@@ -11,32 +11,23 @@ const posts = sortAsc(await getCollection('blog'))
 ---
 
 <Layout>
-  <Seo slot="seo" title="Blog" />
+  <Seo slot="seo" title="Categories" />
   <SkipNavContent>
-    <h1 class="sr-only">Blog</h1>
+    <h1 class="sr-only">Categories</h1>
 
     <!-- 헤더(표 설명) -->
     <div class="text-faded border-b border-border pb-2 mb-2
-                grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center">
-      <span class="text-sm">Category</span>
+                grid grid-cols-[1fr_auto_auto] gap-x-3 items-center">
       <span class="text-sm">Title</span>
       <span class="text-sm">Date</span>
       <span class="text-sm">Metrics</span>
     </div>
 
-    <!-- 목록: 같은 그리드 템플릿 재사용 -->
+    <!-- 목록 -->
     <div class="divide-y divide-border">
       {
         posts.map(({ data: post }) => (
-          <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center py-3">
-            <!-- [Category] -->
-            <Link
-              href={`/blog/category/${encodeURIComponent(post.category)}/`}
-              class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
-            >
-              [{post.category}]
-            </Link>
-
+          <div class="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-3">
             <!-- Title -->
             <Link
               variant="highlight"

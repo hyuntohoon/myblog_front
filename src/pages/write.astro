@@ -1,0 +1,63 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import Spacer from '@components/spacer.astro'
+---
+
+<Layout>
+  <Seo slot="seo" title="Write a new post" />
+  <div class="max-w-3xl mx-auto p-6">
+    <h1 class="text-2xl font-bold mb-6">Write a new post</h1>
+
+    <form id="write-form" class="space-y-4">
+      <div>
+        <label class="block font-medium mb-1">Title</label>
+        <input type="text" name="title" class="w-full border p-2 rounded" required />
+      </div>
+
+      <div>
+        <label class="block font-medium mb-1">Slug (kebab-case)</label>
+        <input type="text" name="slug" class="w-full border p-2 rounded" required />
+      </div>
+
+      <div>
+        <label class="block font-medium mb-1">Description</label>
+        <textarea name="description" class="w-full border p-2 rounded" rows="3"></textarea>
+      </div>
+
+      <div>
+        <label class="block font-medium mb-1">Category</label>
+        <input type="text" name="category" class="w-full border p-2 rounded" />
+      </div>
+
+      <div>
+        <label class="block font-medium mb-1">Content (Markdown)</label>
+        <textarea name="content" class="w-full border p-2 rounded font-mono text-sm" rows="12"></textarea>
+      </div>
+
+      <button type="submit" class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80">
+        Save Draft
+      </button>
+    </form>
+
+    <Spacer axis="vertical" size={8} />
+  </div>
+
+  <script>
+    const form = document.getElementById('write-form')
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const data = Object.fromEntries(new FormData(form))
+
+      const payload = {
+        ...data,
+        date: new Date().toISOString().split('T')[0],
+      }
+
+      // 지금은 콘솔에 출력만
+      console.log('📝 New post data:', payload)
+
+      alert('작성 완료 (현재는 로컬 미리보기만 가능)')
+    })
+  </script>
+</Layout>

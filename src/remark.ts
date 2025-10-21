@@ -12,15 +12,18 @@ export function remarkAsides() {
 			 * Only accept asides with three ::: (containerDirective).
 			 * leafDirective and textDirective (: and ::) are not supported.
 			 */
-			if (!parent || nodeIndex === undefined || node.type !== 'containerDirective') {
+			if (
+				!parent ||
+				nodeIndex === undefined ||
+				node.type !== 'containerDirective'
+			) {
 				return
 			}
 
 			/**
 			 * Check for the correct name, e.g. :::note
 			 */
-			if (!ASIDE_TYPES.includes(node.name as AsideType))
-				return
+			if (!ASIDE_TYPES.includes(node.name as AsideType)) return
 
 			const asideType = node.name as AsideType
 			let title: string = ''
@@ -31,7 +34,12 @@ export function remarkAsides() {
 			 * Extract the title there and remove the paragraph element from the children array.
 			 */
 			const firstChild = node.children[0]
-			if (firstChild?.type === 'paragraph' && firstChild.data && 'directiveLabel' in firstChild.data && firstChild.children.length > 0) {
+			if (
+				firstChild?.type === 'paragraph' &&
+				firstChild.data &&
+				'directiveLabel' in firstChild.data &&
+				firstChild.children.length > 0
+			) {
 				title = toString(firstChild.children).trim()
 
 				node.children.splice(0, 1)

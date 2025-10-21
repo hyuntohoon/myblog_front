@@ -10,7 +10,11 @@ import { FRONTMATTER_TAGS } from './constants'
  * Returns a date in the format "MMM DD, YYYY"
  */
 export function defaultDateFormat(date: Date): string {
-	return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+	return date.toLocaleDateString('en-US', {
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+	})
 }
 
 /**
@@ -40,7 +44,7 @@ export function frontmatterToString(data: Record<string, any>): string {
 	const yaml = Object.entries(data)
 		.map(([key, value]) => {
 			if (Array.isArray(value)) {
-				return `${key}:\n ${value.map(tag => `- ${tag}`).join('\n ')}`
+				return `${key}:\n ${value.map((tag) => `- ${tag}`).join('\n ')}`
 			}
 
 			return `${key}: ${JSON.stringify(value)}`
@@ -53,7 +57,9 @@ export function frontmatterToString(data: Record<string, any>): string {
  * Sort the 'blog' collection ASC by date
  */
 export function sortAsc(data: Array<CollectionEntry<'blog'>>) {
-	return data.sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime())
+	return data.sort(
+		(a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+	)
 }
 
 /**
@@ -66,26 +72,31 @@ export function capitalize<T extends string>(str: T): Capitalize<T> {
 /**
  * Get all posts tagged with the given tag
  */
-export function getPostsByTag(data: Array<CollectionEntry<'blog'>>, tag: FrontmatterTag) {
-	return data.filter(post => post.data.tags?.includes(tag))
+export function getPostsByTag(
+	data: Array<CollectionEntry<'blog'>>,
+	tag: FrontmatterTag
+) {
+	return data.filter((post) => post.data.tags?.includes(tag))
 }
 
 /**
  * Get all tags, their slug, and the number of posts
  */
 export function getTags(data: Array<CollectionEntry<'blog'>>) {
-	const output = [] as Array<{ tag: FrontmatterTag, slug: string, count: number }>
+	const output = [] as Array<{
+		tag: FrontmatterTag
+		slug: string
+		count: number
+	}>
 
 	for (const post of data) {
-		if (!post.data.tags)
-			continue
+		if (!post.data.tags) continue
 
 		for (const tag of post.data.tags) {
-			const existingTag = output.find(t => t.tag === tag)
+			const existingTag = output.find((t) => t.tag === tag)
 			if (existingTag) {
 				existingTag.count++
-			}
-			else {
+			} else {
 				output.push({
 					tag,
 					slug: FRONTMATTER_TAGS.get(tag) as string,
@@ -117,7 +128,8 @@ export function pagefindIntegration(): AstroIntegration {
 				}
 			},
 			'astro:server:setup': ({ server, logger }) => {
-				const outDir = clientDir ?? path.join(server.config.root, server.config.build.outDir)
+				const outDir =
+					clientDir ?? path.join(server.config.root, server.config.build.outDir)
 				logger.debug(`Serving pagefind from ${outDir}`)
 				const serve = sirv(outDir, {
 					dev: true,
@@ -126,8 +138,7 @@ export function pagefindIntegration(): AstroIntegration {
 				server.middlewares.use((req, res, next) => {
 					if (req.url?.startsWith('/pagefind/')) {
 						serve(req, res, next)
-					}
-					else {
+					} else {
 						next()
 					}
 				})

@@ -5,44 +5,58 @@ import Link from './link.astro'
 import Search from './search.astro'
 
 const { pathname } = Astro.url
+
+// ✅ 활성 경로 비교시 트레일링 슬래시 차이 보정
+const normalize = (p: string) => (p.endsWith('/') ? p : p + '/')
+const isActive = (url: string) => normalize(pathname) === normalize(url)
+
+// ✅ constants.ts의 HEADER만 사용(추가/필터 X)
+//   만약 혹시라도 중복이 들어와도 URL 기준으로 dedupe
+const dedupeByUrl = <T extends { url: string }>(arr: T[]) =>
+  Array.from(new Map(arr.map(i => [i.url, i])).values())
+
+const internal = dedupeByUrl(HEADER.internal ?? [])
+const external = dedupeByUrl(HEADER.external ?? [])
 ---
 
 <header class="container">
-	<Spacer axis="vertical" size={8} />
-	<div class="flex flex-row justify-between items-center">
-		<div>
-			<a
-				class="font-semibold text-xl md:text-2xl lg:text-3xl text-highlight"
-				href="/"
-				aria-label={`${SITE.title} - Back to home`}>{SITE.title}</a
-			>
-		</div>
-		<Search />
-	</div>
-	<Spacer axis="vertical" size={6} />
-	<div class="flex flex-row justify-between items-center border-b border-border pb-4 text-lg md:text-xl">
-		<nav aria-label="Primary navigation" class="flex gap-4">
-			{
-				HEADER.internal.map((link) => (
-					<Link
-						href={link.url}
-						class={pathname === link.url ? 'active' : ''}
-						aria-current={pathname === link.url ? 'page' : 'false'}
-					>
-						{link.title}
-					</Link>
-				))
-			}
-		</nav>
-		<div class="flex gap-4">
-			{
-				HEADER.external.map((link) => (
-					<Link href={link.url} {...link.props}>
-						{link.title}
-					</Link>
-				))
-			}
-		</div>
-	</div>
-	<Spacer axis="vertical" size={16} />
+  <Spacer axis="vertical" size={8} />
+  <div class="flex flex-row justify-between items-center">
+    <div>
+      <a
+        class="font-semibold text-xl md:text-2xl lg:text-3xl text-highlight"
+        href="/"
+        aria-label={`${SITE.title} - Back to home`}
+      >{SITE.title}</a>
+    </div>
+    <Search />
+  </div>
+
+  <Spacer axis="vertical" size={6} />
+  <div class="flex flex-row justify-between items-center border-b border-border pb-4 text-lg md:text-xl">
+    <nav aria-label="Primary navigation" class="flex gap-4">
+      {
+        internal.map((link) => (
+          <Link
+            href={link.url}
+            class={isActive(link.url) ? 'active' : ''}
+            aria-current={isActive(link.url) ? 'page' : undefined}
+          >
+            {link.title}
+          </Link>
+        ))
+      }
+    </nav>
+    <div class="flex gap-4">
+      {
+        external.map((link) => (
+          <Link href={link.url} {...(link.props ?? {})}>
+            {link.title}
+          </Link>
+        ))
+      }
+    </div>
+  </div>
+
+  <Spacer axis="vertical" size={4} />
 </header>
