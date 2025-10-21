@@ -6,6 +6,49 @@ import CATEGORIES from './categories.json'
 // zod enum에 배열을 안전하게 넣기
 const zodEnum = <T>(arr: T[]): [T, ...T[]] => arr as [T, ...T[]]
 
+/** ---------- 선택적: 음악 리뷰/평점 블록 ---------- */
+const Rating = z.object({
+	value: z.number().min(0).max(10), // 0~10 평점
+	scale: z.literal(10).default(10), // 필요시 5점제로 바꿔도 됨
+	label: z.string().optional(), // 코멘트(예: "재청취 강추")
+})
+
+const MusicLink = z.object({
+	spotify: z.string().url().optional(),
+	appleMusic: z.string().url().optional(),
+	youtubeMusic: z.string().url().optional(),
+	bandcamp: z.string().url().optional(),
+})
+
+const Track = z.object({
+	title: z.string(),
+	artists: z.array(z.string()).default([]),
+	durationSec: z.number().int().positive().optional(),
+	rating: z.number().min(0).max(10).optional(), // 트랙별 개별 평점(선택)
+})
+
+const MusicReview = z
+	.object({
+		subject: z.enum(['album', 'track']).default('album'), // 리뷰 대상
+		title: z.string(), // 앨범/곡 제목
+		artists: z.array(z.string()).default([]),
+		releaseDate: z.coerce.date().optional(),
+		genres: z.array(z.string()).default([]),
+		cover: z
+			.object({
+				src: z.string(),
+				alt: z.string().optional(),
+				credit: z.string().optional(),
+			})
+			.optional(),
+		links: MusicLink.optional(),
+		rating: Rating, // ✅ 핵심: 평점
+		favoriteTracks: z.array(z.string()).default([]),
+		tracks: z.array(Track).default([]), // 앨범 리뷰일 때 트랙리스트
+	})
+	.strict()
+
+/** ---------- 블로그 컬렉션 ---------- */
 const blog = defineCollection({
 	loader: glob({ pattern: '**/[^_]*.mdx', base: './content/blog' }),
 	schema: z
@@ -42,6 +85,9 @@ const blog = defineCollection({
 
 			// (향후 확장) 글에서 참조할 앨범 ID들
 			albumIds: z.array(z.string()).default([]),
+
+			// ✅ 선택적: 음악 리뷰/평점 블록 (음악 글에만 넣으면 됨)
+			musicReview: MusicReview.optional(),
 		})
 		.transform((data) => ({
 			...data,

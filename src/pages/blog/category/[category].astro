@@ -7,7 +7,6 @@ import { defaultDateFormat, sortAsc } from '@utils'
 import Link from '@components/link.astro'
 import PostMetricsItem from '@components/post-metrics-item.tsx'
 
-// /blog/category/<category> 정적 경로 생성
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
   const cats = new Set(entries.filter(e => !e.data.draft).map(e => e.data.category))
@@ -16,9 +15,7 @@ export async function getStaticPaths() {
 
 const all = await getCollection('blog')
 const current = Astro.params.category!
-const posts = sortAsc(
-  all.filter(e => !e.data.draft && e.data.category === current)
-)
+const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === current))
 ---
 
 <Layout>
@@ -26,7 +23,7 @@ const posts = sortAsc(
   <SkipNavContent>
     <h1 class="sr-only">Category: {current}</h1>
 
-    <!-- 헤더(표 설명) -->
+    <!-- 헤더 -->
     <div class="text-faded border-b border-border pb-2 mb-2
                 grid grid-cols-[1fr_auto_auto] gap-x-3 items-center">
       <span class="text-sm">Title</span>
@@ -34,7 +31,7 @@ const posts = sortAsc(
       <span class="text-sm">Metrics</span>
     </div>
 
-    <!-- 목록: 블로그 목록과 동일 템플릿(카테고리 열만 제거) -->
+    <!-- 목록 -->
     <div class="divide-y divide-border">
       {
         posts.length === 0 ? (
@@ -42,15 +39,24 @@ const posts = sortAsc(
         ) : (
           posts.map(({ data: post }) => (
             <div class="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-3">
-              <!-- Title -->
-              <Link
-                variant="highlight"
-                class="font-medium text-base md:text-lg truncate"
-                href={`/blog/${post.slug}/`}
-                title={post.title}
-              >
-                {post.title}
-              </Link>
+              <!-- Title (+ 평점 뱃지) -->
+              <div class="flex items-center gap-2 min-w-0">
+                <Link
+                  variant="highlight"
+                  class="font-medium text-base md:text-lg truncate"
+                  href={`/blog/${post.slug}/`}
+                  title={post.title}
+                >
+                  {post.title}
+                </Link>
+
+                {post.musicReview && post.musicReview.rating && (
+                  <span class="shrink-0 rounded px-2 py-0.5 text-xs bg-muted text-highlight"
+                        title="Rating">
+                    ★ {post.musicReview.rating.value}/{post.musicReview.rating.scale}
+                  </span>
+                )}
+              </div>
 
               <!-- Date -->
               <span class="text-faded whitespace-nowrap">

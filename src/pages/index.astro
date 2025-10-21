@@ -2,84 +2,72 @@
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import { getCollection } from 'astro:content'
-import { Content as Hero } from '@assets/hero.mdx'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import { defaultDateFormat, sortAsc } from '@utils'
 import Link from '@components/link.astro'
-import Prose from '@components/prose.astro'
-import Spacer from '@components/spacer.astro'
-import { SITE } from '@constants'
+import PostMetricsItem from '@components/post-metrics-item.tsx'
 
-const OSS_PROJECTS: Array<{ name: string; url: string; description: string }> = [
-	{
-		name: 'secco',
-		url: 'https://github.com/LekoArts/secco',
-		description: 'Local package testing made easy',
-	},
-	{
-		name: 'astro-loaders',
-		url: 'https://github.com/LekoArts/astro-loaders',
-		description: "Loaders for Astro's Content Layer",
-	},
-	{
-		name: 'annum',
-		url: 'https://github.com/LekoArts/annum',
-		description: 'Visualize your Trakt.tv history',
-	},
-]
-
-const POSTS_TO_SHOW = 3
-
-const posts = sortAsc(await getCollection('blog')).slice(0, POSTS_TO_SHOW)
+const posts = sortAsc(await getCollection('blog'))
 ---
 
 <Layout>
-	<Seo slot="seo" />
-	<SkipNavContent>
-		<h1 class="sr-only">{SITE.title}</h1>
-		<Prose>
-			<Hero />
-		</Prose>
-		<Spacer axis="vertical" size={32} />
-		<section>
-			<div class="border-b border-border pb-4 flex justify-between items-center">
-				<h2 class="font-medium text-xl md:text-2xl lg:text-3xl text-highlight">Latest Posts</h2>
-				<div><Link href="/blog/">Read all posts</Link></div>
-			</div>
-			<Spacer axis="vertical" size={8} />
-			<div class="flex gap-10 flex-col">
-				{
-					posts.map(({ data: post }) => (
-						<div>
-							<Link variant="highlight" href={`/${post.slug}/`}>
-								{post.title}
-							</Link>
-							<Spacer axis="vertical" size={2} />
-							<div class="text-faded">{defaultDateFormat(post.date)}</div>
-						</div>
-					))
-				}
-			</div>
-		</section>
-		<Spacer axis="vertical" size={32} />
-		<section>
-			<div class="border-b border-border pb-4">
-				<h2 class="font-medium text-xl md:text-2xl lg:text-3xl text-highlight">Open Source Projects</h2>
-			</div>
-			<Spacer axis="vertical" size={8} />
-			<div class="flex gap-10 flex-col">
-				{
-					OSS_PROJECTS.map((oss) => (
-						<div>
-							<Link variant="highlight" href={oss.url}>
-								{oss.name}
-							</Link>
-							<Spacer axis="vertical" size={2} />
-							<div class="text-faded">{oss.description}</div>
-						</div>
-					))
-				}
-			</div>
-		</section>
-	</SkipNavContent>
+  <Seo slot="seo" title="Blog" />
+  <SkipNavContent>
+    <h1 class="sr-only">Blog</h1>
+
+    <!-- 헤더(표 설명) -->
+    <div class="text-faded border-b border-border pb-2 mb-2
+                grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center">
+      <span class="text-sm">Category</span>
+      <span class="text-sm">Title</span>
+      <span class="text-sm">Date</span>
+      <span class="text-sm">Metrics</span>
+    </div>
+
+    <!-- 목록 -->
+    <div class="divide-y divide-border">
+      {
+        posts.map(({ data: post }) => (
+          <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center py-3">
+            <!-- [Category] -->
+            <Link
+              href={`/blog/category/${encodeURIComponent(post.category)}/`}
+              class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
+            >
+              [{post.category}]
+            </Link>
+
+            <!-- Title (+ 평점 뱃지: 있으면만) -->
+            <div class="flex items-center gap-2 min-w-0">
+              <Link
+                variant="highlight"
+                class="font-medium text-base md:text-lg truncate"
+                href={`/blog/${post.slug}/`}
+                title={post.title}
+              >
+                {post.title}
+              </Link>
+
+              {post.musicReview && post.musicReview.rating && (
+                <span class="shrink-0 rounded px-2 py-0.5 text-xs bg-muted text-highlight"
+                      title="Rating">
+                  ★ {post.musicReview.rating.value}/{post.musicReview.rating.scale}
+                </span>
+              )}
+            </div>
+
+            <!-- Date -->
+            <span class="text-faded whitespace-nowrap">
+              {defaultDateFormat(post.date)}
+            </span>
+
+            <!-- Metrics -->
+            <span class="text-faded whitespace-nowrap">
+              <PostMetricsItem client:load slug={post.slug} />
+            </span>
+          </div>
+        ))
+      }
+    </div>
+  </SkipNavContent>
 </Layout>
