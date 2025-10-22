@@ -1,8 +1,10 @@
 ---
-// src/pages/write.astro (예시)
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
+
+// ⬇️ 번들 시 안전하게 URL로 변환되도록 Astro.resolve 사용
+import writeClientUrl from '../scripts/write.client.ts?url'
 ---
 
 <Layout>
@@ -25,7 +27,7 @@ import Spacer from '@components/spacer.astro'
         <p class="text-xs text-faded mt-1">비우면 오늘 날짜로 저장됩니다.</p>
       </div>
 
-      <!-- 카테고리 (동적 로딩 + 추가) -->
+      <!-- 카테고리 -->
       <div>
         <label class="block font-medium mb-1">Category</label>
         <div class="flex items-center gap-2">
@@ -39,17 +41,16 @@ import Spacer from '@components/spacer.astro'
         <p id="catHelp" class="text-xs text-faded mt-1 hidden">No categories yet. You can add one.</p>
       </div>
 
-      <!-- Music Review 옵션 토글 -->
+      <!-- 옵션 토글 -->
       <div class="flex items-center gap-2">
         <input type="checkbox" id="enableReview" name="enableReview" class="w-4 h-4" />
         <label for="enableReview" class="font-medium">Add Music Review (optional)</label>
       </div>
 
-      <!-- Music Review (옵셔널) -->
+      <!-- Music Review -->
       <fieldset id="musicReview" class="border rounded p-4 space-y-4 hidden">
         <legend class="font-semibold text-lg">🎧 Music Review</legend>
 
-        <!-- 1) 대상 선택 -->
         <div>
           <label class="block font-medium mb-1">Target Type</label>
           <select name="reviewType" id="reviewType" class="border p-2 rounded w-full">
@@ -59,7 +60,6 @@ import Spacer from '@components/spacer.astro'
           </select>
         </div>
 
-        <!-- 2) 앨범/트랙 선택 (더미) + 이미지 프리뷰 -->
         <div>
           <label class="block font-medium mb-1">Select Album/Track</label>
           <select name="albumId" id="albumId" class="border p-2 rounded w-full">
@@ -74,21 +74,13 @@ import Spacer from '@components/spacer.astro'
           </div>
         </div>
 
-        <!-- 평점 -->
         <div>
           <label class="block font-medium mb-1">Rating (0–10)</label>
-          <input
-            type="number"
-            name="rating"
-            class="border p-2 rounded w-24"
-            min="0"
-            max="10"
-            step="0.5"
-          />
+          <input type="number" name="rating" class="border p-2 rounded w-24" min="0" max="10" step="0.5" />
         </div>
       </fieldset>
 
-      <!-- 본문 (Markdown/MDX) -->
+      <!-- 본문 -->
       <div>
         <label class="block font-medium mb-1">Content (Markdown/MDX)</label>
         <textarea
@@ -100,11 +92,7 @@ import Spacer from '@components/spacer.astro'
         ></textarea>
       </div>
 
-      <button
-        id="submit-btn"
-        type="submit"
-        class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80"
-      >
+      <button id="submit-btn" type="submit" class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80">
         Save
       </button>
       <p id="write-result" class="text-sm mt-2"></p>
@@ -112,10 +100,7 @@ import Spacer from '@components/spacer.astro'
 
     <Spacer axis="vertical" size={8} />
   </div>
-<script type="module">
-    // 이 인라인 스크립트는 브라우저에서 실행되지만,
-    // 실제 로직은 외부 모듈(/src/scripts/write.client.ts)에 있고
-    // 그 파일이 Vite 번들링되므로 astro:env/client import가 안전하게 처리됩니다.
-    import '/src/scripts/write.client.ts';
-  </script>
+
+  <!-- ✅ CSP 안전: 외부 모듈 로드 -->
+  <script type="module" src={writeClientUrl}></script>
 </Layout>
