@@ -21,8 +21,6 @@ import { SITE } from './src/constants'
 import { remarkAsides } from './src/remark'
 import { pagefindIntegration } from './src/utils'
 
-import node from '@astrojs/node'
-
 export default defineConfig({
 	experimental: {
 		fonts: [
@@ -36,8 +34,7 @@ export default defineConfig({
 		],
 	},
 
-	output: 'server',
-	adapter: node({ mode: 'standalone' }),
+	output: 'static',
 	prerender: { default: true },
 	trailingSlash: 'always',
 	site: SITE.url,
