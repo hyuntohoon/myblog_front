@@ -5,13 +5,15 @@ import { getCollection } from 'astro:content'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import { defaultDateFormat, sortAsc } from '@utils'
 import Link from '@components/link.astro'
-import PostMetricsItem from '@components/post-metrics-item.tsx'
+import PostMetricsItem from '@components/post-metrics'
 
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
   const cats = new Set(entries.filter(e => !e.data.draft).map(e => e.data.category))
   return Array.from(cats).map((category) => ({ params: { category } }))
 }
+
+export const prerender = true;
 
 const all = await getCollection('blog')
 const current = Astro.params.category!

@@ -61,7 +61,7 @@ export default defineConfig({
 	env: {
 		schema: {
 			// 클라이언트/서버 모두 접근 가능한 공개 문자열
-			API_URL: envField.string({
+			PUBLIC_API_URL: envField.string({
 				context: 'client',
 				access: 'public',
 			}),

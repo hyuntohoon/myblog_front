@@ -1,6 +1,6 @@
 // 브라우저 전용 모듈 (Vite가 번들함)
-import { API_URL } from 'astro:env/client'
-const API_BASE_URL = API_URL
+import { PUBLIC_API_URL } from 'astro:env/client'
+const API_BASE_URL = PUBLIC_API_URL
 
 // DOM 헬퍼
 const $ = <T extends Element = HTMLElement>(sel: string) =>
