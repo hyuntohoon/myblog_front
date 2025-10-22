@@ -15,7 +15,7 @@ export const POST: APIRoute = async ({ request }) => {
 				status: 400,
 			})
 
-		const base = import.meta.env.PUBLIC_API_BASE
+		const base = import.meta.env.PUBLIC_API_BASE || 'http://127.0.0.1:8000'
 		if (base) {
 			// 실제 FastAPI에 전달
 			try {

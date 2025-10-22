@@ -6,7 +6,7 @@ type Metrics = { likes: number; comments: number }
 const ZERO: Metrics = { likes: 0, comments: 0 }
 
 // 예: http://localhost:8000  (FastAPI 준비되면 .env에 넣기)
-const FASTAPI_BASE = import.meta.env.FASTAPI_BASE_URL ?? ''
+const FASTAPI_BASE = import.meta.env.PUBLIC_API_BASE || 'http://127.0.0.1:8000'
 
 export const GET: APIRoute = async ({ url }) => {
 	const slugsParam = url.searchParams.get('slugs') ?? ''

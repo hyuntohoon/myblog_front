@@ -1,4 +1,5 @@
 ---
+// src/pages/write.astro (예시)
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
@@ -15,6 +16,13 @@ import Spacer from '@components/spacer.astro'
       <div>
         <label class="block font-medium mb-1">Title</label>
         <input type="text" name="title" class="w-full border p-2 rounded" required />
+      </div>
+
+      <!-- 날짜(선택) -->
+      <div>
+        <label class="block font-medium mb-1">Date</label>
+        <input type="date" name="posted_date" class="w-full border p-2 rounded" />
+        <p class="text-xs text-faded mt-1">비우면 오늘 날짜로 저장됩니다.</p>
       </div>
 
       <!-- 카테고리 (동적 로딩 + 추가) -->
@@ -34,7 +42,7 @@ import Spacer from '@components/spacer.astro'
       <!-- Music Review 옵션 토글 -->
       <div class="flex items-center gap-2">
         <input type="checkbox" id="enableReview" name="enableReview" class="w-4 h-4" />
-        <label for="enableReview" class="font-medium">Add Music Review</label>
+        <label for="enableReview" class="font-medium">Add Music Review (optional)</label>
       </div>
 
       <!-- Music Review (옵셔널) -->
@@ -68,12 +76,12 @@ import Spacer from '@components/spacer.astro'
 
         <!-- 평점 -->
         <div>
-          <label class="block font-medium mb-1">Rating (1–10)</label>
+          <label class="block font-medium mb-1">Rating (0–10)</label>
           <input
             type="number"
             name="rating"
             class="border p-2 rounded w-24"
-            min="1"
+            min="0"
             max="10"
             step="0.5"
           />
@@ -82,197 +90,32 @@ import Spacer from '@components/spacer.astro'
 
       <!-- 본문 (Markdown/MDX) -->
       <div>
-        <label class="block font-medium mb-1">Content (Markdown)</label>
+        <label class="block font-medium mb-1">Content (Markdown/MDX)</label>
         <textarea
           name="content"
           class="w-full border p-2 rounded font-mono text-sm"
           rows="12"
           placeholder="# Heading\n\nWrite here..."
+          required
         ></textarea>
       </div>
 
       <button
+        id="submit-btn"
         type="submit"
         class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80"
       >
-        Save Draft
+        Save
       </button>
+      <p id="write-result" class="text-sm mt-2"></p>
     </form>
 
     <Spacer axis="vertical" size={8} />
   </div>
-
-  <script>
-    const $ = (s) => document.querySelector(s)
-
-    const form = $('#write-form')
-    const categorySel = $('#category')
-    const catHelp = $('#catHelp')
-    const addBtn = $('#add-category')
-
-    const enableReview = $('#enableReview')
-    const reviewSection = $('#musicReview')
-    const albumSelect = $('#albumId')
-    const albumPreview = $('#albumPreview')
-    const albumImage = albumPreview.querySelector('img')
-
-    // 더미 이미지 데이터
-    const albumImages = {
-      1: 'https://i.scdn.co/image/ab67616d0000b273f3f8ed949a4f79f5ad5caa7c',
-      2: 'https://i.scdn.co/image/ab67616d0000b273a9a5fd746f62bcee3e6a9db7',
-      3: 'https://i.scdn.co/image/ab67616d0000b273620e42f6a19cfb459dbf5566',
-    }
-
-    // 카테고리 동적 로딩
-    async function loadCategories() {
-      try {
-        const res = await fetch('/api/categories.json', { cache: 'no-store' })
-        if (!res.ok) throw new Error('HTTP ' + res.status)
-        const { categories } = await res.json()
-
-        categorySel.innerHTML = ''
-        if (!categories || categories.length === 0) {
-          catHelp.classList.remove('hidden')
-          const opt = document.createElement('option')
-          opt.value = ''
-          opt.textContent = '(no categories)'
-          categorySel.appendChild(opt)
-          categorySel.value = ''
-          return
-        }
-
-        catHelp.classList.add('hidden')
-        const frag = document.createDocumentFragment()
-        const placeholder = document.createElement('option')
-        placeholder.value = ''
-        placeholder.textContent = 'Select category...'
-        placeholder.selected = true
-        placeholder.disabled = true
-        frag.appendChild(placeholder)
-
-        categories.forEach((name) => {
-          const opt = document.createElement('option')
-          opt.value = name
-          opt.textContent = name
-          frag.appendChild(opt)
-        })
-        categorySel.appendChild(frag)
-      } catch (e) {
-        categorySel.innerHTML = ''
-        const opt = document.createElement('option')
-        opt.value = ''
-        opt.textContent = '(failed to load categories)'
-        categorySel.appendChild(opt)
-        categorySel.value = ''
-        catHelp.classList.remove('hidden')
-      }
-    }
-
-    // 카테고리 추가(백엔드로 POST, 실패 시에도 UI는 갱신)
-    async function addCategory(name) {
-      try {
-        const r = await fetch('/api/categories', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        })
-        if (r.ok) {
-          const json = await r.json()
-          // persisted가 false면 임시 UI만 갱신 (백엔드 없을 때)
-          return json?.name || name
-        }
-      } catch {}
-      return name
-    }
-
-    addBtn.addEventListener('click', async () => {
-      const name = prompt('새 카테고리 이름을 입력하세요:')
-      if (!name) return
-      const trimmed = name.trim()
-      if (!trimmed) return
-      const exists = Array.from(categorySel.options).some((o) => o.value === trimmed)
-      if (exists) {
-        categorySel.value = trimmed
-        return
-      }
-      const saved = await addCategory(trimmed)
-      const opt = document.createElement('option')
-      opt.value = saved
-      opt.textContent = saved
-      categorySel.appendChild(opt)
-      categorySel.value = saved
-    })
-
-    // 리뷰 토글
-    enableReview.addEventListener('change', () => {
-      reviewSection.classList.toggle('hidden', !enableReview.checked)
-    })
-
-    // 앨범 이미지 미리보기
-    albumSelect.addEventListener('change', () => {
-      const id = albumSelect.value
-      if (id && albumImages[id]) {
-        albumPreview.classList.remove('hidden')
-        albumImage.src = albumImages[id]
-      } else {
-        albumPreview.classList.add('hidden')
-      }
-    })
-
-    // 제출: slug 자동 생성 + 리뷰/본문 포함
-    form.addEventListener('submit', (e) => {
-      e.preventDefault()
-      const data = Object.fromEntries(new FormData(form))
-
-      const slug = String(data.title || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '') || 'untitled'
-
-      const payload = {
-        title: data.title?.toString().trim() || '',
-        slug,
-        date: new Date().toISOString().split('T')[0],
-        category: data.category?.toString().trim() || '',
-        description: '',            // 스키마상 optional이지만 빈 문자열로
-        draft: false,
-        searchIndex: true,
-        albumIds: [],               // 나중에 백엔드 연동 시 실제로 채움
-        body: data.content?.toString() || '',
-      }
-
-      // 리뷰가 켜진 경우만 포함
-      if (document.getElementById('enableReview').checked) {
-        const reviewType = (data.reviewType || '').toString()
-        const rating = parseFloat(String(data.rating || ''))
-        const albumId = (data.albumId || '').toString()
-
-        if (reviewType && !Number.isNaN(rating)) {
-          payload.musicReview = {
-            subject: reviewType,                   // 'album' | 'track'
-            title: '',                             // 백엔드에서 앨범/트랙 정보로 채워도 됨
-            artists: [],
-            genres: [],
-            rating: { value: rating, scale: 10 },
-            favoriteTracks: [],
-            tracks: [],
-            links: undefined,
-            releaseDate: undefined,
-            cover: undefined,
-          }
-          if (albumId) {
-            // 지금은 dummy: albumIds에 참고 값만 넣어둠
-            payload.albumIds = [albumId]
-          }
-        }
-      }
-
-      console.log('📝 New Post Payload:', payload)
-      alert('작성 완료 (현재는 로컬 미리보기). 콘솔을 확인하세요.')
-      // TODO: 나중에 FastAPI 연결
-      // fetch('/api/write', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) })
-    })
-
-    document.addEventListener('DOMContentLoaded', loadCategories)
+<script type="module">
+    // 이 인라인 스크립트는 브라우저에서 실행되지만,
+    // 실제 로직은 외부 모듈(/src/scripts/write.client.ts)에 있고
+    // 그 파일이 Vite 번들링되므로 astro:env/client import가 안전하게 처리됩니다.
+    import '/src/scripts/write.client.ts';
   </script>
 </Layout>

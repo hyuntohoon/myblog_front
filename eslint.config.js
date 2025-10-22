@@ -22,14 +22,17 @@ export default antfu(
 
 	// 추가 오버라이드 (룰/무시 경로)
 	{
+		plugins: ['unused-imports'],
 		rules: {
 			// 포맷은 Prettier가 담당 → 스타일/포맷 관련 룰 꺼서 충돌 방지
+			'style/operator-linebreak': ['error', 'after'],
 			'no-mixed-spaces-and-tabs': 'off', // 일단 끄고 일괄 변환 후 필요하면 'error'로 되돌리세요
 			'quote-props': 'off',
 			'style/quote-props': 'off', // eslint-stylistic 네임스페이스용
 			'style/indent': 'off',
 			'style/no-multi-spaces': 'off',
 			'perfectionist/sort-imports': 'off',
+			'unused-imports/no-unused-imports': 'error',
 		},
 		ignores: ['**/dist/**', '**/.astro/**', 'node_modules/**'],
 	}

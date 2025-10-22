@@ -1,28 +1,39 @@
 import { useEffect, useState } from 'react'
 
+const API_BASE = 'http://127.0.0.1:8000+1'
+
 type Metrics = { likes: number; comments: number }
 
 export default function PostMetricsItem({ slug }: { slug: string }) {
-	const [m, setM] = useState<Metrics>({ likes: 0, comments: 0 })
+	const [data, setData] = useState<Metrics | null>(null)
 
 	useEffect(() => {
-		if (!slug) return
-		const qs = encodeURIComponent(slug)
-		fetch(`/api/metrics.json?slugs=${qs}`, { cache: 'no-store' })
-			.then((r) => r.json())
-			.then((json) => {
-				const v = json?.[slug]
-				setM({
-					likes: typeof v?.likes === 'number' ? v.likes : 0,
-					comments: typeof v?.comments === 'number' ? v.comments : 0,
+		let aborted = false
+		const run = async () => {
+			try {
+				const res = await fetch(`${API_BASE}/api/metrics/batch`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ slugs: [slug] }),
 				})
-			})
-			.catch(() => setM({ likes: 0, comments: 0 }))
+				if (!res.ok) return
+				const json = (await res.json()) as { data?: Record<string, Metrics> }
+				if (!aborted) setData(json?.data?.[slug] ?? { likes: 0, comments: 0 })
+			} catch {
+				if (!aborted) setData({ likes: 0, comments: 0 })
+			}
+		}
+		run()
+		return () => {
+			aborted = true
+		}
 	}, [slug])
 
+	const likes = data?.likes ?? 0
+	const comments = data?.comments ?? 0
 	return (
-		<span className="inline-flex gap-3 text-faded">
-			👍 {m.likes} · 💬 {m.comments}
+		<span aria-label="post-metrics">
+			👍 {likes} · 💬 {comments}
 		</span>
 	)
 }
