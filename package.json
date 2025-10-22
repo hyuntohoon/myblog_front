@@ -16,6 +16,7 @@
 	},
 	"dependencies": {
 		"@astrojs/mdx": "^4.3.3",
+		"@astrojs/node": "^9.5.0",
 		"@astrojs/react": "^4.3.0",
 		"@astrojs/rss": "^4.0.11",
 		"@astrojs/sitemap": "^3.4.2",

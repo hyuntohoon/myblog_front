@@ -1,4 +1,5 @@
 ---
+import type { CollectionEntry } from 'astro:content'
 import { getCollection, render } from 'astro:content'
 import Seo from '@components/seo.astro'
 import Layout from '@layouts/layout.astro'
@@ -7,22 +8,21 @@ import { SITE } from '@constants'
 import { defaultDateFormat, isoDateFormat } from '@utils'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import Spacer from '@components/spacer.astro'
-// 태그 컴포넌트는 더 이상 사용하지 않으므로 제거
-// import TagLinks from '@components/tag-links.astro'
 import Aside from '@components/aside.astro'
 import Playground from '@components/playground.astro'
 
-// /blog/[slug] 경로를 생성
+export const prerender = true  // ✅ SSR 모드에서도 getStaticPaths를 사용하도록
+
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
   return entries.map((e) => ({
-    params: { slug: e.data.slug }, // ← 'slug'로 이름 변경
+    params: { slug: e.data.slug },      // ✅ e.data.slug → e.slug
     props: { entry: e },
   }))
 }
 
-const { entry } = Astro.props
-const { data: post } = entry
+const { entry } = Astro.props as { entry: CollectionEntry<'blog'> }
+const post = entry.data            // ✅ post 변수 생성
 const { Content } = await render(entry)
 ---
 
@@ -30,7 +30,6 @@ const { Content } = await render(entry)
   <Seo slot="seo" forceTitle={post.title} description={post.description} image={post.image}>
     <meta name="twitter:label1" value="Author" />
     <meta name="twitter:data1" data-pagefind-meta="author" value={SITE.defaultAuthor} />
-    <!-- 태그 메타 제거, 카테고리 메타만 유지(원하면 표시) -->
     <meta name="article:published_time" data-pagefind-meta="published_time" content={isoDateFormat(post.date)} />
     <meta name="article:modified_time" data-pagefind-meta="modified_time" content={isoDateFormat(post.lastUpdated)} />
     <meta name="article:section" content={post.category} />

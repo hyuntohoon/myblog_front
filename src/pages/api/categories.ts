@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro'
+import { API_URL } from 'astro:env/client'
 
 /**
  * 카테고리 추가
@@ -15,7 +16,7 @@ export const POST: APIRoute = async ({ request }) => {
 				status: 400,
 			})
 
-		const base = import.meta.env.PUBLIC_API_BASE || 'http://127.0.0.1:8000'
+		const base = API_URL
 		if (base) {
 			// 실제 FastAPI에 전달
 			try {

@@ -21,6 +21,8 @@ import { SITE } from './src/constants'
 import { remarkAsides } from './src/remark'
 import { pagefindIntegration } from './src/utils'
 
+import node from '@astrojs/node'
+
 export default defineConfig({
 	experimental: {
 		fonts: [
@@ -33,9 +35,13 @@ export default defineConfig({
 			},
 		],
 	},
-	output: 'static',
+
+	output: 'server',
+	adapter: node({ mode: 'standalone' }),
+	prerender: { default: true },
 	trailingSlash: 'always',
 	site: SITE.url,
+
 	integrations: [
 		expressiveCode(),
 		mdx(),
@@ -43,12 +49,15 @@ export default defineConfig({
 		pagefindIntegration(),
 		react(),
 	],
+
 	vite: {
 		plugins: [tailwindcss()],
 	},
+
 	image: {
 		service: imageService(),
 	},
+
 	devToolbar: { enabled: false },
 
 	// ✅ 타입 안전 env 스키마
