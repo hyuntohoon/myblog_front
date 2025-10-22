@@ -1,0 +1,43 @@
+name: Deploy Front (S3+CF)
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "astro.config.*"
+      - "package.json"
+      - "pnpm-lock.yaml"
+
+jobs:
+  deploy-front:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+      - name: Build Astro
+        env:
+          NODE_ENV: production
+          PUBLIC_API_URL: ${{ vars.API_URL }}
+        run: pnpm build
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Sync HTML only
+        run: |
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
+            --delete --exclude "assets/*" \
+            --cache-control "public, max-age=60, must-revalidate"
+      - name: Invalidate CF
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CF_DIST_ID }} \
+            --paths "/*"
