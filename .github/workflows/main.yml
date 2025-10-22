@@ -1,8 +1,8 @@
 name: Deploy Front (S3+CF)
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:  # 수동 실행 버튼도 추가(테스트 용)
+    branches: ['main']
+  workflow_dispatch: # 수동 실행 버튼도 추가(테스트 용)
 
 jobs:
   deploy-front:
@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
       - uses: pnpm/action-setup@v3
         with:
           version: 9
@@ -19,7 +19,7 @@ jobs:
       - name: Build Astro
         env:
           NODE_ENV: production
-          API_URL: ${{ vars.API_URL }}   # ← 이름 수정
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }} # ← 이름 수정
         run: pnpm build
       - uses: aws-actions/configure-aws-credentials@v4
         with:
