@@ -2,12 +2,7 @@ name: Deploy Front (S3+CF)
 on:
   push:
     branches: [ "main" ]
-    paths:
-      - "src/**"
-      - "public/**"
-      - "astro.config.*"
-      - "package.json"
-      - "pnpm-lock.yaml"
+  workflow_dispatch:  # 수동 실행 버튼도 추가(테스트 용)
 
 jobs:
   deploy-front:
@@ -24,7 +19,7 @@ jobs:
       - name: Build Astro
         env:
           NODE_ENV: production
-          PUBLIC_API_URL: ${{ vars.API_URL }}
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}   # ← 이름 수정
         run: pnpm build
       - uses: aws-actions/configure-aws-credentials@v4
         with:
