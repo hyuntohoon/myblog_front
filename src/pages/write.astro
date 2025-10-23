@@ -3,8 +3,6 @@ import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
 
-// ⬇️ 번들 시 안전하게 URL로 변환되도록 Astro.resolve 사용
-import writeClientUrl from '../scripts/write.client.ts?url'
 ---
 
 <Layout>
@@ -102,5 +100,7 @@ import writeClientUrl from '../scripts/write.client.ts?url'
   </div>
 
   <!-- ✅ CSP 안전: 외부 모듈 로드 -->
-  <script type="module" src={writeClientUrl}></script>
+<script>
+    import '../scripts/write.client.ts';
+  </script>
 </Layout>
