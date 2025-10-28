@@ -1,7 +1,8 @@
+// src/scripts/write.client.ts
+
 // 브라우저 전용 모듈 (Vite가 번들함)
-import { PUBLIC_API_URL } from 'astro:env/client'
+import { PUBLIC_API_URL, PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
 const API_BASE_URL = PUBLIC_API_URL
-import { PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
 
 // DOM 헬퍼
 const $ = <T extends Element = HTMLElement>(sel: string) =>
@@ -20,6 +21,69 @@ const reviewSection = $('#musicReview') as HTMLElement | null
 const albumSelect = $('#albumId') as HTMLSelectElement | null
 const albumPreview = $('#albumPreview') as HTMLElement | null
 const albumImage = albumPreview?.querySelector('img') as HTMLImageElement | null
+
+// ─────────────────────────────────────────────────────────────
+// UX: 간단 토스트(실패/성공 알림)
+function showToast(
+	message: string,
+	variant: 'success' | 'error' = 'error',
+	ms = 2600
+) {
+	let host = document.getElementById('toast-host')
+	if (!host) {
+		host = document.createElement('div')
+		host.id = 'toast-host'
+		host.style.position = 'fixed'
+		host.style.left = '50%'
+		host.style.bottom = '24px'
+		host.style.transform = 'translateX(-50%)'
+		host.style.zIndex = '9999'
+		host.style.display = 'flex'
+		host.style.flexDirection = 'column'
+		host.style.gap = '10px'
+		document.body.appendChild(host)
+	}
+	const el = document.createElement('div')
+	el.textContent = message
+	el.style.padding = '12px 14px'
+	el.style.borderRadius = '10px'
+	el.style.fontSize = '14px'
+	el.style.color = variant === 'success' ? '#073b16' : '#5a0b0b'
+	el.style.background = variant === 'success' ? '#c9f7d9' : '#ffd8d6'
+	el.style.boxShadow = '0 6px 24px rgba(0,0,0,.12)'
+	el.style.minWidth = '240px'
+	el.style.textAlign = 'center'
+	host.appendChild(el)
+	setTimeout(() => {
+		el.style.transition = 'opacity .25s ease'
+		el.style.opacity = '0'
+		setTimeout(() => el.remove(), 260)
+	}, ms)
+}
+
+function redirectOnSuccess(slug?: string) {
+	// 같은 오리진이고, 뒤로 갈 페이지가 있으면 back
+	const refOk =
+		document.referrer &&
+		(() => {
+			try {
+				const u = new URL(document.referrer)
+				return u.origin === location.origin
+			} catch {
+				return false
+			}
+		})()
+	if (refOk) {
+		showToast('✅ 저장 & 발행 완료! 이전 페이지로 이동합니다.', 'success', 1400)
+		setTimeout(() => history.back(), 1200)
+		return
+	}
+	// slug 있으면 해당 문서로, 없으면 홈
+	const target = slug ? `/posts/${slug}/` : '/'
+	showToast('✅ 저장 & 발행 완료!', 'success', 1200)
+	setTimeout(() => location.assign(target), 900)
+}
+// ─────────────────────────────────────────────────────────────
 
 // 더미 이미지 데이터
 const albumImages: Record<string, string> = {
@@ -87,7 +151,7 @@ async function addCategory(name: string) {
 
 function wireUI() {
 	if (addBtn && categorySel && catHelp) {
-		addBtn.addEventListener('click', async () => {
+		const onClick = async () => {
 			const name = prompt('새 카테고리 이름을 입력하세요:')
 			if (!name) return
 			const trimmed = name.trim()
@@ -102,17 +166,21 @@ function wireUI() {
 			categorySel.value = opt.value
 
 			catHelp.classList.add('hidden')
-		})
+		}
+		addBtn.removeEventListener('click', onClick)
+		addBtn.addEventListener('click', onClick)
 	}
 
 	if (enableReview && reviewSection) {
-		enableReview.addEventListener('change', () => {
+		const onChange = () => {
 			reviewSection.classList.toggle('hidden', !enableReview.checked)
-		})
+		}
+		enableReview.removeEventListener('change', onChange)
+		enableReview.addEventListener('change', onChange)
 	}
 
 	if (albumSelect && albumPreview && albumImage) {
-		albumSelect.addEventListener('change', () => {
+		const onAlbumChange = () => {
 			const id = albumSelect.value
 			if (id && albumImages[id]) {
 				albumPreview.classList.remove('hidden')
@@ -120,7 +188,9 @@ function wireUI() {
 			} else {
 				albumPreview.classList.add('hidden')
 			}
-		})
+		}
+		albumSelect.removeEventListener('change', onAlbumChange)
+		albumSelect.addEventListener('change', onAlbumChange)
 	}
 }
 
@@ -147,109 +217,143 @@ async function publishToGit(params: {
 	return res
 }
 
+// 이름 있는 submit 핸들러 (중복 바인딩 방지)
+async function onFormSubmit(e: SubmitEvent) {
+	if (!form || !resultEl || !submitBtn || !categorySel) return
+	e.preventDefault()
+	resultEl.textContent = ''
+
+	const formData = new FormData(form)
+	const data = Object.fromEntries(formData as any) as Record<string, string>
+	const postedDate = data.posted_date || new Date().toISOString().slice(0, 10)
+
+	const payload = {
+		title: String(data.title || '').trim(),
+		description: '',
+		body_mdx: String(data.content || ''),
+		body_text: '',
+		posted_date: postedDate,
+		status: 'published',
+		category_id: data.category ? Number(data.category) : null,
+		search_index: true,
+		extra: {} as Record<string, unknown>,
+	}
+
+	if (!payload.title) {
+		showToast('제목을 입력하세요.')
+		return
+	}
+	if (!payload.body_mdx || payload.body_mdx.trim().length < 5) {
+		showToast('본문이 너무 짧아요.')
+		return
+	}
+
+	submitBtn.disabled = true
+	const originalText = submitBtn.textContent
+	submitBtn.textContent = 'Saving...'
+
+	try {
+		// 1) DB 저장
+		const res = await fetch(`${API_BASE_URL}/api/posts`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload),
+		})
+
+		if (!res.ok) {
+			const json = await res.json().catch(() => null as any)
+			const msg =
+				json?.detail ||
+				json?.message ||
+				(await res.text().catch(() => '')).slice(0, 500)
+			resultEl.textContent = `❌ Failed to save (${res.status}) ${msg || ''}`
+			showToast(`저장 실패 (${res.status})`, 'error')
+			return
+		}
+
+		const saved = await res.json() // { id, slug } 등
+		resultEl.textContent = '✅ Saved to DB. Publishing to GitHub...'
+
+		// 2) GitHub 퍼블리시 (카테고리 "이름" 필요)
+		let categoryName = ''
+		if (categorySel && categorySel.value) {
+			const opt = categorySel.options[categorySel.selectedIndex]
+			if (opt && !opt.disabled) categoryName = opt.textContent || ''
+		}
+
+		const pubRes = await publishToGit({
+			title: payload.title,
+			body_mdx: payload.body_mdx,
+			categoryName,
+			description: payload.description,
+			posted_date: postedDate,
+		})
+
+		if (!pubRes.ok) {
+			const t = await pubRes.text().catch(() => '')
+			resultEl.textContent = `⚠️ Saved, but publish failed (${pubRes.status}). ${t.slice(0, 400)}`
+			showToast(`발행 실패 (${pubRes.status})`, 'error')
+			return
+		}
+
+		const pubJson = await pubRes.json()
+		resultEl.textContent = `✅ Saved & Published! (slug: ${pubJson?.slug || saved?.slug || '-'})`
+
+		// 성공 → 이전 페이지 또는 홈으로 이동
+		redirectOnSuccess(pubJson?.slug || saved?.slug)
+
+		// 폼 초기화 (리디렉트 전에 UI 깔끔히)
+		form.reset()
+		if (enableReview && reviewSection) {
+			enableReview.checked = false
+			reviewSection.classList.add('hidden')
+		}
+		albumPreview?.classList.add('hidden')
+	} catch (err) {
+		console.error(err)
+		resultEl.textContent = '❌ Network error'
+		showToast('네트워크 오류', 'error')
+	} finally {
+		submitBtn.disabled = false
+		submitBtn.textContent = originalText
+	}
+}
+
 function wireSubmit() {
 	if (!form || !resultEl || !submitBtn || !categorySel) return
-
-	form.addEventListener('submit', async (e) => {
-		e.preventDefault()
-		resultEl.textContent = ''
-
-		const formData = new FormData(form)
-		const data = Object.fromEntries(formData as any) as Record<string, string>
-
-		const postedDate = data.posted_date || new Date().toISOString().slice(0, 10)
-
-		const payload = {
-			title: String(data.title || '').trim(),
-			description: '',
-			body_mdx: String(data.content || ''),
-			body_text: '',
-			posted_date: postedDate,
-			status: 'published',
-			category_id: data.category ? Number(data.category) : null,
-			search_index: true,
-			extra: {} as Record<string, unknown>,
-		}
-
-		if (!payload.title) {
-			alert('제목을 입력하세요')
-			return
-		}
-		if (!payload.body_mdx || payload.body_mdx.trim().length < 5) {
-			alert('본문이 너무 짧아요')
-			return
-		}
-
-		submitBtn.disabled = true
-		const originalText = submitBtn.textContent
-		submitBtn.textContent = 'Saving...'
-
-		try {
-			// 1) DB 저장
-			const res = await fetch(`${API_BASE_URL}/api/posts`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload),
-			})
-
-			if (!res.ok) {
-				const json = await res.json().catch(() => null as any)
-				const msg =
-					json?.detail ||
-					json?.message ||
-					(await res.text().catch(() => '')).slice(0, 500)
-				resultEl.textContent = `❌ Failed to save (${res.status}) ${msg || ''}`
-				return
-			}
-
-			const saved = await res.json() // { id, slug } 등
-			resultEl.textContent = '✅ Saved to DB. Publishing to GitHub...'
-
-			// 2) GitHub 퍼블리시 (카테고리 "이름" 필요)
-			let categoryName = ''
-			if (categorySel && categorySel.value) {
-				const opt = categorySel.options[categorySel.selectedIndex]
-				if (opt && !opt.disabled) categoryName = opt.textContent || ''
-			}
-
-			const pubRes = await publishToGit({
-				title: payload.title,
-				body_mdx: payload.body_mdx,
-				categoryName,
-				description: payload.description,
-				posted_date: postedDate,
-			})
-
-			if (!pubRes.ok) {
-				const t = await pubRes.text().catch(() => '')
-				resultEl.textContent = `⚠️ Saved, but publish failed (${pubRes.status}). ${t.slice(0, 400)}`
-				return
-			}
-
-			const pubJson = await pubRes.json()
-			resultEl.textContent = `✅ Saved & Published! (slug: ${pubJson?.slug || saved?.slug || '-'})`
-
-			// 폼 초기화
-			form.reset()
-			if (enableReview && reviewSection) {
-				enableReview.checked = false
-				reviewSection.classList.add('hidden')
-			}
-			albumPreview?.classList.add('hidden')
-		} catch (err) {
-			console.error(err)
-			resultEl.textContent = '❌ Network error'
-		} finally {
-			submitBtn.disabled = false
-			submitBtn.textContent = originalText
-		}
-	})
+	// 중복 바인딩 방지
+	form.removeEventListener('submit', onFormSubmit)
+	form.addEventListener('submit', onFormSubmit)
+	if (import.meta.hot) {
+		import.meta.hot.dispose(() =>
+			form?.removeEventListener('submit', onFormSubmit)
+		)
+	}
+	;(form as any).dataset.bound = '1'
 }
 
 function init() {
 	wireUI()
 	wireSubmit()
-	document.addEventListener('DOMContentLoaded', loadCategories)
+
+	// DOM 상태에 따라 카테고리 로딩
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', loadCategories, {
+			once: true,
+		})
+	} else {
+		loadCategories()
+	}
+
+	// Astro SPA 네비게이션 대응
+	document.addEventListener('astro:page-load', () => {
+		if (!(form as any)?.dataset.bound) wireSubmit()
+		loadCategories()
+	})
+	document.addEventListener('astro:after-swap', () => {
+		if (!(form as any)?.dataset.bound) wireSubmit()
+		loadCategories()
+	})
 }
 
 init()
