@@ -20,7 +20,7 @@ jobs:
         env:
           NODE_ENV: production
           PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }} # ← 이름 수정
-          PUBLIC_PUBLISH_BASE_URL: ${{ secrets.PUBLIC_PUBLISH_BASE_URL }}
+          PUBLIC_PUBLISH_BASE_URL: ${{ vars.PUBLIC_PUBLISH_BASE_URL }}
         run: pnpm build
       - uses: aws-actions/configure-aws-credentials@v4
         with:
