@@ -1,7 +1,7 @@
 // 브라우저 전용 모듈 (Vite가 번들함)
 import { PUBLIC_API_URL } from 'astro:env/client'
 const API_BASE_URL = PUBLIC_API_URL
-import { PUBLISH_API_URL } from 'astro:env/client'
+import { PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
 
 // DOM 헬퍼
 const $ = <T extends Element = HTMLElement>(sel: string) =>
@@ -139,7 +139,7 @@ async function publishToGit(params: {
 		description: description || '',
 		posted_date,
 	}
-	const res = await fetch(`${PUBLISH_API_URL}/api/publish`, {
+	const res = await fetch(`${PUBLIC_PUBLISH_BASE_URL}/api/publish`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(payload),
