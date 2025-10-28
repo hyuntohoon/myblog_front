@@ -65,6 +65,10 @@ export default defineConfig({
 				context: 'client',
 				access: 'public',
 			}),
+			PUBLISH_BASE_URL: envField.string({
+				context: 'client',
+				access: 'public',
+			}),
 		},
 	},
 
