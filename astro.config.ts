@@ -65,7 +65,7 @@ export default defineConfig({
 				context: 'client',
 				access: 'public',
 			}),
-			PUBLIC_PUBLISH_API_URL: envField.string({
+			PUBLIC_PUBLISH_BASE_URL: envField.string({
 				context: 'client',
 				access: 'public',
 			}),
