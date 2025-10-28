@@ -23,8 +23,8 @@ interface Header {
 /** Header nav (Blog/Write만) */
 export const HEADER: Header = {
 	internal: [
-		{ title: 'Blog', url: '/blog/' },
-		{ title: 'Write', url: '/write/' },
+		{ title: 'Blog', url: '/blog' },
+		{ title: 'Write', url: '/write' },
 	],
 	external: [],
 }

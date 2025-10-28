@@ -11,7 +11,6 @@ const normalize = (p: string) => (p.endsWith('/') ? p : p + '/')
 const isActive = (url: string) => normalize(pathname) === normalize(url)
 
 // ✅ constants.ts의 HEADER만 사용(추가/필터 X)
-//   만약 혹시라도 중복이 들어와도 URL 기준으로 dedupe
 const dedupeByUrl = <T extends { url: string }>(arr: T[]) =>
   Array.from(new Map(arr.map(i => [i.url, i])).values())
 
@@ -22,14 +21,22 @@ const external = dedupeByUrl(HEADER.external ?? [])
 <header class="container">
   <Spacer axis="vertical" size={8} />
   <div class="flex flex-row justify-between items-center">
-    <div>
+    <div class="flex items-center gap-4">
       <a
         class="font-semibold text-xl md:text-2xl lg:text-3xl text-highlight"
         href="/"
         aria-label={`${SITE.title} - Back to home`}
       >{SITE.title}</a>
+
+      <!-- 로그인된 경우에만 보이는 글쓰기 링크 -->
+      <a id="write-link" href="/write" class="hidden text-base md:text-lg">Write</a>
     </div>
-    <Search />
+    <div class="flex items-center gap-3">
+      <Search />
+      <!-- 로그인/로그아웃 버튼 -->
+      <button id="login-btn" class="text-base md:text-lg">Login</button>
+      <button id="logout-btn" class="hidden text-base md:text-lg">Logout</button>
+    </div>
   </div>
 
   <Spacer axis="vertical" size={6} />
@@ -59,4 +66,43 @@ const external = dedupeByUrl(HEADER.external ?? [])
   </div>
 
   <Spacer axis="vertical" size={4} />
+
+  <!-- 클라이언트 사이드 스크립트: 로그인 상태/버튼 동기화 -->
+  <script type="module">
+    import { isLoggedIn, goLogin, logout } from '/src/lib/auth.ts';
+
+    const $ = (sel) => document.querySelector(sel);
+    const loginBtn = $('#login-btn');
+    const logoutBtn = $('#logout-btn');
+    const writeLink = $('#write-link');
+
+    function syncAuthUI() {
+      const logged = isLoggedIn();
+      if (logged) {
+        loginBtn.classList.add('hidden');
+        logoutBtn.classList.remove('hidden');
+        writeLink?.classList.remove('hidden');
+      } else {
+        loginBtn.classList.remove('hidden');
+        logoutBtn.classList.add('hidden');
+        writeLink?.classList.add('hidden');
+      }
+    }
+
+    // 초기 동기화
+    syncAuthUI();
+
+    // 이벤트 바인딩
+    loginBtn?.addEventListener('click', () => {
+      // 토큰 없으면 Cognito Hosted UI로 이동 (PKCE 포함)
+      goLogin();
+    });
+
+    logoutBtn?.addEventListener('click', () => {
+      // Cognito 로그아웃 + 로컬 토큰 정리
+      logout();
+    });
+
+    // SPA 내 라우팅 후에도 상태 반영하고 싶으면 popstate 등에서 syncAuthUI 호출
+  </script>
 </header>

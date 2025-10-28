@@ -36,7 +36,7 @@ export default defineConfig({
 
 	output: 'static',
 	prerender: { default: true },
-	trailingSlash: 'always',
+	trailingSlash: 'never',
 	site: SITE.url,
 
 	integrations: [
