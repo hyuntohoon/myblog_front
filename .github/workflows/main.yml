@@ -25,8 +25,8 @@ jobs:
       - name: Build Astro
         env:
           NODE_ENV: production
-          PUBLIC_API_URL: ${{ secrets.PUBLIC_API_URL }}                # 기존에 쓰던 API 베이스
-          PUBLIC_PUBLISH_BASE_URL: ${{ secrets.PUBLIC_PUBLISH_BASE_URL }} # (있다면)
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+          PUBLIC_PUBLISH_BASE_URL: ${{ vars.PUBLIC_PUBLISH_BASE_URL }}
           PUBLIC_COGNITO_DOMAIN: ${{ secrets.PUBLIC_COGNITO_DOMAIN }}
           PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.PUBLIC_COGNITO_CLIENT_ID }}
           PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.PUBLIC_COGNITO_USER_POOL_ID }}
