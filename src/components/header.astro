@@ -6,7 +6,12 @@ import Search from './search.astro'
 
 const { pathname } = Astro.url
 
-const normalize = (p: string) => (p.endsWith('/') ? p : p + '/')
+const normalize = (p: string) => {
+  if (!p.startsWith('/')) p = '/' + p
+  if (!p.endsWith('/')) p += '/'
+  return p
+}
+
 const isActive = (url: string) => normalize(pathname) === normalize(url)
 
 const dedupeByUrl = <T extends { url: string }>(arr: T[]) =>
@@ -15,20 +20,24 @@ const dedupeByUrl = <T extends { url: string }>(arr: T[]) =>
 const internal = dedupeByUrl(HEADER.internal ?? [])
 const external = dedupeByUrl(HEADER.external ?? [])
 ---
+
 <script src="../scripts/header.client.ts"></script>
+
 <header class="container">
   <Spacer axis="vertical" size={8} />
+
+  <!-- ✅ 상단: 로고, 검색/로그인 -->
   <div class="flex flex-row justify-between items-center">
     <div class="flex items-center gap-4">
       <a
         class="font-semibold text-xl md:text-2xl lg:text-3xl text-highlight"
         href="/"
         aria-label={`${SITE.title} - Back to home`}
-      >{SITE.title}</a>
-
-      <!-- ✅ 슬래시 추가 -->
-      <a id="write-link" href="/write/" class="hidden text-base md:text-lg">Write</a>
+      >
+        {SITE.title}
+      </a>
     </div>
+
     <div class="flex items-center gap-3">
       <Search />
       <button id="login-btn" class="text-base md:text-lg">Login</button>
@@ -37,30 +46,32 @@ const external = dedupeByUrl(HEADER.external ?? [])
   </div>
 
   <Spacer axis="vertical" size={6} />
+
+  <!-- ✅ 하단: Blog / Write nav -->
   <div class="flex flex-row justify-between items-center border-b border-border pb-4 text-lg md:text-xl">
-    <nav aria-label="Primary navigation" class="flex gap-4">
-      {
-        internal.map((link) => (
-          <Link
-            href={normalize(link.url)}  <!-- ✅ 모든 내부 링크 normalize -->
-            class={isActive(link.url) ? 'active' : ''}
-            aria-current={isActive(link.url) ? 'page' : undefined}
-          >
-            {link.title}
-          </Link>
-        ))
-      }
-    </nav>
-    <div class="flex gap-4">
-      {
-        external.map((link) => (
-          <Link href={link.url} {...(link.props ?? {})}>
-            {link.title}
-          </Link>
-        ))
-      }
-    </div>
+  <nav aria-label="Primary navigation" class="flex gap-4">
+    {internal.map(link => {
+      const normalized = normalize(link.url)
+      return (
+        <Link
+          href={normalized}
+          class={isActive(normalized) ? 'active' : undefined}
+          aria-current={isActive(normalized) ? 'page' : undefined}
+        >
+          {link.title}
+        </Link>
+      )
+    })}
+  </nav>
+
+  <div class="flex gap-4">
+    {external.map(link => (
+      <Link href={link.url} {...(link.props ?? {})}>
+        {link.title}
+      </Link>
+    ))}
   </div>
+</div>
 
   <Spacer axis="vertical" size={4} />
 </header>

@@ -1,6 +1,7 @@
 ---
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import { getCollection } from 'astro:content'
 import { defaultDateFormat } from '@utils'
 import Link from '@components/link.astro'
@@ -15,94 +16,102 @@ const allPosts = (await getCollection('blog')).sort(byDateDesc)
 
 const limit = 5
 const posts = isHome ? allPosts.slice(0, limit) : allPosts
-
-// ✅ 헤더/로우 공통 그리드 템플릿 (같은 클래스 사용)
-const COLS = 'grid grid-cols-[12ch_1fr_12ch_10ch] gap-x-4 items-center'
 ---
 
 <Layout>
-  <Seo slot="seo" title={isHome ? 'Recent Posts' : 'All Posts'} />
+  <Seo slot="seo" title={isHome ? 'Recent Posts' : 'Blog'} />
 
-  {isHome ? (
-    <>
-      <h2 class="text-base font-semibold mb-4">Recent {limit} Posts</h2>
-      <div class="space-y-3">
-        {posts.map(({ data: p }) => (
-          <div class={`${COLS} border-b border-border pb-2`}>
-            <Link
-              href={`/blog/category/${encodeURIComponent(p.category)}/`}
-              class="font-mono text-xs px-1.5 py-0.5 border border-border text-faded hover:text-highlight truncate"
-              title={p.category}
-            >
-              [{p.category}]
-            </Link>
+  <SkipNavContent>
+    {isHome ? (
+      <>
+        <h2 class="text-base font-semibold mb-4">Recent {limit} Posts</h2>
 
-            <Link
-              variant="highlight"
-              href={`/blog/${p.slug}/`}
-              class="truncate text-base font-medium"
-              title={p.title}
-            >
-              {p.title}
-            </Link>
+        <div class="text-faded border-b border-border pb-2 mb-2
+                    grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center text-sm">
+          <span>Category</span>
+          <span>Title</span>
+          <span>Date</span>
+          <span>Metrics</span>
+        </div>
 
-            <span class="text-faded text-xs whitespace-nowrap text-right">
-              {defaultDateFormat(p.date)}
-            </span>
+        <div class="divide-y divide-border">
+          {posts.map(({ data: post }) => (
+            <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center py-3">
+              <Link
+                href={`/blog/category/${encodeURIComponent(post.category)}/`}
+                class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
+              >
+                [{post.category}]
+              </Link>
 
-            <span class="text-faded text-xs whitespace-nowrap text-right">
-              <PostMetricsItem client:load slug={p.slug} />
-            </span>
-          </div>
-        ))}
-      </div>
+              <Link
+                variant="highlight"
+                class="font-medium text-base md:text-lg truncate"
+                href={`/blog/${post.slug}/`}
+                title={post.title}
+              >
+                {post.title}
+              </Link>
 
-      <div class="mt-4 text-right">
-        <Link href="/blog" class="text-sm text-faded hover:text-highlight">
-          all posts →
-        </Link>
-      </div>
-    </>
-  ) : (
-    <>
-      {/* ✅ 헤더와 로우 모두 COLS 공통 적용 + 같은 paddings */}
-      <div class={`${COLS} text-faded border-b border-border py-2 mb-1 text-sm`}>
-        <span>Category</span>
-        <span>Title</span>
-        <span class="text-right">Date</span>
-        <span class="text-right">Metrics</span>
-      </div>
+              <span class="text-faded whitespace-nowrap text-sm">
+                {defaultDateFormat(post.date)}
+              </span>
 
-      <div class="divide-y divide-border">
-        {posts.map(({ data: p }) => (
-          <div class={`${COLS} py-2`}>
-            <Link
-              href={`/blog/category/${encodeURIComponent(p.category)}/`}
-              class="font-mono text-xs px-1.5 py-0.5 border border-border text-faded hover:text-highlight truncate"
-              title={p.category}
-            >
-              [{p.category}]
-            </Link>
+              <span class="text-faded whitespace-nowrap text-sm">
+                <PostMetricsItem client:load slug={post.slug} />
+              </span>
+            </div>
+          ))}
+        </div>
 
-            <Link
-              variant="highlight"
-              href={`/blog/${p.slug}/`}
-              class="truncate text-base font-medium"
-              title={p.title}
-            >
-              {p.title}
-            </Link>
+        <div class="mt-4 text-right">
+          <Link href="/blog" class="text-sm text-faded hover:text-highlight">
+            all posts →
+          </Link>
+        </div>
+      </>
+    ) : (
+      <>
+        <h1 class="sr-only">Blog</h1>
 
-            <span class="text-faded text-sm whitespace-nowrap text-right">
-              {defaultDateFormat(p.date)}
-            </span>
+        <div class="text-faded border-b border-border pb-2 mb-2
+                    grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center">
+          <span class="text-sm">Category</span>
+          <span class="text-sm">Title</span>
+          <span class="text-sm">Date</span>
+          <span class="text-sm">Metrics</span>
+        </div>
 
-            <span class="text-faded text-sm whitespace-nowrap text-right">
-              <PostMetricsItem client:load slug={p.slug} />
-            </span>
-          </div>
-        ))}
-      </div>
-    </>
-  )}
+        <div class="divide-y divide-border">
+          {posts.map(({ data: post }) => (
+            <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center py-3">
+              <Link
+                href={`/blog/category/${encodeURIComponent(post.category)}/`}
+                class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
+              >
+                [{post.category}]
+              </Link>
+
+              <Link
+                variant="highlight"
+                class="font-medium text-base md:text-lg truncate"
+                href={`/blog/${post.slug}/`}
+                title={post.title}
+              >
+                {post.title}
+              </Link>
+
+              <span class="text-faded whitespace-nowrap">
+                {defaultDateFormat(post.date)}
+              </span>
+
+              <span class="text-faded whitespace-nowrap">
+                <PostMetricsItem client:load slug={post.slug} />
+              </span>
+            </div>
+          ))}
+        </div>
+      </>
+    )}
+  </SkipNavContent>
 </Layout>

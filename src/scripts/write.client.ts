@@ -254,9 +254,15 @@ async function onFormSubmit(e: SubmitEvent) {
 
 	try {
 		// 1) DB 저장
+		const token = localStorage.getItem('access_token')
+		const headers: Record<string, string> = {
+			'Content-Type': 'application/json',
+		}
+		if (token) headers['Authorization'] = `Bearer ${token}`
+
 		const res = await fetch(`${API_BASE_URL}/api/posts`, {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers,
 			body: JSON.stringify(payload),
 		})
 
