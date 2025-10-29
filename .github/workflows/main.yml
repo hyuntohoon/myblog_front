@@ -9,8 +9,10 @@ jobs:
   deploy-front:
     runs-on: ubuntu-latest
     steps:
+      # 1️⃣ 코드 체크아웃
       - uses: actions/checkout@v4
 
+      # 2️⃣ Node + PNPM 설치
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -21,7 +23,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # 🔥 Astro 빌드에 PUBLIC_* 환경변수 주입 (secrets 사용)
+      # 3️⃣ Astro 빌드 (PUBLIC_* 환경변수 주입)
       - name: Build Astro
         env:
           NODE_ENV: production
@@ -33,27 +35,30 @@ jobs:
           PUBLIC_COGNITO_REDIRECT_URI: ${{ secrets.PUBLIC_COGNITO_REDIRECT_URI }}
         run: pnpm build
 
+      # 4️⃣ AWS 인증
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # HTML은 짧은 캐시
-      - name: Sync HTML only
+      # 5️⃣ 정적 파일 배포
+      # HTML: 짧은 캐시 (빠른 갱신)
+      - name: Upload HTML (short cache)
         run: |
           aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
             --delete --exclude "assets/*" \
             --cache-control "public, max-age=60, must-revalidate"
 
-      # 정적 asset은 긴 캐시(옵션) — 필요하면 사용
-      # - name: Sync assets (long cache)
-      #   run: |
-      #     aws s3 sync dist/assets/ s3://${{ secrets.S3_BUCKET_WEB }}/assets/ \
-      #       --delete --cache-control "public, max-age=31536000, immutable" \
-      #       --content-encoding "gzip" || true
+      # JS/CSS/이미지: 긴 캐시 (1년)
+      - name: Upload assets (long cache)
+        run: |
+          aws s3 sync dist/assets/ s3://${{ secrets.S3_BUCKET_WEB }}/assets/ \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable"
 
-      - name: Invalidate CF
+      # 6️⃣ CloudFront 캐시 무효화
+      - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CF_DIST_ID }} \
