@@ -4,6 +4,8 @@ import Spacer from './spacer.astro'
 import Link from './link.astro'
 import Search from './search.astro'
 
+import headerClientUrl from '../scripts/header.client.ts?url'
+
 const { pathname } = Astro.url
 
 const normalize = (p: string) => (p.endsWith('/') ? p : p + '/')
@@ -65,5 +67,7 @@ const external = dedupeByUrl(HEADER.external ?? [])
   <Spacer axis="vertical" size={4} />
 
   <!-- ✅ 분리된 클라이언트 스크립트 로드 -->
-  <script type="module" src="/scripts/header.client.js"></script>
+     <script type="module">
+    import '/src/scripts/header.client.ts';
+  </script>
 </header>
