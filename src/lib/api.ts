@@ -1,3 +1,5 @@
+import { getAccessToken, goLogin } from './auth'
+
 export async function safeFetch<T>(
 	url: string,
 	init?: RequestInit
@@ -59,5 +61,30 @@ export async function fetchMetrics(
 		return json.data ?? {}
 	} catch {
 		return {}
+	}
+}
+
+export async function apiFetch(path, options = {}) {
+	try {
+		const token = await getAccessToken()
+		const res = await fetch(path, {
+			...options,
+			headers: {
+				...(options.headers || {}),
+				Authorization: `Bearer ${token}`,
+				'Content-Type': 'application/json',
+			},
+		})
+
+		if (res.status === 401) {
+			console.warn('Token expired — redirecting to login')
+			goLogin(true, window.location.pathname)
+			return null
+		}
+
+		return res
+	} catch (err) {
+		console.error('API fetch error:', err)
+		goLogin(true, window.location.pathname)
 	}
 }

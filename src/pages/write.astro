@@ -5,7 +5,7 @@ import Spacer from '@components/spacer.astro'
 ---
 <Layout>
   <Seo slot="seo" title="Write a new post" />
-
+  <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css" />
   <div class="max-w-3xl mx-auto p-6">
     <h1 class="text-2xl font-bold mb-6">Write a new post</h1>
 
@@ -98,16 +98,8 @@ import Spacer from '@components/spacer.astro'
   </div>
 
   <!-- ✅ 로그인 가드: 로그인 안 되어 있으면 Cognito 로그인 → 완료 후 /write/ 복귀 -->
-  <script type="module">
-    import { isLoggedIn, goLogin } from '/src/lib/auth.ts';
-
-    (async () => {
-      if (!isLoggedIn()) {
-        await goLogin(true, '/write/'); // ✅ 슬래시 추가
-      }
-    })();
-  </script>
+<script src="../scripts/write.guard.ts"></script>
 
   <!-- ✅ 클라이언트 스크립트 로딩 -->
-  <script src="../scripts/write.client.ts"></script>
+  <script src="../scripts/write/index.ts"></script>
 </Layout>

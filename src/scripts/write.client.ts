@@ -1,8 +1,11 @@
 // src/scripts/write.client.ts
 
-// 브라우저 전용 모듈 (Vite가 번들함)
 import { PUBLIC_API_URL, PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
 const API_BASE_URL = PUBLIC_API_URL
+
+// ✅ EasyMDE 추가 (CSS 포함)
+import EasyMDE from 'easymde'
+import 'easymde/dist/easymde.min.css'
 
 // DOM 헬퍼
 const $ = <T extends Element = HTMLElement>(sel: string) =>
@@ -22,8 +25,11 @@ const albumSelect = $('#albumId') as HTMLSelectElement | null
 const albumPreview = $('#albumPreview') as HTMLElement | null
 const albumImage = albumPreview?.querySelector('img') as HTMLImageElement | null
 
+// ✅ 전역 에디터 (HMR/SPA에서도 재사용)
+let mde: EasyMDE | null = null
+
 // ─────────────────────────────────────────────────────────────
-// UX: 간단 토스트(실패/성공 알림)
+// UX: 간단 토스트
 function showToast(
 	message: string,
 	variant: 'success' | 'error' = 'error',
@@ -62,7 +68,6 @@ function showToast(
 }
 
 function redirectOnSuccess(slug?: string) {
-	// 같은 오리진이고, 뒤로 갈 페이지가 있으면 back
 	const refOk =
 		document.referrer &&
 		(() => {
@@ -78,14 +83,12 @@ function redirectOnSuccess(slug?: string) {
 		setTimeout(() => history.back(), 1200)
 		return
 	}
-	// slug 있으면 해당 문서로, 없으면 홈
 	const target = slug ? `/posts/${slug}/` : '/'
 	showToast('✅ 저장 & 발행 완료!', 'success', 1200)
 	setTimeout(() => location.assign(target), 900)
 }
 // ─────────────────────────────────────────────────────────────
 
-// 더미 이미지 데이터
 const albumImages: Record<string, string> = {
 	1: 'https://i.scdn.co/image/ab67616d0000b273f3f8ed949a4f79f5ad5caa7c',
 	2: 'https://i.scdn.co/image/ab67616d0000b273a9a5fd746f62bcee3e6a9db7',
@@ -194,6 +197,51 @@ function wireUI() {
 	}
 }
 
+// ✅ EasyMDE 초기화(타입 오류/중복 초기화 방지)
+//  - previewRender 커스텀 제거 → TS2339 사라짐(기본 프리뷰 사용)
+function initMDE() {
+	const textarea = document.querySelector(
+		'textarea[name="content"]'
+	) as HTMLTextAreaElement | null
+	if (!textarea) return
+
+	// 이미 에디터가 붙어 있으면 재생성하지 않음
+	if (mde || (textarea as any)._mdeBound) return
+
+	mde = new EasyMDE({
+		element: textarea,
+		spellChecker: false,
+		autosave: {
+			enabled: true,
+			uniqueId: 'write-page-draft',
+			delay: 1000,
+		},
+		placeholder: '# Heading\n\nWrite here...',
+		status: ['lines', 'words'],
+		toolbar: [
+			'bold',
+			'italic',
+			'heading',
+			'|',
+			'quote',
+			'unordered-list',
+			'ordered-list',
+			'|',
+			'link',
+			'image',
+			'table',
+			'|',
+			'preview',
+			'side-by-side',
+			'fullscreen',
+			'|',
+			'guide',
+		],
+		// previewRender 제거: 기본 렌더 사용 → 타입 에러 없음
+	})
+	;(textarea as any)._mdeBound = true
+}
+
 async function publishToGit(params: {
 	title: string
 	body_mdx: string
@@ -217,7 +265,7 @@ async function publishToGit(params: {
 	return res
 }
 
-// 이름 있는 submit 핸들러 (중복 바인딩 방지)
+// 이름 있는 submit 핸들러
 async function onFormSubmit(e: SubmitEvent) {
 	if (!form || !resultEl || !submitBtn || !categorySel) return
 	e.preventDefault()
@@ -225,6 +273,10 @@ async function onFormSubmit(e: SubmitEvent) {
 
 	const formData = new FormData(form)
 	const data = Object.fromEntries(formData as any) as Record<string, string>
+
+	// ✅ EasyMDE 값으로 폼 데이터 덮어쓰기 (미연동 방지)
+	if (mde) data.content = mde.value()
+
 	const postedDate = data.posted_date || new Date().toISOString().slice(0, 10)
 
 	const payload = {
@@ -277,7 +329,7 @@ async function onFormSubmit(e: SubmitEvent) {
 			return
 		}
 
-		const saved = await res.json() // { id, slug } 등
+		const saved = await res.json()
 		resultEl.textContent = '✅ Saved to DB. Publishing to GitHub...'
 
 		// 2) GitHub 퍼블리시 (카테고리 "이름" 필요)
@@ -305,16 +357,16 @@ async function onFormSubmit(e: SubmitEvent) {
 		const pubJson = await pubRes.json()
 		resultEl.textContent = `✅ Saved & Published! (slug: ${pubJson?.slug || saved?.slug || '-'})`
 
-		// 성공 → 이전 페이지 또는 홈으로 이동
 		redirectOnSuccess(pubJson?.slug || saved?.slug)
 
-		// 폼 초기화 (리디렉트 전에 UI 깔끔히)
+		// 폼 초기화
 		form.reset()
 		if (enableReview && reviewSection) {
 			enableReview.checked = false
 			reviewSection.classList.add('hidden')
 		}
 		albumPreview?.classList.add('hidden')
+		if (mde) mde.value('')
 	} catch (err) {
 		console.error(err)
 		resultEl.textContent = '❌ Network error'
@@ -327,7 +379,6 @@ async function onFormSubmit(e: SubmitEvent) {
 
 function wireSubmit() {
 	if (!form || !resultEl || !submitBtn || !categorySel) return
-	// 중복 바인딩 방지
 	form.removeEventListener('submit', onFormSubmit)
 	form.addEventListener('submit', onFormSubmit)
 	if (import.meta.hot) {
@@ -340,25 +391,33 @@ function wireSubmit() {
 
 function init() {
 	wireUI()
+	initMDE()
 	wireSubmit()
 
-	// DOM 상태에 따라 카테고리 로딩
 	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', loadCategories, {
-			once: true,
-		})
+		document.addEventListener(
+			'DOMContentLoaded',
+			() => {
+				loadCategories()
+				initMDE()
+			},
+			{ once: true }
+		)
 	} else {
 		loadCategories()
+		initMDE()
 	}
 
 	// Astro SPA 네비게이션 대응
 	document.addEventListener('astro:page-load', () => {
 		if (!(form as any)?.dataset.bound) wireSubmit()
 		loadCategories()
+		initMDE()
 	})
 	document.addEventListener('astro:after-swap', () => {
 		if (!(form as any)?.dataset.bound) wireSubmit()
 		loadCategories()
+		initMDE()
 	})
 }
 
