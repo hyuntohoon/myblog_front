@@ -99,16 +99,7 @@ import Spacer from '@components/spacer.astro'
   </div>
 
   <!-- ✅ 로그인 가드: 로그인 안 되어 있으면 Cognito 로그인 → 완료 후 /write 복귀 -->
-  <script type="module">
-    import { isLoggedIn, goLogin } from '/src/lib/auth.ts';
-
-    (async () => {
-      if (!isLoggedIn()) {
-        // 로그인 후 다시 /write 로 돌아오게
-        await goLogin(true, '/write');
-      }
-    })();
-  </script>
+  <script src="../scripts/write.guard.ts"></script>
 
   <!-- ✅ 클라이언트 스크립트 로딩 (기존 파일 활용) -->
   <!-- 주의: Astro에선 inline import를 쓰거나 src 속성으로 ESM 모듈을 로드해야 함 -->
