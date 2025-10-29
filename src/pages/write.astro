@@ -112,7 +112,5 @@ import Spacer from '@components/spacer.astro'
 
   <!-- ✅ 클라이언트 스크립트 로딩 (기존 파일 활용) -->
   <!-- 주의: Astro에선 inline import를 쓰거나 src 속성으로 ESM 모듈을 로드해야 함 -->
-  <script type="module">
-    import '/src/scripts/write.client.ts';
-  </script>
+  <script src="../scripts/write.client.ts"></script>
 </Layout>

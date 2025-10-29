@@ -4,7 +4,7 @@ import Spacer from './spacer.astro'
 import Link from './link.astro'
 import Search from './search.astro'
 
-import headerClientUrl from '../scripts/header.client.ts?url'
+
 
 const { pathname } = Astro.url
 
@@ -17,7 +17,7 @@ const dedupeByUrl = <T extends { url: string }>(arr: T[]) =>
 const internal = dedupeByUrl(HEADER.internal ?? [])
 const external = dedupeByUrl(HEADER.external ?? [])
 ---
-
+<script src="../scripts/header.client.ts"></script>
 <header class="container">
   <Spacer axis="vertical" size={8} />
   <div class="flex flex-row justify-between items-center">
@@ -66,8 +66,4 @@ const external = dedupeByUrl(HEADER.external ?? [])
 
   <Spacer axis="vertical" size={4} />
 
-  <!-- ✅ 분리된 클라이언트 스크립트 로드 -->
-     <script type="module">
-    import '/src/scripts/header.client.ts';
-  </script>
 </header>
