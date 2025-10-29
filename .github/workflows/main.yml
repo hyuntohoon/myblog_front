@@ -47,13 +47,12 @@ jobs:
       - name: Upload HTML (short cache)
         run: |
           aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
-            --delete --exclude "assets/*" \
+            --delete --exclude "_astro/*" \
             --cache-control "public, max-age=60, must-revalidate"
-
-      # JS/CSS/이미지: 긴 캐시 (1년)
+      
       - name: Upload assets (long cache)
         run: |
-          aws s3 sync dist/assets/ s3://${{ secrets.S3_BUCKET_WEB }}/assets/ \
+          aws s3 sync dist/_astro/ s3://${{ secrets.S3_BUCKET_WEB }}/_astro/ \
             --delete \
             --cache-control "public, max-age=31536000, immutable"
 
