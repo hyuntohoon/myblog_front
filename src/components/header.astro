@@ -4,8 +4,6 @@ import Spacer from './spacer.astro'
 import Link from './link.astro'
 import Search from './search.astro'
 
-
-
 const { pathname } = Astro.url
 
 const normalize = (p: string) => (p.endsWith('/') ? p : p + '/')
@@ -28,8 +26,8 @@ const external = dedupeByUrl(HEADER.external ?? [])
         aria-label={`${SITE.title} - Back to home`}
       >{SITE.title}</a>
 
-      <!-- 로그인된 경우에만 보이는 글쓰기 링크 -->
-      <a id="write-link" href="/write" class="hidden text-base md:text-lg">Write</a>
+      <!-- ✅ 슬래시 추가 -->
+      <a id="write-link" href="/write/" class="hidden text-base md:text-lg">Write</a>
     </div>
     <div class="flex items-center gap-3">
       <Search />
@@ -44,7 +42,7 @@ const external = dedupeByUrl(HEADER.external ?? [])
       {
         internal.map((link) => (
           <Link
-            href={link.url}
+            href={normalize(link.url)}  <!-- ✅ 모든 내부 링크 normalize -->
             class={isActive(link.url) ? 'active' : ''}
             aria-current={isActive(link.url) ? 'page' : undefined}
           >
@@ -65,5 +63,4 @@ const external = dedupeByUrl(HEADER.external ?? [])
   </div>
 
   <Spacer axis="vertical" size={4} />
-
 </header>

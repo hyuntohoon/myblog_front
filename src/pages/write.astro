@@ -1,5 +1,4 @@
 ---
-// src/pages/write.astro
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
@@ -98,10 +97,17 @@ import Spacer from '@components/spacer.astro'
     <Spacer axis="vertical" size={8} />
   </div>
 
-  <!-- ✅ 로그인 가드: 로그인 안 되어 있으면 Cognito 로그인 → 완료 후 /write 복귀 -->
-  <script src="../scripts/write.guard.ts"></script>
+  <!-- ✅ 로그인 가드: 로그인 안 되어 있으면 Cognito 로그인 → 완료 후 /write/ 복귀 -->
+  <script type="module">
+    import { isLoggedIn, goLogin } from '/src/lib/auth.ts';
 
-  <!-- ✅ 클라이언트 스크립트 로딩 (기존 파일 활용) -->
-  <!-- 주의: Astro에선 inline import를 쓰거나 src 속성으로 ESM 모듈을 로드해야 함 -->
+    (async () => {
+      if (!isLoggedIn()) {
+        await goLogin(true, '/write/'); // ✅ 슬래시 추가
+      }
+    })();
+  </script>
+
+  <!-- ✅ 클라이언트 스크립트 로딩 -->
   <script src="../scripts/write.client.ts"></script>
 </Layout>

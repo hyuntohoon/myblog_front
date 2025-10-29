@@ -1,6 +1,5 @@
 // src/scripts/callback.client.ts
-import { handleCallback, goLogin } from '/src/lib/auth.ts'
-
+import { handleCallback, goLogin } from '../lib/auth'
 const log = (m: string) => {
 	console.log(m)
 	const el = document.getElementById('msg')
