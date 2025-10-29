@@ -36,7 +36,8 @@ export default defineConfig({
 
 	output: 'static',
 	prerender: { default: true },
-	trailingSlash: 'never',
+	trailingSlash: 'always',
+	build: { format: 'directory' },
 	site: SITE.url,
 
 	integrations: [
