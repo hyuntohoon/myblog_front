@@ -9,10 +9,8 @@ jobs:
   deploy-front:
     runs-on: ubuntu-latest
     steps:
-      # 1️⃣ 코드 체크아웃
       - uses: actions/checkout@v4
 
-      # 2️⃣ Node + PNPM 설치
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -23,7 +21,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # 3️⃣ Astro 빌드 (PUBLIC_* 환경변수 주입)
       - name: Build Astro
         env:
           NODE_ENV: production
@@ -35,28 +32,26 @@ jobs:
           PUBLIC_COGNITO_REDIRECT_URI: ${{ secrets.PUBLIC_COGNITO_REDIRECT_URI }}
         run: pnpm build
 
-      # 4️⃣ AWS 인증
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # 5️⃣ 정적 파일 배포
-      # HTML: 짧은 캐시 (빠른 갱신)
-      - name: Upload HTML (short cache)
+      # 1) 파일 구조 동기화(삭제 포함) — 헤더는 아직 X
+      - name: Sync all files (no headers yet)
         run: |
-          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
-            --delete --exclude "_astro/*" \
-            --cache-control "public, max-age=60, must-revalidate"
-      
-      - name: Upload assets (long cache)
-        run: |
-          aws s3 sync dist/_astro/ s3://${{ secrets.S3_BUCKET_WEB }}/_astro/ \
-            --delete \
-            --cache-control "public, max-age=31536000, immutable"
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} --delete
 
-      # 6️⃣ CloudFront 캐시 무효화
+      # 2) 전체 객체 Cache-Control 강제 덮어쓰기 (캐시 완전 비활성화)
+      - name: Force replace Cache-Control headers (disable all caching)
+        run: |
+          aws s3 cp dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
+            --recursive \
+            --metadata-directive REPLACE \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      # 3) CloudFront 캐시 무효화
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
