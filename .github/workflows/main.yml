@@ -1,37 +1,58 @@
 name: Deploy Front (S3+CF)
+
 on:
   push:
     branches: ['main']
-  workflow_dispatch: # 수동 실행 버튼도 추가(테스트 용)
+  workflow_dispatch:
 
 jobs:
   deploy-front:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - uses: pnpm/action-setup@v3
         with:
           version: 9
+
       - run: pnpm install --frozen-lockfile
+
+      # 🔥 Astro 빌드에 PUBLIC_* 환경변수 주입 (secrets 사용)
       - name: Build Astro
         env:
           NODE_ENV: production
-          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }} # ← 이름 수정
-          PUBLIC_PUBLISH_BASE_URL: ${{ vars.PUBLIC_PUBLISH_BASE_URL }}
+          PUBLIC_API_URL: ${{ secrets.PUBLIC_API_URL }}                # 기존에 쓰던 API 베이스
+          PUBLIC_PUBLISH_BASE_URL: ${{ secrets.PUBLIC_PUBLISH_BASE_URL }} # (있다면)
+          PUBLIC_COGNITO_DOMAIN: ${{ secrets.PUBLIC_COGNITO_DOMAIN }}
+          PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.PUBLIC_COGNITO_CLIENT_ID }}
+          PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.PUBLIC_COGNITO_USER_POOL_ID }}
+          PUBLIC_COGNITO_REDIRECT_URI: ${{ secrets.PUBLIC_COGNITO_REDIRECT_URI }}
         run: pnpm build
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      # HTML은 짧은 캐시
       - name: Sync HTML only
         run: |
           aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
             --delete --exclude "assets/*" \
             --cache-control "public, max-age=60, must-revalidate"
+
+      # 정적 asset은 긴 캐시(옵션) — 필요하면 사용
+      # - name: Sync assets (long cache)
+      #   run: |
+      #     aws s3 sync dist/assets/ s3://${{ secrets.S3_BUCKET_WEB }}/assets/ \
+      #       --delete --cache-control "public, max-age=31536000, immutable" \
+      #       --content-encoding "gzip" || true
+
       - name: Invalidate CF
         run: |
           aws cloudfront create-invalidation \
