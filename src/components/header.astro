@@ -6,11 +6,9 @@ import Search from './search.astro'
 
 const { pathname } = Astro.url
 
-// ✅ 활성 경로 비교시 트레일링 슬래시 차이 보정
 const normalize = (p: string) => (p.endsWith('/') ? p : p + '/')
 const isActive = (url: string) => normalize(pathname) === normalize(url)
 
-// ✅ constants.ts의 HEADER만 사용(추가/필터 X)
 const dedupeByUrl = <T extends { url: string }>(arr: T[]) =>
   Array.from(new Map(arr.map(i => [i.url, i])).values())
 
@@ -33,7 +31,6 @@ const external = dedupeByUrl(HEADER.external ?? [])
     </div>
     <div class="flex items-center gap-3">
       <Search />
-      <!-- 로그인/로그아웃 버튼 -->
       <button id="login-btn" class="text-base md:text-lg">Login</button>
       <button id="logout-btn" class="hidden text-base md:text-lg">Logout</button>
     </div>
@@ -67,42 +64,6 @@ const external = dedupeByUrl(HEADER.external ?? [])
 
   <Spacer axis="vertical" size={4} />
 
-  <!-- 클라이언트 사이드 스크립트: 로그인 상태/버튼 동기화 -->
-  <script type="module">
-    import { isLoggedIn, goLogin, logout } from '/src/lib/auth.ts';
-
-    const $ = (sel) => document.querySelector(sel);
-    const loginBtn = $('#login-btn');
-    const logoutBtn = $('#logout-btn');
-    const writeLink = $('#write-link');
-
-    function syncAuthUI() {
-      const logged = isLoggedIn();
-      if (logged) {
-        loginBtn.classList.add('hidden');
-        logoutBtn.classList.remove('hidden');
-        writeLink?.classList.remove('hidden');
-      } else {
-        loginBtn.classList.remove('hidden');
-        logoutBtn.classList.add('hidden');
-        writeLink?.classList.add('hidden');
-      }
-    }
-
-    // 초기 동기화
-    syncAuthUI();
-
-    // 이벤트 바인딩
-    loginBtn?.addEventListener('click', () => {
-      // 토큰 없으면 Cognito Hosted UI로 이동 (PKCE 포함)
-      goLogin();
-    });
-
-    logoutBtn?.addEventListener('click', () => {
-      // Cognito 로그아웃 + 로컬 토큰 정리
-      logout();
-    });
-
-    // SPA 내 라우팅 후에도 상태 반영하고 싶으면 popstate 등에서 syncAuthUI 호출
-  </script>
+  <!-- ✅ 분리된 클라이언트 스크립트 로드 -->
+  <script type="module" src="/scripts/header.client.js"></script>
 </header>
