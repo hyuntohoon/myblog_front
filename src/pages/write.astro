@@ -2,6 +2,7 @@
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
+
 ---
 <Layout>
   <Seo slot="seo" title="Write a new post" />
@@ -11,10 +12,24 @@ import Spacer from '@components/spacer.astro'
 
     <form id="write-form" class="space-y-6">
       <!-- 제목 -->
-      <div>
-        <label class="block font-medium mb-1">Title</label>
-        <input type="text" name="title" class="w-full border p-2 rounded" required />
-      </div>
+      <input type="text" id="title" name="title" class="w-full border p-2 rounded" required />
+<p id="titleError" class="text-xs text-red-500 mt-1 hidden">제목을 입력하세요.</p>
+
+<script is:inline>
+  const form = document.getElementById('write-form');
+  const titleInput = document.getElementById('title');
+  const titleError = document.getElementById('titleError');
+
+  form.addEventListener('submit', (e) => {
+    if (!titleInput.value.trim()) {
+      e.preventDefault();
+      titleError.classList.remove('hidden');
+      titleInput.focus();
+    } else {
+      titleError.classList.add('hidden');
+    }
+  });
+</script>
 
       <!-- 날짜(선택) -->
       <div>
@@ -43,6 +58,61 @@ import Spacer from '@components/spacer.astro'
         <label for="enableReview" class="font-medium">Add Music Review (optional)</label>
       </div>
 
+      <!-- 음반 검색 -->
+      <!-- sanity test: 버튼/검색 스타일 + JS 동작 확인 -->
+<!-- 🎵 Search Bar with Artist/Album Toggle (click → color changes) -->
+<div class="flex flex-wrap md:flex-nowrap items-center gap-2 mt-6 border p-3 rounded-lg bg-base-100">
+  <!-- Toggle -->
+  <div class="join" role="tablist" aria-label="Search type">
+    <!-- 초기엔 Artist 활성(파란색), Album 비활성(회색 테두리) -->
+    <button id="toggle-artist" class="btn btn-sm join-item btn-primary" role="tab" aria-selected="true">Artist</button>
+    <button id="toggle-album"  class="btn btn-sm join-item btn-outline"  role="tab" aria-selected="false">Album</button>
+  </div>
+
+  <!-- Search input -->
+  <label class="input input-bordered flex items-center gap-2 flex-1" aria-label="Search input">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path d="M21 21l-4.35-4.35"/><circle cx="10.5" cy="10.5" r="7.5"/>
+    </svg>
+    <input id="searchBar" type="text" class="grow" placeholder="Search artist..." />
+  </label>
+
+  <!-- Search button -->
+  <button id="searchBtn" type="button" class="btn btn-primary">
+    <span class="search-label">Search</span>
+    <span class="loading loading-spinner loading-sm hidden"></span>
+  </button>
+</div>
+
+<script is:inline>
+  const toggleArtist = document.getElementById('toggle-artist');
+  const toggleAlbum  = document.getElementById('toggle-album');
+  const searchBar    = document.getElementById('searchBar');
+
+  // 클릭 시 항상 "한쪽만" 색 변경: 활성=btn-primary, 비활성=btn-outline
+  function setType(type) {
+    const active   = type === 'artist' ? toggleArtist : toggleAlbum;
+    const inactive = type === 'artist' ? toggleAlbum  : toggleArtist;
+
+    active.classList.add('btn-primary');
+    active.classList.remove('btn-outline');
+
+    inactive.classList.remove('btn-primary');
+    inactive.classList.add('btn-outline');
+
+    toggleArtist.setAttribute('aria-selected', String(type === 'artist'));
+    toggleAlbum .setAttribute('aria-selected', String(type === 'album'));
+
+    // placeholder도 같이 변경
+    searchBar.placeholder = type === 'artist' ? 'Search artist...' : 'Search album...';
+  }
+
+  toggleArtist.addEventListener('click', () => setType('artist'));
+  toggleAlbum .addEventListener('click', () => setType('album'));
+
+  // 초기 상태 보정(새로고침 등)
+  setType('artist');
+</script>
       <!-- Music Review -->
       <fieldset id="musicReview" class="border rounded p-4 space-y-4 hidden">
         <legend class="font-semibold text-lg">🎧 Music Review</legend>
