@@ -1,0 +1,125 @@
+---
+interface Artist {
+  id: string
+  name: string
+  spotify_id?: string | null
+}
+interface Track {
+  id: string
+  title: string
+  track_no?: number | null
+  duration_sec?: number | null
+  spotify_id?: string | null
+}
+interface Album {
+  id: string
+  title: string
+  release_date?: string | null
+  cover_url?: string | null
+  album_type?: string | null
+  spotify_id?: string | null
+}
+interface AlbumDetail {
+  album: Album
+  artists: Artist[]
+  tracks: Track[]
+  meta?: Record<string, any>
+}
+
+/** props:
+ * - detail: AlbumDetail (백엔드 응답 그대로)
+ */
+const { detail } = Astro.props as { detail: AlbumDetail }
+
+const album = detail.album
+const artists = detail.artists || []
+const tracks = detail.tracks || []
+
+const spotifyUrl = album.spotify_id ? `https://open.spotify.com/album/${album.spotify_id}` : null
+
+const fmt = (sec?: number | null) => {
+  if (!sec || isNaN(sec)) return ''
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+const release = album.release_date ?? ''
+const primaryArtists = artists.map(a => a.name).join(', ')
+---
+
+<style>
+  .wrap {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+  }
+  .cover {
+    width: 180px; height: 180px; border-radius: 12px; overflow: hidden;
+    background: #f3f4f6; border: 1px solid #e5e7eb;
+  }
+  .cover img { width: 100%; height: 100%; object-fit: cover; display:block; }
+  .meta { display: grid; gap: .35rem; }
+  .title { font-size: 1.25rem; font-weight: 800; color: #111827; display:flex; gap:.5rem; align-items: center;}
+  .badge { font-size: .75rem; font-weight: 700; padding: .15rem .45rem; border-radius: 999px; background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+  .sub { color:#374151; font-size:.95rem; }
+  .row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+  .link { color:#0ea5e9; text-decoration: none; font-weight:700; }
+  .link:hover { text-decoration: underline; }
+  .tracks {
+    margin-top: .75rem;
+    border-top: 1px solid #e5e7eb;
+    padding-top: .75rem;
+  }
+  table { width:100%; border-collapse: collapse; }
+  th, td { text-align:left; padding:.5rem .4rem; border-bottom:1px solid #f1f5f9; }
+  th { color:#6b7280; font-weight:700; font-size:.85rem; }
+  td { font-size:.95rem; }
+  .num { width:3rem; color:#6b7280; }
+  .dur { width:4rem; text-align:right; color:#6b7280; }
+</style>
+
+<div class="wrap">
+  <div class="cover">
+    <img src={album.cover_url ?? 'https://placehold.co/600x600?text=No+Image'} alt={album.title} />
+  </div>
+
+  <div class="meta">
+    <div class="title">
+      <span>{album.title}</span>
+      {album.album_type && <span class="badge">{album.album_type}</span>}
+    </div>
+    {primaryArtists && <div class="sub"><strong>Artist:</strong> {primaryArtists}</div>}
+    {release && <div class="sub"><strong>Released:</strong> {release}</div>}
+    {spotifyUrl && (
+      <div class="row">
+        <a class="link" href={spotifyUrl} target="_blank" rel="noreferrer">Open in Spotify ↗</a>
+      </div>
+    )}
+
+    <div class="tracks">
+      <table>
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>Title</th>
+            <th class="dur">⏱</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tracks.map(t => (
+            <tr>
+              <td class="num">{t.track_no ?? ''}</td>
+              <td>{t.title}</td>
+              <td class="dur">{fmt(t.duration_sec)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
