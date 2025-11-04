@@ -143,5 +143,15 @@ const clientScript = '../src/scripts/searchBar.client.ts'
 <div class="results-wrap" id="resultsWrap" hidden>
   <div class="results-row" id="resultsRow"></div>
 </div>
+<div style="margin-top:.5rem; display:flex; gap:.5rem;">
+  <button id="moreBtn" type="button" class="toggle" aria-pressed="false">
+    Spotify에서 더 찾아보기
+  </button>
+</div>
+
+<!-- 외부(Spotify) 후보 결과 -->
+<div class="results-wrap" id="externalWrap" hidden>
+  <div class="results-row" id="externalRow"></div>
+</div>
 
 <script type="module" src={clientScript}></script>
