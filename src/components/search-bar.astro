@@ -5,51 +5,80 @@ const spClient = '/src/scripts/searchBarSpotify.client.ts'
 ---
 
 <style>
+  /* 기본 박스 */
   .searchbar {
-  --bg: #f3f4f6; --bd: #d1d5db; --fg: #111827;
-  display: grid;
-  /* 가운데 칸이 0으로 찌그러지지 않도록 minmax 추가 */
-  grid-template-columns: auto minmax(280px, 1fr) auto;
-  align-items: center;
-  gap: .5rem;
-  padding: .5rem .75rem;
-  border: 1px solid var(--bd);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--fg);
-  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
-  box-shadow: 0 1px 2px rgba(0,0,0,.04);
-}
-.searchForm { 
-  display:flex; 
-  align-items:center; 
-  gap:.5rem; 
-  min-width: 280px; /* 안전장치 */
-}
-  .theme-none{--bg:#f3f4f6;--bd:#d1d5db;--fg:#111827;}
-  .theme-artist{--bg:#eef2ff;--bd:#c7d2fe;--fg:#3730a3;}
-  .theme-album{--bg:#ecfdf5;--bd:#a7f3d0;--fg:#065f46;}
-  .theme-track{--bg:#fff7ed;--bd:#fed7aa;--fg:#9a3412;}
-  .toggle{border:1px solid transparent; padding:.4rem .7rem; border-radius:8px; font-size:.9rem; font-weight:600; background:transparent; transition:background .15s, border-color .15s;}
-  .toggle:hover{cursor:pointer; background:rgba(0,0,0,.05);}
-  .toggle[aria-pressed="true"]{background:rgba(255,255,255,.55); border-color:rgba(0,0,0,.15);}
-.input{
-  width:100%;
-  background:#fff;           /* ⬅︎ 배경 */
-  border:1px solid #d1d5db;  /* ⬅︎ 보더 */
-  border-radius:8px;
-  font-size:1rem;
-  padding:.5rem .75rem;
-  outline:none;
-}
+    --bg: #f3f4f6; --bd: #d1d5db; --fg: #111827;
+    display: grid;
+    grid-template-columns: auto minmax(280px, 1fr) auto;
+    align-items: center;
+    gap: .5rem;
+    padding: .5rem .75rem;
+    border: 1px solid var(--bd);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--fg);
+    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
 
-  .search-btn{border:none; background:transparent; padding:.4rem; border-radius:8px;}
-  .search-btn:hover{cursor:pointer; background:rgba(0,0,0,.06);}
+  /* ✅ 테마를 같은 요소에 붙여서 명시도 확보 */
+  .searchbar.theme-none { --bg:#f3f4f6; --bd:#d1d5db; --fg:#111827; }
+  .searchbar.theme-artist { --bg:#eef2ff; --bd:#c7d2fe; --fg:#3730a3; }
+  .searchbar.theme-album  { --bg:#ecfdf5; --bd:#a7f3d0; --fg:#065f46; }
+  /* 필요하면 트랙도 here:
+     .searchbar.theme-track { --bg:#fff7ed; --bd:#fed7aa; --fg:#9a3412; } */
+
+  .searchForm { 
+    display:flex; 
+    align-items:center; 
+    gap:.5rem; 
+    min-width: 280px;
+  }
+
+  /* 토글(버튼) */
+  .toggle{
+    border:1px solid transparent;
+    padding:.4rem .7rem;
+    border-radius:8px;
+    font-size:.9rem;
+    font-weight:600;
+    background:transparent;
+    transition:background .15s, border-color .15s, color .15s;
+    color: var(--fg);
+  }
+  .toggle:hover{ cursor:pointer; background:rgba(0,0,0,.05); }
+  .toggle[aria-pressed="true"]{
+    background:rgba(255,255,255,.55);
+    border-color:rgba(0,0,0,.15);
+  }
+
+  /* 인풋/버튼 */
+  .input{
+    width:100%;
+    background:#fff;
+    border:1px solid #d1d5db;
+    border-radius:8px;
+    font-size:1rem;
+    padding:.5rem .75rem;
+    outline:none;
+  }
+  .input::placeholder { color:#6b7280; }
+
+  .search-btn{
+    border:none; background:transparent; padding:.4rem; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .search-btn:hover{ cursor:pointer; background:rgba(0,0,0,.06); transform:scale(1.05); }
 
   .section-title{font-weight:800; margin:1rem 0 .5rem;}
 
   .results-wrap{margin-top:.75rem; border:1px solid #e5e7eb; border-radius:10px; background:#fff; overflow-x:auto; padding:.75rem;}
+  .results-grid{display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:1rem;}
+  .results-col{display:grid; grid-template-rows:auto 1fr; gap:.5rem; min-width:0;}
+  .results-heading{font-weight:800;}
   .results-row{--card-px:135px; --card-size:135px; display:grid; grid-auto-flow:column; grid-auto-columns:var(--card-px); gap:1.25rem;}
+
   :global(.card){width:var(--card-px)!important; display:grid; grid-template-rows:auto auto; gap:.6rem; border-radius:14px; cursor:pointer;}
   :global(.art){width:100%; aspect-ratio:1/1; border-radius:14px; overflow:hidden; background:#f3f4f6; box-shadow:0 2px 10px rgba(0,0,0,.06); border:1px solid #e5e7eb; transition:box-shadow .15s, transform .06s, border-color .15s;}
   :global(.card:hover .art){transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,.12); border-color:#d1d5db;}
@@ -58,7 +87,10 @@ const spClient = '/src/scripts/searchBarSpotify.client.ts'
   :global(.title){font-size:1.05rem; font-weight:800; color:#111827; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   :global(.type){font-size:.9rem; color:#6b7280; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   :global(.thumb), :global(.meta), :global(.title), :global(.type){pointer-events:none;}
-  .input::placeholder { color:#6b7280; }
+
+  @media (max-width: 960px) {
+    .results-grid{grid-template-columns: 1fr;}
+  }
 </style>
 
 <h2 class="section-title">DB Search</h2>
@@ -73,7 +105,16 @@ const spClient = '/src/scripts/searchBarSpotify.client.ts'
   </div>
 
   <div class="searchBtnWrap">
-    <button class="search-btn" id="dbSubmitBtn" type="button" title="Search DB">🔎</button>
+    <button class="search-btn" id="dbSubmitBtn" type="button" title="Search DB" aria-label="Search">
+      <!-- Search icon -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+           style="width:1.25em; height:1.25em; opacity:0.7;">
+        <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2.5" fill="none" stroke="currentColor">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+        </g>
+      </svg>
+    </button>
   </div>
 </section>
 
@@ -88,61 +129,43 @@ const spClient = '/src/scripts/searchBarSpotify.client.ts'
 </div>
 
 <h2 class="section-title" style="margin-top:1.25rem;">Spotify Search</h2>
-<section id="spSearchbar" class="searchbar theme-album" data-type="album">
-  <!-- 1행 -->
-  <div class="modeBtns">
-    <button id="spArtistBtn" type="button" class="toggle" aria-pressed="false">Artist</button>
-    <button id="spAlbumBtn"  type="button" class="toggle" aria-pressed="true">Album</button>
-    <button id="spTrackBtn"  type="button" class="toggle" aria-pressed="false">Track</button>
-  </div>
 
+<!-- 단일 검색바 -->
+<section id="spSearchbar" class="searchbar theme-none">
+  <div style="visibility:hidden; width:1px; height:1px;"></div> <!-- 자리 맞춤용 -->
   <div class="searchForm">
-    <input id="spQ" class="input" type="text" placeholder='Use Spotify filters e.g. album:"Proof" artist:"BTS" year:2022' />
+    <input id="spQ" class="input" type="text" placeholder="그냥 검색하세요 (예: BTS proof 2022)" />
   </div>
-
   <div class="searchBtnWrap">
-    <button id="spSubmitBtn" class="search-btn" type="button" title="Search Spotify">🟢 Search</button>
+    <button id="spSubmitBtn" class="search-btn" type="button" title="Search Spotify" aria-label="Search">
+      <!-- Search icon -->
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+           style="width:1.25em; height:1.25em; opacity:0.7;">
+        <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2.5" fill="none" stroke="currentColor">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+        </g>
+      </svg>
+    </button>
   </div>
-
-  <!-- 2행: 칩 -->
-  <div class="filterChips" id="spChips">
-    <button class="chip" id="chipMarket">Market: <span class="val" id="chipMarketVal">KR</span></button>
-    <button class="chip" id="chipYear">Year: <span class="val" id="chipYearVal">Any</span></button>
-    <button class="chip" id="chipExplicit">Explicit: <span class="val" id="chipExplicitVal">Off</span></button>
-    <button class="chip" id="chipSort">Sort: <span class="val" id="chipSortVal">Relevance</span></button>
-    <button class="chip" id="chipAdvanced">고급 옵션</button>
-  </div>
-
-  <!-- 펼침: 고급(기존 옵션 유지) -->
-  <details class="advanced" id="spAdvanced">
-    <summary>Advanced options</summary>
-    <div class="row">
-      <label>Market:
-        <select id="spMarket">
-          <option value="KR" selected>KR (Korea)</option>
-          <option value="US">US (United States)</option>
-          <option value="JP">JP (Japan)</option>
-          <option value="GB">GB (United Kingdom)</option>
-          <option value="FR">FR (France)</option>
-          <option value="DE">DE (Germany)</option>
-          <option value="BR">BR (Brazil)</option>
-          <option value="IN">IN (India)</option>
-        </select>
-      </label>
-      <label>Limit: <input id="spLimit" type="number" value="12" min="1" max="50" style="width:60px;" /></label>
-      <label>Offset: <input id="spOffset" type="number" value="0" min="0" style="width:60px;" /></label>
-      <label>External:
-        <select id="spExternal">
-          <option value="">Default</option>
-          <option value="audio">Include audio</option>
-        </select>
-      </label>
-    </div>
-  </details>
 </section>
 
+<!-- 결과 3열 -->
 <div class="results-wrap" id="spResultsWrap" hidden>
-  <div class="results-row" id="spResultsRow"></div>
+  <div class="results-grid" id="spResultsGrid">
+    <div class="results-col" id="spArtistsCol">
+      <div class="results-heading">Artists</div>
+      <div class="results-row" id="spArtistsRow"></div>
+    </div>
+    <div class="results-col" id="spAlbumsCol">
+      <div class="results-heading">Albums</div>
+      <div class="results-row" id="spAlbumsRow"></div>
+    </div>
+    <div class="results-col" id="spTracksCol">
+      <div class="results-heading">Tracks</div>
+      <div class="results-row" id="spTracksRow"></div>
+    </div>
+  </div>
 </div>
 
 <script type="module" src={dbClient}></script>

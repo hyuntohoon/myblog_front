@@ -9,30 +9,29 @@ type CardItem = {
 	source: 'db'
 	spotify_id?: string | null
 	release_date?: string | null
-	// 🔽 추가: 앨범의 대표 아티스트 표시용
-	artist_name?: string | null
+	artist_name?: string | null // 앨범 카드 하위 텍스트용
 	artist_spotify_id?: string | null
 }
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-// ---------- DOM helpers ----------
-const $ = (id: string): HTMLElement => {
+// ---------- DOM helpers (충돌 방지: $ -> byId) ----------
+const byId = <T extends HTMLElement = HTMLElement>(id: string): T => {
 	const el = document.getElementById(id)
 	if (!el) throw new Error(`#${id} not found`)
-	return el
+	return el as T
 }
 
-// ---------- Elements ----------
-const bar = $('dbSearchbar')
-const artistBtn = $('dbArtistBtn') as HTMLButtonElement
-const albumBtn = $('dbAlbumBtn') as HTMLButtonElement
-const input = $('dbQ') as HTMLInputElement
-const submitBtn = $('dbSubmitBtn') as HTMLButtonElement
-const resultsWrap = $('dbResultsWrap') as HTMLDivElement
-const resultsRow = $('dbResultsRow') as HTMLDivElement
+// ---------- Elements (DB 전용 id만 사용) ----------
+const bar = byId<HTMLDivElement>('dbSearchbar')
+const artistBtn = byId<HTMLButtonElement>('dbArtistBtn')
+const albumBtn = byId<HTMLButtonElement>('dbAlbumBtn')
+const input = byId<HTMLInputElement>('dbQ')
+const submitBtn = byId<HTMLButtonElement>('dbSubmitBtn')
+const resultsWrap = byId<HTMLDivElement>('dbResultsWrap')
+const resultsRow = byId<HTMLDivElement>('dbResultsRow')
 
-// ⬇ 별도 섹션: 선택한 "아티스트"의 앨범 목록 표시용 (페이지에 요소가 없는 경우를 대비해 optional)
+// (옵셔널 섹션: 선택 아티스트의 앨범 리스트)
 const artistAlbumsWrap = document.getElementById(
 	'dbArtistAlbumsWrap'
 ) as HTMLDivElement | null
@@ -49,6 +48,7 @@ const getMode = (): Mode => (bar.getAttribute('data-mode') as Mode) ?? 'none'
 // ---------- Networking ----------
 const getJSON = async <T = any>(url: string): Promise<T> => {
 	const res = await fetch(url, { method: 'GET' })
+	if (!res.ok) throw new Error(`HTTP ${res.status}`)
 	return res.json()
 }
 
@@ -58,7 +58,7 @@ const mapDBArtists = (data: any): CardItem[] =>
 		id: a.id,
 		type: 'artist',
 		title: a.name,
-		img: a.cover_url ?? null, // 백엔드에 없다면 null
+		img: a.cover_url ?? null,
 		source: 'db',
 		spotify_id: a.spotify_id ?? null,
 	}))
@@ -72,7 +72,6 @@ const mapDBAlbums = (data: any): CardItem[] =>
 		source: 'db',
 		spotify_id: al.spotify_id ?? null,
 		release_date: al.release_date ?? null,
-		// 🔽 백엔드 응답에서 매핑
 		artist_name: al.artist_name ?? null,
 		artist_spotify_id: al.artist_spotify_id ?? null,
 	}))
@@ -99,11 +98,11 @@ const setMode = (mode: Mode) => {
 				? 'Search by album title'
 				: 'Select Artist or Album first'
 
-	// 상단 검색 결과 초기화
+	// 상단 결과 초기화
 	resultsRow.innerHTML = ''
 	resultsWrap.hidden = true
 
-	// 하단 "아티스트의 앨범" 섹션 초기화(존재할 때만)
+	// 하단 섹션 초기화(존재할 때만)
 	if (artistAlbumsRow) artistAlbumsRow.innerHTML = ''
 	if (artistAlbumsWrap) artistAlbumsWrap.hidden = true
 }
@@ -131,14 +130,13 @@ const makeCard = (it: CardItem): HTMLDivElement => {
 	title.textContent = it.title
 	meta.appendChild(title)
 
-	// 🔽 앨범이면 artist_name을 서브텍스트로 노출
+	// 앨범이면 하위에 아티스트명
 	if (it.type === 'album') {
 		const sub = document.createElement('div')
 		sub.className = 'type'
-		sub.textContent = it.artist_name || '' // 없으면 빈 문자열
+		sub.textContent = it.artist_name || ''
 		meta.appendChild(sub)
 	}
-	// 아티스트는 서브텍스트 생략 (디자인 요구사항대로)
 
 	card.appendChild(art)
 	card.appendChild(meta)
@@ -159,7 +157,6 @@ const render = (items: CardItem[]) => {
 	resultsWrap.hidden = items.length === 0
 }
 
-// ⬇ 아티스트의 앨범들을 “별도 섹션”에만 렌더 (해당 섹션이 있을 때만)
 const renderArtistAlbums = (albums: CardItem[], artistName: string) => {
 	if (!artistAlbumsRow || !artistAlbumsWrap || !artistAlbumsTitle) return
 	artistAlbumsRow.innerHTML = ''
@@ -170,19 +167,22 @@ const renderArtistAlbums = (albums: CardItem[], artistName: string) => {
 
 // ---------- Actions ----------
 const onSelect = async (it: CardItem) => {
-	if (it.type === 'artist') {
-		const data = await getJSON(
-			`${API_BASE}/api/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
-		)
-		renderArtistAlbums(mapDBAlbums(data), it.title)
-		return
-	}
-
-	if (it.type === 'album') {
-		const detail = await getJSON(
-			`${API_BASE}/api/albums/${encodeURIComponent(it.id)}`
-		)
-		window.dispatchEvent(new CustomEvent('album:detail', { detail }))
+	try {
+		if (it.type === 'artist') {
+			const data = await getJSON(
+				`${API_BASE}/api/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
+			)
+			renderArtistAlbums(mapDBAlbums(data), it.title)
+			return
+		}
+		if (it.type === 'album') {
+			const detail = await getJSON(
+				`${API_BASE}/api/albums/${encodeURIComponent(it.id)}`
+			)
+			window.dispatchEvent(new CustomEvent('album:detail', { detail }))
+		}
+	} catch (err) {
+		console.error('DB select failed:', err)
 	}
 }
 
@@ -191,20 +191,24 @@ const runSearch = async () => {
 	const q = input.value.trim()
 	if (!q || (mode !== 'artist' && mode !== 'album')) return
 
-	// 새 검색 시, 하단 섹션 초기화(있을 때만)
 	if (artistAlbumsRow) artistAlbumsRow.innerHTML = ''
 	if (artistAlbumsWrap) artistAlbumsWrap.hidden = true
 
-	if (mode === 'artist') {
-		const data = await getJSON(
-			`${API_BASE}/api/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`
-		)
-		render(mapDBArtists(data)) // 아티스트 리스트만 상단에 표시
-	} else {
-		const data = await getJSON(
-			`${API_BASE}/api/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`
-		)
-		render(mapDBAlbums(data)) // 앨범 카드에 artist_name 표시됨
+	try {
+		if (mode === 'artist') {
+			const data = await getJSON(
+				`${API_BASE}/api/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`
+			)
+			render(mapDBArtists(data))
+		} else {
+			const data = await getJSON(
+				`${API_BASE}/api/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`
+			)
+			render(mapDBAlbums(data))
+		}
+	} catch (err) {
+		console.error('DB search failed:', err)
+		resultsWrap.hidden = false
 	}
 }
 

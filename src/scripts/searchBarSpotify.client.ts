@@ -1,83 +1,46 @@
 // /src/scripts/searchBarSpotify.client.ts
 
-type Mode = 'artist' | 'album' | 'track'
+// ---------- Types ----------
 type Source = 'candidates' | 'db'
+type Kind = 'artist' | 'album' | 'track'
 
 type CardItem = {
 	id: string
-	type: 'artist' | 'album' | 'track'
+	type: Kind
 	title: string
 	img: string | null
 	source: Source
 	spotify_id?: string | null
 	release_date?: string | null
+	// 서브텍스트용
+	artist_name?: string | null
+	album_title?: string | null
+	external_url?: string | null
+	// 트랙 → 앨범 동기화용
+	album_spotify_id?: string | null
 }
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-// ---------- DOM helpers ----------
-const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
+// ---------- DOM helpers (충돌 방지: $ -> byId) ----------
+const byId = <T extends HTMLElement = HTMLElement>(id: string): T => {
 	const el = document.getElementById(id)
 	if (!el) throw new Error(`#${id} not found`)
 	return el as T
 }
 
 // ---------- Grab elements ----------
-const wrap = $<HTMLDivElement>('spSearchbar')
-const resWrap = $<HTMLDivElement>('spResultsWrap')
-const resRow = $<HTMLDivElement>('spResultsRow')
-
-const btnArtist = $<HTMLButtonElement>('spArtistBtn')
-const btnAlbum = $<HTMLButtonElement>('spAlbumBtn')
-const btnTrack = $<HTMLButtonElement>('spTrackBtn')
-
-const inputQ = $<HTMLInputElement>('spQ')
-const btnSubmit = $<HTMLButtonElement>('spSubmitBtn')
-
-const selMarket = $<HTMLSelectElement>('spMarket')
-const inpLimit = $<HTMLInputElement>('spLimit')
-const inpOffset = $<HTMLInputElement>('spOffset')
-const selExt = $<HTMLSelectElement>('spExternal')
-
-// ---------- Mode handling ----------
-const getMode = (): Mode => (wrap.getAttribute('data-type') as Mode) || 'album'
-
-const setMode = (m: Mode) => {
-	wrap.setAttribute('data-type', m)
-	wrap.classList.remove('theme-artist', 'theme-album', 'theme-track')
-	wrap.classList.add(
-		m === 'artist'
-			? 'theme-artist'
-			: m === 'track'
-				? 'theme-track'
-				: 'theme-album'
-	)
-
-	// toggle aria-pressed 정확히 하나만 true
-	btnArtist.setAttribute('aria-pressed', String(m === 'artist'))
-	btnAlbum.setAttribute('aria-pressed', String(m === 'album'))
-	btnTrack.setAttribute('aria-pressed', String(m === 'track'))
-
-	// placeholder도 모드에 맞춰 힌트 제공
-	inputQ.placeholder =
-		m === 'artist'
-			? 'artist:"BTS" genre:k-pop'
-			: m === 'track'
-				? 'track:"Spring Day" isrc:KRA321701234'
-				: 'album:"Proof" year:2022'
-
-	// 결과 초기화
-	resRow.innerHTML = ''
-	resWrap.hidden = true
-}
-
-btnArtist.onclick = () => setMode('artist')
-btnAlbum.onclick = () => setMode('album')
-btnTrack.onclick = () => setMode('track')
+const resWrap = byId<HTMLDivElement>('spResultsWrap')
+const artistsRow = byId<HTMLDivElement>('spArtistsRow')
+const albumsRow = byId<HTMLDivElement>('spAlbumsRow')
+const tracksRow = byId<HTMLDivElement>('spTracksRow')
+const inputQ = byId<HTMLInputElement>('spQ')
+const btnSubmit = byId<HTMLButtonElement>('spSubmitBtn')
 
 // ---------- Fetch helpers ----------
 const getJSON = async <T = any>(url: string): Promise<T> => {
 	const r = await fetch(url, { method: 'GET' })
+	if (!r.ok) throw new Error(`HTTP ${r.status}`)
 	return r.json()
 }
 const postJSON = async <T = any>(url: string, body: any): Promise<T> => {
@@ -86,10 +49,11 @@ const postJSON = async <T = any>(url: string, body: any): Promise<T> => {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(body),
 	})
+	if (!r.ok) throw new Error(`HTTP ${r.status}`)
 	return r.json()
 }
 
-// ---------- Mapping (backend /api/search/candidates 응답 매핑) ----------
+// ---------- Mapping ----------
 const mapCandAlbums = (cand: any): CardItem[] =>
 	(cand.albums || []).map((a: any) => ({
 		id: a.spotify_id,
@@ -99,6 +63,8 @@ const mapCandAlbums = (cand: any): CardItem[] =>
 		source: 'candidates',
 		spotify_id: a.spotify_id ?? null,
 		release_date: a.release_date ?? null,
+		artist_name: a.artist_name ?? null,
+		external_url: a.external_url ?? null,
 	}))
 
 const mapCandArtists = (cand: any): CardItem[] =>
@@ -109,6 +75,7 @@ const mapCandArtists = (cand: any): CardItem[] =>
 		img: a.photo_url ?? null,
 		source: 'candidates',
 		spotify_id: a.spotify_id ?? null,
+		external_url: a.external_url ?? null,
 	}))
 
 const mapCandTracks = (cand: any): CardItem[] =>
@@ -116,13 +83,17 @@ const mapCandTracks = (cand: any): CardItem[] =>
 		id: t.spotify_id,
 		type: 'track',
 		title: t.title,
-		img: t.album && t.album.cover_url ? t.album.cover_url : null,
+		img: t.album?.cover_url ?? null,
 		source: 'candidates',
 		spotify_id: t.spotify_id ?? null,
 		release_date: t.album?.release_date ?? null,
+		artist_name: t.artist_name ?? null,
+		album_title: t.album_title ?? t.album?.title ?? null,
+		external_url: t.external_url ?? null,
+		album_spotify_id: t.album?.spotify_id ?? null, // ✅ 트랙 → 앨범 sync용
 	}))
 
-// ---------- Render ----------
+// ---------- UI: Card ----------
 const makeCard = (it: CardItem): HTMLDivElement => {
 	const card = document.createElement('div')
 	card.className = 'card'
@@ -140,15 +111,26 @@ const makeCard = (it: CardItem): HTMLDivElement => {
 
 	const meta = document.createElement('div')
 	meta.className = 'meta'
+
 	const title = document.createElement('div')
 	title.className = 'title'
 	title.textContent = it.title
-	const ty = document.createElement('div')
-	ty.className = 'type'
-	ty.textContent = `${it.type}${it.source === 'candidates' ? ' (Spotify)' : ''}`
-
 	meta.appendChild(title)
-	meta.appendChild(ty)
+
+	if (it.type === 'album' && it.artist_name) {
+		const sub = document.createElement('div')
+		sub.className = 'type'
+		sub.textContent = `by ${it.artist_name}`
+		meta.appendChild(sub)
+	} else if (it.type === 'track') {
+		const sub = document.createElement('div')
+		sub.className = 'type'
+		let txt = ''
+		if (it.artist_name) txt += it.artist_name
+		if (it.album_title) txt += (txt ? ' • ' : '') + it.album_title
+		sub.textContent = txt || 'Track'
+		meta.appendChild(sub)
+	}
 
 	card.appendChild(art)
 	card.appendChild(meta)
@@ -163,71 +145,88 @@ const makeCard = (it: CardItem): HTMLDivElement => {
 	return card
 }
 
-const render = (items: CardItem[]) => {
-	resRow.innerHTML = ''
-	items.forEach((it) => resRow.appendChild(makeCard(it)))
-	resWrap.hidden = items.length === 0
+// ---------- Render ----------
+const render = (
+	artists: CardItem[],
+	albums: CardItem[],
+	tracks: CardItem[]
+) => {
+	artistsRow.innerHTML = ''
+	albumsRow.innerHTML = ''
+	tracksRow.innerHTML = ''
+
+	artists.forEach((it) => artistsRow.appendChild(makeCard(it)))
+	albums.forEach((it) => albumsRow.appendChild(makeCard(it)))
+	tracks.forEach((it) => tracksRow.appendChild(makeCard(it)))
+
+	const total = artists.length + albums.length + tracks.length
+	resWrap.hidden = total === 0
 }
 
-// ---------- Build query ----------
-const buildSmartQuery = (mode: Mode, raw: string): string => {
-	const q = raw.trim()
-	if (!q) return ''
-	if (mode === 'artist') return `artist:"${q}"`
-	if (mode === 'track') return `track:"${q}"`
-	return `album:"${q}"`
-}
-
-const buildTypesParam = (mode: Mode): string => {
-	if (mode === 'artist') return 'artist'
-	if (mode === 'track') return 'track'
-	return 'album'
-}
+// ---------- Query ----------
+const buildQuery = (raw: string) => raw.trim()
 
 // ---------- Actions ----------
 const runSearch = async () => {
-	const mode = getMode()
-	const smartQ = buildSmartQuery(mode, inputQ.value)
-	if (!smartQ) return
+	const q = buildQuery(inputQ.value)
+	if (!q) return
 
 	const url =
 		`${API_BASE}/api/search/candidates` +
-		`?q=${encodeURIComponent(smartQ)}` +
-		`&type=${encodeURIComponent(buildTypesParam(mode))}` +
-		`&market=${encodeURIComponent(selMarket.value)}` +
-		`&limit=${encodeURIComponent(inpLimit.value)}` +
-		`&offset=${encodeURIComponent(inpOffset.value)}` +
-		(selExt.value
-			? `&include_external=${encodeURIComponent(selExt.value)}`
-			: '')
+		`?q=${encodeURIComponent(q)}` +
+		`&type=${encodeURIComponent('artist,album,track')}` +
+		`&market=KR&limit=50&offset=0` // 크게 받아서 슬라이스
 
-	const cand = await getJSON(url)
-
-	// 현재 모드에 맞는 결과만 표시
-	let items: CardItem[] = []
-	if (mode === 'artist') items = mapCandArtists(cand)
-	else if (mode === 'track') items = mapCandTracks(cand)
-	else items = mapCandAlbums(cand)
-
-	render(items)
+	try {
+		const cand = await getJSON(url)
+		const artists = mapCandArtists(cand).slice(0, 3)
+		const albums = mapCandAlbums(cand).slice(0, 10)
+		const tracks = mapCandTracks(cand).slice(0, 10)
+		render(artists, albums, tracks)
+	} catch (e) {
+		console.error('Search failed:', e)
+		resWrap.hidden = false
+	}
 }
 
-btnSubmit.onclick = runSearch
+// ---------- Select handlers ----------
+const onSelect = async (it: CardItem) => {
+	try {
+		if (it.type === 'album' && it.spotify_id) {
+			console.debug('[sync] album click', it.spotify_id)
+			const detail = await postJSON(`${API_BASE}/api/albums/sync`, {
+				spotify_album_id: it.spotify_id,
+				market: 'KR',
+			})
+			window.dispatchEvent(new CustomEvent('album:detail', { detail }))
+			return
+		}
+
+		if (it.type === 'track' && it.album_spotify_id) {
+			console.debug('[sync] track click -> album sync', it.album_spotify_id)
+			const detail = await postJSON(`${API_BASE}/api/albums/sync`, {
+				spotify_album_id: it.album_spotify_id,
+				market: 'KR',
+			})
+			window.dispatchEvent(new CustomEvent('album:detail', { detail }))
+			return
+		}
+
+		// artist 클릭은 동작 정의 X (원하면 여기서 top tracks/albums 로직 추가 가능)
+		console.debug('[sync] no-op for item', it.type, it)
+	} catch (e) {
+		console.error('Sync failed:', e)
+	}
+}
+
+// ---------- Events ----------
+btnSubmit.addEventListener('click', runSearch)
 inputQ.addEventListener('keydown', (e) => {
 	if (e.key === 'Enter') runSearch()
 })
 
-// ---------- Select handlers ----------
-const onSelect = async (it: CardItem) => {
-	// Spotify 후보에서 앨범을 고르면 동기화 → 페이지에 album:detail 이벤트로 알림
-	if (it.type === 'album' && it.source === 'candidates' && it.spotify_id) {
-		const detail = await postJSON(`${API_BASE}/api/albums/sync`, {
-			spotify_album_id: it.spotify_id,
-			market: selMarket.value || 'KR',
-		})
-		window.dispatchEvent(new CustomEvent('album:detail', { detail }))
-	}
-}
-
 // ---------- init ----------
-setMode(getMode())
+;(() => {
+	inputQ.placeholder = 'Search'
+	resWrap.hidden = true
+})()
