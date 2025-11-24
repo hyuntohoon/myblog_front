@@ -1,6 +1,9 @@
-import { PUBLIC_API_URL, PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
+import {
+	PUBLIC_BACKEND_API_URL,
+	PUBLIC_PUBLISH_BASE_URL,
+} from 'astro:env/client'
 
-const API_BASE_URL = PUBLIC_API_URL
+const API_BASE_URL = PUBLIC_BACKEND_API_URL
 
 export type PostPayload = {
 	title: string

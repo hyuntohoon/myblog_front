@@ -70,6 +70,10 @@ export default defineConfig({
 				context: 'client',
 				access: 'public',
 			}),
+			PUBLIC_BACKEND_API_URL: envField.string({
+				context: 'client',
+				access: 'public',
+			}),
 		},
 	},
 

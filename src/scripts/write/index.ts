@@ -9,7 +9,11 @@ import {
 	wireAlbumPreview,
 } from './ui'
 
-// DOM 헬퍼
+type AlbumDetail = {
+	album: { id: string; title: string; cover_url?: string | null }
+	artists?: { name: string; spotify_id?: string | null }[]
+}
+
 const $ = <T extends Element = HTMLElement>(sel: string) =>
 	document.querySelector(sel) as T | null
 
@@ -27,36 +31,129 @@ const albumSelect = $('#albumId') as HTMLSelectElement | null
 const albumPreview = $('#albumPreview') as HTMLElement | null
 const albumImage = albumPreview?.querySelector('img') as HTMLImageElement | null
 
+const albumIdsHidden = $('#albumIds') as HTMLInputElement | null
+const selectedAlbumsWrap = $('#selected-albums-wrap') as HTMLElement | null
+const selectedAlbumsRow = $('#selectedAlbums') as HTMLElement | null
+
+type SimpleSelectedAlbum = {
+	id: string
+	title: string
+	artists: string
+	coverUrl?: string | null
+}
+
+let selectedAlbum: SimpleSelectedAlbum | null = null
+let albumDetailListenerBound = false
+
+function renderSelectedAlbum() {
+	if (!selectedAlbumsRow || !albumIdsHidden) return
+
+	selectedAlbumsRow.innerHTML = ''
+
+	if (!selectedAlbum) {
+		albumIdsHidden.value = ''
+		selectedAlbumsWrap?.classList.add('hidden')
+		return
+	}
+
+	const chip = document.createElement('div')
+	chip.className =
+		'inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-sm'
+
+	if (selectedAlbum.coverUrl) {
+		const img = document.createElement('img')
+		img.src = selectedAlbum.coverUrl
+		img.alt = selectedAlbum.title
+		img.className = 'w-8 h-8 rounded object-cover'
+		chip.appendChild(img)
+	}
+
+	const textWrap = document.createElement('div')
+	const titleSpan = document.createElement('span')
+	titleSpan.textContent = selectedAlbum.title
+	const artistSpan = document.createElement('span')
+	artistSpan.className = 'text-xs text-slate-500'
+	artistSpan.textContent = selectedAlbum.artists
+
+	textWrap.appendChild(titleSpan)
+	textWrap.appendChild(artistSpan)
+	chip.appendChild(textWrap)
+
+	const removeBtn = document.createElement('button')
+	removeBtn.type = 'button'
+	removeBtn.textContent = '×'
+	removeBtn.className = 'ml-2 text-xs text-slate-500 hover:text-slate-900'
+	removeBtn.addEventListener('click', () => {
+		selectedAlbum = null
+		renderSelectedAlbum()
+	})
+
+	chip.appendChild(removeBtn)
+	selectedAlbumsRow.appendChild(chip)
+
+	albumIdsHidden.value = JSON.stringify([selectedAlbum.id])
+	selectedAlbumsWrap?.classList.remove('hidden')
+}
+
+function bindAlbumDetailListenerOnce() {
+	if (albumDetailListenerBound) return
+	albumDetailListenerBound = true
+
+	window.addEventListener('album:detail', (e: Event) => {
+		const ce = e as CustomEvent<AlbumDetail>
+		const detail = ce.detail
+		if (!detail?.album) return
+
+		const artists = (detail.artists || []).map((a) => a.name).join(', ')
+
+		selectedAlbum = {
+			id: detail.album.id,
+			title: detail.album.title,
+			artists,
+			coverUrl: detail.album.cover_url ?? null,
+		}
+
+		renderSelectedAlbum()
+	})
+}
+
 async function onFormSubmit(e: SubmitEvent) {
 	if (!form || !resultEl || !submitBtn || !categorySel) return
 	e.preventDefault()
 	resultEl.textContent = ''
 
 	const formData = new FormData(form)
-	const data = Object.fromEntries(formData as any) as Record<string, string>
+	const data = Object.fromEntries(formData) as Record<string, string>
 
-	// 에디터 값으로 본문 대체
 	data.content = getContent()
 
 	const postedDate = data.posted_date || new Date().toISOString().slice(0, 10)
 
-	const payload: PostPayload = {
-		title: String(data.title || '').trim(),
+	let album_ids: string[] = []
+	if (albumIdsHidden?.value) {
+		try {
+			album_ids = JSON.parse(albumIdsHidden.value)
+		} catch {}
+	}
+
+	const payload: PostPayload & { album_ids?: string[] } = {
+		title: (data.title || '').trim(),
 		description: '',
-		body_mdx: String(data.content || ''),
+		body_mdx: data.content || '',
 		body_text: '',
 		posted_date: postedDate,
 		status: 'published',
 		category_id: data.category ? Number(data.category) : null,
 		search_index: true,
 		extra: {},
+		album_ids: album_ids.length ? album_ids : undefined,
 	}
 
 	if (!payload.title) {
 		showToast('제목을 입력하세요.')
 		return
 	}
-	if (!payload.body_mdx || payload.body_mdx.trim().length < 5) {
+	if (payload.body_mdx.trim().length < 5) {
 		showToast('본문이 너무 짧아요.')
 		return
 	}
@@ -66,25 +163,21 @@ async function onFormSubmit(e: SubmitEvent) {
 	submitBtn.textContent = 'Saving...'
 
 	try {
-		// 1) DB 저장
 		const res = await savePost(payload)
 		if (!res.ok) {
-			const json = await res.json().catch(() => null as any)
+			const json = await res.json().catch(() => null)
 			const msg =
-				json?.detail ||
-				json?.message ||
-				(await res.text().catch(() => '')).slice(0, 500)
+				json?.detail || json?.message || (await res.text()).slice(0, 500)
 			resultEl.textContent = `❌ Failed to save (${res.status}) ${msg || ''}`
 			showToast(`저장 실패 (${res.status})`, 'error')
 			return
 		}
-		const saved = await res.json() // { id, slug }
 
+		const saved = await res.json()
 		resultEl.textContent = '✅ Saved to DB. Publishing to GitHub...'
 
-		// 2) GitHub 퍼블리시 (카테고리 "이름" 필요)
 		let categoryName = ''
-		if (categorySel && categorySel.value) {
+		if (categorySel.value) {
 			const opt = categorySel.options[categorySel.selectedIndex]
 			if (opt && !opt.disabled) categoryName = opt.textContent || ''
 		}
@@ -98,25 +191,29 @@ async function onFormSubmit(e: SubmitEvent) {
 		})
 
 		if (!pubRes.ok) {
-			const t = await pubRes.text().catch(() => '')
-			resultEl.textContent = `⚠️ Saved, but publish failed (${pubRes.status}). ${t.slice(0, 400)}`
+			const t = await pubRes.text()
+			resultEl.textContent = `⚠️ Saved, but publish failed (${pubRes.status}). ${t.slice(
+				0,
+				400
+			)}`
 			showToast(`발행 실패 (${pubRes.status})`, 'error')
 			return
 		}
 
 		const pubJson = await pubRes.json()
-		resultEl.textContent = `✅ Saved & Published! (slug: ${pubJson?.slug || saved?.slug || '-'})`
+		resultEl.textContent = `✅ Saved & Published! (slug: ${
+			pubJson?.slug || saved?.slug || '-'
+		})`
 
 		redirectOnSuccess(pubJson?.slug || saved?.slug)
 
-		// 폼/에디터 초기화
 		form.reset()
 		resetContent()
-		if (enableReview && reviewSection) {
-			enableReview.checked = false
-			reviewSection.classList.add('hidden')
-		}
-		albumPreview?.classList.add('hidden')
+		selectedAlbum = null
+		renderSelectedAlbum()
+
+		enableReview && (enableReview.checked = false)
+		reviewSection?.classList.add('hidden')
 	} catch (err) {
 		console.error(err)
 		resultEl.textContent = '❌ Network error'
@@ -128,37 +225,37 @@ async function onFormSubmit(e: SubmitEvent) {
 }
 
 function wireSubmit() {
-	if (!form || !resultEl || !submitBtn || !categorySel) return
+	if (!form || !submitBtn) return
 	form.removeEventListener('submit', onFormSubmit)
 	form.addEventListener('submit', onFormSubmit)
+
 	if (import.meta.hot) {
 		import.meta.hot.dispose(() =>
 			form?.removeEventListener('submit', onFormSubmit)
 		)
 	}
+
 	;(form as any).dataset.bound = '1'
 }
 
 function initOnce() {
-	// Editor
 	initEditor()
 
-	// UI wiring
 	if (addBtn && categorySel)
 		wireCategoryAddButton(addBtn, categorySel, catHelp || undefined)
+
 	if (enableReview && reviewSection)
 		wireReviewToggle(enableReview, reviewSection)
+
 	if (albumSelect && albumPreview)
 		wireAlbumPreview(albumSelect, albumPreview, albumImage || null)
 
-	// Categories
 	if (categorySel) loadCategoriesToSelect(categorySel, catHelp || undefined)
 
-	// Submit
 	wireSubmit()
+	bindAlbumDetailListenerOnce()
 }
 
-// 초기화 (DOM/SPA/HMR 대응)
 function init() {
 	initOnce()
 
@@ -172,6 +269,7 @@ function init() {
 		if (!(form as any)?.dataset.bound) wireSubmit()
 		initOnce()
 	})
+
 	document.addEventListener('astro:after-swap', () => {
 		if (!(form as any)?.dataset.bound) wireSubmit()
 		initOnce()

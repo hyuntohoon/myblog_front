@@ -21,7 +21,7 @@ export type AddCategoryResult =
 	| { ok: true; name: string; persisted: boolean }
 	| { ok: false; error: string }
 
-const API = import.meta.env.PUBLIC_API_URL as string | undefined
+const API = import.meta.env.PUBLIC_BACKEND_API_URL as string | undefined
 
 export async function addCategory(name: string): Promise<AddCategoryResult> {
 	const trimmed = String(name ?? '').trim()
@@ -48,7 +48,7 @@ export type Metrics = { likes: number; comments: number }
 export async function fetchMetrics(
 	slugs: string[]
 ): Promise<Record<string, Metrics>> {
-	const API = import.meta.env.PUBLIC_API_URL as string | undefined
+	const API = import.meta.env.PUBLIC_BACKEND_API_URL as string | undefined
 	if (!API || slugs.length === 0) return {}
 	try {
 		const r = await fetch(`${API}/api/metrics/batch`, {

@@ -1,7 +1,7 @@
 // src/scripts/write.client.ts
 
-import { PUBLIC_API_URL, PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
-const API_BASE_URL = PUBLIC_API_URL
+import { PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
+const BACKEND_API_BASE_URL = PUBLIC_PUBLISH_BASE_URL
 
 // ✅ EasyMDE 추가 (CSS 포함)
 import EasyMDE from 'easymde'
@@ -98,7 +98,7 @@ const albumImages: Record<string, string> = {
 async function loadCategories() {
 	if (!categorySel || !catHelp) return
 	try {
-		const res = await fetch(`${API_BASE_URL}/api/categories`, {
+		const res = await fetch(`${BACKEND_API_BASE_URL}/api/categories`, {
 			cache: 'no-store',
 		})
 		if (!res.ok) throw new Error('HTTP ' + res.status)
@@ -139,7 +139,7 @@ async function loadCategories() {
 
 async function addCategory(name: string) {
 	try {
-		const r = await fetch(`${API_BASE_URL}/api/categories`, {
+		const r = await fetch(`${BACKEND_API_BASE_URL}/api/categories`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name }),
@@ -312,7 +312,7 @@ async function onFormSubmit(e: SubmitEvent) {
 		}
 		if (token) headers['Authorization'] = `Bearer ${token}`
 
-		const res = await fetch(`${API_BASE_URL}/api/posts`, {
+		const res = await fetch(`${BACKEND_API_BASE_URL}/api/posts`, {
 			method: 'POST',
 			headers,
 			body: JSON.stringify(payload),

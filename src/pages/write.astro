@@ -2,36 +2,33 @@
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
-
+import SearchBar from '@components/search-bar.astro'
+const detailClient = '/src/scripts/albumDetail.client.ts';
 ---
+
 <Layout>
   <Seo slot="seo" title="Write a new post" />
   <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css" />
+
   <div class="max-w-3xl mx-auto p-6">
     <h1 class="text-2xl font-bold mb-6">Write a new post</h1>
 
     <form id="write-form" class="space-y-6">
       <!-- 제목 -->
-      <input type="text" id="title" name="title" class="w-full border p-2 rounded" required />
-<p id="titleError" class="text-xs text-red-500 mt-1 hidden">제목을 입력하세요.</p>
+      <div>
+        <input
+          type="text"
+          id="title"
+          name="title"
+          class="w-full border p-2 rounded"
+          required
+        />
+        <p id="titleError" class="text-xs text-red-500 mt-1 hidden">
+          제목을 입력하세요.
+        </p>
+      </div>
 
-<script is:inline>
-  const form = document.getElementById('write-form');
-  const titleInput = document.getElementById('title');
-  const titleError = document.getElementById('titleError');
-
-  form.addEventListener('submit', (e) => {
-    if (!titleInput.value.trim()) {
-      e.preventDefault();
-      titleError.classList.remove('hidden');
-      titleInput.focus();
-    } else {
-      titleError.classList.add('hidden');
-    }
-  });
-</script>
-
-      <!-- 날짜(선택) -->
+      <!-- 날짜 -->
       <div>
         <label class="block font-medium mb-1">Date</label>
         <input type="date" name="posted_date" class="w-full border p-2 rounded" />
@@ -45,74 +42,36 @@ import Spacer from '@components/spacer.astro'
           <select name="category" id="category" class="border p-2 rounded flex-1">
             <option disabled selected>Loading...</option>
           </select>
-          <button type="button" id="add-category" class="border border-dashed px-3 py-1 rounded text-sm hover:bg-muted">
+          <button
+            type="button"
+            id="add-category"
+            class="border border-dashed px-3 py-1 rounded text-sm hover:bg-muted"
+          >
             + Add
           </button>
         </div>
-        <p id="catHelp" class="text-xs text-faded mt-1 hidden">No categories yet. You can add one.</p>
+        <p id="catHelp" class="text-xs text-faded mt-1 hidden">
+          No categories yet. You can add one.
+        </p>
       </div>
 
-      <!-- 옵션 토글 -->
+      <!-- 옵션 -->
       <div class="flex items-center gap-2">
         <input type="checkbox" id="enableReview" name="enableReview" class="w-4 h-4" />
         <label for="enableReview" class="font-medium">Add Music Review (optional)</label>
       </div>
 
-      <!-- 음반 검색 -->
-      <!-- sanity test: 버튼/검색 스타일 + JS 동작 확인 -->
-<!-- 🎵 Search Bar with Artist/Album Toggle (click → color changes) -->
-<div class="flex flex-wrap md:flex-nowrap items-center gap-2 mt-6 border p-3 rounded-lg bg-base-100">
-  <!-- Toggle -->
-  <div class="join" role="tablist" aria-label="Search type">
-    <!-- 초기엔 Artist 활성(파란색), Album 비활성(회색 테두리) -->
-    <button id="toggle-artist" class="btn btn-sm join-item btn-primary" role="tab" aria-selected="true">Artist</button>
-    <button id="toggle-album"  class="btn btn-sm join-item btn-outline"  role="tab" aria-selected="false">Album</button>
-  </div>
 
-  <!-- Search input -->
-  <label class="input input-bordered flex items-center gap-2 flex-1" aria-label="Search input">
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-      <path d="M21 21l-4.35-4.35"/><circle cx="10.5" cy="10.5" r="7.5"/>
-    </svg>
-    <input id="searchBar" type="text" class="grow" placeholder="Search artist..." />
-  </label>
+      <!-- SearchBar 삽입 -->
+      <section id="album-search-section" class="mt-6 space-y-4">
+        <SearchBar />
+      </section>
 
-  <!-- Search button -->
-  <button id="searchBtn" type="button" class="btn btn-primary">
-    <span class="search-label">Search</span>
-    <span class="loading loading-spinner loading-sm hidden"></span>
-  </button>
-</div>
+      <!-- 선택된 앨범 표시 -->
+      <div id="albumDetail"></div>
 
-<script is:inline>
-  const toggleArtist = document.getElementById('toggle-artist');
-  const toggleAlbum  = document.getElementById('toggle-album');
-  const searchBar    = document.getElementById('searchBar');
+      <input type="hidden" id="albumIds" name="album_ids" value="[]">
 
-  // 클릭 시 항상 "한쪽만" 색 변경: 활성=btn-primary, 비활성=btn-outline
-  function setType(type) {
-    const active   = type === 'artist' ? toggleArtist : toggleAlbum;
-    const inactive = type === 'artist' ? toggleAlbum  : toggleArtist;
-
-    active.classList.add('btn-primary');
-    active.classList.remove('btn-outline');
-
-    inactive.classList.remove('btn-primary');
-    inactive.classList.add('btn-outline');
-
-    toggleArtist.setAttribute('aria-selected', String(type === 'artist'));
-    toggleAlbum .setAttribute('aria-selected', String(type === 'album'));
-
-    // placeholder도 같이 변경
-    searchBar.placeholder = type === 'artist' ? 'Search artist...' : 'Search album...';
-  }
-
-  toggleArtist.addEventListener('click', () => setType('artist'));
-  toggleAlbum .addEventListener('click', () => setType('album'));
-
-  // 초기 상태 보정(새로고침 등)
-  setType('artist');
-</script>
       <!-- Music Review -->
       <fieldset id="musicReview" class="border rounded p-4 space-y-4 hidden">
         <legend class="font-semibold text-lg">🎧 Music Review</legend>
@@ -129,10 +88,7 @@ import Spacer from '@components/spacer.astro'
         <div>
           <label class="block font-medium mb-1">Select Album/Track</label>
           <select name="albumId" id="albumId" class="border p-2 rounded w-full">
-            <option value="">(Dummy Data)</option>
-            <option value="1">NewJeans - Super Shy</option>
-            <option value="2">IU - Love wins all</option>
-            <option value="3">LE SSERAFIM - Easy</option>
+            <option value="">(Select from chosen albums/tracks)</option>
           </select>
 
           <div id="albumPreview" class="mt-2 hidden">
@@ -142,7 +98,14 @@ import Spacer from '@components/spacer.astro'
 
         <div>
           <label class="block font-medium mb-1">Rating (0–10)</label>
-          <input type="number" name="rating" class="border p-2 rounded w-24" min="0" max="10" step="0.5" />
+          <input
+            type="number"
+            name="rating"
+            class="border p-2 rounded w-24"
+            min="0"
+            max="10"
+            step="0.5"
+          />
         </div>
       </fieldset>
 
@@ -151,6 +114,7 @@ import Spacer from '@components/spacer.astro'
         <label class="block font-medium mb-1">Content (Markdown/MDX)</label>
         <textarea
           name="content"
+          id="content"
           class="w-full border p-2 rounded font-mono text-sm"
           rows="12"
           placeholder="# Heading\n\nWrite here..."
@@ -158,7 +122,11 @@ import Spacer from '@components/spacer.astro'
         ></textarea>
       </div>
 
-      <button id="submit-btn" type="submit" class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80">
+      <button
+        id="submit-btn"
+        type="submit"
+        class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80"
+      >
         Save
       </button>
       <p id="write-result" class="text-sm mt-2"></p>
@@ -167,9 +135,9 @@ import Spacer from '@components/spacer.astro'
     <Spacer axis="vertical" size={8} />
   </div>
 
-  <!-- ✅ 로그인 가드: 로그인 안 되어 있으면 Cognito 로그인 → 완료 후 /write/ 복귀 -->
-<script src="../scripts/write.guard.ts"></script>
-
-  <!-- ✅ 클라이언트 스크립트 로딩 -->
+  <!-- 로그인 -->
+  <script src="../scripts/write.guard.ts"></script>
+<script type="module" src={detailClient}></script>
+  <!-- 클라이언트 -->
   <script src="../scripts/write/index.ts"></script>
 </Layout>
