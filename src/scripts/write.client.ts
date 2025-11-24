@@ -290,7 +290,9 @@ async function onFormSubmit(e: SubmitEvent) {
 		search_index: true,
 		extra: {} as Record<string, unknown>,
 	}
-
+	if (!data.category || data.category.trim() === '') {
+		data.category = 'default'
+	}
 	if (!payload.title) {
 		showToast('제목을 입력하세요.')
 		return
