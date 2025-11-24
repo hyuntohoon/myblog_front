@@ -128,8 +128,12 @@ const render = (d: AlbumDetail) => {
 					detail: {
 						id: a.id,
 						title: a.title,
-						artists: artists.map((x) => x.name),
 						spotify_id: a.spotify_id,
+						artists: artists.map((x) => ({
+							id: x.id,
+							name: x.name,
+							spotify_id: x.spotify_id ?? null,
+						})),
 					},
 				})
 			)

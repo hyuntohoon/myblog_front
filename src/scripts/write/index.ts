@@ -11,7 +11,7 @@ import {
 
 type AlbumDetail = {
 	album: { id: string; title: string; cover_url?: string | null }
-	artists?: { name: string; spotify_id?: string | null }[]
+	artists?: { id: string; name: string; spotify_id?: string | null }[]
 }
 
 const $ = <T extends Element = HTMLElement>(sel: string) =>
@@ -32,6 +32,7 @@ const albumPreview = $('#albumPreview') as HTMLElement | null
 const albumImage = albumPreview?.querySelector('img') as HTMLImageElement | null
 
 const albumIdsHidden = $('#albumIds') as HTMLInputElement | null
+const artistIdsHidden = $('#artistIds') as HTMLInputElement | null
 const selectedAlbumsWrap = $('#selected-albums-wrap') as HTMLElement | null
 const selectedAlbumsRow = $('#selectedAlbums') as HTMLElement | null
 
@@ -39,19 +40,26 @@ type SimpleSelectedAlbum = {
 	id: string
 	title: string
 	artists: string
+	artistIds: string[]
 	coverUrl?: string | null
 }
 
 let selectedAlbum: SimpleSelectedAlbum | null = null
 let albumDetailListenerBound = false
 
-function renderSelectedAlbum() {
-	if (!selectedAlbumsRow || !albumIdsHidden) return
+// ✅ Enter 키로 폼 제출 막기 (검색창 제외)
+document.addEventListener('keydown', (e) => {
+	const target = e.target as HTMLElement
+	if (e.key === 'Enter' && target.id !== 'searchBar') e.preventDefault()
+})
 
+function renderSelectedAlbum() {
+	if (!selectedAlbumsRow || !albumIdsHidden || !artistIdsHidden) return
 	selectedAlbumsRow.innerHTML = ''
 
 	if (!selectedAlbum) {
 		albumIdsHidden.value = ''
+		artistIdsHidden.value = ''
 		selectedAlbumsWrap?.classList.add('hidden')
 		return
 	}
@@ -87,11 +95,11 @@ function renderSelectedAlbum() {
 		selectedAlbum = null
 		renderSelectedAlbum()
 	})
-
 	chip.appendChild(removeBtn)
-	selectedAlbumsRow.appendChild(chip)
 
+	selectedAlbumsRow.appendChild(chip)
 	albumIdsHidden.value = JSON.stringify([selectedAlbum.id])
+	artistIdsHidden.value = JSON.stringify(selectedAlbum.artistIds)
 	selectedAlbumsWrap?.classList.remove('hidden')
 }
 
@@ -105,11 +113,15 @@ function bindAlbumDetailListenerOnce() {
 		if (!detail?.album) return
 
 		const artists = (detail.artists || []).map((a) => a.name).join(', ')
+		const artistIds = (detail.artists || [])
+			.map((a) => a.id)
+			.filter((x): x is string => !!x)
 
 		selectedAlbum = {
 			id: detail.album.id,
 			title: detail.album.title,
 			artists,
+			artistIds,
 			coverUrl: detail.album.cover_url ?? null,
 		}
 
@@ -124,19 +136,27 @@ async function onFormSubmit(e: SubmitEvent) {
 
 	const formData = new FormData(form)
 	const data = Object.fromEntries(formData) as Record<string, string>
-
 	data.content = getContent()
 
 	const postedDate = data.posted_date || new Date().toISOString().slice(0, 10)
 
 	let album_ids: string[] = []
+	let artist_ids: string[] = []
 	if (albumIdsHidden?.value) {
 		try {
 			album_ids = JSON.parse(albumIdsHidden.value)
 		} catch {}
 	}
+	if (artistIdsHidden?.value) {
+		try {
+			artist_ids = JSON.parse(artistIdsHidden.value)
+		} catch {}
+	}
 
-	const payload: PostPayload & { album_ids?: string[] } = {
+	const payload: PostPayload & {
+		album_ids?: string[]
+		artist_ids?: string[]
+	} = {
 		title: (data.title || '').trim(),
 		description: '',
 		body_mdx: data.content || '',
@@ -147,16 +167,12 @@ async function onFormSubmit(e: SubmitEvent) {
 		search_index: true,
 		extra: {},
 		album_ids: album_ids.length ? album_ids : undefined,
+		artist_ids: artist_ids.length ? artist_ids : undefined,
 	}
 
-	if (!payload.title) {
-		showToast('제목을 입력하세요.')
-		return
-	}
-	if (payload.body_mdx.trim().length < 5) {
-		showToast('본문이 너무 짧아요.')
-		return
-	}
+	if (!payload.title) return showToast('제목을 입력하세요.')
+	if (payload.body_mdx.trim().length < 5)
+		return showToast('본문이 너무 짧아요.')
 
 	submitBtn.disabled = true
 	const originalText = submitBtn.textContent
@@ -206,12 +222,10 @@ async function onFormSubmit(e: SubmitEvent) {
 		})`
 
 		redirectOnSuccess(pubJson?.slug || saved?.slug)
-
 		form.reset()
 		resetContent()
 		selectedAlbum = null
 		renderSelectedAlbum()
-
 		enableReview && (enableReview.checked = false)
 		reviewSection?.classList.add('hidden')
 	} catch (err) {
@@ -228,48 +242,36 @@ function wireSubmit() {
 	if (!form || !submitBtn) return
 	form.removeEventListener('submit', onFormSubmit)
 	form.addEventListener('submit', onFormSubmit)
-
-	if (import.meta.hot) {
+	if (import.meta.hot)
 		import.meta.hot.dispose(() =>
 			form?.removeEventListener('submit', onFormSubmit)
 		)
-	}
-
 	;(form as any).dataset.bound = '1'
 }
 
 function initOnce() {
 	initEditor()
-
 	if (addBtn && categorySel)
 		wireCategoryAddButton(addBtn, categorySel, catHelp || undefined)
-
 	if (enableReview && reviewSection)
 		wireReviewToggle(enableReview, reviewSection)
-
 	if (albumSelect && albumPreview)
 		wireAlbumPreview(albumSelect, albumPreview, albumImage || null)
-
 	if (categorySel) loadCategoriesToSelect(categorySel, catHelp || undefined)
-
 	wireSubmit()
 	bindAlbumDetailListenerOnce()
 }
 
 function init() {
 	initOnce()
-
-	if (document.readyState === 'loading') {
+	if (document.readyState === 'loading')
 		document.addEventListener('DOMContentLoaded', () => initOnce(), {
 			once: true,
 		})
-	}
-
 	document.addEventListener('astro:page-load', () => {
 		if (!(form as any)?.dataset.bound) wireSubmit()
 		initOnce()
 	})
-
 	document.addEventListener('astro:after-swap', () => {
 		if (!(form as any)?.dataset.bound) wireSubmit()
 		initOnce()
