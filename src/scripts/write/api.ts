@@ -5,16 +5,16 @@ import {
 
 const API_BASE_URL = PUBLIC_BACKEND_API_URL
 
+// ✅ 백엔드 WritePostRequest 기준
 export type PostPayload = {
 	title: string
 	description: string
 	body_mdx: string
-	body_text: string
-	posted_date: string
+	posted_date: string // ISO string (YYYY-MM-DD)
 	status: 'published' | 'draft'
-	category_id: number | null
-	search_index: boolean
-	extra: Record<string, unknown>
+	category: string | null // 카테고리 "이름"
+	album_ids: string[] // 항상 배열
+	artist_ids: string[] // 항상 배열
 }
 
 export async function fetchCategories() {
@@ -49,17 +49,40 @@ export async function savePost(payload: PostPayload) {
 	return res
 }
 
+// ✅ 백엔드 CreatePostReq 기준
 export async function publishToGit(params: {
 	title: string
 	body_mdx: string
-	categoryName: string
+	categoryName: string | null // 프론트에서 선택한 카테고리 이름
 	description: string
-	posted_date: string
+	posted_date: string // ISO string
+	album_ids: string[]
+	artist_ids: string[]
 }) {
+	const {
+		title,
+		body_mdx,
+		categoryName,
+		description,
+		posted_date,
+		album_ids,
+		artist_ids,
+	} = params
+
+	const payload = {
+		title,
+		body_mdx,
+		category: categoryName || null, // <- 백엔드 CreatePostReq.category
+		description: description || '',
+		posted_date,
+		album_ids,
+		artist_ids,
+	}
+
 	const res = await fetch(`${PUBLIC_PUBLISH_BASE_URL}/api/publish`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(params),
+		body: JSON.stringify(payload),
 	})
 	return res
 }

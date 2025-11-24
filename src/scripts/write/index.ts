@@ -54,53 +54,63 @@ document.addEventListener('keydown', (e) => {
 })
 
 function renderSelectedAlbum() {
-	if (!selectedAlbumsRow || !albumIdsHidden || !artistIdsHidden) return
-	selectedAlbumsRow.innerHTML = ''
+	// ✅ hidden input은 필수, UI 컨테이너는 옵션
+	if (!albumIdsHidden || !artistIdsHidden) return
+
+	// UI 영역 있으면만 정리
+	if (selectedAlbumsRow) {
+		selectedAlbumsRow.innerHTML = ''
+	}
 
 	if (!selectedAlbum) {
-		albumIdsHidden.value = ''
-		artistIdsHidden.value = ''
+		albumIdsHidden.value = '[]'
+		artistIdsHidden.value = '[]'
 		selectedAlbumsWrap?.classList.add('hidden')
 		return
 	}
 
-	const chip = document.createElement('div')
-	chip.className =
-		'inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-sm'
+	// ✅ 선택된 앨범 chip은 selectedAlbumsRow가 있을 때만 그림
+	if (selectedAlbumsRow) {
+		const chip = document.createElement('div')
+		chip.className =
+			'inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-sm'
 
-	if (selectedAlbum.coverUrl) {
-		const img = document.createElement('img')
-		img.src = selectedAlbum.coverUrl
-		img.alt = selectedAlbum.title
-		img.className = 'w-8 h-8 rounded object-cover'
-		chip.appendChild(img)
+		if (selectedAlbum.coverUrl) {
+			const img = document.createElement('img')
+			img.src = selectedAlbum.coverUrl
+			img.alt = selectedAlbum.title
+			img.className = 'w-8 h-8 rounded object-cover'
+			chip.appendChild(img)
+		}
+
+		const textWrap = document.createElement('div')
+		const titleSpan = document.createElement('span')
+		titleSpan.textContent = selectedAlbum.title
+		const artistSpan = document.createElement('span')
+		artistSpan.className = 'text-xs text-slate-500'
+		artistSpan.textContent = selectedAlbum.artists
+
+		textWrap.appendChild(titleSpan)
+		textWrap.appendChild(artistSpan)
+		chip.appendChild(textWrap)
+
+		const removeBtn = document.createElement('button')
+		removeBtn.type = 'button'
+		removeBtn.textContent = '×'
+		removeBtn.className = 'ml-2 text-xs text-slate-500 hover:text-slate-900'
+		removeBtn.addEventListener('click', () => {
+			selectedAlbum = null
+			renderSelectedAlbum()
+		})
+		chip.appendChild(removeBtn)
+
+		selectedAlbumsRow.appendChild(chip)
+		selectedAlbumsWrap?.classList.remove('hidden')
 	}
 
-	const textWrap = document.createElement('div')
-	const titleSpan = document.createElement('span')
-	titleSpan.textContent = selectedAlbum.title
-	const artistSpan = document.createElement('span')
-	artistSpan.className = 'text-xs text-slate-500'
-	artistSpan.textContent = selectedAlbum.artists
-
-	textWrap.appendChild(titleSpan)
-	textWrap.appendChild(artistSpan)
-	chip.appendChild(textWrap)
-
-	const removeBtn = document.createElement('button')
-	removeBtn.type = 'button'
-	removeBtn.textContent = '×'
-	removeBtn.className = 'ml-2 text-xs text-slate-500 hover:text-slate-900'
-	removeBtn.addEventListener('click', () => {
-		selectedAlbum = null
-		renderSelectedAlbum()
-	})
-	chip.appendChild(removeBtn)
-
-	selectedAlbumsRow.appendChild(chip)
+	// 🔥 핵심: UI 유무와 상관없이 항상 hidden 값은 세팅
 	albumIdsHidden.value = JSON.stringify([selectedAlbum.id])
 	artistIdsHidden.value = JSON.stringify(selectedAlbum.artistIds)
-	selectedAlbumsWrap?.classList.remove('hidden')
 }
 
 function bindAlbumDetailListenerOnce() {
@@ -153,21 +163,25 @@ async function onFormSubmit(e: SubmitEvent) {
 		} catch {}
 	}
 
-	const payload: PostPayload & {
-		album_ids?: string[]
-		artist_ids?: string[]
-	} = {
+	// 1) 셀렉트에서 "카테고리 이름" 추출
+	let categoryName: string | null = null
+	if (categorySel.value) {
+		const opt = categorySel.options[categorySel.selectedIndex]
+		if (opt && !opt.disabled) {
+			categoryName = opt.textContent?.trim() || null
+		}
+	}
+
+	// 2) 백엔드 + PostPayload 에 딱 맞게 payload 재정의
+	const payload: PostPayload = {
 		title: (data.title || '').trim(),
 		description: '',
 		body_mdx: data.content || '',
-		body_text: '',
 		posted_date: postedDate,
 		status: 'published',
-		category_id: data.category ? Number(data.category) : null,
-		search_index: true,
-		extra: {},
-		album_ids: album_ids.length ? album_ids : undefined,
-		artist_ids: artist_ids.length ? artist_ids : undefined,
+		category: categoryName, // ✅ 문자열 이름
+		album_ids, // ([] 포함)
+		artist_ids,
 	}
 
 	if (!payload.title) return showToast('제목을 입력하세요.')
@@ -201,9 +215,11 @@ async function onFormSubmit(e: SubmitEvent) {
 		const pubRes = await publishToGit({
 			title: payload.title,
 			body_mdx: payload.body_mdx,
-			categoryName,
+			categoryName: categoryName, // null 허용
 			description: payload.description,
 			posted_date: postedDate,
+			album_ids,
+			artist_ids,
 		})
 
 		if (!pubRes.ok) {

@@ -1,7 +1,11 @@
 // src/scripts/write.client.ts
 
-import { PUBLIC_PUBLISH_BASE_URL } from 'astro:env/client'
-const BACKEND_API_BASE_URL = PUBLIC_PUBLISH_BASE_URL
+import {
+	PUBLIC_PUBLISH_BASE_URL,
+	PUBLIC_BACKEND_API_URL,
+} from 'astro:env/client'
+
+const BACKEND_API_BASE_URL = PUBLIC_BACKEND_API_URL
 
 // ✅ EasyMDE 추가 (CSS 포함)
 import EasyMDE from 'easymde'
@@ -24,6 +28,14 @@ const reviewSection = $('#musicReview') as HTMLElement | null
 const albumSelect = $('#albumId') as HTMLSelectElement | null
 const albumPreview = $('#albumPreview') as HTMLElement | null
 const albumImage = albumPreview?.querySelector('img') as HTMLImageElement | null
+
+// ✅ hidden input (선택된 앨범/아티스트 ID 저장용)
+const albumIdsHidden = document.getElementById(
+	'albumIds'
+) as HTMLInputElement | null
+const artistIdsHidden = document.getElementById(
+	'artistIds'
+) as HTMLInputElement | null
 
 // ✅ 전역 에디터 (HMR/SPA에서도 재사용)
 let mde: EasyMDE | null = null
@@ -198,7 +210,6 @@ function wireUI() {
 }
 
 // ✅ EasyMDE 초기화(타입 오류/중복 초기화 방지)
-//  - previewRender 커스텀 제거 → TS2339 사라짐(기본 프리뷰 사용)
 function initMDE() {
 	const textarea = document.querySelector(
 		'textarea[name="content"]'
@@ -237,9 +248,28 @@ function initMDE() {
 			'|',
 			'guide',
 		],
-		// previewRender 제거: 기본 렌더 사용 → 타입 에러 없음
 	})
 	;(textarea as any)._mdeBound = true
+}
+
+// ✅ hidden input에서 앨범/아티스트 id 읽기
+function getSelectedIds(): { album_ids: string[]; artist_ids: string[] } {
+	const parse = (raw: string | null | undefined): string[] => {
+		if (!raw) return []
+		try {
+			const v = JSON.parse(raw)
+			if (Array.isArray(v)) {
+				return v.filter((x) => typeof x === 'string')
+			}
+		} catch {
+			// JSON 아니면 무시
+		}
+		return []
+	}
+
+	const album_ids = parse(albumIdsHidden?.value)
+	const artist_ids = parse(artistIdsHidden?.value)
+	return { album_ids, artist_ids }
 }
 
 async function publishToGit(params: {
@@ -248,20 +278,35 @@ async function publishToGit(params: {
 	categoryName: string
 	description: string
 	posted_date: string
+	album_ids: string[]
+	artist_ids: string[]
 }) {
-	const { title, body_mdx, categoryName, description, posted_date } = params
+	const {
+		title,
+		body_mdx,
+		categoryName,
+		description,
+		posted_date,
+		album_ids,
+		artist_ids,
+	} = params
+
 	const payload = {
 		title,
 		body_mdx,
 		category: categoryName || null,
 		description: description || '',
 		posted_date,
+		album_ids,
+		artist_ids,
 	}
+
 	const res = await fetch(`${PUBLIC_PUBLISH_BASE_URL}/api/publish`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(payload),
 	})
+
 	return res
 }
 
@@ -274,10 +319,12 @@ async function onFormSubmit(e: SubmitEvent) {
 	const formData = new FormData(form)
 	const data = Object.fromEntries(formData as any) as Record<string, string>
 
-	// ✅ EasyMDE 값으로 폼 데이터 덮어쓰기 (미연동 방지)
+	// ✅ EasyMDE 값으로 폼 데이터 덮어쓰기
 	if (mde) data.content = mde.value()
 
 	const postedDate = data.posted_date || new Date().toISOString().slice(0, 10)
+
+	const { album_ids, artist_ids } = getSelectedIds()
 
 	const payload = {
 		title: String(data.title || '').trim(),
@@ -286,13 +333,14 @@ async function onFormSubmit(e: SubmitEvent) {
 		body_text: '',
 		posted_date: postedDate,
 		status: 'published',
-		category_id: data.category ? Number(data.category) : null,
+		// ✅ 백엔드에는 category "이름"으로 보냄
+		category: categorySel?.value || 'default',
 		search_index: true,
 		extra: {} as Record<string, unknown>,
+		album_ids,
+		artist_ids,
 	}
-	if (!data.category || data.category.trim() === '') {
-		data.category = 'default'
-	}
+
 	if (!payload.title) {
 		showToast('제목을 입력하세요.')
 		return
@@ -347,17 +395,24 @@ async function onFormSubmit(e: SubmitEvent) {
 			categoryName,
 			description: payload.description,
 			posted_date: postedDate,
+			album_ids,
+			artist_ids,
 		})
 
 		if (!pubRes.ok) {
 			const t = await pubRes.text().catch(() => '')
-			resultEl.textContent = `⚠️ Saved, but publish failed (${pubRes.status}). ${t.slice(0, 400)}`
+			resultEl.textContent = `⚠️ Saved, but publish failed (${pubRes.status}). ${t.slice(
+				0,
+				400
+			)}`
 			showToast(`발행 실패 (${pubRes.status})`, 'error')
 			return
 		}
 
 		const pubJson = await pubRes.json()
-		resultEl.textContent = `✅ Saved & Published! (slug: ${pubJson?.slug || saved?.slug || '-'})`
+		resultEl.textContent = `✅ Saved & Published! (slug: ${
+			pubJson?.slug || saved?.slug || '-'
+		})`
 
 		redirectOnSuccess(pubJson?.slug || saved?.slug)
 
@@ -369,6 +424,8 @@ async function onFormSubmit(e: SubmitEvent) {
 		}
 		albumPreview?.classList.add('hidden')
 		if (mde) mde.value('')
+		if (albumIdsHidden) albumIdsHidden.value = '[]'
+		if (artistIdsHidden) artistIdsHidden.value = '[]'
 	} catch (err) {
 		console.error(err)
 		resultEl.textContent = '❌ Network error'
