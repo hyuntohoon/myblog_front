@@ -12,8 +12,10 @@ const { posts } = Astro.props
 <ul class="grid grid-cols-3 gap-5">
   {posts.map((entry) => {
     const post = entry.data
+
+    // ✅ frontmatter: albumCover: "..."
     const cover =
-      (Array.isArray((post as any).albumCover) && (post as any).albumCover[0]) ||
+      post.albumCover ||
       post.image ||
       '/default-cover.jpg'
 

@@ -87,7 +87,7 @@ const blog = defineCollection({
 			artistIds: z.array(z.string()).default([]),
 
 			// ✅ 앨범 커버 이미지 리스트 (대표 커버 포함)
-			albumCover: z.array(z.string()).default([]),
+			albumCover: z.string().optional(),
 
 			// ✅ 선택적: 음악 리뷰 / 평점 블록
 			musicReview: MusicReview.optional(),

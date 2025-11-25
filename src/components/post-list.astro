@@ -14,7 +14,7 @@ const { posts } = Astro.props
 <div class="divide-y divide-border">
   {posts.map(({ data: post }) => {
     const cover =
-      (Array.isArray((post as any).albumCover) && (post as any).albumCover[0]) ||
+      post.albumCover ||
       post.image ||
       '/default-cover.jpg'
 
