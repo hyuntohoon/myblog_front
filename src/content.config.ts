@@ -68,30 +68,33 @@ const blog = defineCollection({
 			// ✅ 옵션 + coerce
 			lastUpdated: z.coerce.date().optional(),
 
-			// ✅ 카테고리: 목록에 있으면 enum으로 검증,
-			//    목록에 없어도 임시로 문자열을 허용해 개발 막힘 방지
+			// ✅ 카테고리: 등록된 목록 or 자유 문자열 허용
 			category: z
 				.union([z.enum(zodEnum(CATEGORIES)), z.string().min(1)])
 				.transform((v) => String(v)),
 
-			// 초안 여부(목록/검색에서 제외할 때 사용)
+			// 초안 여부 (목록/검색 제외용)
 			draft: z.boolean().default(false),
 
-			// 표지/이미지(선택)
+			// 표지 이미지 (선택)
 			image: z.string().url().or(z.string()).optional(),
 
 			// 검색/인덱싱 포함 여부
 			searchIndex: z.boolean().default(true),
 
-			// (향후 확장) 글에서 참조할 앨범 ID들
+			// 앨범 / 아티스트 참조용 ID 리스트
 			albumIds: z.array(z.string()).default([]),
+			artistIds: z.array(z.string()).default([]),
 
-			// ✅ 선택적: 음악 리뷰/평점 블록 (음악 글에만 넣으면 됨)
+			// ✅ 앨범 커버 이미지 리스트 (대표 커버 포함)
+			albumCover: z.array(z.string()).default([]),
+
+			// ✅ 선택적: 음악 리뷰 / 평점 블록
 			musicReview: MusicReview.optional(),
 		})
 		.transform((data) => ({
 			...data,
-			// lastUpdated가 없으면 date로 대체
+			// lastUpdated 없을 때 date로 대체
 			lastUpdated: data.lastUpdated ?? data.date,
 		})),
 })

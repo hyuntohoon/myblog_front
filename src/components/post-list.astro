@@ -1,0 +1,70 @@
+---
+import type { CollectionEntry } from 'astro:content'
+import Link from '@components/link.astro'
+import PostMetricsItem from '@components/post-metrics'
+import { defaultDateFormat } from '@utils'
+
+export interface Props {
+  posts: CollectionEntry<'blog'>[]
+}
+
+const { posts } = Astro.props
+---
+
+<div class="divide-y divide-border">
+  {posts.map(({ data: post }) => {
+    const cover =
+      (Array.isArray((post as any).albumCover) && (post as any).albumCover[0]) ||
+      post.image ||
+      '/default-cover.jpg'
+
+    return (
+      <div class="flex items-center gap-4 py-4 md:py-5">
+        {/* 썸네일 */}
+        <Link
+          href={`/blog/${post.slug}/`}
+          class="flex-shrink-0"
+          title={post.title}
+        >
+          <img
+            src={cover}
+            alt={post.title}
+            loading="lazy"
+            class="w-20 h-20 md:w-24 md:h-24 rounded-md object-cover bg-gray-200"
+          />
+        </Link>
+
+        {/* 제목 + 메타 */}
+        <div class="flex-1 min-w-0">
+          <Link
+            href={`/blog/${post.slug}/`}
+            variant="highlight"
+            class="block font-medium text-base md:text-lg line-clamp-2"
+            title={post.title}
+          >
+            {post.title}
+          </Link>
+
+          <div class="mt-1 flex flex-wrap items-center gap-3 text-xs text-faded">
+            {post.category && (
+              <Link
+                href={`/blog/category/${encodeURIComponent(post.category)}/`}
+                class="font-mono px-1.5 py-0.5 rounded border border-border hover:text-highlight"
+              >
+                [{post.category}]
+              </Link>
+            )}
+
+            <span class="whitespace-nowrap">
+              {defaultDateFormat(post.date)}
+            </span>
+
+            <span class="whitespace-nowrap">
+              <PostMetricsItem client:load slug={post.slug} />
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  })}
+</div>

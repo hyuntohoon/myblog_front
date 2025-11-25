@@ -10,10 +10,9 @@ import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import Spacer from '@components/spacer.astro'
 import Aside from '@components/aside.astro'
 import Playground from '@components/playground.astro'
+import PostGrid from '@components/post-grid.astro'
 
-// 클라이언트 스크립트 (앨범 디테일 렌더러)
 const detailClient = '/src/scripts/albumDetail.client.ts'
-// 🔹 새로 추가: fetch 전담 스크립트
 const detailFetchClient = '/src/scripts/albumDetail.fetch.client.ts'
 
 export const prerender = true
@@ -30,10 +29,8 @@ const { entry } = Astro.props as { entry: CollectionEntry<'blog'> }
 const post = entry.data
 const { Content } = await render(entry)
 
-const allPosts = await getCollection('blog')
-const siblings = allPosts.sort(
-  (a, b) => +new Date(b.data.date) - +new Date(a.data.date)
-)
+const allPosts = await getCollection('blog', ({ data }) => !data.draft)
+const posts = allPosts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
 ---
 
 <Layout>
@@ -45,6 +42,7 @@ const siblings = allPosts.sort(
     <meta name="article:section" content={post.category} />
   </Seo>
 
+  {/* ⬇️ 여기는 그대로: SkipNavContent가 <main class="container"> 를 렌더링함 */}
   <SkipNavContent searchIndex={post.searchIndex}>
     <Prose>
       <h1 class="mb-0!" data-pagefind-meta="title">{post.title}</h1>
@@ -67,10 +65,14 @@ const siblings = allPosts.sort(
       <Content components={{ Aside, Playground }} />
     </Prose>
   </SkipNavContent>
+
+  {/* ⬇️ All Posts도 동일하게 container 사용 */}
+  <section class="container mt-12">
+    <h2 class="text-xl font-bold mb-6">All Posts</h2>
+    <PostGrid posts={posts} />
+    <Spacer axis="vertical" size={8} />
+  </section>
 </Layout>
 
-<!-- 🎧 앨범 디테일 렌더러 -->
 <script type="module" src={detailClient}></script>
-
-<!-- 🎧 fetch + 이벤트 디스패치 전담 스크립트 -->
 <script type="module" src={detailFetchClient}></script>

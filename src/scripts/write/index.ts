@@ -1,3 +1,4 @@
+// src/scripts/write/index.ts
 import { publishToGit, savePost, type PostPayload } from './api'
 import { initEditor, getContent, resetContent } from './editor'
 import {
@@ -25,6 +26,7 @@ const categorySel = $('#category') as HTMLSelectElement | null
 const catHelp = $('#catHelp') as HTMLElement | null
 const addBtn = $('#add-category') as HTMLButtonElement | null
 
+// 지금은 UI에서 안 쓰지만, 기존 코드와 호환 위해 남겨둠 (null이면 그냥 스킵됨)
 const enableReview = $('#enableReview') as HTMLInputElement | null
 const reviewSection = $('#musicReview') as HTMLElement | null
 const albumSelect = $('#albumId') as HTMLSelectElement | null
@@ -35,6 +37,10 @@ const albumIdsHidden = $('#albumIds') as HTMLInputElement | null
 const artistIdsHidden = $('#artistIds') as HTMLInputElement | null
 const selectedAlbumsWrap = $('#selected-albums-wrap') as HTMLElement | null
 const selectedAlbumsRow = $('#selectedAlbums') as HTMLElement | null
+
+// 🔥 평점 입력 요소
+const ratingInput = $('#rating') as HTMLInputElement | null
+const ratingSection = $('#rating-section') as HTMLElement | null
 
 type SimpleSelectedAlbum = {
 	id: string
@@ -54,7 +60,7 @@ document.addEventListener('keydown', (e) => {
 })
 
 function renderSelectedAlbum() {
-	// ✅ hidden input은 필수, UI 컨테이너는 옵션
+	// hidden input은 필수, UI 컨테이너는 옵션
 	if (!albumIdsHidden || !artistIdsHidden) return
 
 	// UI 영역 있으면만 정리
@@ -66,10 +72,15 @@ function renderSelectedAlbum() {
 		albumIdsHidden.value = '[]'
 		artistIdsHidden.value = '[]'
 		selectedAlbumsWrap?.classList.add('hidden')
+
+		// 앨범 없으면 평점 UI 숨기고 초기화
+		if (ratingSection) ratingSection.classList.add('hidden')
+		if (ratingInput) ratingInput.value = ''
+
 		return
 	}
 
-	// ✅ 선택된 앨범 chip은 selectedAlbumsRow가 있을 때만 그림
+	// 선택된 앨범 chip은 selectedAlbumsRow가 있을 때만 그림
 	if (selectedAlbumsRow) {
 		const chip = document.createElement('div')
 		chip.className =
@@ -111,6 +122,11 @@ function renderSelectedAlbum() {
 	// 🔥 핵심: UI 유무와 상관없이 항상 hidden 값은 세팅
 	albumIdsHidden.value = JSON.stringify([selectedAlbum.id])
 	artistIdsHidden.value = JSON.stringify(selectedAlbum.artistIds)
+
+	// 앨범이 생겼을 때 평점 입력 UI 노출
+	if (ratingSection) {
+		ratingSection.classList.remove('hidden')
+	}
 }
 
 function bindAlbumDetailListenerOnce() {
@@ -139,6 +155,30 @@ function bindAlbumDetailListenerOnce() {
 	})
 }
 
+// 🔢 평점 입력 제어: 숫자만, 0~10, 0.5 step
+function wireRatingInput() {
+	if (!ratingInput) return
+
+	ratingInput.addEventListener('input', () => {
+		let raw = ratingInput.value.trim()
+		if (raw === '') return
+
+		raw = raw.replace(',', '.')
+		let n = Number(raw)
+
+		if (Number.isNaN(n)) {
+			ratingInput.value = ''
+			return
+		}
+
+		if (n < 0) n = 0
+		if (n > 10) n = 10
+
+		n = Math.round(n * 2) / 2 // 0.5 step
+		ratingInput.value = n.toString()
+	})
+}
+
 async function onFormSubmit(e: SubmitEvent) {
 	if (!form || !resultEl || !submitBtn || !categorySel) return
 	e.preventDefault()
@@ -163,7 +203,17 @@ async function onFormSubmit(e: SubmitEvent) {
 		} catch {}
 	}
 
-	// 1) 셀렉트에서 "카테고리 이름" 추출
+	// 🔥 평점 읽기 + 최종 검증
+	let ratingValue: number | null = null
+	if (ratingInput && ratingInput.value.trim() !== '') {
+		const parsed = Number(ratingInput.value.replace(',', '.'))
+		if (Number.isNaN(parsed) || parsed < 0 || parsed > 10) {
+			return showToast('평점은 0~10 사이 숫자만 가능합니다.')
+		}
+		ratingValue = Math.round(parsed * 2) / 2
+	}
+
+	// 카테고리 이름 추출
 	let categoryName: string | null = null
 	if (categorySel.value) {
 		const opt = categorySel.options[categorySel.selectedIndex]
@@ -172,17 +222,18 @@ async function onFormSubmit(e: SubmitEvent) {
 		}
 	}
 
-	// 2) 백엔드 + PostPayload 에 딱 맞게 payload 재정의
+	// ✅ 백엔드 + PostPayload 에 딱 맞게 payload 재정의
 	const payload: PostPayload = {
 		title: (data.title || '').trim(),
 		description: '',
 		body_mdx: data.content || '',
 		posted_date: postedDate,
 		status: 'published',
-		category: categoryName, // ✅ 문자열 이름
-		album_ids, // ([] 포함)
+		category: categoryName,
+		album_ids,
 		artist_ids,
-		album_covers: [selectedAlbum?.coverUrl ?? ''],
+		album_cover_url: selectedAlbum?.coverUrl ?? null,
+		rating: ratingValue,
 	}
 
 	if (!payload.title) return showToast('제목을 입력하세요.')
@@ -194,6 +245,7 @@ async function onFormSubmit(e: SubmitEvent) {
 	submitBtn.textContent = 'Saving...'
 
 	try {
+		// 1) DB 저장
 		const res = await savePost(payload)
 		if (!res.ok) {
 			const json = await res.json().catch(() => null)
@@ -207,22 +259,26 @@ async function onFormSubmit(e: SubmitEvent) {
 		const saved = await res.json()
 		resultEl.textContent = '✅ Saved to DB. Publishing to GitHub...'
 
-		let categoryName = ''
+		// 다시 한 번 카테고리 이름
+		let categoryNameText = ''
 		if (categorySel.value) {
 			const opt = categorySel.options[categorySel.selectedIndex]
-			if (opt && !opt.disabled) categoryName = opt.textContent || ''
+			if (opt && !opt.disabled) categoryNameText = opt.textContent || ''
 		}
 
+		// 2) GitHub MDX 발행
 		const pubRes = await publishToGit({
 			title: payload.title,
 			body_mdx: payload.body_mdx,
 			slug: saved.slug,
-			categoryName: categoryName, // null 허용
+			categoryName: categoryNameText,
 			description: payload.description,
 			posted_date: postedDate,
 			album_ids,
 			artist_ids,
 			post_id: saved.id,
+			album_cover_url: selectedAlbum?.coverUrl ?? null,
+			rating: ratingValue,
 		})
 
 		if (!pubRes.ok) {
@@ -241,10 +297,13 @@ async function onFormSubmit(e: SubmitEvent) {
 		})`
 
 		redirectOnSuccess(pubJson?.slug || saved?.slug)
+
+		// 폼 초기화
 		form.reset()
 		resetContent()
 		selectedAlbum = null
 		renderSelectedAlbum()
+		if (ratingInput) ratingInput.value = ''
 		enableReview && (enableReview.checked = false)
 		reviewSection?.classList.add('hidden')
 	} catch (err) {
@@ -279,6 +338,7 @@ function initOnce() {
 	if (categorySel) loadCategoriesToSelect(categorySel, catHelp || undefined)
 	wireSubmit()
 	bindAlbumDetailListenerOnce()
+	wireRatingInput()
 }
 
 function init() {

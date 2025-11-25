@@ -3,115 +3,113 @@ import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import { getCollection } from 'astro:content'
-import { defaultDateFormat } from '@utils'
+import PostList from '@components/post-list.astro'
+import PostGrid from '@components/post-grid.astro'
 import Link from '@components/link.astro'
-import PostMetricsItem from '@components/post-metrics'
 
 const isHome = Astro.url.pathname === '/'
 
-// 최신순 정렬
 const byDateDesc = (a, b) =>
   new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
 const allPosts = (await getCollection('blog')).sort(byDateDesc)
 
-const limit = 5
-const posts = isHome ? allPosts.slice(0, limit) : allPosts
+const PER_PAGE = 30
+const pageParam = Number(Astro.url.searchParams.get('page') ?? '1')
+const currentPage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
+const totalPages = Math.ceil(allPosts.length / PER_PAGE)
+const start = (currentPage - 1) * PER_PAGE
+const posts = allPosts.slice(start, start + PER_PAGE)
+
+const basePath = isHome ? '/' : '/blog'
 ---
 
 <Layout>
   <Seo slot="seo" title={isHome ? 'Recent Posts' : 'Blog'} />
 
   <SkipNavContent>
-    {isHome ? (
-      <>
-        <h2 class="text-base font-semibold mb-4">Recent {limit} Posts</h2>
+    <section class="max-w-4xl ">
+      <!-- 헤더 + 버튼 -->
+      <div class="flex items-center justify-between mb-4">
+        {isHome ? (
+          <h2 class="text-base font-semibold">Recent Posts</h2>
+        ) : (
+          <h1 class="text-lg font-semibold">Blog</h1>
+        )}
 
-        <div class="text-faded border-b border-border pb-2 mb-2
-                    grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center text-sm">
-          <span>Category</span>
-          <span>Title</span>
-          <span>Date</span>
-          <span>Metrics</span>
+        <div class="inline-flex items-center rounded border border-gray-300 overflow-hidden text-xs">
+          <button id="listViewBtn" class="px-3 py-1 bg-gray-900 text-white">List</button>
+          <button id="gridViewBtn" class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100">Grid</button>
         </div>
+      </div>
 
-        <div class="divide-y divide-border">
-          {posts.map(({ data: post }) => (
-            <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center py-3">
-              <Link
-                href={`/blog/category/${encodeURIComponent(post.category)}/`}
-                class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
-              >
-                [{post.category}]
-              </Link>
+      <!-- 리스트 뷰 -->
+      <div id="list-view">
+        <PostList posts={posts} />
+      </div>
 
-              <Link
-                variant="highlight"
-                class="font-medium text-base md:text-lg truncate"
-                href={`/blog/${post.slug}/`}
-                title={post.title}
-              >
-                {post.title}
-              </Link>
+      <!-- 그리드 뷰 -->
+      <div id="grid-view" class="hidden">
+        <PostGrid posts={posts} />
+      </div>
 
-              <span class="text-faded whitespace-nowrap text-sm">
-                {defaultDateFormat(post.date)}
-              </span>
-
-              <span class="text-faded whitespace-nowrap text-sm">
-                <PostMetricsItem client:load slug={post.slug} />
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div class="mt-4 text-right">
-          <Link href="/blog" class="text-sm text-faded hover:text-highlight">
-            all posts →
+      <!-- 페이지네이션 -->
+      <div class="mt-6 flex items-center justify-between text-sm text-faded">
+        {currentPage > 1 ? (
+          <Link
+            href={currentPage === 2 ? basePath : `${basePath}?page=${currentPage - 1}`}
+            class="hover:text-highlight"
+          >
+            ← Prev
           </Link>
-        </div>
-      </>
-    ) : (
-      <>
-        <h1 class="sr-only">Blog</h1>
+        ) : (
+          <span class="opacity-40">← Prev</span>
+        )}
 
-        <div class="text-faded border-b border-border pb-2 mb-2
-                    grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center">
-          <span class="text-sm">Category</span>
-          <span class="text-sm">Title</span>
-          <span class="text-sm">Date</span>
-          <span class="text-sm">Metrics</span>
-        </div>
+        <span>Page {currentPage} / {totalPages}</span>
 
-        <div class="divide-y divide-border">
-          {posts.map(({ data: post }) => (
-            <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center py-3">
-              <Link
-                href={`/blog/category/${encodeURIComponent(post.category)}/`}
-                class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
-              >
-                [{post.category}]
-              </Link>
-
-              <Link
-                variant="highlight"
-                class="font-medium text-base md:text-lg truncate"
-                href={`/blog/${post.slug}/`}
-                title={post.title}
-              >
-                {post.title}
-              </Link>
-
-              <span class="text-faded whitespace-nowrap">
-                {defaultDateFormat(post.date)}
-              </span>
-
-              <span class="text-faded whitespace-nowrap">
-                <PostMetricsItem client:load slug={post.slug} />
-              </span>
-            </div>
-          ))}
-        </div>
-      </>
-    )}
+        {currentPage < totalPages ? (
+          <Link
+            href={`${basePath}?page=${currentPage + 1}`}
+            class="hover:text-highlight"
+          >
+            Next →
+          </Link>
+        ) : (
+          <span class="opacity-40">Next →</span>
+        )}
+      </div>
+    </section>
   </SkipNavContent>
+
+  <!-- 🚫 외부 파일 없이 순수 inline 스크립트 -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const listBtn = document.getElementById('listViewBtn');
+      const gridBtn = document.getElementById('gridViewBtn');
+      const listView = document.getElementById('list-view');
+      const gridView = document.getElementById('grid-view');
+
+      if (!listBtn || !gridBtn || !listView || !gridView) return;
+
+      const setView = (view) => {
+        const isList = view === 'list';
+        listView.classList.toggle('hidden', !isList);
+        gridView.classList.toggle('hidden', isList);
+
+        listBtn.classList.toggle('bg-gray-900', isList);
+        listBtn.classList.toggle('text-white', isList);
+        listBtn.classList.toggle('bg-white', !isList);
+        listBtn.classList.toggle('text-gray-700', !isList);
+
+        gridBtn.classList.toggle('bg-gray-900', !isList);
+        gridBtn.classList.toggle('text-white', !isList);
+        gridBtn.classList.toggle('bg-white', isList);
+        gridBtn.classList.toggle('text-gray-700', isList);
+      };
+
+      listBtn.addEventListener('click', () => setView('list'));
+      gridBtn.addEventListener('click', () => setView('grid'));
+      setView('list'); // 기본 리스트 뷰
+    });
+  </script>
 </Layout>
