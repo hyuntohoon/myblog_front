@@ -11,19 +11,29 @@ import Spacer from '@components/spacer.astro'
 import Aside from '@components/aside.astro'
 import Playground from '@components/playground.astro'
 
-export const prerender = true  // ✅ SSR 모드에서도 getStaticPaths를 사용하도록
+// 클라이언트 스크립트 (앨범 디테일 렌더러)
+const detailClient = '/src/scripts/albumDetail.client.ts'
+// 🔹 새로 추가: fetch 전담 스크립트
+const detailFetchClient = '/src/scripts/albumDetail.fetch.client.ts'
+
+export const prerender = true
 
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
   return entries.map((e) => ({
-    params: { slug: e.data.slug },      // ✅ e.data.slug → e.slug
+    params: { slug: e.data.slug },
     props: { entry: e },
   }))
 }
 
 const { entry } = Astro.props as { entry: CollectionEntry<'blog'> }
-const post = entry.data            // ✅ post 변수 생성
+const post = entry.data
 const { Content } = await render(entry)
+
+const allPosts = await getCollection('blog')
+const siblings = allPosts.sort(
+  (a, b) => +new Date(b.data.date) - +new Date(a.data.date)
+)
 ---
 
 <Layout>
@@ -38,12 +48,29 @@ const { Content } = await render(entry)
   <SkipNavContent searchIndex={post.searchIndex}>
     <Prose>
       <h1 class="mb-0!" data-pagefind-meta="title">{post.title}</h1>
+
+      <section
+        id="music-section"
+        class="mt-4 border-t border-gray-200 pt-0"
+        data-album-ids={JSON.stringify(post.albumIds ?? [])}
+        data-artist-ids={JSON.stringify(post.artistIds ?? [])}
+      >
+        <div id="albumDetail"></div>
+      </section>
+
       <Spacer axis="vertical" size={4} />
+
       <div class="text-faded">
-        {defaultDateFormat(post.date)} — {post.category}
+        {defaultDateFormat(post.date)}
       </div>
-      <Spacer axis="vertical" size={12} />
+
       <Content components={{ Aside, Playground }} />
     </Prose>
   </SkipNavContent>
 </Layout>
+
+<!-- 🎧 앨범 디테일 렌더러 -->
+<script type="module" src={detailClient}></script>
+
+<!-- 🎧 fetch + 이벤트 디스패치 전담 스크립트 -->
+<script type="module" src={detailFetchClient}></script>

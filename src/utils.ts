@@ -9,11 +9,14 @@ import sirv from 'sirv'
  * Returns a date in the format "MMM DD, YYYY"
  */
 export function defaultDateFormat(date: Date): string {
-	return date.toLocaleDateString('en-US', {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	})
+	return date
+		.toLocaleDateString('ko-KR', {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+		})
+		.replace(/\. /g, '.')
+		.replace(/\.$/, '')
 }
 
 /**

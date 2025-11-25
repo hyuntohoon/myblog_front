@@ -3,141 +3,108 @@ import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
 import SearchBar from '@components/search-bar.astro'
-const detailClient = '/src/scripts/albumDetail.client.ts';
+
+const detailClient = '/src/scripts/albumDetail.client.ts'
 ---
 
 <Layout>
   <Seo slot="seo" title="Write a new post" />
-  <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css" />
 
-  <div class="max-w-3xl mx-auto p-6">
+  <div class="max-w-5xl mx-auto px-4 py-8">
     <h1 class="text-2xl font-bold mb-6">Write a new post</h1>
 
     <form id="write-form" class="space-y-6">
-      <!-- 제목 -->
-      <div>
-        <input
-          type="text"
-          id="title"
-          name="title"
-          class="w-full border p-2 rounded"
-          required
-        />
-        <p id="titleError" class="text-xs text-red-500 mt-1 hidden">
-          제목을 입력하세요.
-        </p>
-      </div>
+      <!-- 제목 + 카테고리 한 줄 -->
+      <div class="flex flex-col gap-1">
+  <div class="flex items-center gap-3">
+    <!-- 제목 -->
+    <input
+      type="text"
+      id="title"
+      name="title"
+      class="flex-1 border border-gray-300 px-3 py-2 rounded text-base"
+      placeholder="제목"
+      required
+    />
 
-      <!-- 날짜 -->
-      <div>
-        <label class="block font-medium mb-1">Date</label>
-        <input type="date" name="posted_date" class="w-full border p-2 rounded" />
-        <p class="text-xs text-faded mt-1">비우면 오늘 날짜로 저장됩니다.</p>
-      </div>
+    <!-- 카테고리 -->
+    <div class="flex items-center gap-2">
+      <select
+        name="category"
+        id="category"
+        class="border border-gray-300 px-3 py-2 rounded text-base w-32 md:w-40"
+      >
+        <option disabled selected>Loading...</option>
+      </select>
+      <button
+        type="button"
+        id="add-category"
+        class="border border-dashed border-gray-400 px-3 py-2 rounded text-base hover:bg-muted"
+      >
+        +
+      </button>
+    </div>
+  </div>
 
-      <!-- 카테고리 -->
-      <div>
-        <label class="block font-medium mb-1">Category</label>
-        <div class="flex items-center gap-2">
-          <select name="category" id="category" class="border p-2 rounded flex-1">
-            <option disabled selected>Loading...</option>
-          </select>
-          <button
-            type="button"
-            id="add-category"
-            class="border border-dashed px-3 py-1 rounded text-sm hover:bg-muted"
-          >
-            + Add
-          </button>
-        </div>
-        <p id="catHelp" class="text-xs text-faded mt-1 hidden">
-          No categories yet. You can add one.
-        </p>
-      </div>
+  <p id="titleError" class="text-xs text-red-500 hidden">
+    제목을 입력하세요.
+  </p>
+</div>
 
-      <!-- 옵션 -->
-      <div class="flex items-center gap-2">
-        <input type="checkbox" id="enableReview" name="enableReview" class="w-4 h-4" />
-        <label for="enableReview" class="font-medium">Add Music Review (optional)</label>
-      </div>
+      <!-- 날짜 필드 없음 -->
 
-
-      <!-- SearchBar 삽입 -->
-      <section id="album-search-section" class="mt-6 space-y-4">
+      <!-- 음악 검색/선택 -->
+      <section
+        id="album-search-section"
+        class="mt-2 border border-gray-200 rounded px-3 py-3 space-y-3"
+      >
         <SearchBar />
+
+        <!-- 선택된 앨범 표시 -->
+        <div id="albumDetail" class="mt-2"></div>
+
+        <!-- 선택 결과(hidden) -->
+        <input type="hidden" id="albumIds" name="album_ids" value="[]">
+        <input type="hidden" id="artistIds" name="artist_ids" value="[]">
       </section>
 
-      <!-- 선택된 앨범 표시 -->
-      <div id="albumDetail"></div>
-
-      <input type="hidden" id="albumIds" name="album_ids" value="[]">
-      <input type="hidden" id="artistIds" name="artist_ids" value="[]">
-      <!-- Music Review -->
-      <fieldset id="musicReview" class="border rounded p-4 space-y-4 hidden">
-        <legend class="font-semibold text-lg">🎧 Music Review</legend>
-
-        <div>
-          <label class="block font-medium mb-1">Target Type</label>
-          <select name="reviewType" id="reviewType" class="border p-2 rounded w-full">
-            <option value="">Select...</option>
-            <option value="album">Album</option>
-            <option value="track">Track</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="block font-medium mb-1">Select Album/Track</label>
-          <select name="albumId" id="albumId" class="border p-2 rounded w-full">
-            <option value="">(Select from chosen albums/tracks)</option>
-          </select>
-
-          <div id="albumPreview" class="mt-2 hidden">
-            <img src="" alt="Album preview" class="rounded shadow w-32" />
-          </div>
-        </div>
-
-        <div>
-          <label class="block font-medium mb-1">Rating (0–10)</label>
-          <input
-            type="number"
-            name="rating"
-            class="border p-2 rounded w-24"
-            min="0"
-            max="10"
-            step="0.5"
-          />
-        </div>
-      </fieldset>
-
-      <!-- 본문 -->
+      <!-- 본문: Toast UI Editor 컨테이너 + 숨겨진 textarea (백엔드용) -->
       <div>
-        <label class="block font-medium mb-1">Content (Markdown/MDX)</label>
+        <div
+          id="editor"
+          class="border border-gray-300 rounded"
+        ></div>
+
+        <!-- JS에서 getContent()로만 쓰고, 폴백/백엔드용 -->
         <textarea
           name="content"
           id="content"
-          class="w-full border p-2 rounded font-mono text-sm"
-          rows="12"
-          placeholder="# Heading\n\nWrite here..."
-          required
+          class="hidden"
         ></textarea>
       </div>
 
-      <button
-        id="submit-btn"
-        type="submit"
-        class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80"
-      >
-        Save
-      </button>
-      <p id="write-result" class="text-sm mt-2"></p>
+      <!-- 제출 -->
+      <div class="flex items-center gap-3">
+        <button
+          id="submit-btn"
+          type="submit"
+          class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80 text-sm"
+        >
+          Save
+        </button>
+        <p id="write-result" class="text-xs mt-1"></p>
+      </div>
     </form>
 
     <Spacer axis="vertical" size={8} />
   </div>
 
-  <!-- 로그인 -->
+  <!-- 로그인 가드 -->
   <script src="../scripts/write.guard.ts"></script>
-<script type="module" src={detailClient}></script>
-  <!-- 클라이언트 -->
+
+  <!-- 앨범 디테일 클라이언트 -->
+  <script type="module" src={detailClient}></script>
+
+  <!-- 폼 로직 -->
   <script src="../scripts/write/index.ts"></script>
 </Layout>

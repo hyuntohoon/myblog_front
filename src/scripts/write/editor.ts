@@ -1,99 +1,49 @@
-// EasyMDE만 담당: 생성, 값 읽기/초기화, 재초기화 방지
-import EasyMDE from 'easymde'
-import 'easymde/dist/easymde.min.css'
-import type { Options } from 'easymde'
+// ✅ Toast UI Editor (Markdown 기반 WYSIWYG)
+import '@toast-ui/editor/dist/toastui-editor.css'
+import { Editor } from '@toast-ui/editor'
 
-let mde: EasyMDE | null = null
-let boundEl: HTMLTextAreaElement | null = null
+let editor: Editor | null = null
 
-const defaultOptions: Partial<Options> = {
-	spellChecker: false,
-	forceSync: true,
-	minHeight: '420px',
-	autosave: {
-		enabled: true,
-		uniqueId: 'write-page-draft',
-		delay: 1000,
-		submit_delay: 4000,
-		text: 'Autosaved: ',
-	},
-	placeholder: '# Heading\n\nWrite here...',
-	insertTexts: {
-		link: ['[', '](https://)'],
-		image: ['![](', ')'],
-		table: [
-			'',
-			'\n\n| Column 1 | Column 2 |\n| -------- | -------- |\n| Text     | Text     |\n\n',
+export function initEditor(selector = '#editor') {
+	const el = document.querySelector(selector)
+	if (!el) {
+		console.warn('Editor container not found:', selector)
+		return null
+	}
+
+	// 이미 초기화된 경우 재사용
+	if (editor) return editor
+
+	editor = new Editor({
+		el,
+		height: '500px',
+		initialEditType: 'markdown',
+		previewStyle: 'vertical', // 좌:에디터 / 우:미리보기
+		usageStatistics: false,
+		hideModeSwitch: false,
+		placeholder: '# Heading\n\nWrite here...',
+		toolbarItems: [
+			['heading', 'bold', 'quote'],
+			['ol', 'indent', 'outdent'],
+			['scrollSync'],
 		],
-		horizontalRule: ['', '\n\n-----\n\n'],
-	},
-	renderingConfig: {
-		singleLineBreaks: false,
-		codeSyntaxHighlighting: true, // highlight.js CSS 별도 로드 필요
-	},
-	status: ['autosave', 'lines', 'words', 'cursor'],
-	toolbar: [
-		'undo',
-		'redo',
-		'|',
-		'bold',
-		'italic',
-		'strikethrough',
-		'code',
-		'|',
-		{
-			name: 'heading',
-			action: EasyMDE.toggleHeadingSmaller,
-			className: 'fa fa-header',
-			title: 'Headers',
-		},
-		'|',
-		'quote',
-		'unordered-list',
-		'ordered-list',
-		'table',
-		'horizontal-rule',
-		'|',
-		'link',
-		'image',
-		'|',
-		'preview',
-		'side-by-side',
-		'fullscreen',
-		'|',
-		'guide',
-	],
-	toolbarTips: true,
-}
+	})
 
-export function initEditor(
-	textareaSelector = 'textarea[name="content"]',
-	opts?: Partial<Options>
-) {
-	const el = document.querySelector(
-		textareaSelector
-	) as HTMLTextAreaElement | null
-	if (!el) return null
-	if (mde && boundEl === el) return mde // 중복 초기화 방지
-
-	mde = new EasyMDE({ element: el, ...defaultOptions, ...(opts || {}) })
-	boundEl = el
-	return mde
+	return editor
 }
 
 export function getContent(): string {
-	return mde ? mde.value() : (boundEl?.value ?? '')
+	return editor ? editor.getMarkdown() : ''
 }
 
-export function setContent(v: string) {
-	if (mde) mde.value(v)
-	else if (boundEl) boundEl.value = v
+export function setContent(value: string) {
+	if (editor) editor.setMarkdown(value)
 }
 
 export function resetContent() {
-	setContent('')
+	if (editor) editor.setMarkdown('')
 }
 
 export function isReady() {
-	return !!mde
+	return !!editor
 }

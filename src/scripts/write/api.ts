@@ -15,6 +15,7 @@ export type PostPayload = {
 	category: string | null // 카테고리 "이름"
 	album_ids: string[] // 항상 배열
 	artist_ids: string[] // 항상 배열
+	album_covers: string[] // 앨범 커버 URL 배열
 }
 
 export async function fetchCategories() {
@@ -53,30 +54,36 @@ export async function savePost(payload: PostPayload) {
 export async function publishToGit(params: {
 	title: string
 	body_mdx: string
+	slug: string
 	categoryName: string | null // 프론트에서 선택한 카테고리 이름
 	description: string
 	posted_date: string // ISO string
 	album_ids: string[]
 	artist_ids: string[]
+	post_id: string
 }) {
 	const {
 		title,
 		body_mdx,
+		slug,
 		categoryName,
 		description,
 		posted_date,
 		album_ids,
 		artist_ids,
+		post_id,
 	} = params
 
 	const payload = {
 		title,
 		body_mdx,
+		slug,
 		category: categoryName || null, // <- 백엔드 CreatePostReq.category
 		description: description || '',
 		posted_date,
 		album_ids,
 		artist_ids,
+		post_id,
 	}
 
 	const res = await fetch(`${PUBLIC_PUBLISH_BASE_URL}/api/publish`, {

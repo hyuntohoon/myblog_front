@@ -146,7 +146,7 @@ async function onFormSubmit(e: SubmitEvent) {
 
 	const formData = new FormData(form)
 	const data = Object.fromEntries(formData) as Record<string, string>
-	data.content = getContent()
+	data.content = await getContent()
 
 	const postedDate = data.posted_date || new Date().toISOString().slice(0, 10)
 
@@ -182,6 +182,7 @@ async function onFormSubmit(e: SubmitEvent) {
 		category: categoryName, // ✅ 문자열 이름
 		album_ids, // ([] 포함)
 		artist_ids,
+		album_covers: [selectedAlbum?.coverUrl ?? ''],
 	}
 
 	if (!payload.title) return showToast('제목을 입력하세요.')
@@ -215,11 +216,13 @@ async function onFormSubmit(e: SubmitEvent) {
 		const pubRes = await publishToGit({
 			title: payload.title,
 			body_mdx: payload.body_mdx,
+			slug: saved.slug,
 			categoryName: categoryName, // null 허용
 			description: payload.description,
 			posted_date: postedDate,
 			album_ids,
 			artist_ids,
+			post_id: saved.id,
 		})
 
 		if (!pubRes.ok) {

@@ -76,7 +76,7 @@ export async function loadCategoriesToSelect(
 		const frag = document.createDocumentFragment()
 		const placeholder = document.createElement('option')
 		placeholder.value = ''
-		placeholder.textContent = 'Select category...'
+		placeholder.textContent = 'Select category'
 		placeholder.disabled = true
 		placeholder.selected = true
 		frag.appendChild(placeholder)
