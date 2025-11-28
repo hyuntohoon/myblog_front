@@ -4,7 +4,6 @@ import Seo from '@components/seo.astro'
 import Spacer from '@components/spacer.astro'
 import SearchBar from '@components/search-bar.astro'
 
-const detailClient = '/src/scripts/albumDetail.client.ts'
 ---
 
 <Layout>
@@ -103,8 +102,9 @@ const detailClient = '/src/scripts/albumDetail.client.ts'
   </main>
 
   <!-- 스크립트 -->
-  <script src="../scripts/write.guard.ts"></script>
-  <script type="module" src={detailClient}></script>
+
+ <script src="../scripts/write.guard.ts"></script>
+   <script src="../scripts/albumDetail.client.ts"></script>
   <script src="../scripts/write/index.ts"></script>
 
   <!-- 🔥 평점 자동 노출 스크립트 -->
