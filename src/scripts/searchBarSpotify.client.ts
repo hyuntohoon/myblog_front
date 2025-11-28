@@ -43,7 +43,7 @@ const postJSON = async <T = any>(url: string, body: any): Promise<T> => {
 	return r.json()
 }
 
-// ---------- Mapping: /api/search/candidates 응답 → CardItem ----------
+// ---------- Mapping: /api/music/search/candidates 응답 → CardItem ----------
 const mapCandAlbums = (cand: any): CardItem[] =>
 	(cand.albums || []).map(
 		(a: any) =>
@@ -221,7 +221,7 @@ const runSearch = async () => {
 	if (!q) return
 
 	const url =
-		`${API_BASE}/api/search/candidates` +
+		`${API_BASE}/api/music/search/candidates` +
 		`?q=${encodeURIComponent(q)}` +
 		`&type=${encodeURIComponent('artist,album,track')}` +
 		`&market=KR&limit=50&offset=0`

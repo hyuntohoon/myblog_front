@@ -186,12 +186,12 @@ const runSearch = async () => {
 
 	if (mode === 'artist') {
 		const data = await getJSON(
-			`${API_BASE}/api/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`
+			`${API_BASE}/api/music/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`
 		)
 		render(mapDBArtists(data))
 	} else {
 		const data = await getJSON(
-			`${API_BASE}/api/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`
+			`${API_BASE}/api/music/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`
 		)
 		render(mapDBAlbums(data))
 	}
@@ -208,7 +208,7 @@ const searchCandidates = async () => {
 		mode === 'artist' ? `artist:"${q}"` : mode === 'album' ? `album:"${q}"` : q
 
 	const cand = await getJSON(
-		`${API_BASE}/api/search/candidates?q=${encodeURIComponent(
+		`${API_BASE}/api/music/search/candidates?q=${encodeURIComponent(
 			smartQ
 		)}&type=${encodeURIComponent(types)}&market=KR&limit=12`
 	)

@@ -164,12 +164,12 @@ const runSearch = async () => {
 	try {
 		if (mode === 'artist') {
 			const data = await getJSON(
-				`${API_BASE}/api/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`
+				`${API_BASE}/api/music/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`
 			)
 			renderResults(mapDBArtists(data))
 		} else {
 			const data = await getJSON(
-				`${API_BASE}/api/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`
+				`${API_BASE}/api/music/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`
 			)
 			renderResults(mapDBAlbums(data))
 		}
