@@ -137,14 +137,14 @@ const makeCard = (it: CardItem): HTMLDivElement => {
 	const sub = document.createElement('div')
 	sub.className = 'type'
 	if (it.type === 'album' && it.artist_name) {
-		sub.textContent = `by ${it.artist_name}`
+		sub.textContent = `${it.artist_name}`
 	} else if (it.type === 'track') {
 		let txt = ''
 		if (it.artist_name) txt += it.artist_name
 		if (it.album_title) txt += (txt ? ' • ' : '') + it.album_title
 		sub.textContent = txt || 'Track'
 	} else if (it.type === 'artist') {
-		sub.textContent = 'Artist'
+		sub.textContent = ''
 	}
 	if (sub.textContent) meta.appendChild(sub)
 
