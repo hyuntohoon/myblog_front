@@ -2,7 +2,9 @@
 
 import type { CardItem, AlbumDetail } from '../scripts/types/search.ts'
 
-const API_BASE = 'http://127.0.0.1:8000'
+import { PUBLIC_API_URL } from 'astro:env/client'
+
+const API_BASE = PUBLIC_API_URL
 
 // ---------- DOM helpers ----------
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => {

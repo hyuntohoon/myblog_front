@@ -19,7 +19,8 @@ const resultsWrap = $('resultsWrap') as HTMLDivElement
 const resultsRow = $('resultsRow') as HTMLDivElement
 const moreBtn = document.getElementById('moreBtn') as HTMLButtonElement | null
 
-const API_BASE = 'http://127.0.0.1:8000'
+import { PUBLIC_API_URL } from 'astro:env/client'
+const API_BASE = PUBLIC_API_URL
 
 // --------------------------------------------------
 // Mode

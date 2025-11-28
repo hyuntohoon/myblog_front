@@ -4,7 +4,9 @@ import { makeCard } from './components/makeCard.ts'
 
 type Mode = 'none' | 'artist' | 'album'
 
-const API_BASE = 'http://127.0.0.1:8000'
+import { PUBLIC_API_URL } from 'astro:env/client'
+
+const API_BASE = PUBLIC_API_URL
 
 // --------------------------------------------------
 // DOM
