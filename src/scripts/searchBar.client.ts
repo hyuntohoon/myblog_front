@@ -139,7 +139,7 @@ const selectItem = async (it: CardItem): Promise<void> => {
 	// Artist(DB)
 	if (it.type === 'artist' && it.source === 'db') {
 		const data = await getJSON(
-			`${API_BASE}/api/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
+			`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
 		)
 		render(mapDBAlbums(data))
 		return
@@ -155,7 +155,7 @@ const selectItem = async (it: CardItem): Promise<void> => {
 
 	// Album(Spotify candidates)
 	if (it.type === 'album' && it.source === 'candidates' && it.spotify_id) {
-		const detail = await postJSON(`${API_BASE}/api/albums/sync`, {
+		const detail = await postJSON(`${API_BASE}/api/music/albums/sync`, {
 			spotify_album_id: it.spotify_id,
 			market: 'KR',
 		})

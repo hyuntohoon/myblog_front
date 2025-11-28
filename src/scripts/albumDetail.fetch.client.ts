@@ -35,7 +35,7 @@ if (!section) {
 	// ─────────────────────────────
 	if (albumIds.length > 0) {
 		const albumId = albumIds[0]
-		const albumUrl = `${base}/api/albums/${albumId}`
+		const albumUrl = `${base}/api/music/albums/${albumId}`
 
 		fetch(albumUrl)
 			.then((r) => {
@@ -59,7 +59,7 @@ if (!section) {
 	// 2) 아티스트 정보 (지금은 로깅만, 나중 확장용)
 	// ─────────────────────────────
 	if (artistIds.length > 0) {
-		const artistUrls = artistIds.map((id) => `${base}/api/artists/${id}`)
+		const artistUrls = artistIds.map((id) => `${base}/api/music/artists/${id}`)
 
 		Promise.all(
 			artistUrls.map((u) =>

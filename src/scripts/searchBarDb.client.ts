@@ -121,7 +121,7 @@ const onSelect = async (it: CardItem) => {
 		// Artist(DB) → show albums
 		if (it.type === 'artist' && it.source === 'db') {
 			const data = await getJSON(
-				`${API_BASE}/api/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
+				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
 			)
 			const albums = mapDBAlbums(data)
 			renderArtistAlbums(albums, it.title)
@@ -131,7 +131,7 @@ const onSelect = async (it: CardItem) => {
 		// Album(DB) → show detail view (dispatch)
 		if (it.type === 'album' && it.source === 'db') {
 			const detail = await getJSON(
-				`${API_BASE}/api/albums/${encodeURIComponent(it.id)}`
+				`${API_BASE}/api/music/albums/${encodeURIComponent(it.id)}`
 			)
 
 			window.dispatchEvent(new CustomEvent('album:detail', { detail }))

@@ -93,7 +93,7 @@ const mapCandTracks = (cand: any): CardItem[] =>
 			}) satisfies CardItem
 	)
 
-// ⭐ 아티스트 → 앨범 리스트용 (백엔드 /api/artists/spotify/{id}/albums 응답, SearchResult<AlbumItem>)
+// ⭐ 아티스트 → 앨범 리스트용 (백엔드 /api/music/artists/spotify/{id}/albums 응답, SearchResult<AlbumItem>)
 const mapArtistAlbums = (data: any): CardItem[] =>
 	(data.items || []).map(
 		(al: any) =>
@@ -242,7 +242,7 @@ const runSearch = async () => {
 const fetchAlbumDetailBySpotifyId = async (
 	spotifyAlbumId: string
 ): Promise<AlbumDetail> => {
-	const url = `${API_BASE}/api/albums/by-spotify/${encodeURIComponent(
+	const url = `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(
 		spotifyAlbumId
 	)}`
 	return getJSON<AlbumDetail>(url)
@@ -254,7 +254,7 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		// 1) 아티스트 → 해당 아티스트의 앨범 목록 (Spotify ID 기반, 결과는 DB SearchResult)
 		if (it.type === 'artist' && it.spotify_id) {
 			const url =
-				`${API_BASE}/api/artists/spotify/${encodeURIComponent(
+				`${API_BASE}/api/music/artists/spotify/${encodeURIComponent(
 					it.spotify_id
 				)}/albums` + `?market=KR&limit=20&offset=0`
 
