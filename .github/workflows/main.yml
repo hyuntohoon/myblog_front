@@ -25,6 +25,7 @@ jobs:
         env:
           NODE_ENV: production
           PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+          PUBLIC_BACKEND_API_URL: ${{ vars.PUBLIC_API_URL }}
           PUBLIC_PUBLISH_BASE_URL: ${{ vars.PUBLIC_PUBLISH_BASE_URL }}
           PUBLIC_COGNITO_DOMAIN: ${{ secrets.PUBLIC_COGNITO_DOMAIN }}
           PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.PUBLIC_COGNITO_CLIENT_ID }}
