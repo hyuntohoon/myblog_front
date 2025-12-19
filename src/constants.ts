@@ -4,11 +4,11 @@ type MapKey<T extends Map<any, any>> = T extends Map<infer K, any> ? K : never
 /** Site metadata (필요 최소) */
 export const SITE: Record<string, string> = {
 	url: 'http://localhost:4321', // RSS 등에서 사용
-	title: 'Test Blog',
-	titleDefault: 'Astro Theme: Minimal Blog',
-	lang: 'en-US',
+	title: 'RAMAMU',
+	titleDefault: 'Rate Your Music',
+	lang: 'ko-KR',
 	defaultOgImage: '/og-image.png',
-	defaultAuthor: 'LekoArts',
+	defaultAuthor: 'hyuntohoon',
 }
 
 interface Header {
