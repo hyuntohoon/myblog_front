@@ -1,34 +1,28 @@
-// src/scripts/types/music.ts
+// src/scripts/types/search.ts
 
-// Spotify 쪽 카드가 어디 출신인지
-export type Source = 'spotify'
-
-// 카드 종류
+export type Source = 'db' | 'spotify'
 export type Kind = 'artist' | 'album' | 'track'
 
-// 검색 결과 카드 하나
 export interface CardItem {
-	id: string // spotify_id 그대로 쓰는 쪽
+	id: string
 	type: Kind
 	title: string
 	img: string | null
 	source: Source
 
-	// 공통 메타
 	spotify_id?: string | null
 	release_date?: string | null
 	external_url?: string | null
 
-	// 아티스트 / 앨범 / 트랙별 서브텍스트용
 	artist_name?: string | null
 	artist_spotify_id?: string | null
 	album_title?: string | null
-
-	// 트랙 → 앨범 상세 조회용
 	album_spotify_id?: string | null
+
+	// ✅ DB track -> album detail 이동용 (album DB uuid)
+	db_album_id?: string | null
 }
 
-// ---- 앨범 상세 (albumDetail.client.ts 에서 쓰는 구조와 호환) ----
 export interface Artist {
 	id: string
 	name: string
