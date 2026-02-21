@@ -3,48 +3,21 @@
 ---
 
 <style>
-  /* ✅ 기본 검색 바 스타일 */
-  .searchbar {
-    --bg: #f3f4f6; --bd: #d1d5db; --fg: #111827;
-    display: grid;
-    grid-template-columns: auto minmax(280px, 1fr) auto;
-    align-items: center;
-    gap: .5rem;
-    padding: .5rem .75rem;
-    border: 1px solid var(--bd);
-    border-radius: 8px;
-    background: var(--bg);
-    color: var(--fg);
-    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, color .15s ease;
-    box-shadow: 0 1px 2px rgba(0,0,0,.04);
-  }
-
-  .searchbar.theme-none { --bg:#f3f4f6; --bd:#d1d5db; --fg:#111827; }
-  .searchbar.theme-artist { --bg:#eef2ff; --bd:#c7d2fe; --fg:#3730a3; }
-  .searchbar.theme-album  { --bg:#ecfdf5; --bd:#a7f3d0; --fg:#065f46; }
-
-  .searchForm { 
-    display:flex; 
-    align-items:center; 
-    gap:.5rem; 
-    min-width: 280px;
-  }
-
-  .toggle{
-    border:1px solid transparent;
-    padding:.4rem .7rem;
+  .searchbar{
+    --bg:#f3f4f6; --bd:#d1d5db; --fg:#111827;
+    display:grid;
+    grid-template-columns: minmax(280px, 1fr) auto;
+    align-items:center;
+    gap:.5rem;
+    padding:.5rem .75rem;
+    border:1px solid var(--bd);
     border-radius:8px;
-    font-size:.9rem;
-    font-weight:600;
-    background:transparent;
-    transition:background .15s, border-color .15s, color .15s;
-    color: var(--fg);
+    background:var(--bg);
+    color:var(--fg);
+    box-shadow:0 1px 2px rgba(0,0,0,.04);
   }
-  .toggle:hover{ cursor:pointer; background:rgba(0,0,0,.05); }
-  .toggle[aria-pressed="true"]{
-    background:rgba(255,255,255,.55);
-    border-color:rgba(0,0,0,.15);
-  }
+
+  .searchForm{ display:flex; align-items:center; gap:.5rem; min-width:280px; }
 
   .input{
     width:100%;
@@ -55,18 +28,21 @@
     padding:.5rem .75rem;
     outline:none;
   }
-  .input::placeholder { color:#6b7280; }
+  .input::placeholder{ color:#6b7280; }
 
-  .search-btn{
+  .section-title{ font-weight:800; margin:1rem 0 .5rem; }
+
+  .actions{ display:flex; align-items:center; gap:.25rem; }
+
+  .icon-btn{
     border:none; background:transparent; padding:.4rem; border-radius:8px;
     display:flex; align-items:center; justify-content:center;
     transition: background .15s ease, transform .1s ease;
   }
-  .search-btn:hover{ cursor:pointer; background:rgba(0,0,0,.06); transform:scale(1.05); }
+  .icon-btn:hover{ cursor:pointer; background:rgba(0,0,0,.06); transform:scale(1.05); }
 
-  .section-title{font-weight:800; margin:1rem 0 .5rem;}
+  .status-line{ margin-top:.5rem; font-size:.85rem; color:#6b7280; }
 
-  /* ✅ 결과 박스들 */
   .results-wrap{
     margin-top:.75rem;
     border:1px solid #e5e7eb;
@@ -76,7 +52,6 @@
     padding:.75rem;
   }
 
-  /* ✅ 여기 핵심 변경: 세로 방향(한 줄씩) */
   .results-grid{
     display:flex;
     flex-direction:column;
@@ -90,11 +65,8 @@
     min-width:0;
   }
 
-  .results-heading{
-    font-weight:800;
-  }
+  .results-heading{ font-weight:800; }
 
-  /* 카드들이 가로로 스크롤되게 */
   .results-row{
     --card-px:135px;
     display:flex;
@@ -137,49 +109,30 @@
     display:block;
   }
 
-  :global(.meta){
-    display:flex;
-    flex-direction:column;
-    gap:.25rem;
-    width:100%;
-  }
-
+  :global(.meta){ display:flex; flex-direction:column; gap:.25rem; width:100%; }
   :global(.title){
-    font-size:1.05rem;
-    font-weight:800;
-    color:#111827;
-    line-height:1.2;
-    white-space:normal;
-    overflow:hidden;
-    text-overflow:ellipsis;
+    font-size:1.05rem; font-weight:800; color:#111827; line-height:1.2;
+    white-space:normal; overflow:hidden; text-overflow:ellipsis;
   }
-
   :global(.type){
-    font-size:.9rem;
-    color:#6b7280;
-    white-space:normal;
-    overflow:hidden;
-    text-overflow:ellipsis;
+    font-size:.9rem; color:#6b7280;
+    white-space:normal; overflow:hidden; text-overflow:ellipsis;
   }
 
-  :global(.thumb), :global(.meta), :global(.title), :global(.type){
-    pointer-events:none;
-  }
+  :global(.thumb), :global(.meta), :global(.title), :global(.type){ pointer-events:none; }
 </style>
 
-<h2 class="section-title">DB Search</h2>
-<section id="dbSearchbar" class="searchbar theme-none" data-mode="none">
-  <div class="modeBtns toggles">
-    <button class="toggle" id="dbArtistBtn" type="button" aria-pressed="false">Artist</button>
-    <button class="toggle" id="dbAlbumBtn"  type="button" aria-pressed="false">Album</button>
-  </div>
+<h2 class="section-title">Music Search</h2>
 
+<section id="dbSearchbar" class="searchbar">
   <div class="searchForm">
-    <input class="input" id="dbQ" type="search" placeholder="Select Artist or Album first" />
+    <!-- write/index.ts에서 Enter 막는 로직이 searchBar 제외라 id 유지 -->
+    <input id="searchBar" class="input" type="search" placeholder="Search artists, albums, tracks (DB first)" />
   </div>
 
-  <div class="searchBtnWrap">
-    <button class="search-btn" id="dbSubmitBtn" type="button" title="Search DB" aria-label="Search">
+  <div class="actions">
+    <!-- DB 검색 -->
+    <button class="icon-btn" id="dbSubmitBtn" type="button" title="Search DB" aria-label="Search DB">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:1.25em; height:1.25em; opacity:0.7;">
         <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2.5" fill="none" stroke="currentColor">
           <circle cx="11" cy="11" r="8"></circle>
@@ -187,54 +140,43 @@
         </g>
       </svg>
     </button>
-  </div>
-</section>
 
-<div class="results-wrap" id="dbResultsWrap" hidden>
-  <div class="results-row" id="dbResultsRow"></div>
-</div>
-
-<div class="results-wrap" id="dbArtistAlbumsWrap" hidden>
-  <div style="font-weight:700; margin-bottom:.5rem;" id="dbArtistAlbumsTitle"></div>
-  <div class="results-row" id="dbArtistAlbumsRow"></div>
-</div>
-
-<h2 class="section-title" style="margin-top:1.25rem;">Spotify Search</h2>
-
-<section id="spSearchbar" class="searchbar theme-none">
-  <div style="visibility:hidden; width:1px; height:1px;"></div>
-  <div class="searchForm">
-    <input id="spQ" class="input" type="text" placeholder="그냥 검색하세요 (예: BTS proof 2022)" />
-  </div>
-  <div class="searchBtnWrap">
-    <button id="spSubmitBtn" class="search-btn" type="button" title="Search Spotify" aria-label="Search">
+    <!-- Sync (Spotify candidates + worker enqueue) -->
+    <button class="icon-btn" id="dbSyncBtn" type="button" title="Sync (Spotify candidates)" aria-label="Sync">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:1.25em; height:1.25em; opacity:0.7;">
-        <g stroke-linejoin="round" stroke-linecap="round" stroke-width="2.5" fill="none" stroke="currentColor">
-          <circle cx="11" cy="11" r="8"></circle>
-          <path d="m21 21-4.3-4.3"></path>
-        </g>
+        <path d="M21 12a9 9 0 1 1-3-6.7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M21 3v6h-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+
+    <!-- Spotify 화면에서 DB로 돌아가기 -->
+    <button class="icon-btn" id="dbBackBtn" type="button" title="Back to DB" aria-label="Back" hidden>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="width:1.25em; height:1.25em; opacity:0.7;">
+        <path d="M15 18l-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
   </div>
 </section>
 
-<!-- ✅ 결과: 항상 세로 1열로 표시 -->
-<div class="results-wrap" id="spResultsWrap" hidden>
-  <div class="results-grid" id="spResultsGrid">
-    <div class="results-col" id="spArtistsCol">
+<div class="status-line" id="dbStatus"></div>
+
+<div class="results-wrap" id="resultsWrap" hidden>
+  <div class="results-grid" id="resultsGrid">
+    <div class="results-col" id="artistsCol">
       <div class="results-heading">Artists</div>
-      <div class="results-row" id="spArtistsRow"></div>
+      <div class="results-row" id="artistsRow"></div>
     </div>
-    <div class="results-col" id="spAlbumsCol">
+
+    <div class="results-col" id="albumsCol">
       <div class="results-heading">Albums</div>
-      <div class="results-row" id="spAlbumsRow"></div>
+      <div class="results-row" id="albumsRow"></div>
     </div>
-    <div class="results-col" id="spTracksCol">
+
+    <div class="results-col" id="tracksCol">
       <div class="results-heading">Tracks</div>
-      <div class="results-row" id="spTracksRow"></div>
+      <div class="results-row" id="tracksRow"></div>
     </div>
   </div>
 </div>
 
 <script src="../scripts/searchBarDb.client.ts"></script>
-<script src="../scripts/searchBarSpotify.client.ts"></script>

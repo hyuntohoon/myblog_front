@@ -1,3 +1,4 @@
+// src/scripts/components/makeCard.ts
 import type { CardItem } from '../types/search'
 
 export function makeCard(
@@ -12,6 +13,7 @@ export function makeCard(
 
 	const artWrap = document.createElement('div')
 	artWrap.className = 'art'
+
 	const img = document.createElement('img')
 	img.className = 'thumb'
 	img.src = it.img || 'https://placehold.co/600x600?text=No+Image'
@@ -26,29 +28,36 @@ export function makeCard(
 	title.textContent = it.title
 	meta.appendChild(title)
 
-	// ⭐ 앨범이면 추가 텍스트 표시(DB, Spotify 모두 지원)
-	if (it.type === 'album' && it.artist_name) {
-		const sub = document.createElement('div')
-		sub.className = 'type'
-		sub.textContent = it.artist_name
-		meta.appendChild(sub)
+	// 서브 텍스트
+	const sub = document.createElement('div')
+	sub.className = 'type'
+
+	if (it.type === 'album') {
+		// 앨범이면 아티스트 이름 우선
+		sub.textContent =
+			it.artist_name || (it.source === 'spotify' ? 'Album (Spotify)' : 'Album')
+	} else if (it.type === 'track') {
+		let txt = ''
+		if (it.artist_name) txt += it.artist_name
+		if (it.album_title) txt += (txt ? ' • ' : '') + it.album_title
+		sub.textContent =
+			txt || (it.source === 'spotify' ? 'Track (Spotify)' : 'Track')
 	} else {
-		const type = document.createElement('div')
-		type.className = 'type'
-		type.textContent =
-			it.type + (it.source === 'candidates' ? ' (Spotify)' : '')
-		meta.appendChild(type)
+		// artist
+		sub.textContent = it.source === 'spotify' ? 'Artist (Spotify)' : 'Artist'
 	}
+
+	meta.appendChild(sub)
 
 	card.appendChild(artWrap)
 	card.appendChild(meta)
 
-	// ⭐ onClick 콜백으로 완전히 외부 위임
-	card.addEventListener('click', () => onClick(it))
+	// 클릭 위임
+	card.addEventListener('click', () => void onClick(it))
 	card.addEventListener('keydown', (e: KeyboardEvent) => {
 		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault()
-			onClick(it)
+			void onClick(it)
 		}
 	})
 
