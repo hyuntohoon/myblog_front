@@ -1,120 +1,83 @@
-# Astro Theme: Minimal Blog
+# myblog_front
 
-Welcome to **Astro Theme: Minimal Blog**, an ideal option to start sharing your ideas. It's easy to set up and features everything you'd need for a blog.
+> **MyBlog + Music Review** 프로젝트의 프론트엔드 — Astro 기반 정적 사이트 + 관리자 글쓰기 UI
 
-[**Demo Website**](https://astro-theme-minimal-blog.lekoarts.de)
+🔗 **전체 프로젝트 README:** [MyBlog + Music Review](https://github.com/hyuntohoon/myblog_front#관련-리포지토리)
 
-## ✨ Features
+---
 
-- Write blog posts with MDX
-- Styled with [Tailwind](https://tailwindcss.com/)
-- Code blocks powered by [Expressive Code](https://expressive-code.com/)
-- Custom asides component
-- Live coding powered by [Sandpack](https://github.com/codesandbox/sandpack)
-- RSS, Sitemap
-- Light/Dark/System color mode toggle
-- Add tags to your blog posts
-- [Pagefind](https://pagefind.app/) search
+## 개요
 
-## 🚀 Getting started
+사용자에게 보여지는 블로그 정적 사이트와 관리자 글쓰기 화면을 담당합니다. Astro로 빌드된 정적 페이지는 S3에 배포되고 CloudFront를 통해 서빙됩니다.
 
-1. **Important:** Ensure that [pnpm](https://pnpm.io/installation) is installed
-1. Clone the [astro-theme-minimal-blog](https://github.com/LekoArts/astro-theme-minimal-blog) repository.
-1. Install dependencies.
-   ```shell
-   pnpm install
-   ```
-1. Run the development server.
-   ```shell
-   pnpm dev
-   ```
+---
 
-## 📝 Using & modifying this theme
+## 주요 기능
 
-### Add content
+**일반 사용자 (읽기)**
 
-This theme features a CLI to help you scaffold new blog posts. It asks you questions to fill out the frontmatter and creates a file in the end. Run the CLI:
+- 블로그 글 열람 — CloudFront 캐시 기반으로 빠른 응답
+- 음악 검색 — DB-first 검색 UI, 필요 시 Sync 버튼으로 Spotify 최신 후보 확인
+- 트랙 클릭 → 앨범 상세(DB) 이동
 
-```shell
-pnpm assistant
+**관리자 (글쓰기)**
+
+- Cognito 인증 후 글 작성 화면 진입
+- 에디터에서 앨범·아티스트 검색 및 연결, 평점(0~10) 입력
+- 글 저장 후 Publish API 호출로 정적 사이트 갱신 트리거
+
+---
+
+## 기술 스택
+
+| 항목       | 기술                        |
+| ---------- | --------------------------- |
+| 프레임워크 | Astro                       |
+| 배포       | S3 + CloudFront             |
+| CI/CD      | GitHub Actions              |
+| 인증       | AWS Cognito (관리자 글쓰기) |
+
+---
+
+## 서비스 연동
+
+```
+myblog_front
+  ├── → myblog_backend   : 글/카테고리 CRUD (POST, GET /posts, /categories)
+  ├── → myblog_music     : 음악 검색 (GET /search/unified, /search/candidates)
+  └── → myblog_publish   : 글 발행 트리거 (POST /publish)
 ```
 
-If you want to extend it, change the [`assistant.ts`](./scripts/assistant.ts) file.
+---
 
-### Change constants
+## 환경 변수
 
-Parts of the theme are referencing [`constants.ts`](./src/constants.ts) to e.g. set the site title or main navigation. Modify its contents to suit your site before deploying it.
+| 변수                      | 설명                      |
+| ------------------------- | ------------------------- |
+| `PUBLIC_API_URL`          | 공개 API URL (Music API)  |
+| `PUBLIC_BACKEND_API_URL`  | 백엔드 API URL (Blog API) |
+| `PUBLIC_PUBLISH_BASE_URL` | 퍼블리싱 트리거 URL       |
 
-### Change existing tags / Add new tags
+---
 
-Inside [`constants.ts`](./src/constants.ts) the `FRONTMATTER_TAGS` map contains the available tags for your site. You need to add your display name and slug of the tag inside this map. The display name will be used in the UI and the slug will be used in the URL.
+## 배포
 
-It's referenced by Astro's content collections and also by the [`assistant.ts`](./scripts/assistant.ts) file.
+GitHub Actions가 `main` 브랜치 push 시 자동으로 Astro 빌드 → S3 업로드 → CloudFront invalidation을 수행합니다.
 
-You can add a new tag like so:
+---
 
-```ts
-export const FRONTMATTER_TAGS = new Map([
-	// Existing tags...
-	['Display name', 'slug-of-your-tag'] as const,
-])
-```
+## 왜 분리했는가
 
-## 🔍 Reference
+읽기 트래픽은 CDN 캐시로 대부분 처리되므로 프론트는 **정적·저비용·고가용**이 핵심입니다. UI/콘텐츠 변경 주기가 가장 빠른 영역이라 독립 배포가 필요했습니다.
 
-### Blog post frontmatter
+---
 
-By default, these frontmatter fields are available. You need to change [`content.config.ts`](./src/content.config.ts) to adjust it.
+## 관련 리포지토리
 
-```yaml
-title: Markdown Reference Overview
-slug: markdown-reference-overview
-description: A post showcasing the markdown formatting of a post
-date: 2025-02-18
-lastUpdated: 2025-02-18
-tags:
-  - General
-  - MDX
-searchIndex: true
-image: https://absolute-link.google.com/image.png
-```
-
-### Custom MDX components
-
-#### `<Aside>`
-
-```md
-:::note
-Text
-:::
-
-:::caution[Watch out!]
-Text
-:::
-
-:::tip
-Text
-:::
-
-:::danger
-Text
-:::
-```
-
-Read the [Aside Example](./content/blog/2025-04-02--mdx-asides/index.mdx) to learn more.
-
-#### `<Playground>`
-
-````md
-<Playground template="react">
-
-```js name=App.js active
-export default function App() {
-	return <h1>Hello World</h1>
-}
-```
-
-</Playground>
-````
-
-Read the [Playground Example](./content/blog/2025-06-23--live-coding-with-sandpack/index.mdx) to learn more.
+| 리포                                                             | 역할                          |
+| ---------------------------------------------------------------- | ----------------------------- |
+| **myblog_front** (현재)                                          | 정적 사이트 + 글쓰기 UI       |
+| [`myblog_backend`](https://github.com/hyuntohoon/myblog_backend) | 글·카테고리 API + 인증        |
+| [`myblog_music`](https://github.com/hyuntohoon/myblog_music)     | DB-first 검색 + Sync 트리거   |
+| [`myblog_worker`](https://github.com/hyuntohoon/myblog_worker)   | SQS Consumer + Spotify 동기화 |
+| [`myblog_publish`](https://github.com/hyuntohoon/myblog_publish) | 정적 사이트 발행              |
