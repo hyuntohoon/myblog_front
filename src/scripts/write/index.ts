@@ -207,8 +207,8 @@ async function onFormSubmit(e: SubmitEvent) {
 	let ratingValue: number | null = null
 	if (ratingInput && ratingInput.value.trim() !== '') {
 		const parsed = Number(ratingInput.value.replace(',', '.'))
-		if (Number.isNaN(parsed) || parsed < 0 || parsed > 10) {
-			return showToast('평점은 0~10 사이 숫자만 가능합니다.')
+		if (Number.isNaN(parsed) || parsed < 0 || parsed > 5) {
+			return showToast('평점은 0~5 사이 숫자만 가능합니다.')
 		}
 		ratingValue = Math.round(parsed * 2) / 2
 	}

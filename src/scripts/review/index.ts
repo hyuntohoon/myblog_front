@@ -178,8 +178,8 @@ async function onSubmit(e: SubmitEvent) {
 	}
 
 	const rating = ratingInput ? Number(ratingInput.value) : null
-	if (rating === null || Number.isNaN(rating)) {
-		resultMsg.textContent = '❌ 평점을 입력해주세요'
+	if (rating === null || Number.isNaN(rating) || rating < 0 || rating > 5) {
+		resultMsg.textContent = '❌ 평점은 0~5 사이 숫자를 입력해주세요'
 		resultMsg.className = 'text-sm text-red-500'
 		return
 	}

@@ -86,5 +86,6 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 	} catch (err) {
 		console.error('API fetch error:', err)
 		goLogin(true, window.location.pathname)
+		return null
 	}
 }
