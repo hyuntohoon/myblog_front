@@ -30,7 +30,7 @@ export async function addCategory(name: string): Promise<AddCategoryResult> {
 	if (!API) return { ok: true, name: trimmed, persisted: false } // 낙관적 UI
 
 	try {
-		const r = await fetch(`${API}/categories`, {
+		const r = await fetch(`${API}/api/categories`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: trimmed }),
@@ -64,7 +64,7 @@ export async function fetchMetrics(
 	}
 }
 
-export async function apiFetch(path, options = {}) {
+export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response | null> {
 	try {
 		const token = await getAccessToken()
 		const res = await fetch(path, {
@@ -86,5 +86,6 @@ export async function apiFetch(path, options = {}) {
 	} catch (err) {
 		console.error('API fetch error:', err)
 		goLogin(true, window.location.pathname)
+		return null
 	}
 }

@@ -16,7 +16,8 @@ export type PostPayload = {
 	album_ids: string[] // 항상 배열
 	artist_ids: string[] // 항상 배열
 	album_cover_url: string | null // 앨범 커버 URL (단일)
-	rating: number | null // 평점 0~10, 없으면 null
+	rating: number | null // 0–5, null if unrated
+	rating_scale?: number // denominator; backend default 5, range 1–10
 }
 
 export async function fetchCategories() {
@@ -64,6 +65,7 @@ export async function publishToGit(params: {
 	post_id: string
 	album_cover_url: string | null
 	rating: number | null
+	rating_scale?: number
 }) {
 	const {
 		title,
@@ -77,13 +79,14 @@ export async function publishToGit(params: {
 		post_id,
 		album_cover_url,
 		rating,
+		rating_scale,
 	} = params
 
 	const payload = {
 		title,
 		body_mdx,
 		slug,
-		category: categoryName || null, // <- 백엔드 CreatePostReq.category
+		category: categoryName || null,
 		description: description || '',
 		posted_date,
 		album_ids,
@@ -91,6 +94,7 @@ export async function publishToGit(params: {
 		post_id,
 		album_cover_url,
 		rating,
+		rating_scale,
 	}
 
 	const res = await fetch(`${PUBLIC_PUBLISH_BASE_URL}/api/publish`, {
