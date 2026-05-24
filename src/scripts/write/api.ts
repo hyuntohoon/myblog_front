@@ -2,22 +2,14 @@ import {
 	PUBLIC_BACKEND_API_URL,
 	PUBLIC_PUBLISH_BASE_URL,
 } from 'astro:env/client'
+import type { components } from '../../lib/backend-api.gen'
 
 const API_BASE_URL = PUBLIC_BACKEND_API_URL
 
-// ✅ 백엔드 WritePostRequest 기준
-export type PostPayload = {
-	title: string
-	description: string
-	body_mdx: string
-	posted_date: string // ISO string (YYYY-MM-DD)
-	status: 'published' | 'draft'
-	category: string | null // 카테고리 "이름"
-	album_ids: string[] // 항상 배열
-	artist_ids: string[] // 항상 배열
-	album_cover_url: string | null // 앨범 커버 URL (단일)
-	rating: number | null // 0–5, null if unrated
-	rating_scale?: number // denominator; backend default 5, range 1–10
+// Derived from backend WritePostRequest (auto-generated — run `pnpm generate:types` to refresh).
+// album_cover_url is a frontend-only field forwarded to the publish service; the backend ignores it.
+export type PostPayload = components['schemas']['WritePostRequest'] & {
+	album_cover_url?: string | null
 }
 
 export async function fetchCategories() {

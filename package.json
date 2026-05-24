@@ -12,7 +12,8 @@
 		"astro": "astro",
 		"lint": "eslint",
 		"lint:fix": "eslint --fix",
-		"assistant": "tsx ./scripts/assistant.ts"
+		"assistant": "tsx ./scripts/assistant.ts",
+		"generate:types": "openapi-typescript ../docs/contracts/openapi-backend.json -o src/lib/backend-api.gen.ts"
 	},
 	"dependencies": {
 		"@astrojs/mdx": "^4.3.11",
@@ -39,6 +40,7 @@
 	},
 	"devDependencies": {
 		"@antfu/eslint-config": "^5.1.0",
+		"@astrojs/check": "^0.9.9",
 		"@clack/prompts": "^0.11.0",
 		"@tailwindcss/typography": "^0.5.16",
 		"@types/mdast": "^4.0.4",
@@ -56,6 +58,7 @@
 		"hastscript": "^9.0.1",
 		"mdast-util-mdx-jsx": "^3.2.0",
 		"mdast-util-to-string": "^4.0.0",
+		"openapi-typescript": "^7.13.0",
 		"prettier": "^3.6.2",
 		"prettier-plugin-astro": "^0.14.1",
 		"rehype-autolink-headings": "^7.1.0",

@@ -201,6 +201,7 @@ async function onSubmit(e: SubmitEvent) {
 		artist_ids: selectedAlbum.artistIds,
 		album_cover_url: selectedAlbum.coverUrl,
 		rating,
+		rating_scale: 5,
 	}
 
 	submitBtn.disabled = true
@@ -224,16 +225,16 @@ async function onSubmit(e: SubmitEvent) {
 		// 2) GitHub 발행
 		const pubRes = await publishToGit({
 			title: payload.title,
-			body_mdx: payload.body_mdx,
+			body_mdx: payload.body_mdx ?? '',
 			slug: saved.slug,
 			categoryName: 'review',
 			description: '',
 			posted_date: postedDate,
-			album_ids: payload.album_ids,
-			artist_ids: payload.artist_ids,
+			album_ids: payload.album_ids ?? [],
+			artist_ids: payload.artist_ids ?? [],
 			post_id: saved.id,
-			album_cover_url: payload.album_cover_url,
-			rating: payload.rating,
+			album_cover_url: payload.album_cover_url ?? null,
+			rating: payload.rating ?? null,
 		})
 
 		if (!pubRes.ok) {
