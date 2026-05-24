@@ -1,10 +1,15 @@
 {
 	"extends": "astro/tsconfigs/strict",
 	"compilerOptions": {
+		"target": "ES2022",
 		"jsx": "react-jsx",
 		"jsxImportSource": "react",
 
+		/* 추가/보강 */
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
 		"baseUrl": "./",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
 		"paths": {
 			"@assets/*": ["./src/assets/*"],
 			"@components/*": ["./src/components/*"],
@@ -13,12 +18,6 @@
 			"@utils": ["./src/utils.ts"],
 			"@styles/*": ["./src/styles/*"]
 		},
-
-		/* 추가/보강 */
-		"lib": ["ES2022", "DOM", "DOM.Iterable"],
-		"target": "ES2022",
-		"module": "ESNext",
-		"moduleResolution": "Bundler",
 		"types": ["astro/client"]
 	},
 	"include": [

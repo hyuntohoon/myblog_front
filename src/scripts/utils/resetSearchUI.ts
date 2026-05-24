@@ -15,6 +15,8 @@ export function resetSearchUI({
 	resultsRow.innerHTML = ''
 	resultsWrap.hidden = true
 
-	if (artistAlbumsRow) artistAlbumsRow.innerHTML = ''
-	if (artistAlbumsWrap) artistAlbumsWrap.hidden = true
+	if (artistAlbumsRow)
+artistAlbumsRow.innerHTML = ''
+	if (artistAlbumsWrap)
+artistAlbumsWrap.hidden = true
 }

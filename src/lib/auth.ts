@@ -17,7 +17,7 @@ function b64url(bytes: Uint8Array) {
 	return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 async function sha256(input: Uint8Array) {
-	const digest = await crypto.subtle.digest('SHA-256', input)
+	const digest = await crypto.subtle.digest('SHA-256', input as any)
 	return new Uint8Array(digest)
 }
 async function makePkce() {
@@ -58,7 +58,7 @@ export async function goLogin(force: boolean = false, returnTo?: string) {
 	if (COGNITO_DOMAIN.includes('/')) {
 		console.error(
 			'[auth] PUBLIC_COGNITO_DOMAIN should not contain a path:',
-			COGNITO_DOMAIN
+			COGNITO_DOMAIN,
 		)
 	}
 
@@ -82,7 +82,8 @@ export async function goLogin(force: boolean = false, returnTo?: string) {
 		code_challenge_method: 'S256',
 		state,
 	}
-	if (force) params.prompt = 'login'
+	if (force)
+params.prompt = 'login'
 	url.search = new URLSearchParams(params).toString()
 
 	location.assign(url.toString())
@@ -122,14 +123,16 @@ export async function handleCallback() {
 	if (!resp.ok) {
 		// 디버깅을 위해 본문 노출
 		throw new Error(
-			`Token exchange failed: ${resp.status} ${await resp.text()}`
+			`Token exchange failed: ${resp.status} ${await resp.text()}`,
 		)
 	}
 	const json = await resp.json()
 
 	localStorage.setItem(LS_ACCESS, json.access_token || '')
-	if (json.id_token) localStorage.setItem(LS_ID, json.id_token)
-	if (json.refresh_token) localStorage.setItem(LS_REFRESH, json.refresh_token)
+	if (json.id_token)
+localStorage.setItem(LS_ID, json.id_token)
+	if (json.refresh_token)
+localStorage.setItem(LS_REFRESH, json.refresh_token)
 
 	// cleanup
 	sessionStorage.removeItem(SS_VERIFIER)
@@ -162,7 +165,8 @@ export async function authFetch(url: string, init: RequestInit = {}) {
 		headers.set('Content-Type', 'application/json')
 
 	const token = getAccessToken()
-	if (token) headers.set('Authorization', `Bearer ${token}`)
+	if (token)
+headers.set('Authorization', `Bearer ${token}`)
 
 	return fetch(url, { ...init, headers })
 }

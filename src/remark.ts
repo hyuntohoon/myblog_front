@@ -23,7 +23,8 @@ export function remarkAsides() {
 			/**
 			 * Check for the correct name, e.g. :::note
 			 */
-			if (!ASIDE_TYPES.includes(node.name as AsideType)) return
+			if (!ASIDE_TYPES.includes(node.name as AsideType))
+return
 
 			const asideType = node.name as AsideType
 			let title: string = ''

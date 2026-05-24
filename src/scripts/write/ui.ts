@@ -1,10 +1,10 @@
 // UI 관련(토스트, 폼 바인딩, 카테고리/리뷰 토글, 앨범 미리보기)
-import { fetchCategories, createCategory } from './api'
+import { createCategory, fetchCategories } from './api'
 
 export function showToast(
 	message: string,
 	variant: 'success' | 'error' = 'error',
-	ms = 2600
+	ms = 2600,
 ) {
 	let host = document.getElementById('toast-host')
 	if (!host) {
@@ -45,7 +45,8 @@ export function redirectOnSuccess(slug?: string) {
 			try {
 				const u = new URL(document.referrer)
 				return u.origin === location.origin
-			} catch {
+			}
+ catch {
 				return false
 			}
 		})()
@@ -61,18 +62,20 @@ export function redirectOnSuccess(slug?: string) {
 
 export async function loadCategoriesToSelect(
 	sel: HTMLSelectElement,
-	helpEl?: HTMLElement
+	helpEl?: HTMLElement,
 ) {
 	try {
 		const items = await fetchCategories()
 		sel.innerHTML = ''
 		if (!items.length) {
-			if (helpEl) helpEl.classList.remove('hidden')
+			if (helpEl)
+helpEl.classList.remove('hidden')
 			sel.innerHTML = '<option value="">(no categories)</option>'
 			sel.value = ''
 			return
 		}
-		if (helpEl) helpEl.classList.add('hidden')
+		if (helpEl)
+helpEl.classList.add('hidden')
 		const frag = document.createDocumentFragment()
 		const placeholder = document.createElement('option')
 		placeholder.value = ''
@@ -87,23 +90,28 @@ export async function loadCategoriesToSelect(
 			frag.appendChild(opt)
 		}
 		sel.appendChild(frag)
-	} catch {
+	}
+ catch {
 		sel.innerHTML = '<option value="">(failed to load categories)</option>'
 		sel.value = ''
-		if (helpEl) helpEl.classList.remove('hidden')
+		if (helpEl)
+helpEl.classList.remove('hidden')
 	}
 }
 
 export function wireCategoryAddButton(
 	btn: HTMLButtonElement,
 	sel: HTMLSelectElement,
-	helpEl?: HTMLElement
+	helpEl?: HTMLElement,
 ) {
 	const onClick = async () => {
+		// eslint-disable-next-line no-alert
 		const name = prompt('새 카테고리 이름을 입력하세요:')
-		if (!name) return
+		if (!name)
+return
 		const trimmed = name.trim()
-		if (!trimmed) return
+		if (!trimmed)
+return
 		try {
 			const saved = await createCategory(trimmed)
 			const opt = document.createElement('option')
@@ -111,8 +119,10 @@ export function wireCategoryAddButton(
 			opt.textContent = saved?.name ?? trimmed
 			sel.appendChild(opt)
 			sel.value = opt.value
-			if (helpEl) helpEl.classList.add('hidden')
-		} catch {
+			if (helpEl)
+helpEl.classList.add('hidden')
+		}
+ catch {
 			showToast('카테고리 생성 실패', 'error')
 		}
 	}
@@ -129,7 +139,7 @@ export function wireReviewToggle(chk: HTMLInputElement, section: HTMLElement) {
 export function wireAlbumPreview(
 	sel: HTMLSelectElement,
 	previewWrap: HTMLElement,
-	imgEl: HTMLImageElement | null
+	imgEl: HTMLImageElement | null,
 ) {
 	const albumImages: Record<string, string> = {
 		1: 'https://i.scdn.co/image/ab67616d0000b273f3f8ed949a4f79f5ad5caa7c',
@@ -140,8 +150,10 @@ export function wireAlbumPreview(
 		const id = sel.value
 		if (id && albumImages[id]) {
 			previewWrap.classList.remove('hidden')
-			if (imgEl) imgEl.src = albumImages[id]
-		} else {
+			if (imgEl)
+imgEl.src = albumImages[id]
+		}
+ else {
 			previewWrap.classList.add('hidden')
 		}
 	}

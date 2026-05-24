@@ -6,16 +6,19 @@ import Search from './search.astro'
 
 const { pathname } = Astro.url
 
-const normalize = (p: string) => {
-  if (!p.startsWith('/')) p = '/' + p
-  if (!p.endsWith('/')) p += '/'
+function normalize(p: string) {
+  if (!p.startsWith('/'))
+p = `/${p}`
+  if (!p.endsWith('/'))
+p += '/'
   return p
 }
 
 const isActive = (url: string) => normalize(pathname) === normalize(url)
 
-const dedupeByUrl = <T extends { url: string }>(arr: T[]) =>
-  Array.from(new Map(arr.map(i => [i.url, i])).values())
+function dedupeByUrl<T extends { url: string }>(arr: T[]) {
+  return Array.from(new Map(arr.map(i => [i.url, i])).values())
+}
 
 const internal = dedupeByUrl(HEADER.internal ?? [])
 const external = dedupeByUrl(HEADER.external ?? [])
@@ -30,9 +33,9 @@ const external = dedupeByUrl(HEADER.external ?? [])
   <div class="flex flex-row justify-between items-center">
     <div class="flex items-center gap-4">
       <a
-        class="font-semibold text-xl md:text-2xl lg:text-3xl text-highlight"
-        href="/"
-        aria-label={`${SITE.title} - Back to home`}
+	class="font-semibold text-xl md:text-2xl lg:text-3xl text-highlight"
+	href="/"
+	aria-label={`${SITE.title} - Back to home`}
       >
         {SITE.title}
       </a>
@@ -50,13 +53,13 @@ const external = dedupeByUrl(HEADER.external ?? [])
   <!-- ✅ 하단: Blog / Write nav -->
   <div class="flex flex-row justify-between items-center border-b border-border pb-4 text-lg md:text-xl">
   <nav aria-label="Primary navigation" class="flex gap-4">
-    {internal.map(link => {
+    {internal.map((link) => {
       const normalized = normalize(link.url)
       return (
         <Link
-          href={normalized}
-          class={isActive(normalized) ? 'active' : undefined}
-          aria-current={isActive(normalized) ? 'page' : undefined}
+	href={normalized}
+	class={isActive(normalized) ? 'active' : undefined}
+	aria-current={isActive(normalized) ? 'page' : undefined}
         >
           {link.title}
         </Link>

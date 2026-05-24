@@ -16,7 +16,8 @@ export async function fetchCategories() {
 	const res = await fetch(`${API_BASE_URL}/api/categories`, {
 		cache: 'no-store',
 	})
-	if (!res.ok) throw new Error('HTTP ' + res.status)
+	if (!res.ok)
+throw new Error(`HTTP ${res.status}`)
 	const json = await res.json()
 	return (json?.items || json?.categories || []) as any[]
 }
@@ -27,14 +28,16 @@ export async function createCategory(name: string) {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ name }),
 	})
-	if (!res.ok) throw new Error('HTTP ' + res.status)
+	if (!res.ok)
+throw new Error(`HTTP ${res.status}`)
 	return res.json()
 }
 
 export async function savePost(payload: PostPayload) {
 	const token = localStorage.getItem('access_token')
 	const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-	if (token) headers['Authorization'] = `Bearer ${token}`
+	if (token)
+headers.Authorization = `Bearer ${token}`
 
 	const res = await fetch(`${API_BASE_URL}/api/posts`, {
 		method: 'POST',

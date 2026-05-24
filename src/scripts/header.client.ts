@@ -1,5 +1,5 @@
 // src/scripts/header.client.ts
-import { isLoggedIn, goLogin, logout } from '../lib/auth.ts'
+import { goLogin, isLoggedIn, logout } from '../lib/auth.ts'
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null
 const loginBtn = $('#login-btn')
@@ -12,7 +12,8 @@ function syncAuthUI() {
 		loginBtn?.classList.add('hidden')
 		logoutBtn?.classList.remove('hidden')
 		writeLink?.classList.remove('hidden')
-	} else {
+	}
+ else {
 		loginBtn?.classList.remove('hidden')
 		logoutBtn?.classList.add('hidden')
 		writeLink?.classList.add('hidden')

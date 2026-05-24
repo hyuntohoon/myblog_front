@@ -12,7 +12,7 @@ const { title: _title, type } = Astro.props
 const capitalizedType = capitalize(type)
 const title = _title === '' ? capitalizedType : _title
 
-const styleVariants: Record<AsideType, { bg: string; accent: string; border: string }> = {
+const styleVariants: Record<AsideType, { bg: string, accent: string, border: string }> = {
 	note: {
 		bg: 'bg-blue-100 dark:bg-blue-900/50',
 		accent: 'text-blue-600 dark:text-blue-300',

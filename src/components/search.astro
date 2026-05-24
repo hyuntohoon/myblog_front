@@ -11,7 +11,8 @@ import { trailingSlash } from 'astro:config/client'
 import Icon from './icon.astro'
 
 const dataAttributes: DOMStringMap = {}
-if (trailingSlash === 'never') dataAttributes['data-strip-trailing-slash'] = ''
+if (trailingSlash === 'never')
+dataAttributes['data-strip-trailing-slash'] = ''
 ---
 
 <site-search class="contents" {...dataAttributes}>
@@ -57,7 +58,8 @@ if (trailingSlash === 'never') dataAttributes['data-strip-trailing-slash'] = ''
 	;(() => {
 		const openBtn = document.querySelector('button[data-open-modal]')
 		const shortcut = openBtn?.querySelector('kbd')
-		if (!openBtn || !(shortcut instanceof HTMLElement)) return
+		if (!openBtn || !(shortcut instanceof HTMLElement))
+return
 		const platformKey = shortcut.querySelector('kbd')
 		if (platformKey && /Mac|iPhone|iPod|iPad/i.test(navigator.platform)) {
 			platformKey.textContent = '⌘'
@@ -116,7 +118,7 @@ if (trailingSlash === 'never') dataAttributes['data-strip-trailing-slash'] = ''
 			const formatURL = shouldStrip ? stripTrailingSlash : (path: string) => path
 
 			window.addEventListener('DOMContentLoaded', () => {
-				const onIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1))
+				const onIdle = window.requestIdleCallback || (cb => setTimeout(cb, 1))
 				onIdle(async () => {
 					// @ts-expect-error — Missing types for @pagefind/default-ui package.
 					const { PagefindUI } = await import('@pagefind/default-ui')
@@ -128,7 +130,7 @@ if (trailingSlash === 'never') dataAttributes['data-strip-trailing-slash'] = ''
 						showImages: false,
 						showSubResults: true,
 						resetStyles: false,
-						processResult: (result: { url: string; sub_results: Array<{ url: string }> }) => {
+						processResult: (result: { url: string, sub_results: Array<{ url: string }> }) => {
 							result.url = formatURL(result.url)
 							result.sub_results = result.sub_results.map((sub_result) => {
 								sub_result.url = formatURL(sub_result.url)

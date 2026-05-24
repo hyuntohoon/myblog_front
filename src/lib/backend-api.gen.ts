@@ -4,367 +4,367 @@
  */
 
 export interface paths {
-    "/api/categories": {
+    '/api/categories': {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
         /** List Categories */
-        get: operations["list_categories_api_categories_get"];
-        put?: never;
+        get: operations['list_categories_api_categories_get']
+        put?: never
         /** Add Category */
-        post: operations["add_category_api_categories_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/posts": {
+        post: operations['add_category_api_categories_post']
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
+    '/api/posts': {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        get?: never
+        put?: never
         /** Create Post */
-        post: operations["create_post_api_posts_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/metrics/batch": {
+        post: operations['create_post_api_posts_post']
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
+    '/api/metrics/batch': {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        get?: never
+        put?: never
         /** Batch Metrics */
-        post: operations["batch_metrics_api_metrics_batch_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/health": {
+        post: operations['batch_metrics_api_metrics_batch_post']
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
+    '/health': {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
         /** Health */
-        get: operations["health_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/db/ping": {
+        get: operations['health_health_get']
+        put?: never
+        post?: never
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
+    '/api/db/ping': {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
         /** Ping */
-        get: operations["ping_api_db_ping_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
+        get: operations['ping_api_db_ping_get']
+        put?: never
+        post?: never
+        delete?: never
+        options?: never
+        head?: never
+        patch?: never
+        trace?: never
+    }
 }
-export type webhooks = Record<string, never>;
+export type webhooks = Record<string, never>
 export interface components {
     schemas: {
         /** AddCategoryRequest */
         AddCategoryRequest: {
             /** Name */
-            name: string;
-        };
+            name: string
+        }
         /** CategoryListResponse */
         CategoryListResponse: {
             /** Categories */
-            categories: string[];
-        };
+            categories: string[]
+        }
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
+            detail?: components['schemas']['ValidationError'][]
+        }
         /** MetricsBatchRequest */
         MetricsBatchRequest: {
             /** Slugs */
-            slugs: string[];
-        };
+            slugs: string[]
+        }
         /** MetricsBatchResponse */
         MetricsBatchResponse: {
             /** Data */
             data: {
-                [key: string]: components["schemas"]["PostMetrics"];
-            };
-        };
+                [key: string]: components['schemas']['PostMetrics']
+            }
+        }
         /** PostMetrics */
         PostMetrics: {
             /** Likes */
-            likes: number;
+            likes: number
             /** Comments */
-            comments: number;
-        };
+            comments: number
+        }
         /** RecommendedTrackInput */
         RecommendedTrackInput: {
             /** Album Id */
-            album_id: string;
+            album_id: string
             /** Track Id */
-            track_id: string;
+            track_id: string
             /** Position */
-            position?: number | null;
+            position?: number | null
             /** Note */
-            note?: string | null;
-        };
+            note?: string | null
+        }
         /** ValidationError */
         ValidationError: {
             /** Location */
-            loc: (string | number)[];
+            loc: (string | number)[]
             /** Message */
-            msg: string;
+            msg: string
             /** Error Type */
-            type: string;
-        };
+            type: string
+        }
         /** WritePostRequest */
         WritePostRequest: {
             /** Title */
-            title: string;
+            title: string
             /** Body Mdx */
-            body_mdx?: string | null;
+            body_mdx?: string | null
             /**
              * Description
              * @default
              */
-            description: string;
+            description: string
             /**
              * Posted Date
              * Format: date
              */
-            posted_date?: string;
+            posted_date?: string
             /**
              * Status
              * @default published
              * @enum {string}
              */
-            status: "draft" | "published" | "archived";
+            status: 'draft' | 'published' | 'archived'
             /** Category */
-            category?: string | null;
+            category?: string | null
             /** Search Index */
-            search_index?: boolean | null;
+            search_index?: boolean | null
             /** Album Ids */
-            album_ids?: string[];
+            album_ids?: string[]
             /** Artist Ids */
-            artist_ids?: string[];
+            artist_ids?: string[]
             /** Rating */
-            rating?: number | null;
+            rating?: number | null
             /**
              * Rating Scale
              * @default 5
              */
-            rating_scale: number;
+            rating_scale: number
             /** Album Classics */
             album_classics?: {
-                [key: string]: boolean;
-            };
+                [key: string]: boolean
+            }
             /** Recommended Tracks */
-            recommended_tracks?: components["schemas"]["RecommendedTrackInput"][];
-        };
+            recommended_tracks?: components['schemas']['RecommendedTrackInput'][]
+        }
         /** WritePostResponse */
         WritePostResponse: {
             /** Id */
-            id: string;
+            id: string
             /** Slug */
-            slug: string;
-        };
-    };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+            slug: string
+        }
+    }
+    responses: never
+    parameters: never
+    requestBodies: never
+    headers: never
+    pathItems: never
 }
-export type $defs = Record<string, never>;
+export type $defs = Record<string, never>
 export interface operations {
     list_categories_api_categories_get: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        requestBody?: never
         responses: {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": components["schemas"]["CategoryListResponse"];
-                };
-            };
-        };
-    };
+                    'application/json': components['schemas']['CategoryListResponse']
+                }
+            }
+        }
+    }
     add_category_api_categories_post: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AddCategoryRequest"];
-            };
-        };
+                'application/json': components['schemas']['AddCategoryRequest']
+            }
+        }
         responses: {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": unknown;
-                };
-            };
+                    'application/json': unknown
+                }
+            }
             /** @description Validation Error */
             422: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
+                    'application/json': components['schemas']['HTTPValidationError']
+                }
+            }
+        }
+    }
     create_post_api_posts_post: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WritePostRequest"];
-            };
-        };
+                'application/json': components['schemas']['WritePostRequest']
+            }
+        }
         responses: {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": components["schemas"]["WritePostResponse"];
-                };
-            };
+                    'application/json': components['schemas']['WritePostResponse']
+                }
+            }
             /** @description Validation Error */
             422: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
+                    'application/json': components['schemas']['HTTPValidationError']
+                }
+            }
+        }
+    }
     batch_metrics_api_metrics_batch_post: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MetricsBatchRequest"];
-            };
-        };
+                'application/json': components['schemas']['MetricsBatchRequest']
+            }
+        }
         responses: {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": components["schemas"]["MetricsBatchResponse"];
-                };
-            };
+                    'application/json': components['schemas']['MetricsBatchResponse']
+                }
+            }
             /** @description Validation Error */
             422: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
+                    'application/json': components['schemas']['HTTPValidationError']
+                }
+            }
+        }
+    }
     health_health_get: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        requestBody?: never
         responses: {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
+                    'application/json': unknown
+                }
+            }
+        }
+    }
     ping_api_db_ping_get: {
         parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
+            query?: never
+            header?: never
+            path?: never
+            cookie?: never
+        }
+        requestBody?: never
         responses: {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
-                };
+                    [name: string]: unknown
+                }
                 content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
+                    'application/json': unknown
+                }
+            }
+        }
+    }
 }

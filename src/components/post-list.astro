@@ -22,25 +22,25 @@ const { posts } = Astro.props
       <div class="flex items-center gap-4 py-4 md:py-5">
         {/* 썸네일 */}
         <Link
-          href={`/blog/${post.slug}/`}
-          class="flex-shrink-0"
-          title={post.title}
+	href={`/blog/${post.slug}/`}
+	class="flex-shrink-0"
+	title={post.title}
         >
           <img
-            src={cover}
-            alt={post.title}
-            loading="lazy"
-            class="w-20 h-20 md:w-24 md:h-24 rounded-md object-cover bg-gray-200"
+	src={cover}
+	alt={post.title}
+	loading="lazy"
+	class="w-20 h-20 md:w-24 md:h-24 rounded-md object-cover bg-gray-200"
           />
         </Link>
 
         {/* 제목 + 메타 */}
         <div class="flex-1 min-w-0">
           <Link
-            href={`/blog/${post.slug}/`}
-            variant="highlight"
-            class="block font-medium text-base md:text-lg line-clamp-2"
-            title={post.title}
+	href={`/blog/${post.slug}/`}
+	variant="highlight"
+	class="block font-medium text-base md:text-lg line-clamp-2"
+	title={post.title}
           >
             {post.title}
           </Link>
@@ -48,8 +48,8 @@ const { posts } = Astro.props
           <div class="mt-1 flex flex-wrap items-center gap-3 text-xs text-faded">
             {post.category && (
               <Link
-                href={`/blog/category/${encodeURIComponent(post.category)}/`}
-                class="font-mono px-1.5 py-0.5 rounded border border-border hover:text-highlight"
+	href={`/blog/category/${encodeURIComponent(post.category)}/`}
+	class="font-mono px-1.5 py-0.5 rounded border border-border hover:text-highlight"
               >
                 [{post.category}]
               </Link>

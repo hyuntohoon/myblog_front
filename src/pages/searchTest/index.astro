@@ -19,25 +19,25 @@ import SearchBar from '@components/search-bar.astro'
       <div class="flex flex-col gap-1">
         <div class="flex items-center gap-3">
           <input
-            type="text"
-            id="title"
-            name="title"
-            class="flex-1 border border-gray-300 px-3 py-2 rounded text-base"
-            placeholder="제목 (예: [앨범명] 간단 평점)"
-            required
+	type="text"
+	id="title"
+	name="title"
+	class="flex-1 border border-gray-300 px-3 py-2 rounded text-base"
+	placeholder="제목 (예: [앨범명] 간단 평점)"
+	required
           />
           <div class="flex items-center gap-2">
             <select
-              name="category"
-              id="category"
-              class="border border-gray-300 px-3 py-2 rounded text-base w-32 md:w-40"
+	name="category"
+	id="category"
+	class="border border-gray-300 px-3 py-2 rounded text-base w-32 md:w-40"
             >
               <option disabled selected>Loading...</option>
             </select>
             <button
-              type="button"
-              id="add-category"
-              class="border border-dashed border-gray-400 px-3 py-2 rounded text-base hover:bg-muted"
+	type="button"
+	id="add-category"
+	class="border border-dashed border-gray-400 px-3 py-2 rounded text-base hover:bg-muted"
             >
               +
             </button>
@@ -50,8 +50,8 @@ import SearchBar from '@components/search-bar.astro'
 
       {/* 음악 검색 + 앨범 선택 */}
       <section
-        id="album-search-section"
-        class="mt-2 border border-gray-200 rounded px-3 py-3 space-y-3"
+	id="album-search-section"
+	class="mt-2 border border-gray-200 rounded px-3 py-3 space-y-3"
       >
         <div class="flex items-center justify-between gap-2">
           <h2 class="text-sm font-semibold text-gray-700">
@@ -67,22 +67,22 @@ import SearchBar from '@components/search-bar.astro'
 
         {/* ✅ 평점 입력: 0–5, 0.5 step */}
         <div
-          id="rating-section"
-          class="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-700"
+	id="rating-section"
+	class="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-700"
         >
           <label for="rating" class="shrink-0 font-medium">
             평점
           </label>
           <input
-            type="number"
-            id="rating"
-            name="rating"
-            min="0"
-            max="5"
-            step="0.5"
-            class="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
-            placeholder="0–5"
-            required
+	type="number"
+	id="rating"
+	name="rating"
+	min="0"
+	max="5"
+	step="0.5"
+	class="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
+	placeholder="0–5"
+	required
           />
           <span class="text-xs text-gray-400">0–5 (0.5 단위)</span>
           <div id="rating-stars" class="ml-2 flex text-amber-400 text-xs"></div>
@@ -104,9 +104,9 @@ import SearchBar from '@components/search-bar.astro'
             본문 (선택)
           </span>
           <button
-            type="button"
-            id="toggle-editor"
-            class="text-xs text-gray-500 underline underline-offset-2 hover:text-gray-700"
+	type="button"
+	id="toggle-editor"
+	class="text-xs text-gray-500 underline underline-offset-2 hover:text-gray-700"
           >
             에디터 열기
           </button>
@@ -124,9 +124,9 @@ import SearchBar from '@components/search-bar.astro'
       {/* 제출 */}
       <div class="flex items-center gap-3">
         <button
-          id="submit-btn"
-          type="submit"
-          class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80 text-sm"
+	id="submit-btn"
+	type="submit"
+	class="bg-highlight text-white px-4 py-2 rounded hover:bg-opacity-80 text-sm"
         >
           Save
         </button>
@@ -157,20 +157,21 @@ import SearchBar from '@components/search-bar.astro'
     }
 
     // 평점 입력 간단 체크 (0–5)
-    const ratingInput = document.getElementById('rating')
+    const ratingInput = document.getElementById('rating') as HTMLInputElement | null
     const ratingError = document.getElementById('ratingError')
     const form = document.getElementById('rating-write-form')
 
     if (form && ratingInput && ratingError) {
       form.addEventListener('submit', (e) => {
-        const value = parseFloat(ratingInput.value)
+        const value = Number.parseFloat(ratingInput.value)
         if (Number.isNaN(value) || value < 0 || value > 5) {
           e.preventDefault()
           ratingError.classList.remove('hidden')
-        } else {
+        }
+ else {
           ratingError.classList.add('hidden')
         }
       })
     }
-  </script>
+ </script>
 </Layout>

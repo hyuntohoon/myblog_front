@@ -3,7 +3,7 @@ import type { CardItem } from '../types/search'
 
 export function makeCard(
 	it: CardItem,
-	onClick: (it: CardItem) => void | Promise<void>
+	onClick: (it: CardItem) => void | Promise<void>,
 ): HTMLDivElement {
 	const card = document.createElement('div')
 	card.className = 'card'
@@ -36,13 +36,17 @@ export function makeCard(
 		// 앨범이면 아티스트 이름 우선
 		sub.textContent =
 			it.artist_name || (it.source === 'spotify' ? 'Album (Spotify)' : 'Album')
-	} else if (it.type === 'track') {
+	}
+ else if (it.type === 'track') {
 		let txt = ''
-		if (it.artist_name) txt += it.artist_name
-		if (it.album_title) txt += (txt ? ' • ' : '') + it.album_title
+		if (it.artist_name)
+txt += it.artist_name
+		if (it.album_title)
+txt += (txt ? ' • ' : '') + it.album_title
 		sub.textContent =
 			txt || (it.source === 'spotify' ? 'Track (Spotify)' : 'Track')
-	} else {
+	}
+ else {
 		// artist
 		sub.textContent = it.source === 'spotify' ? 'Artist (Spotify)' : 'Artist'
 	}
