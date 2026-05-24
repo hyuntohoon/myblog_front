@@ -234,10 +234,11 @@ async function onFormSubmit(e: SubmitEvent) {
 		artist_ids,
 		album_cover_url: selectedAlbum?.coverUrl ?? null,
 		rating: ratingValue,
+		rating_scale: 5,
 	}
 
 	if (!payload.title) return showToast('제목을 입력하세요.')
-	if (payload.body_mdx.trim().length < 5)
+	if ((payload.body_mdx ?? '').trim().length < 5)
 		return showToast('본문이 너무 짧아요.')
 
 	submitBtn.disabled = true
@@ -269,7 +270,7 @@ async function onFormSubmit(e: SubmitEvent) {
 		// 2) GitHub MDX 발행
 		const pubRes = await publishToGit({
 			title: payload.title,
-			body_mdx: payload.body_mdx,
+			body_mdx: payload.body_mdx ?? '',
 			slug: saved.slug,
 			categoryName: categoryNameText,
 			description: payload.description,
