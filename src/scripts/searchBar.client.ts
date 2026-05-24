@@ -2,18 +2,19 @@
 import type { CardItem } from '../scripts/types/search.ts'
 import { makeCard } from './components/makeCard.ts'
 
+import { PUBLIC_API_URL } from 'astro:env/client'
+
 type Mode = 'none' | 'artist' | 'album'
 type View = 'db' | 'spotify'
-
-import { PUBLIC_API_URL } from 'astro:env/client'
 const API_BASE = PUBLIC_API_URL
 
 // --------------------------------------------------
 // DOM
 // --------------------------------------------------
-const byId = <T extends HTMLElement>(id: string): T => {
+function byId<T extends HTMLElement>(id: string): T {
 	const el = document.getElementById(id)
-	if (!el) throw new Error(`#${id} not found`)
+	if (!el)
+throw new Error(`#${id} not found`)
 	return el as T
 }
 
@@ -39,33 +40,34 @@ const artistAlbumsTitle = byId<HTMLDivElement>('dbArtistAlbumsTitle')
 // --------------------------------------------------
 // State
 // --------------------------------------------------
-let view: View = 'db'
+let _view: View = 'db'
 
 // --------------------------------------------------
 // Helpers
 // --------------------------------------------------
 const getMode = (): Mode => (bar.getAttribute('data-mode') as Mode) ?? 'none'
 
-const setStatus = (msg: string) => {
+function setStatus(msg: string) {
 	statusEl.textContent = msg
 }
 
-const setView = (v: View) => {
-	view = v
+function setView(v: View) {
+	_view = v
 	backBtn.hidden = v !== 'spotify'
 }
 
-const getJSON = async <T = any>(url: string): Promise<T> => {
+async function getJSON<T = any>(url: string): Promise<T> {
 	const res = await fetch(url)
-	if (!res.ok) throw new Error(`HTTP ${res.status}`)
+	if (!res.ok)
+throw new Error(`HTTP ${res.status}`)
 	return res.json()
 }
 
 // --------------------------------------------------
 // Mappers
 // --------------------------------------------------
-const mapDBArtists = (data: any): CardItem[] =>
-	(data.items || []).map((a: any) => ({
+function mapDBArtists(data: any): CardItem[] {
+  return (data.items || []).map((a: any) => ({
 		id: a.id,
 		type: 'artist',
 		title: a.name,
@@ -73,9 +75,10 @@ const mapDBArtists = (data: any): CardItem[] =>
 		source: 'db',
 		spotify_id: a.spotify_id ?? null,
 	}))
+}
 
-const mapDBAlbums = (data: any): CardItem[] =>
-	(data.items || []).map((al: any) => ({
+function mapDBAlbums(data: any): CardItem[] {
+  return (data.items || []).map((al: any) => ({
 		id: al.id,
 		type: 'album',
 		title: al.title,
@@ -86,10 +89,11 @@ const mapDBAlbums = (data: any): CardItem[] =>
 		artist_name: al.artist_name ?? null,
 		artist_spotify_id: al.artist_spotify_id ?? null,
 	}))
+}
 
 // ✅ 후보(Spotify) 앨범만 매핑 (write 화면에서 앨범 선택에 집중)
-const mapCandAlbums = (cand: any): CardItem[] =>
-	(cand.albums || []).map((a: any) => ({
+function mapCandAlbums(cand: any): CardItem[] {
+  return (cand.albums || []).map((a: any) => ({
 		id: a.spotify_id,
 		type: 'album',
 		title: a.title,
@@ -104,30 +108,31 @@ const mapCandAlbums = (cand: any): CardItem[] =>
 		// ✅ 백엔드에서 내려주면 사용 (없어도 동작)
 		// db_album_id: a.db_album_id ?? null,
 	}))
+}
 
 // --------------------------------------------------
 // UI
 // --------------------------------------------------
-const setMode = (mode: Mode) => {
+function setMode(mode: Mode) {
 	bar.setAttribute('data-mode', mode)
 	bar.classList.remove('theme-none', 'theme-artist', 'theme-album')
 	bar.classList.add(
-		mode === 'artist'
-			? 'theme-artist'
-			: mode === 'album'
-				? 'theme-album'
-				: 'theme-none'
+		mode === 'artist' ?
+			'theme-artist' :
+			mode === 'album' ?
+				'theme-album' :
+				'theme-none',
 	)
 
 	artistBtn.setAttribute('aria-pressed', String(mode === 'artist'))
 	albumBtn.setAttribute('aria-pressed', String(mode === 'album'))
 
 	input.placeholder =
-		mode === 'artist'
-			? 'Search by artist name'
-			: mode === 'album'
-				? 'Search by album title'
-				: 'Select Artist or Album first'
+		mode === 'artist' ?
+			'Search by artist name' :
+			mode === 'album' ?
+				'Search by album title' :
+				'Select Artist or Album first'
 
 	// view는 기본적으로 DB로 복귀
 	setView('db')
@@ -142,15 +147,15 @@ const setMode = (mode: Mode) => {
 	artistAlbumsWrap.hidden = true
 }
 
-const renderResults = (items: CardItem[]) => {
+function renderResults(items: CardItem[]) {
 	resultsRow.innerHTML = ''
-	items.forEach((it) => resultsRow.appendChild(makeCard(it, onSelect)))
+	items.forEach(it => resultsRow.appendChild(makeCard(it, onSelect)))
 	resultsWrap.hidden = items.length === 0
 }
 
-const renderArtistAlbums = (albums: CardItem[], artistName: string) => {
+function renderArtistAlbums(albums: CardItem[], artistName: string) {
 	artistAlbumsRow.innerHTML = ''
-	albums.forEach((al) => artistAlbumsRow.appendChild(makeCard(al, onSelect)))
+	albums.forEach(al => artistAlbumsRow.appendChild(makeCard(al, onSelect)))
 	artistAlbumsTitle.textContent = `Albums by ${artistName}`
 	artistAlbumsWrap.hidden = albums.length === 0
 }
@@ -158,18 +163,18 @@ const renderArtistAlbums = (albums: CardItem[], artistName: string) => {
 // --------------------------------------------------
 // Select Action
 // --------------------------------------------------
-const fetchAlbumDetailBySpotifyId = async (spotifyAlbumId: string) => {
+async function fetchAlbumDetailBySpotifyId(spotifyAlbumId: string) {
 	// ✅ DB-only 정책: by-spotify 엔드포인트는 "DB에서 spotify_id로 조회" 용도
 	const url = `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(spotifyAlbumId)}`
 	return getJSON(url)
 }
 
-const onSelect = async (it: CardItem) => {
+async function onSelect(it: CardItem) {
 	try {
 		// Artist(DB) → show albums
 		if (it.type === 'artist' && it.source === 'db') {
 			const data = await getJSON(
-				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
+				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`,
 			)
 			const albums = mapDBAlbums(data)
 			renderArtistAlbums(albums, it.title)
@@ -179,7 +184,7 @@ const onSelect = async (it: CardItem) => {
 		// Album(DB) → show detail view (dispatch)
 		if (it.type === 'album' && it.source === 'db') {
 			const detail = await getJSON(
-				`${API_BASE}/api/music/albums/${encodeURIComponent(it.id)}`
+				`${API_BASE}/api/music/albums/${encodeURIComponent(it.id)}`,
 			)
 
 			window.dispatchEvent(new CustomEvent('album:detail', { detail }))
@@ -198,7 +203,7 @@ const onSelect = async (it: CardItem) => {
 		// ✅ Album(Spotify 후보) → DB-only 상세 시도
 		if (it.type === 'album' && it.source === 'spotify' && it.spotify_id) {
 			setStatus(
-				'⏳ 동기화 중… DB에 반영되면 상세가 열립니다. 잠시 후 다시 클릭하세요.'
+				'⏳ 동기화 중… DB에 반영되면 상세가 열립니다. 잠시 후 다시 클릭하세요.',
 			)
 
 			try {
@@ -213,17 +218,17 @@ const onSelect = async (it: CardItem) => {
 				resultsWrap.hidden = true
 				artistAlbumsRow.innerHTML = ''
 				artistAlbumsWrap.hidden = true
-				return
-			} catch (err) {
+			}
+ catch (err) {
 				// 아직 DB에 없으면(404 등) 안내만
 				console.error('by-spotify detail failed:', err)
 				setStatus(
-					'⏳ 아직 DB에 반영되지 않았습니다. 잠시 후 다시 시도하거나, DB로 돌아가 재검색하세요.'
+					'⏳ 아직 DB에 반영되지 않았습니다. 잠시 후 다시 시도하거나, DB로 돌아가 재검색하세요.',
 				)
-				return
 			}
 		}
-	} catch (err) {
+	}
+ catch (err) {
 		console.error('Select failed:', err)
 	}
 }
@@ -231,10 +236,11 @@ const onSelect = async (it: CardItem) => {
 // --------------------------------------------------
 // Search Action (DB-only)
 // --------------------------------------------------
-const runSearch = async () => {
+async function runSearch() {
 	const mode = getMode()
 	const q = input.value.trim()
-	if (!q || (mode !== 'artist' && mode !== 'album')) return
+	if (!q || (mode !== 'artist' && mode !== 'album'))
+return
 
 	// clear secondary section
 	artistAlbumsRow.innerHTML = ''
@@ -246,16 +252,18 @@ const runSearch = async () => {
 	try {
 		if (mode === 'artist') {
 			const data = await getJSON(
-				`${API_BASE}/api/music/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`
+				`${API_BASE}/api/music/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`,
 			)
 			renderResults(mapDBArtists(data))
-		} else {
+		}
+ else {
 			const data = await getJSON(
-				`${API_BASE}/api/music/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`
+				`${API_BASE}/api/music/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`,
 			)
 			renderResults(mapDBAlbums(data))
 		}
-	} catch (err) {
+	}
+ catch (err) {
 		console.error('DB search failed:', err)
 		setStatus('❌ DB 검색 실패')
 	}
@@ -264,10 +272,11 @@ const runSearch = async () => {
 // --------------------------------------------------
 // Sync Action (Spotify candidates + enqueue)
 // --------------------------------------------------
-const runSync = async () => {
+async function runSync() {
 	const mode = getMode()
 	const q = input.value.trim()
-	if (!q || (mode !== 'artist' && mode !== 'album')) return
+	if (!q || (mode !== 'artist' && mode !== 'album'))
+return
 
 	// 최소 연타 방지(3초)
 	syncBtn.disabled = true
@@ -305,10 +314,12 @@ const runSync = async () => {
 
 		if (!items.length) {
 			setStatus('⚠️ 후보가 없습니다. 검색어를 바꿔보세요.')
-		} else {
+		}
+ else {
 			setStatus('✅ Spotify 후보를 표시 중입니다. (상세는 DB 반영 후 가능)')
 		}
-	} catch (err) {
+	}
+ catch (err) {
 		console.error('Spotify candidates failed:', err)
 		setStatus('❌ Spotify 후보 검색 실패')
 		setView('db')
@@ -331,7 +342,8 @@ albumBtn.addEventListener('click', () => {
 submitBtn.addEventListener('click', () => void runSearch())
 
 input.addEventListener('keydown', (e: KeyboardEvent) => {
-	if (e.key === 'Enter') void runSearch()
+	if (e.key === 'Enter')
+void runSearch()
 })
 
 // ✅ 동기화 버튼

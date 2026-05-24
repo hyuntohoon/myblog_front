@@ -19,7 +19,7 @@ export const prerender = true
 
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
-  return entries.map((e) => ({
+  return entries.map(e => ({
     params: { slug: e.data.slug },
     props: { entry: e },
   }))
@@ -35,8 +35,8 @@ const posts = allPosts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueO
 
 <Layout>
   <Seo slot="seo" forceTitle={post.title} description={post.description} image={post.image}>
-    <meta name="twitter:label1" value="Author" />
-    <meta name="twitter:data1" data-pagefind-meta="author" value={SITE.defaultAuthor} />
+    <meta name="twitter:label1" content="Author" />
+    <meta name="twitter:data1" data-pagefind-meta="author" content={SITE.defaultAuthor} />
     <meta name="article:published_time" data-pagefind-meta="published_time" content={isoDateFormat(post.date)} />
     <meta name="article:modified_time" data-pagefind-meta="modified_time" content={isoDateFormat(post.lastUpdated)} />
     <meta name="article:section" content={post.category} />
@@ -48,10 +48,10 @@ const posts = allPosts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueO
       <h1 class="mb-0!" data-pagefind-meta="title">{post.title}</h1>
 
       <section
-        id="music-section"
-        class="mt-4 border-t border-gray-200 pt-0"
-        data-album-ids={JSON.stringify(post.albumIds ?? [])}
-        data-artist-ids={JSON.stringify(post.artistIds ?? [])}
+	id="music-section"
+	class="mt-4 border-t border-gray-200 pt-0"
+	data-album-ids={JSON.stringify(post.albumIds ?? [])}
+	data-artist-ids={JSON.stringify(post.artistIds ?? [])}
       >
         <div id="albumDetail"></div>
       </section>

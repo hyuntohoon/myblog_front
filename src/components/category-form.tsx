@@ -10,11 +10,12 @@ export default function CategoryForm() {
 		setSaving(true)
 		const res = await addCategory(name)
 		setSaving(false)
-		if (res.ok) setName('')
+		if (res.ok)
+setName('')
 	}
 	return (
 		<form onSubmit={onSubmit}>
-			<input value={name} onChange={(e) => setName(e.target.value)} />
+			<input value={name} onChange={e => setName(e.target.value)} />
 			<button disabled={saving}>추가</button>
 		</form>
 	)

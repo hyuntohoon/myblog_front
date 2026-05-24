@@ -13,8 +13,9 @@ type Post = {
   data: { date: string | Date }
 }
 
-const byDateDesc = (a: Post, b: Post) =>
-  new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+function byDateDesc(a: Post, b: Post) {
+  return new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+}
 
 const allPosts = (await getCollection('blog')).sort(byDateDesc)
 
@@ -35,9 +36,11 @@ const basePath = isHome ? '/' : '/blog'
     <section class="max-w-4xl">
       <!-- 헤더 + 버튼 -->
       <div class="flex items-center justify-between mb-4">
-        {isHome ? (
+        {isHome ?
+(
           <h2 class="text-base font-semibold">Recent Posts</h2>
-        ) : (
+        ) :
+(
           <h1 class="text-lg font-semibold">Blog</h1>
         )}
 
@@ -59,27 +62,31 @@ const basePath = isHome ? '/' : '/blog'
 
       <!-- 페이지네이션 -->
       <div class="mt-6 flex items-center justify-between text-sm text-faded">
-        {currentPage > 1 ? (
+        {currentPage > 1 ?
+(
           <Link
-            href={currentPage === 2 ? basePath : `${basePath}?page=${currentPage - 1}`}
-            class="hover:text-highlight"
+	href={currentPage === 2 ? basePath : `${basePath}?page=${currentPage - 1}`}
+	class="hover:text-highlight"
           >
             ← Prev
           </Link>
-        ) : (
+        ) :
+(
           <span class="opacity-40">← Prev</span>
         )}
 
         <span>Page {currentPage} / {totalPages}</span>
 
-        {currentPage < totalPages ? (
+        {currentPage < totalPages ?
+(
           <Link
-            href={`${basePath}?page=${currentPage + 1}`}
-            class="hover:text-highlight"
+	href={`${basePath}?page=${currentPage + 1}`}
+	class="hover:text-highlight"
           >
             Next →
           </Link>
-        ) : (
+        ) :
+(
           <span class="opacity-40">Next →</span>
         )}
       </div>
@@ -88,32 +95,33 @@ const basePath = isHome ? '/' : '/blog'
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const listBtn = document.getElementById('listViewBtn');
-      const gridBtn = document.getElementById('gridViewBtn');
-      const listView = document.getElementById('list-view');
-      const gridView = document.getElementById('grid-view');
+      const listBtn = document.getElementById('listViewBtn')
+  const gridBtn = document.getElementById('gridViewBtn')
+  const listView = document.getElementById('list-view')
+  const gridView = document.getElementById('grid-view')
 
-      if (!listBtn || !gridBtn || !listView || !gridView) return;
+  if (!listBtn || !gridBtn || !listView || !gridView)
+return
 
       const setView = (view: 'list' | 'grid') => {
-        const isList = view === 'list';
-        listView.classList.toggle('hidden', !isList);
-        gridView.classList.toggle('hidden', isList);
+        const isList = view === 'list'
+    listView.classList.toggle('hidden', !isList)
+    gridView.classList.toggle('hidden', isList)
 
-        listBtn.classList.toggle('bg-gray-900', isList);
-        listBtn.classList.toggle('text-white', isList);
-        listBtn.classList.toggle('bg-white', !isList);
-        listBtn.classList.toggle('text-gray-700', !isList);
+    listBtn.classList.toggle('bg-gray-900', isList)
+    listBtn.classList.toggle('text-white', isList)
+    listBtn.classList.toggle('bg-white', !isList)
+    listBtn.classList.toggle('text-gray-700', !isList)
 
-        gridBtn.classList.toggle('bg-gray-900', !isList);
-        gridBtn.classList.toggle('text-white', !isList);
-        gridBtn.classList.toggle('bg-white', isList);
-        gridBtn.classList.toggle('text-gray-700', isList);
-      };
+    gridBtn.classList.toggle('bg-gray-900', !isList)
+    gridBtn.classList.toggle('text-white', !isList)
+    gridBtn.classList.toggle('bg-white', isList)
+    gridBtn.classList.toggle('text-gray-700', isList)
+  }
 
-      listBtn.addEventListener('click', () => setView('list'));
-      gridBtn.addEventListener('click', () => setView('grid'));
-      setView('list');
-    });
-  </script>
+      listBtn.addEventListener('click', () => setView('list'))
+  gridBtn.addEventListener('click', () => setView('grid'))
+  setView('list')
+})
+</script>
 </Layout>

@@ -24,7 +24,8 @@ const desc = description || siteDescription || ''
 
 // ✅ title 조합 수정 (문자열 템플릿 오동작 수정)
 let seoTitle = title ? `${title} | ${siteTitle}` : siteTitleDefault
-if (forceTitle) seoTitle = forceTitle
+if (forceTitle)
+seoTitle = forceTitle
 
 const seo = {
   title: seoTitle,
@@ -38,10 +39,10 @@ const seo = {
 <meta name="description" content={seo.description} />
 <meta name="image" content={seo.image} />
 <link
-  rel="alternate"
-  type="application/rss+xml"
-  title={SITE.titleDefault}
-  href={new URL('rss.xml', siteUrl)}
+	rel="alternate"
+	type="application/rss+xml"
+	title={SITE.titleDefault}
+	href={new URL('rss.xml', siteUrl)}
 />
 <link rel="canonical" href={seo.url} />
 

@@ -1,3 +1,4 @@
+import process from 'node:process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import * as p from '@clack/prompts'
 import isValidFilename from 'valid-filename'
@@ -91,7 +92,7 @@ async function main() {
 				tags: () =>
 					p.multiselect({
 						message: 'Tags',
-						options: TAGS_NAMES.map((tag) => ({
+						options: TAGS_NAMES.map(tag => ({
 							value: tag,
 							label: tag,
 						})),
@@ -103,7 +104,7 @@ async function main() {
 					p.cancel('See you later!')
 					process.exit(0)
 				},
-			}
+			},
 		)
 
 		const relativeFilePath = `content/blog/${blog.date}--${blog.slug}`
@@ -116,7 +117,7 @@ description: ${blog.description}
 date: ${blog.date}
 lastUpdated: ${blog.date}
 tags:
-${blog.tags.map((tag) => `  - ${tag}`).join('\n')}
+${blog.tags.map(tag => `  - ${tag}`).join('\n')}
 ---`
 
 		p.log.info(`A file will be created at ${relativeFilePath} with:
@@ -140,7 +141,7 @@ ${fileContent}`)
 		}
 	}
 
-	p.outro("You're all set!")
+	p.outro('You\'re all set!')
 }
 
 main().catch(console.error)

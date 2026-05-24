@@ -1,12 +1,12 @@
-type Artist = { id: string; name: string; spotify_id?: string | null }
-type Track = {
+interface Artist { id: string, name: string, spotify_id?: string | null }
+interface Track {
 	id: string
 	title: string
 	track_no: number | null
 	duration_sec: number | null
 	spotify_id?: string | null
 }
-type Album = {
+interface Album {
 	id: string
 	title: string
 	release_date?: string | null
@@ -14,7 +14,7 @@ type Album = {
 	album_type?: string | null
 	spotify_id?: string | null
 }
-type AlbumDetail = {
+interface AlbumDetail {
 	album: Album
 	artists: Artist[]
 	tracks: Track[]
@@ -30,9 +30,10 @@ type AlbumDetailPayload = AlbumDetail & {
 	selectable?: boolean
 }
 
-const $ = (id: string): HTMLElement => {
+function $(id: string): HTMLElement {
 	const el = document.getElementById(id)
-	if (!el) throw new Error(`#${id} not found`)
+	if (!el)
+throw new Error(`#${id} not found`)
 	return el
 }
 
@@ -40,25 +41,29 @@ const root = $('albumDetail')
 
 // ----------------- 공통 util -----------------
 
-const fmtDur = (s?: number | null) => {
-	if (!s && s !== 0) return '-'
+function fmtDur(s?: number | null) {
+	if (!s && s !== 0)
+return '-'
 	const m = Math.floor(s / 60)
 	const r = s % 60
 	return `${m}:${String(r).padStart(2, '0')}`
 }
 
-const escapeHtml = (s: string) =>
-	s
+function escapeHtml(s: string) {
+  return s
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&#39;')
+}
 
-const formatReleaseDate = (dateStr?: string | null): string => {
-	if (!dateStr) return ''
+function formatReleaseDate(dateStr?: string | null): string {
+	if (!dateStr)
+return ''
 	const t = Date.parse(dateStr)
-	if (isNaN(t)) return ''
+	if (Number.isNaN(t))
+return ''
 	// 2025.11.25
 	return new Date(t)
 		.toLocaleDateString('ko-KR', {
@@ -70,16 +75,19 @@ const formatReleaseDate = (dateStr?: string | null): string => {
 		.replace(/\.$/, '')
 }
 
-const getRating5 = (meta?: Record<string, any>): number | null => {
-	if (!meta || meta.rating == null) return null
+function getRating5(meta?: Record<string, any>): number | null {
+	if (!meta || meta.rating == null)
+return null
 	const raw = Number(meta.rating)
-	if (Number.isNaN(raw)) return null
+	if (Number.isNaN(raw))
+return null
 	const v = raw > 5 ? raw / 2 : raw
 	return Math.max(0, Math.min(5, v))
 }
 
-const buildRatingHtml = (rating5: number | null): string => {
-	if (rating5 == null) return ''
+function buildRatingHtml(rating5: number | null): string {
+	if (rating5 == null)
+return ''
 	const full = Math.floor(rating5)
 	const hasHalf = rating5 - full >= 0.5
 	const total = 5
@@ -97,11 +105,12 @@ const buildRatingHtml = (rating5: number | null): string => {
 	return `<div style="margin-top:4px; display:flex; gap:2px; align-items:center;">${stars}</div>`
 }
 
-const buildTrackListHtml = (tracks: Track[]): string => {
-	if (!tracks.length) return ''
+function buildTrackListHtml(tracks: Track[]): string {
+	if (!tracks.length)
+return ''
 	const items = tracks
 		.map(
-			(t) => `
+			t => `
       <li style="
         display:grid;
         grid-template-columns: 2ch 1fr 6ch;
@@ -115,7 +124,7 @@ const buildTrackListHtml = (tracks: Track[]): string => {
           ${fmtDur(t.duration_sec)}
         </span>
       </li>
-    `
+    `,
 		)
 		.join('')
 
@@ -133,7 +142,7 @@ let selectedAlbumId: string | null = null
 
 // ----------------- 마크업 빌더 -----------------
 
-const buildAlbumDetailHtml = (d: AlbumDetailPayload): string => {
+function buildAlbumDetailHtml(d: AlbumDetailPayload): string {
 	const a = d.album
 	const artists = d.artists || []
 	const tracks = d.tracks || []
@@ -143,10 +152,10 @@ const buildAlbumDetailHtml = (d: AlbumDetailPayload): string => {
 	const rating5 = getRating5(d.meta)
 	const ratingBlock = buildRatingHtml(rating5)
 
-	const artistText = artists.map((x) => x.name).join(', ')
+	const artistText = artists.map(x => x.name).join(', ')
 
-	const toggleButtonHtml = hasTracks
-		? `
+	const toggleButtonHtml = hasTracks ?
+		`
       <button
         id="toggleDetailBtn"
         aria-label="toggle tracks"
@@ -167,8 +176,8 @@ const buildAlbumDetailHtml = (d: AlbumDetailPayload): string => {
       >
         ▽
       </button>
-    `
-		: ''
+    ` :
+		''
 
 	const trackListHtml = hasTracks ? buildTrackListHtml(tracks) : ''
 
@@ -233,14 +242,15 @@ const buildAlbumDetailHtml = (d: AlbumDetailPayload): string => {
 
 // ----------------- 이벤트 바인딩 -----------------
 
-const bindSelectionHandler = (d: AlbumDetailPayload) => {
+function bindSelectionHandler(d: AlbumDetailPayload) {
 	// 지금은 선택 버튼 마크업이 없어서 항상 null일 거지만,
 	// 나중에 글쓰기 화면에서 재활용할 수 있게 로직만 유지
 	const selectBtn = document.getElementById(
-		'selectAlbumBtn'
+		'selectAlbumBtn',
 	) as HTMLButtonElement | null
 
-	if (!selectBtn) return
+	if (!selectBtn)
+return
 	const a = d.album
 	const artists = d.artists || []
 
@@ -255,34 +265,36 @@ const bindSelectionHandler = (d: AlbumDetailPayload) => {
 						id: a.id,
 						title: a.title,
 						spotify_id: a.spotify_id,
-						artists: artists.map((x) => ({
+						artists: artists.map(x => ({
 							id: x.id,
 							name: x.name,
 							spotify_id: x.spotify_id ?? null,
 						})),
 					},
-				})
+				}),
 			)
-		} else {
+		}
+ else {
 			selectedAlbumId = null
 			window.dispatchEvent(
 				new CustomEvent('album:deselected', {
 					detail: { id: a.id },
-				})
+				}),
 			)
 		}
 	})
 }
 
-const bindTrackToggleHandler = () => {
+function bindTrackToggleHandler() {
 	const toggleBtn = document.getElementById(
-		'toggleDetailBtn'
+		'toggleDetailBtn',
 	) as HTMLButtonElement | null
 	const trackWrapper = document.getElementById(
-		'trackWrapper'
+		'trackWrapper',
 	) as HTMLDivElement | null
 
-	if (!toggleBtn || !trackWrapper) return
+	if (!toggleBtn || !trackWrapper)
+return
 
 	toggleBtn.addEventListener('click', () => {
 		const isHidden =
@@ -294,7 +306,7 @@ const bindTrackToggleHandler = () => {
 
 // ----------------- 메인 render -----------------
 
-const render = (d: AlbumDetailPayload) => {
+function render(d: AlbumDetailPayload) {
 	root.innerHTML = buildAlbumDetailHtml(d)
 	bindSelectionHandler(d)
 	bindTrackToggleHandler()

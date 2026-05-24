@@ -36,15 +36,15 @@ import SearchBar from '@components/search-bar.astro'
         <div class="flex items-center gap-4">
           <label for="rating" class="font-medium text-gray-700">평점</label>
           <input
-            type="number"
-            id="rating"
-            name="rating"
-            min="0"
-            max="5"
-            step="0.5"
-            class="w-24 border border-gray-300 rounded px-3 py-2 text-lg text-center"
-            placeholder="0~5"
-            required
+	type="number"
+	id="rating"
+	name="rating"
+	min="0"
+	max="5"
+	step="0.5"
+	class="w-24 border border-gray-300 rounded px-3 py-2 text-lg text-center"
+	placeholder="0~5"
+	required
           />
           <span class="text-sm text-gray-400">/ 5</span>
           <div id="rating-stars" class="flex text-amber-400 text-xl"></div>
@@ -55,19 +55,19 @@ import SearchBar from '@components/search-bar.astro'
       <!-- 본문 (선택사항) -->
       <section class="border border-gray-200 rounded px-4 py-4">
         <button
-          type="button"
-          id="toggle-body"
-          class="text-sm text-blue-600 hover:underline"
+	type="button"
+	id="toggle-body"
+	class="text-sm text-blue-600 hover:underline"
         >
           + 코멘트 추가 (선택)
         </button>
         <div id="body-section" class="hidden mt-3">
           <textarea
-            id="body"
-            name="body"
-            rows="4"
-            class="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            placeholder="간단한 코멘트를 남겨보세요 (선택사항)"
+	id="body"
+	name="body"
+	rows="4"
+	class="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+	placeholder="간단한 코멘트를 남겨보세요 (선택사항)"
           ></textarea>
         </div>
       </section>
@@ -75,9 +75,9 @@ import SearchBar from '@components/search-bar.astro'
       <!-- 제출 -->
       <div class="flex items-center gap-3">
         <button
-          id="submit-btn"
-          type="submit"
-          class="bg-highlight text-white px-6 py-2 rounded hover:bg-opacity-80"
+	id="submit-btn"
+	type="submit"
+	class="bg-highlight text-white px-6 py-2 rounded hover:bg-opacity-80"
         >
           등록
         </button>

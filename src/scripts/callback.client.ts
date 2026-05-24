@@ -1,9 +1,11 @@
 // src/scripts/callback.client.ts
-import { handleCallback, goLogin } from '../lib/auth'
-const log = (m: string) => {
+import { goLogin, handleCallback } from '../lib/auth'
+
+function log(m: string) {
 	console.log(m)
 	const el = document.getElementById('msg')
-	if (el) el.textContent = m
+	if (el)
+el.textContent = m
 }
 
 async function run() {
@@ -39,9 +41,10 @@ async function run() {
 
 		log('✅ 로그인 완료. 이동합니다…')
 		location.replace('/write')
-	} catch (e: any) {
+	}
+ catch (e: any) {
 		console.error(e)
-		log('❌ 로그인 처리 실패: ' + (e?.message ?? String(e)))
+		log(`❌ 로그인 처리 실패: ${e?.message ?? String(e)}`)
 		document.getElementById('retry')?.classList.remove('hidden')
 	}
 }

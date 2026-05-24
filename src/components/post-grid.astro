@@ -24,17 +24,17 @@ const { posts } = Astro.props
     return (
       <li class="card-grid-item">
         <a
-          href={href}
-          class="card-anchor group block h-full"
+	href={href}
+	class="card-anchor group block h-full"
         >
           <div class="card-container flex h-full flex-col items-start">
             <div class="card-img-wrapper w-full overflow-hidden rounded-md bg-gray-200">
               <div class="relative w-full pb-[100%]">
                 <img
-                  src={cover}
-                  alt={post.title}
-                  loading="lazy"
-                  class="card-img absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+	src={cover}
+	alt={post.title}
+	loading="lazy"
+	class="card-img absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               </div>
             </div>
@@ -54,9 +54,9 @@ const { posts } = Astro.props
                 )}
 
                 <p class="caption-2 card-user-by text-[11px] text-gray-400">
-                  {post.date instanceof Date
-                    ? post.date.toLocaleDateString('ko-KR').replace(/\. /g, '.').replace(/\.$/, '')
-                    : String(post.date)}
+                  {post.date instanceof Date ?
+                    post.date.toLocaleDateString('ko-KR').replace(/\. /g, '.').replace(/\.$/, '') :
+                    String(post.date)}
                 </p>
               </div>
             </div>

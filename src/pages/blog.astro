@@ -17,7 +17,8 @@ const posts = sortAsc(await getCollection('blog'))
 
     <!-- 헤더(표 설명) -->
     <div class="text-faded border-b border-border pb-2 mb-2
-                grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center">
+                grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center"
+    >
       <span class="text-sm">Category</span>
       <span class="text-sm">Title</span>
       <span class="text-sm">Date</span>
@@ -31,18 +32,18 @@ const posts = sortAsc(await getCollection('blog'))
           <div class="grid grid-cols-[auto_1fr_auto_auto] gap-x-3 items-center py-3">
             <!-- [Category] -->
             <Link
-              href={`/blog/category/${encodeURIComponent(post.category)}/`}
-              class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
+	href={`/blog/category/${encodeURIComponent(post.category)}/`}
+	class="font-mono text-xs md:text-sm px-1.5 py-0.5 rounded border border-border text-faded hover:text-highlight"
             >
               [{post.category}]
             </Link>
 
             <!-- Title -->
             <Link
-              variant="highlight"
-              class="font-medium text-base md:text-lg truncate"
-              href={`/blog/${post.slug}/`}
-              title={post.title}
+	variant="highlight"
+	class="font-medium text-base md:text-lg truncate"
+	href={`/blog/${post.slug}/`}
+	title={post.title}
             >
               {post.title}
             </Link>

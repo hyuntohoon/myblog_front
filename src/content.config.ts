@@ -71,7 +71,7 @@ const blog = defineCollection({
 			// ✅ 카테고리: 등록된 목록 or 자유 문자열 허용
 			category: z
 				.union([z.enum(zodEnum(CATEGORIES)), z.string().min(1)])
-				.transform((v) => String(v)),
+				.transform(v => String(v)),
 
 			// 초안 여부 (목록/검색 제외용)
 			draft: z.boolean().default(false),
@@ -92,7 +92,7 @@ const blog = defineCollection({
 			// ✅ 선택적: 음악 리뷰 / 평점 블록
 			musicReview: MusicReview.optional(),
 		})
-		.transform((data) => ({
+		.transform(data => ({
 			...data,
 			// lastUpdated 없을 때 date로 대체
 			lastUpdated: data.lastUpdated ?? data.date,

@@ -3,7 +3,8 @@
 const section = document.getElementById('music-section') as HTMLElement | null
 if (!section) {
 	console.warn('[albumDetail.fetch] #music-section not found')
-} else {
+}
+ else {
 	const albumIdsRaw = section.dataset.albumIds || '[]'
 	const artistIdsRaw = section.dataset.artistIds || '[]'
 
@@ -12,17 +13,19 @@ if (!section) {
 
 	try {
 		albumIds = JSON.parse(albumIdsRaw)
-	} catch (e) {
+	}
+ catch (e) {
 		console.error('[albumDetail.fetch] invalid albumIds json:', albumIdsRaw, e)
 	}
 
 	try {
 		artistIds = JSON.parse(artistIdsRaw)
-	} catch (e) {
+	}
+ catch (e) {
 		console.error(
 			'[albumDetail.fetch] invalid artistIds json:',
 			artistIdsRaw,
-			e
+			e,
 		)
 	}
 
@@ -39,7 +42,8 @@ if (!section) {
 
 		fetch(albumUrl)
 			.then((r) => {
-				if (!r.ok) throw new Error(`HTTP ${r.status}`)
+				if (!r.ok)
+throw new Error(`HTTP ${r.status}`)
 				return r.json()
 			})
 			.then((data) => {
@@ -47,7 +51,7 @@ if (!section) {
 				window.dispatchEvent(
 					new CustomEvent('album:detail', {
 						detail: { ...data, selectable: false },
-					})
+					}),
 				)
 			})
 			.catch((err) => {
@@ -59,15 +63,16 @@ if (!section) {
 	// 2) 아티스트 정보 (지금은 로깅만, 나중 확장용)
 	// ─────────────────────────────
 	if (artistIds.length > 0) {
-		const artistUrls = artistIds.map((id) => `${base}/api/music/artists/${id}`)
+		const artistUrls = artistIds.map(id => `${base}/api/music/artists/${id}`)
 
 		Promise.all(
-			artistUrls.map((u) =>
+			artistUrls.map(u =>
 				fetch(u).then((r) => {
-					if (!r.ok) throw new Error(`HTTP ${r.status}`)
+					if (!r.ok)
+throw new Error(`HTTP ${r.status}`)
 					return r.json()
-				})
-			)
+				}),
+			),
 		)
 			.then((artists) => {
 				console.log('🎤 Artists loaded:', artists)

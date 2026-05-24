@@ -1,5 +1,6 @@
 // ✅ Toast UI Editor (Markdown 기반 WYSIWYG)
 import '@toast-ui/editor/dist/toastui-editor.css'
+// @ts-expect-error — @toast-ui/editor@3.x does not expose proper ESM exports in package.json
 import { Editor } from '@toast-ui/editor'
 
 let editor: Editor | null = null
@@ -12,7 +13,8 @@ export function initEditor(selector = '#editor') {
 	}
 
 	// 이미 초기화된 경우 재사용
-	if (editor) return editor
+	if (editor)
+return editor
 
 	editor = new Editor({
 		el,
@@ -37,11 +39,13 @@ export function getContent(): string {
 }
 
 export function setContent(value: string) {
-	if (editor) editor.setMarkdown(value)
+	if (editor)
+editor.setMarkdown(value)
 }
 
 export function resetContent() {
-	if (editor) editor.setMarkdown('')
+	if (editor)
+editor.setMarkdown('')
 }
 
 export function isReady() {

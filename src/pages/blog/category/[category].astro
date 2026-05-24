@@ -10,10 +10,10 @@ import PostMetricsItem from '@components/post-metrics'
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
   const cats = new Set(entries.filter(e => !e.data.draft).map(e => e.data.category))
-  return Array.from(cats).map((category) => ({ params: { category } }))
+  return Array.from(cats).map(category => ({ params: { category } }))
 }
 
-export const prerender = true;
+export const prerender = true
 
 const all = await getCollection('blog')
 const current = Astro.params.category!
@@ -27,7 +27,8 @@ const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === curre
 
     <!-- 헤더 -->
     <div class="text-faded border-b border-border pb-2 mb-2
-                grid grid-cols-[1fr_auto_auto] gap-x-3 items-center">
+                grid grid-cols-[1fr_auto_auto] gap-x-3 items-center"
+    >
       <span class="text-sm">Title</span>
       <span class="text-sm">Date</span>
       <span class="text-sm">Metrics</span>
@@ -36,25 +37,29 @@ const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === curre
     <!-- 목록 -->
     <div class="divide-y divide-border">
       {
-        posts.length === 0 ? (
+        posts.length === 0 ?
+(
           <div class="py-6 text-faded">No posts in this category.</div>
-        ) : (
+        ) :
+(
           posts.map(({ data: post }) => (
             <div class="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-3">
               <!-- Title (+ 평점 뱃지) -->
               <div class="flex items-center gap-2 min-w-0">
                 <Link
-                  variant="highlight"
-                  class="font-medium text-base md:text-lg truncate"
-                  href={`/blog/${post.slug}/`}
-                  title={post.title}
+	variant="highlight"
+	class="font-medium text-base md:text-lg truncate"
+	href={`/blog/${post.slug}/`}
+	title={post.title}
                 >
                   {post.title}
                 </Link>
 
                 {post.musicReview && post.musicReview.rating && (
-                  <span class="shrink-0 rounded px-2 py-0.5 text-xs bg-muted text-highlight"
-                        title="Rating">
+                  <span
+	class="shrink-0 rounded px-2 py-0.5 text-xs bg-muted text-highlight"
+	title="Rating"
+                  >
                     ★ {post.musicReview.rating.value}/{post.musicReview.rating.scale}
                   </span>
                 )}

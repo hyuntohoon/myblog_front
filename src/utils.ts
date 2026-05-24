@@ -47,7 +47,7 @@ export function frontmatterToString(data: Record<string, any>): string {
 		.map(([key, value]) => {
 			if (Array.isArray(value)) {
 				// 배열은 일반 리스트로 직렬화 (태그 전용 로직 제거)
-				return `${key}:\n ${value.map((v) => `- ${v}`).join('\n ')}`
+				return `${key}:\n ${value.map(v => `- ${v}`).join('\n ')}`
 			}
 			return `${key}: ${JSON.stringify(value)}`
 		})
@@ -60,7 +60,7 @@ export function frontmatterToString(data: Record<string, any>): string {
  */
 export function sortAsc(data: Array<CollectionEntry<'blog'>>) {
 	return data.sort(
-		(a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+		(a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime(),
 	)
 }
 
@@ -100,7 +100,8 @@ export function pagefindIntegration(): AstroIntegration {
 				server.middlewares.use((req, res, next) => {
 					if (req.url?.startsWith('/pagefind/')) {
 						serve(req, res, next)
-					} else {
+					}
+ else {
 						next()
 					}
 				})

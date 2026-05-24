@@ -7,9 +7,10 @@ const API_BASE = PUBLIC_API_URL
 type View = 'db' | 'spotify'
 
 // DOM
-const byId = <T extends HTMLElement>(id: string): T => {
+function byId<T extends HTMLElement>(id: string): T {
 	const el = document.getElementById(id)
-	if (!el) throw new Error(`#${id} not found`)
+	if (!el)
+throw new Error(`#${id} not found`)
 	return el as T
 }
 
@@ -25,42 +26,39 @@ const albumsRow = byId<HTMLDivElement>('albumsRow')
 const tracksRow = byId<HTMLDivElement>('tracksRow')
 
 // state
-let view: View = 'db'
-const setView = (v: View) => {
-	view = v
+let _view: View = 'db'
+function setView(v: View) {
+	_view = v
 	backBtn.hidden = v !== 'spotify'
 }
-const setStatus = (msg: string) => {
+function setStatus(msg: string) {
 	statusEl.textContent = msg
 }
 
 // HTTP
-const getJSON = async <T = any>(url: string): Promise<T> => {
+async function getJSON<T = any>(url: string): Promise<T> {
 	const r = await fetch(url, { method: 'GET' })
-	if (!r.ok) throw new Error(`HTTP ${r.status}`)
+	if (!r.ok)
+throw new Error(`HTTP ${r.status}`)
 	return r.json()
 }
 
 // render
-const clearResults = () => {
+function clearResults() {
 	artistsRow.innerHTML = ''
 	albumsRow.innerHTML = ''
 	tracksRow.innerHTML = ''
 	resultsWrap.hidden = true
 }
 
-const render = (
-	artists: CardItem[],
-	albums: CardItem[],
-	tracks: CardItem[]
-) => {
+function render(artists: CardItem[],	albums: CardItem[],	tracks: CardItem[]) {
 	artistsRow.innerHTML = ''
 	albumsRow.innerHTML = ''
 	tracksRow.innerHTML = ''
 
-	artists.forEach((it) => artistsRow.appendChild(makeCard(it, onSelect)))
-	albums.forEach((it) => albumsRow.appendChild(makeCard(it, onSelect)))
-	tracks.forEach((it) => tracksRow.appendChild(makeCard(it, onSelect)))
+	artists.forEach(it => artistsRow.appendChild(makeCard(it, onSelect)))
+	albums.forEach(it => albumsRow.appendChild(makeCard(it, onSelect)))
+	tracks.forEach(it => tracksRow.appendChild(makeCard(it, onSelect)))
 
 	resultsWrap.hidden = artists.length + albums.length + tracks.length === 0
 }
@@ -68,8 +66,8 @@ const render = (
 // -----------------------------
 // Mappers (DB unified)
 // -----------------------------
-const mapDBArtistsUnified = (arr: any[]): CardItem[] =>
-	(arr || []).map((a: any) => ({
+function mapDBArtistsUnified(arr: any[]): CardItem[] {
+  return (arr || []).map((a: any) => ({
 		id: a.id,
 		type: 'artist',
 		title: a.name,
@@ -77,9 +75,10 @@ const mapDBArtistsUnified = (arr: any[]): CardItem[] =>
 		source: 'db',
 		spotify_id: a.spotify_id ?? null,
 	}))
+}
 
-const mapDBAlbumsUnified = (arr: any[]): CardItem[] =>
-	(arr || []).map((al: any) => ({
+function mapDBAlbumsUnified(arr: any[]): CardItem[] {
+  return (arr || []).map((al: any) => ({
 		id: al.id,
 		type: 'album',
 		title: al.title,
@@ -91,10 +90,11 @@ const mapDBAlbumsUnified = (arr: any[]): CardItem[] =>
 		artist_spotify_id: al.artist_spotify_id ?? null,
 		external_url: al.external_url ?? null,
 	}))
+}
 
 // ✅ DB TrackItem -> CardItem (트랙 클릭 시 앨범 상세로 가야 하므로 db_album_id에 album_id를 담는다)
-const mapDBTracksUnified = (arr: any[]): CardItem[] =>
-	(arr || []).map((t: any) => ({
+function mapDBTracksUnified(arr: any[]): CardItem[] {
+  return (arr || []).map((t: any) => ({
 		id: t.id, // track db uuid
 		type: 'track',
 		title: t.title,
@@ -107,12 +107,13 @@ const mapDBTracksUnified = (arr: any[]): CardItem[] =>
 		album_spotify_id: t.album_spotify_id ?? null,
 		db_album_id: t.album_id ?? null, // ✅ 핵심: 트랙 클릭 → 이 앨범(DB)로 이동
 	}))
+}
 
 // -----------------------------
 // Mappers (Spotify candidates)
 // -----------------------------
-const mapCandArtists = (cand: any): CardItem[] =>
-	(cand.artists || []).map((a: any) => ({
+function mapCandArtists(cand: any): CardItem[] {
+  return (cand.artists || []).map((a: any) => ({
 		id: a.spotify_id,
 		type: 'artist',
 		title: a.name,
@@ -122,9 +123,10 @@ const mapCandArtists = (cand: any): CardItem[] =>
 		external_url: a.external_url ?? null,
 		artist_spotify_id: a.spotify_id ?? null,
 	}))
+}
 
-const mapCandAlbums = (cand: any): CardItem[] =>
-	(cand.albums || []).map((a: any) => ({
+function mapCandAlbums(cand: any): CardItem[] {
+  return (cand.albums || []).map((a: any) => ({
 		id: a.spotify_id,
 		type: 'album',
 		title: a.title,
@@ -136,10 +138,11 @@ const mapCandAlbums = (cand: any): CardItem[] =>
 		artist_spotify_id: a.artist_spotify_id ?? null,
 		external_url: a.external_url ?? null,
 	}))
+}
 
 // CandidateSearchService.track 응답은 { title, spotify_id, album:{spotify_id,title,release_date,cover_url}, artist_name ... }
-const mapCandTracks = (cand: any): CardItem[] =>
-	(cand.tracks || []).map((t: any) => ({
+function mapCandTracks(cand: any): CardItem[] {
+  return (cand.tracks || []).map((t: any) => ({
 		id: t.spotify_id,
 		type: 'track',
 		title: t.title,
@@ -152,13 +155,15 @@ const mapCandTracks = (cand: any): CardItem[] =>
 		external_url: t.external_url ?? null,
 		album_spotify_id: t.album?.spotify_id ?? null,
 	}))
+}
 
 // -----------------------------
 // Actions
 // -----------------------------
-const runDBSearch = async () => {
+async function runDBSearch() {
 	const q = input.value.trim()
-	if (!q) return
+	if (!q)
+return
 
 	setView('db')
 	setStatus('')
@@ -167,7 +172,7 @@ const runDBSearch = async () => {
 	try {
 		// ✅ 1번 호출로 3섹션
 		const data = await getJSON(
-			`${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&limit=20&offset=0`
+			`${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&limit=20&offset=0`,
 		)
 
 		const artists = mapDBArtistsUnified(data.artists || [])
@@ -179,15 +184,17 @@ const runDBSearch = async () => {
 		if (!artists.length && !albums.length && !tracks.length) {
 			setStatus('DB에 결과가 없습니다. 최신이 필요하면 Sync를 눌러보세요.')
 		}
-	} catch (e) {
+	}
+ catch (e) {
 		console.error(e)
 		setStatus('❌ DB 검색 실패')
 	}
 }
 
-const runSync = async () => {
+async function runSync() {
 	const q = input.value.trim()
-	if (!q) return
+	if (!q)
+return
 
 	// 최소 연타 방지
 	syncBtn.disabled = true
@@ -208,10 +215,11 @@ const runSync = async () => {
 		render(
 			mapCandArtists(cand).slice(0, 10),
 			mapCandAlbums(cand).slice(0, 20),
-			mapCandTracks(cand).slice(0, 20)
+			mapCandTracks(cand).slice(0, 20),
 		)
 		setStatus('✅ Spotify 후보 표시 중 (상세는 DB 반영 후 가능)')
-	} catch (e) {
+	}
+ catch (e) {
 		console.error(e)
 		setStatus('❌ Spotify 후보 검색 실패')
 		setView('db')
@@ -221,15 +229,17 @@ const runSync = async () => {
 // -----------------------------
 // Select (상세는 DB-only)
 // -----------------------------
-const fetchAlbumDetailByDBId = async (dbAlbumId: string) =>
-	getJSON(`${API_BASE}/api/music/albums/${encodeURIComponent(dbAlbumId)}`)
+async function fetchAlbumDetailByDBId(dbAlbumId: string) {
+  return getJSON(`${API_BASE}/api/music/albums/${encodeURIComponent(dbAlbumId)}`)
+}
 
-const fetchAlbumDetailBySpotifyId_DBOnly = async (spotifyAlbumId: string) =>
-	getJSON(
-		`${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(spotifyAlbumId)}`
+async function fetchAlbumDetailBySpotifyId_DBOnly(spotifyAlbumId: string) {
+  return getJSON(
+		`${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(spotifyAlbumId)}`,
 	)
+}
 
-const onSelect = async (it: CardItem): Promise<void> => {
+async function onSelect(it: CardItem): Promise<void> {
 	try {
 		// DB album -> album detail
 		if (it.type === 'album' && it.source === 'db') {
@@ -255,13 +265,14 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		// Spotify album -> DB-only detail by-spotify (없으면 syncing)
 		if (it.type === 'album' && it.source === 'spotify' && it.spotify_id) {
 			setStatus(
-				'⏳ 동기화 중… DB에 반영되면 상세가 열립니다. 잠시 후 다시 클릭하세요.'
+				'⏳ 동기화 중… DB에 반영되면 상세가 열립니다. 잠시 후 다시 클릭하세요.',
 			)
 			try {
 				const detail = await fetchAlbumDetailBySpotifyId_DBOnly(it.spotify_id)
 				window.dispatchEvent(new CustomEvent('album:detail', { detail }))
 				setStatus('✅ DB에서 상세를 불러왔습니다.')
-			} catch (e) {
+			}
+ catch (e) {
 				console.error(e)
 				setStatus('⏳ 아직 DB에 반영되지 않았습니다. 잠시 후 다시 시도하세요.')
 			}
@@ -271,15 +282,16 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		// Spotify track -> album by-spotify (track은 앨범으로 점프)
 		if (it.type === 'track' && it.source === 'spotify' && it.album_spotify_id) {
 			setStatus(
-				'⏳ 동기화 중… DB에 반영되면 상세가 열립니다. 잠시 후 다시 클릭하세요.'
+				'⏳ 동기화 중… DB에 반영되면 상세가 열립니다. 잠시 후 다시 클릭하세요.',
 			)
 			try {
 				const detail = await fetchAlbumDetailBySpotifyId_DBOnly(
-					it.album_spotify_id
+					it.album_spotify_id,
 				)
 				window.dispatchEvent(new CustomEvent('album:detail', { detail }))
 				setStatus('✅ DB에서 상세를 불러왔습니다.')
-			} catch (e) {
+			}
+ catch (e) {
 				console.error(e)
 				setStatus('⏳ 아직 DB에 반영되지 않았습니다. 잠시 후 다시 시도하세요.')
 			}
@@ -290,7 +302,7 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		if (it.type === 'artist' && it.source === 'db') {
 			setStatus(`🎵 ${it.title}의 앨범을 불러오는 중…`)
 			const data = await getJSON(
-				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`
+				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`,
 			)
 			const albums = mapDBAlbumsUnified((data.items || []) as any[])
 			render([], albums, [])
@@ -301,11 +313,11 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		// Spotify artist -> no detail in this phase
 		if (it.type === 'artist' && it.source === 'spotify') {
 			setStatus(
-				'ℹ️ 아티스트 상세는 DB 기반으로만 합니다. 앨범/트랙을 선택해 주세요.'
+				'ℹ️ 아티스트 상세는 DB 기반으로만 합니다. 앨범/트랙을 선택해 주세요.',
 			)
-			return
 		}
-	} catch (e) {
+	}
+ catch (e) {
 		console.error(e)
 		setStatus('❌ 선택 처리 실패')
 	}

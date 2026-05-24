@@ -1,15 +1,16 @@
 // /src/scripts/searchBarSpotify.client.ts
 
-import type { CardItem, AlbumDetail } from '../scripts/types/search.ts'
+import type { AlbumDetail, CardItem } from '../scripts/types/search.ts'
 
 import { PUBLIC_API_URL } from 'astro:env/client'
 
 const API_BASE = PUBLIC_API_URL
 
 // ---------- DOM helpers ----------
-const byId = <T extends HTMLElement = HTMLElement>(id: string): T => {
+function byId<T extends HTMLElement = HTMLElement>(id: string): T {
 	const el = document.getElementById(id)
-	if (!el) throw new Error(`#${id} not found`)
+	if (!el)
+throw new Error(`#${id} not found`)
 	return el as T
 }
 
@@ -27,25 +28,27 @@ const albumsCol = byId<HTMLDivElement>('spAlbumsCol')
 const tracksCol = byId<HTMLDivElement>('spTracksCol')
 
 // ---------- Fetch helpers ----------
-const getJSON = async <T = any>(url: string): Promise<T> => {
+async function getJSON<T = any>(url: string): Promise<T> {
 	const r = await fetch(url, { method: 'GET' })
-	if (!r.ok) throw new Error(`HTTP ${r.status}`)
+	if (!r.ok)
+throw new Error(`HTTP ${r.status}`)
 	return r.json()
 }
 
-const postJSON = async <T = any>(url: string, body: any): Promise<T> => {
+async function _postJSON<T = any>(url: string, body: any): Promise<T> {
 	const r = await fetch(url, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(body),
 	})
-	if (!r.ok) throw new Error(`HTTP ${r.status}`)
+	if (!r.ok)
+throw new Error(`HTTP ${r.status}`)
 	return r.json()
 }
 
 // ---------- Mapping: /api/music/search/candidates 응답 → CardItem ----------
-const mapCandAlbums = (cand: any): CardItem[] =>
-	(cand.albums || []).map(
+function mapCandAlbums(cand: any): CardItem[] {
+  return (cand.albums || []).map(
 		(a: any) =>
 			({
 				id: a.spotify_id,
@@ -57,11 +60,12 @@ const mapCandAlbums = (cand: any): CardItem[] =>
 				release_date: a.release_date ?? null,
 				artist_name: a.artist_name ?? null,
 				external_url: a.external_url ?? null,
-			}) satisfies CardItem
+			}) satisfies CardItem,
 	)
+}
 
-const mapCandArtists = (cand: any): CardItem[] =>
-	(cand.artists || []).map(
+function mapCandArtists(cand: any): CardItem[] {
+  return (cand.artists || []).map(
 		(a: any) =>
 			({
 				id: a.spotify_id,
@@ -72,11 +76,12 @@ const mapCandArtists = (cand: any): CardItem[] =>
 				spotify_id: a.spotify_id ?? null,
 				external_url: a.external_url ?? null,
 				artist_spotify_id: a.spotify_id ?? null,
-			}) satisfies CardItem
+			}) satisfies CardItem,
 	)
+}
 
-const mapCandTracks = (cand: any): CardItem[] =>
-	(cand.tracks || []).map(
+function mapCandTracks(cand: any): CardItem[] {
+  return (cand.tracks || []).map(
 		(t: any) =>
 			({
 				id: t.spotify_id,
@@ -90,12 +95,13 @@ const mapCandTracks = (cand: any): CardItem[] =>
 				album_title: t.album_title ?? t.album?.title ?? null,
 				external_url: t.external_url ?? null,
 				album_spotify_id: t.album?.spotify_id ?? null,
-			}) satisfies CardItem
+			}) satisfies CardItem,
 	)
+}
 
 // ⭐ 아티스트 → 앨범 리스트용 (백엔드 /api/music/artists/spotify/{id}/albums 응답, SearchResult<AlbumItem>)
-const mapArtistAlbums = (data: any): CardItem[] =>
-	(data.items || []).map(
+function mapArtistAlbums(data: any): CardItem[] {
+  return (data.items || []).map(
 		(al: any) =>
 			({
 				id: al.id, // ✅ DB 앨범 UUID
@@ -107,11 +113,12 @@ const mapArtistAlbums = (data: any): CardItem[] =>
 				release_date: al.release_date ?? null,
 				artist_name: al.artist_name ?? null,
 				external_url: al.external_url ?? null,
-			}) satisfies CardItem
+			}) satisfies CardItem,
 	)
+}
 
 // ---------- UI: Card ----------
-const makeCard = (it: CardItem): HTMLDivElement => {
+function makeCard(it: CardItem): HTMLDivElement {
 	const card = document.createElement('div')
 	card.className = 'card'
 	card.setAttribute('role', 'button')
@@ -138,15 +145,20 @@ const makeCard = (it: CardItem): HTMLDivElement => {
 	sub.className = 'type'
 	if (it.type === 'album' && it.artist_name) {
 		sub.textContent = `${it.artist_name}`
-	} else if (it.type === 'track') {
+	}
+ else if (it.type === 'track') {
 		let txt = ''
-		if (it.artist_name) txt += it.artist_name
-		if (it.album_title) txt += (txt ? ' • ' : '') + it.album_title
+		if (it.artist_name)
+txt += it.artist_name
+		if (it.album_title)
+txt += (txt ? ' • ' : '') + it.album_title
 		sub.textContent = txt || 'Track'
-	} else if (it.type === 'artist') {
+	}
+ else if (it.type === 'artist') {
 		sub.textContent = ''
 	}
-	if (sub.textContent) meta.appendChild(sub)
+	if (sub.textContent)
+meta.appendChild(sub)
 
 	card.appendChild(art)
 	card.appendChild(meta)
@@ -162,25 +174,21 @@ const makeCard = (it: CardItem): HTMLDivElement => {
 }
 
 // ---------- Render ----------
-const render = (
-	artists: CardItem[],
-	albums: CardItem[],
-	tracks: CardItem[]
-) => {
+function render(artists: CardItem[],	albums: CardItem[],	tracks: CardItem[]) {
 	artistsRow.innerHTML = ''
 	albumsRow.innerHTML = ''
 	tracksRow.innerHTML = ''
 
-	artists.forEach((it) => artistsRow.appendChild(makeCard(it)))
-	albums.forEach((it) => albumsRow.appendChild(makeCard(it)))
-	tracks.forEach((it) => tracksRow.appendChild(makeCard(it)))
+	artists.forEach(it => artistsRow.appendChild(makeCard(it)))
+	albums.forEach(it => albumsRow.appendChild(makeCard(it)))
+	tracks.forEach(it => tracksRow.appendChild(makeCard(it)))
 
 	const total = artists.length + albums.length + tracks.length
 	resWrap.hidden = total === 0
 }
 
 // Artist 클릭 후 앨범 리스트 덮어쓰기용
-const renderArtistAlbums = (albums: CardItem[]) => {
+function renderArtistAlbums(albums: CardItem[]) {
 	// 검색어 초기화
 	inputQ.value = ''
 
@@ -207,7 +215,7 @@ const renderArtistAlbums = (albums: CardItem[]) => {
 	tracksRow.innerHTML = ''
 	albumsRow.innerHTML = ''
 
-	albums.forEach((it) => albumsRow.appendChild(makeCard(it)))
+	albums.forEach(it => albumsRow.appendChild(makeCard(it)))
 
 	resWrap.hidden = albums.length === 0
 }
@@ -216,9 +224,10 @@ const renderArtistAlbums = (albums: CardItem[]) => {
 const buildQuery = (raw: string) => raw.trim()
 
 // ---------- Actions ----------
-const runSearch = async () => {
+async function runSearch() {
 	const q = buildQuery(inputQ.value)
-	if (!q) return
+	if (!q)
+return
 
 	const url =
 		`${API_BASE}/api/music/search/candidates` +
@@ -232,30 +241,29 @@ const runSearch = async () => {
 		const albums = mapCandAlbums(cand).slice(0, 10)
 		const tracks = mapCandTracks(cand).slice(0, 10)
 		render(artists, albums, tracks)
-	} catch (e) {
+	}
+ catch (e) {
 		console.error('Spotify search failed:', e)
 		resWrap.hidden = false
 	}
 }
 
 // Spotify 앨범 상세 호출 (album / track 공용)
-const fetchAlbumDetailBySpotifyId = async (
-	spotifyAlbumId: string
-): Promise<AlbumDetail> => {
+async function fetchAlbumDetailBySpotifyId(spotifyAlbumId: string): Promise<AlbumDetail> {
 	const url = `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(
-		spotifyAlbumId
+		spotifyAlbumId,
 	)}`
 	return getJSON<AlbumDetail>(url)
 }
 
 // ---------- Select handlers ----------
-const onSelect = async (it: CardItem): Promise<void> => {
+async function onSelect(it: CardItem): Promise<void> {
 	try {
 		// 1) 아티스트 → 해당 아티스트의 앨범 목록 (Spotify ID 기반, 결과는 DB SearchResult)
 		if (it.type === 'artist' && it.spotify_id) {
 			const url =
 				`${API_BASE}/api/music/artists/spotify/${encodeURIComponent(
-					it.spotify_id
+					it.spotify_id,
 				)}/albums` + `?market=KR&limit=20&offset=0`
 
 			const data = await getJSON(url)
@@ -268,7 +276,7 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		if (it.type === 'album' && it.spotify_id) {
 			const detail = await fetchAlbumDetailBySpotifyId(it.spotify_id)
 			window.dispatchEvent(
-				new CustomEvent<AlbumDetail>('album:detail', { detail })
+				new CustomEvent<AlbumDetail>('album:detail', { detail }),
 			)
 
 			// 선택 후 검색창/결과 정리
@@ -284,7 +292,7 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		if (it.type === 'track' && it.album_spotify_id) {
 			const detail = await fetchAlbumDetailBySpotifyId(it.album_spotify_id)
 			window.dispatchEvent(
-				new CustomEvent<AlbumDetail>('album:detail', { detail })
+				new CustomEvent<AlbumDetail>('album:detail', { detail }),
 			)
 
 			inputQ.value = ''
@@ -296,7 +304,8 @@ const onSelect = async (it: CardItem): Promise<void> => {
 		}
 
 		console.debug('[spotify-select] no-op for item', it.type, it)
-	} catch (e) {
+	}
+ catch (e) {
 		console.error('Spotify select failed:', e)
 	}
 }

@@ -2,7 +2,7 @@ name: Deploy Front (S3+CF)
 
 on:
   push:
-    branches: ['main']
+    branches: [main]
   workflow_dispatch:
 
 jobs:

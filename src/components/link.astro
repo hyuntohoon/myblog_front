@@ -7,16 +7,17 @@ interface Props extends HTMLAttributes<'a'> {
   variant?: Variant
 }
 
-const { class: className, variant = 'subtle', href = '', ...rest } = Astro.props
+const { class: className, variant = 'subtle', href, ...rest } = Astro.props
 
-// ✅ 끝 슬래시 강제 추가 (루트 '/'는 제외)
 function ensureTrailingSlash(u: string) {
-  if (!u) return u
-  if (u === '/') return u
-  return u.endsWith('/') ? u : u + '/'
+  if (!u)
+return u
+  if (u === '/')
+return u
+  return u.endsWith('/') ? u : `${u}/`
 }
 
-const finalHref = ensureTrailingSlash(href)
+const finalHref = ensureTrailingSlash(href?.toString() ?? '')
 
 const styleVariants: Record<Variant, string> = {
   highlight: 'text-lg md:text-xl lg:text-2xl',
@@ -25,9 +26,9 @@ const styleVariants: Record<Variant, string> = {
 ---
 
 <a
-  href={finalHref}
-  class:list={[styleVariants[variant], 'hover:underline hover:text-highlight', className]}
-  {...rest}
+	href={finalHref}
+	class:list={[styleVariants[variant], 'hover:underline hover:text-highlight', className]}
+	{...rest}
 >
   <slot />
 </a>

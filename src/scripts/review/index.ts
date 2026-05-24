@@ -1,13 +1,15 @@
 // src/scripts/review/index.ts
-import { savePost, publishToGit, type PostPayload } from '../write/api'
+import {  publishToGit, savePost } from '../write/api'
+import type { PostPayload } from '../write/api'
 
-type AlbumDetail = {
-	album: { id: string; title: string; cover_url?: string | null }
-	artists?: { id: string; name: string; spotify_id?: string | null }[]
+interface AlbumDetail {
+	album: { id: string, title: string, cover_url?: string | null }
+	artists?: { id: string, name: string, spotify_id?: string | null }[]
 }
 
-const $ = <T extends Element = HTMLElement>(sel: string) =>
-	document.querySelector(sel) as T | null
+function $<T extends Element = HTMLElement>(sel: string) {
+  return document.querySelector(sel) as T | null
+}
 
 // Elements
 const form = $('#review-form') as HTMLFormElement | null
@@ -41,16 +43,19 @@ let selectedAlbum: {
 
 // 별점 렌더링
 function renderStars(rating: number) {
-	if (!ratingStars) return
+	if (!ratingStars)
+return
 	const full = Math.floor(rating)
 	const hasHalf = rating - full >= 0.5
 	let html = ''
 	for (let i = 0; i < 5; i++) {
 		if (i < full) {
 			html += '<span>★</span>'
-		} else if (i === full && hasHalf) {
+		}
+ else if (i === full && hasHalf) {
 			html += '<span style="opacity:0.5">★</span>'
-		} else {
+		}
+ else {
 			html += '<span style="color:#e5e7eb">★</span>'
 		}
 	}
@@ -59,10 +64,11 @@ function renderStars(rating: number) {
 
 // 평점 입력 제어
 function wireRatingInput() {
-	if (!ratingInput) return
+	if (!ratingInput)
+return
 
 	ratingInput.addEventListener('input', () => {
-		let raw = ratingInput.value.trim().replace(',', '.')
+		const raw = ratingInput.value.trim().replace(',', '.')
 		if (raw === '') {
 			renderStars(0)
 			return
@@ -84,14 +90,16 @@ function wireRatingInput() {
 
 // 선택된 앨범 렌더링
 function renderSelectedAlbum() {
-	if (!selectedAlbumWrap || !selectedAlbumEl) return
+	if (!selectedAlbumWrap || !selectedAlbumEl)
+return
 	if (
 		!albumIdsHidden ||
 		!artistIdsHidden ||
 		!albumCoverUrlHidden ||
 		!albumTitleHidden
-	)
+	) {
 		return
+}
 
 	if (!selectedAlbum) {
 		selectedAlbumWrap.classList.add('hidden')
@@ -133,10 +141,11 @@ function bindAlbumDetailListener() {
 	window.addEventListener('album:detail', (e: Event) => {
 		const ce = e as CustomEvent<AlbumDetail>
 		const detail = ce.detail
-		if (!detail?.album) return
+		if (!detail?.album)
+return
 
-		const artistNames = (detail.artists || []).map((a) => a.name).join(', ')
-		const artistIds = (detail.artists || []).map((a) => a.id).filter(Boolean)
+		const artistNames = (detail.artists || []).map(a => a.name).join(', ')
+		const artistIds = (detail.artists || []).map(a => a.id).filter(Boolean)
 
 		selectedAlbum = {
 			id: detail.album.id,
@@ -152,21 +161,23 @@ function bindAlbumDetailListener() {
 
 // 본문 토글
 function wireBodyToggle() {
-	if (!toggleBodyBtn || !bodySection) return
+	if (!toggleBodyBtn || !bodySection)
+return
 
 	toggleBodyBtn.addEventListener('click', () => {
 		const isHidden = bodySection.classList.contains('hidden')
 		bodySection.classList.toggle('hidden')
-		toggleBodyBtn.textContent = isHidden
-			? '- 코멘트 접기'
-			: '+ 코멘트 추가 (선택)'
+		toggleBodyBtn.textContent = isHidden ?
+			'- 코멘트 접기' :
+			'+ 코멘트 추가 (선택)'
 	})
 }
 
 // 폼 제출
 async function onSubmit(e: SubmitEvent) {
 	e.preventDefault()
-	if (!form || !resultMsg || !submitBtn) return
+	if (!form || !resultMsg || !submitBtn)
+return
 
 	resultMsg.textContent = ''
 
@@ -251,11 +262,13 @@ async function onSubmit(e: SubmitEvent) {
 		selectedAlbum = null
 		renderSelectedAlbum()
 		renderStars(0)
-	} catch (err) {
+	}
+ catch (err) {
 		console.error(err)
 		resultMsg.textContent = '❌ 네트워크 오류'
 		resultMsg.className = 'text-sm text-red-500'
-	} finally {
+	}
+ finally {
 		submitBtn.disabled = false
 		submitBtn.textContent = '등록'
 	}
@@ -272,6 +285,7 @@ function init() {
 
 if (document.readyState === 'loading') {
 	document.addEventListener('DOMContentLoaded', init)
-} else {
+}
+ else {
 	init()
 }
