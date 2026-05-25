@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-front:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +17,51 @@ jobs:
 
       - uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 10
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm exec astro check
+
+      - name: Lint
+        run: pnpm lint
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
 
       - run: pnpm install --frozen-lockfile
 
@@ -39,20 +83,28 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # 1) 파일 구조 동기화(삭제 포함) — 헤더는 아직 X
-      - name: Sync all files (no headers yet)
+      # 1) Hashed static assets — cache forever
+      - name: Upload _astro/** (immutable)
         run: |
-          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} --delete
+          aws s3 sync dist/_astro/ s3://${{ secrets.S3_BUCKET_WEB }}/_astro/ \
+            --cache-control "public, max-age=31536000, immutable"
 
-      # 2) 전체 객체 Cache-Control 강제 덮어쓰기 (캐시 완전 비활성화)
-      - name: Force replace Cache-Control headers (disable all caching)
+      # 2) Pagefind search index — short cache
+      - name: Upload pagefind/** (short cache)
         run: |
-          aws s3 cp dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
-            --recursive \
-            --metadata-directive REPLACE \
-            --cache-control "no-cache, no-store, must-revalidate"
+          aws s3 sync dist/pagefind/ s3://${{ secrets.S3_BUCKET_WEB }}/pagefind/ \
+            --cache-control "public, max-age=3600"
 
-      # 3) CloudFront 캐시 무효화
+      # 3) HTML, XML, JSON — always revalidate
+      - name: Upload HTML/XML/JSON (no-cache)
+        run: |
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
+            --delete \
+            --exclude "_astro/*" \
+            --exclude "pagefind/*" \
+            --cache-control "no-cache"
+
+      # 4) CloudFront cache invalidation
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
