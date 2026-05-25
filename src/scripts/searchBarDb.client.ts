@@ -2,6 +2,7 @@
 import type { CardItem } from '../scripts/types/search.ts'
 import { makeCard } from './components/makeCard.ts'
 import { PUBLIC_API_URL } from 'astro:env/client'
+import { getAuthHeader } from '../lib/auth.ts'
 
 const API_BASE = PUBLIC_API_URL
 type View = 'db' | 'spotify'
@@ -211,7 +212,9 @@ return
 		`&market=KR&limit=50&offset=0`
 
 	try {
-		const cand = await getJSON(url)
+		const r = await fetch(url, { headers: getAuthHeader() })
+		if (!r.ok) throw new Error(`HTTP ${r.status}`)
+		const cand = await r.json()
 		render(
 			mapCandArtists(cand).slice(0, 10),
 			mapCandAlbums(cand).slice(0, 20),
