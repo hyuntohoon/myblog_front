@@ -22,49 +22,48 @@ interface Props {
   onAuthorChange: (v: string) => void
   onAuthorRoleChange: (v: string) => void
   onDraftSave: () => void
-  onPublish: () => Promise<void>
+  onPublish: () => void
+  onReset: () => void
 }
 
 function TagsInput({ tags, onChange }: { tags: string[], onChange: (t: string[]) => void }) {
-  const [input, setInput] = useState('')
-
-  function addTag() {
-    const trimmed = input.trim().toLowerCase()
-    if (!trimmed || tags.includes(trimmed))
-      return
-    onChange([...tags, trimmed])
-    setInput('')
+  const [draft, setDraft] = useState('')
+  function onKey(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      const t = draft.trim()
+      if (t && !tags.includes(t))
+        onChange([...tags, t])
+      setDraft('')
+    }
+    else if (e.key === 'Backspace' && !draft && tags.length) {
+      onChange(tags.slice(0, -1))
+    }
   }
-
   return (
-    <div className="wr-tags-wrap">
-      {tags.map(tag => (
-        <span key={tag} className="wr-tag-chip">
-          {tag}
-          <button
-	type="button"
-	onClick={() => onChange(tags.filter(t => t !== tag))}
-          >
-            ×
-          </button>
+    <div className="tags-wrap">
+      {tags.map((t, i) => (
+        <span key={i} className="tag-chip">
+          {t}
+          <button type="button" onClick={() => onChange(tags.filter((_, j) => j !== i))}>✕</button>
         </span>
       ))}
       <input
-	type="text"
-	className="wr-tags-input"
-	value={input}
-	placeholder="태그 추가…"
-	onChange={e => setInput(e.target.value)}
-	onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ',') {
-            e.preventDefault()
-            addTag()
-          }
-          if (e.key === 'Backspace' && !input && tags.length) {
-            onChange(tags.slice(0, -1))
-          }
-        }}
+	className="tags-input"
+	placeholder={tags.length ? '' : '태그…'}
+	value={draft}
+	onChange={e => setDraft(e.target.value)}
+	onKeyDown={onKey}
       />
+    </div>
+  )
+}
+
+function Check({ ok, label }: { ok: boolean, label: string }) {
+  return (
+    <div className={`check-row${ok ? ' ok' : ''}`}>
+      <span className="check-mark">{ok ? '✓' : '○'}</span>
+      <span>{label}</span>
     </div>
   )
 }
@@ -90,124 +89,78 @@ onTagsChange,
 onAuthorRoleChange,
   onDraftSave,
 onPublish,
+onReset,
 }: Props) {
-  const [publishing, setPublishing] = useState(false)
-
-  const checks = [
-    { label: '앨범 선택됨', ok: subject !== null },
-    { label: '제목 입력됨', ok: headline.trim().length > 0 },
-    { label: '평점 설정됨', ok: score > 0 },
-    { label: '본문 80자 이상', ok: body.length >= 80 },
-  ]
-  const canPublish = checks.every(c => c.ok)
-
-  async function handlePublish() {
-    if (!canPublish || publishing)
-      return
-    setPublishing(true)
-    try {
-      await onPublish()
-    }
-    finally {
-      setPublishing(false)
-    }
-  }
-
   return (
     <>
-      {open && <div className="wr-settings-backdrop open" onClick={onClose} />}
-      <div className={`wr-settings-panel${open ? ' open' : ''}`}>
-        <div className="wr-set-head">
-          <span className="wr-set-title">발행 설정</span>
-          <button type="button" className="wr-set-close" onClick={onClose}>✕</button>
-        </div>
+      <div className={`settings-backdrop${open ? ' open' : ''}`} onClick={onClose} />
+      <aside className={`settings-panel${open ? ' open' : ''}`}>
+        <header className="set-head">
+          <div className="set-title">발행 설정</div>
+          <button type="button" className="set-close" onClick={onClose} aria-label="Close">✕</button>
+        </header>
 
-        <div className="wr-set-body">
-          <div className="wr-set-block">
-            <label className="wr-set-l">섹션</label>
-            <select
-	className="wr-set-select"
-	value={section}
-	onChange={e => onSectionChange(e.target.value)}
-            >
-              {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+        <div className="set-body">
+          <div className="set-block">
+            <label className="set-l">섹션</label>
+            <select className="set-select" value={section} onChange={e => onSectionChange(e.target.value)}>
+              {SECTIONS.map(x => <option key={x}>{x}</option>)}
             </select>
           </div>
 
-          <div className="wr-set-block">
-            <label className="wr-set-l">장르</label>
-            <select
-	className="wr-set-select"
-	value={genre}
-	onChange={e => onGenreChange(e.target.value)}
-            >
-              {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
+          <div className="set-row-2">
+            <div className="set-block">
+              <label className="set-l">장르</label>
+              <select className="set-select" value={genre} onChange={e => onGenreChange(e.target.value)}>
+                {GENRES.map(x => <option key={x}>{x}</option>)}
+              </select>
+            </div>
+            <div className="set-block">
+              <label className="set-l">발행일</label>
+              <input type="date" className="set-input" value={publishDate} onChange={e => onPublishDateChange(e.target.value)} />
+            </div>
           </div>
 
-          <div className="wr-set-block">
-            <label className="wr-set-l">발행일</label>
-            <input
-	type="date"
-	className="wr-set-input"
-	value={publishDate}
-	onChange={e => onPublishDateChange(e.target.value)}
-            />
-          </div>
-
-          <div className="wr-set-block">
-            <label className="wr-set-l">태그</label>
+          <div className="set-block">
+            <label className="set-l">태그</label>
             <TagsInput tags={tags} onChange={onTagsChange} />
+            <div className="set-hint">엔터로 추가, ⌫로 삭제</div>
           </div>
 
-          <div className="wr-set-row-2">
-            <div className="wr-set-block">
-              <label className="wr-set-l">작성자</label>
-              <input
-	type="text"
-	className="wr-set-input"
-	value={author}
-	placeholder="이름"
-	onChange={e => onAuthorChange(e.target.value)}
-              />
+          <div className="set-row-2">
+            <div className="set-block">
+              <label className="set-l">작성자</label>
+              <input className="set-input" value={author} onChange={e => onAuthorChange(e.target.value)} placeholder="이름" />
             </div>
-            <div className="wr-set-block">
-              <label className="wr-set-l">역할</label>
-              <input
-	type="text"
-	className="wr-set-input"
-	value={authorRole}
-	placeholder="Staff Writer"
-	onChange={e => onAuthorRoleChange(e.target.value)}
-              />
+            <div className="set-block">
+              <label className="set-l">역할</label>
+              <input className="set-input" value={authorRole} onChange={e => onAuthorRoleChange(e.target.value)} placeholder="객원필자" />
             </div>
           </div>
 
-          <div className="wr-set-checklist">
-            {checks.map(c => (
-              <div key={c.label} className={`wr-check-row${c.ok ? ' ok' : ''}`}>
-                <span className="wr-check-mark">{c.ok ? '✓' : ''}</span>
-                <span>{c.label}</span>
-              </div>
-            ))}
+          <div className="set-block set-checklist">
+            <label className="set-l">발행 체크리스트</label>
+            <Check ok={!!subject} label="작품 선택" />
+            <Check ok={!!headline.trim()} label="헤드라인" />
+            <Check ok={score > 0} label="평점" />
+            <Check ok={body.trim().length >= 80} label={`본문 80자 이상 (현재 ${body.trim().length}자)`} />
           </div>
         </div>
 
-        <div className="wr-set-foot">
-          <button type="button" className="wr-set-btn-ghost" onClick={onDraftSave}>
-            임시저장
-          </button>
-          <span className="wr-set-foot-spacer" />
+        <footer className="set-foot">
+          <button type="button" className="set-link-danger" onClick={onReset}>초안 삭제</button>
+          <div className="set-foot-spacer" />
+          <button type="button" className="set-btn-ghost" onClick={onDraftSave}>임시저장</button>
           <button
 	type="button"
-	className="wr-set-btn-primary"
-	disabled={!canPublish || publishing}
-	onClick={handlePublish}
+	className="set-btn-primary"
+	onClick={onPublish}
+	disabled={!subject || !headline.trim() || score <= 0 || body.trim().length < 80}
           >
-            {publishing ? '발행 중…' : '발행 →'}
+            발행 →
           </button>
-        </div>
-      </div>
+        </footer>
+      </aside>
     </>
   )
 }

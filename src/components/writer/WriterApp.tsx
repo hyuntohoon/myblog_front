@@ -15,23 +15,88 @@ function todayISO() {
 }
 
 function nowTime() {
-  return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function loadDraft(): Partial<DraftPersist> {
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
-    if (!raw)
-return {}
-    return JSON.parse(raw) as Partial<DraftPersist>
+    return raw ? JSON.parse(raw) as Partial<DraftPersist> : {}
   }
- catch {
+  catch {
     return {}
   }
 }
 
+function autoGrow(el: HTMLTextAreaElement) {
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+function TitleArea({ headline, setHeadline, dek, setDek, dim }: {
+  headline: string
+  setHeadline: (v: string) => void
+  dek: string
+  setDek: (v: string) => void
+  dim: boolean
+}) {
+  return (
+    <div className={`title-area${dim ? ' is-dim' : ''}`}>
+      <textarea
+	className="title-input"
+	rows={1}
+	placeholder="제목"
+	value={headline}
+	onChange={(e) => {
+          setHeadline(e.target.value)
+          autoGrow(e.target)
+        }}
+	onFocus={e => autoGrow(e.target)}
+	spellCheck={false}
+      />
+      <textarea
+	className="dek-input"
+	rows={1}
+	placeholder="부제 또는 한 줄 요약"
+	value={dek}
+	onChange={(e) => {
+          setDek(e.target.value)
+          autoGrow(e.target)
+        }}
+	onFocus={e => autoGrow(e.target)}
+	spellCheck={false}
+      />
+    </div>
+  )
+}
+
+function ByLine({ author, role, date }: { author: string, role: string, date: string }) {
+  return (
+    <div className="byline">
+      <span className="byline-by">By</span>
+      <span className="byline-author">{author || '—'}</span>
+      {role && (
+<span className="byline-role">
+·
+{role}
+</span>
+)}
+      <span className="byline-sep">·</span>
+      <span>{date}</span>
+    </div>
+  )
+}
+
+function Toast({ msg }: { msg: string }) {
+  if (!msg)
+    return null
+  return <div className="toast">{msg}</div>
+}
+
 export default function WriterApp() {
   const saved = loadDraft()
+  const loaded = useRef(false)
 
   const [subject, setSubject] = useState<AlbumDetail | null>(saved.subject ?? null)
   const [score, setScore] = useState(saved.score ?? 0)
@@ -49,80 +114,89 @@ export default function WriterApp() {
   const [view, setView] = useState<WriterView>('edit')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [status, setStatus] = useState<SaveStatus>('saved')
-  const [lastSaved, setLastSaved] = useState(saved.lastSaved ?? nowTime())
+  const [lastSaved, setLastSaved] = useState(saved.lastSaved ?? '—')
   const [toast, setToast] = useState('')
 
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  function showToast(msg: string) {
+  const flash = useCallback((msg: string) => {
     setToast(msg)
     if (toastTimer.current)
-clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(''), 3000)
-  }
+      clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(''), 2600)
+  }, [])
 
-  const persistDraft = useCallback(() => {
-    const draft: DraftPersist = {
-      subject,
+  useEffect(() => {
+    loaded.current = true
+  }, [])
+
+  // Autosave
+  useEffect(() => {
+    if (!loaded.current)
+      return
+    setStatus('dirty')
+    const id = setTimeout(() => {
+      const ts = nowTime()
+      const data: DraftPersist = {
+        subject,
 score,
 bestNew,
 headline,
 dek,
 body,
 tags,
-      section,
+        section,
 genre,
 publishDate,
 author,
 authorRole,
-      lastSaved: nowTime(),
-    }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-    const t = nowTime()
-    setLastSaved(t)
-    setStatus('saved')
+lastSaved: ts,
+      }
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(data))
+      }
+      catch { /* quota */ }
+      setLastSaved(ts)
+      setStatus('saved')
+    }, 600)
+    return () => clearTimeout(id)
   }, [subject, score, bestNew, headline, dek, body, tags, section, genre, publishDate, author, authorRole])
 
-  // autosave on any change
-  useEffect(() => {
-    setStatus('dirty')
-    if (autosaveTimer.current)
-clearTimeout(autosaveTimer.current)
-    autosaveTimer.current = setTimeout(persistDraft, 600)
-    return () => {
- if (autosaveTimer.current)
-clearTimeout(autosaveTimer.current)
-}
-  }, [subject, score, bestNew, headline, dek, body, tags, section, genre, publishDate, author, authorRole, persistDraft])
+  const onSaveDraft = () => flash('임시저장 완료')
 
-  function handleManualSave() {
-    persistDraft()
-    showToast('임시저장 완료')
+  const onReset = () => {
+    localStorage.removeItem(DRAFT_KEY)
+    setSubject(null)
+    setScore(0)
+    setBestNew(false)
+    setHeadline('')
+    setDek('')
+    setBody('')
+    setTags([])
+    setSettingsOpen(false)
+    flash('초안이 삭제되었습니다.')
   }
 
-  async function handlePublish() {
-    if (!subject || !headline.trim() || score <= 0 || body.length < 80)
-return
-
+  const onPublish = async () => {
+    if (!subject || !headline.trim() || score <= 0 || body.trim().length < 80) {
+      flash('발행 조건이 충족되지 않았습니다.')
+      return
+    }
     const artistIds = subject.artists.map(a => a.id).filter(Boolean)
-    const payload = {
+    const res = await savePost({
       title: headline,
       description: dek,
       body_mdx: body,
       posted_date: publishDate,
-      status: 'published' as const,
+      status: 'published',
       album_ids: [subject.id],
       artist_ids: artistIds,
       rating: score,
       rating_scale: 5,
       album_cover_url: subject.cover_url,
-    }
-
-    const res = await savePost(payload)
+    })
     if (!res.ok) {
-      const err = await res.text()
-      showToast(`발행 실패: ${err}`)
+      flash(`발행 실패: ${res.status}`)
       return
     }
 
@@ -144,51 +218,35 @@ return
       rating: score,
       rating_scale: 5,
     })
-
     if (!gitRes.ok) {
-      showToast('저장 완료, Git 발행 실패')
+      flash('저장 완료, Git 발행 실패')
       return
     }
 
     localStorage.removeItem(DRAFT_KEY)
-    showToast('발행 완료!')
+    flash('발행 완료!')
+    setSettingsOpen(false)
     setTimeout(() => {
       window.location.href = `/blog/${slug}`
     }, 1200)
   }
 
-  const artistName = subject?.artists.map(a => a.name).join(', ') ?? ''
-  const year = subject?.release_date?.slice(0, 4) ?? ''
+  const s = { subject, score, bestNew, headline, dek, body, tags, section, genre, publishDate, author, authorRole }
 
   return (
-    <div className="wr-root">
+    <div className="page">
       <WriterChrome
-	status={status}
-	lastSaved={lastSaved}
 	view={view}
 	onViewChange={setView}
-	onSave={handleManualSave}
+	status={status}
+	lastSaved={lastSaved}
+	onSave={onSaveDraft}
 	onPublish={() => setSettingsOpen(true)}
       />
 
-      <main className="wr-surface">
-        {view === 'preview' ?
-          (
-            <PreviewView
-	subject={subject}
-	score={score}
-	bestNew={bestNew}
-	headline={headline}
-	dek={dek}
-	body={body}
-	author={author}
-	authorRole={authorRole}
-	publishDate={publishDate}
-            />
-          ) :
-          (
-          <>
-            {/* Subject (album search + compact card) */}
+      {view === 'edit' ?
+        (
+          <main className="surface">
             <SubjectBlock
 	subject={subject}
 	score={score}
@@ -196,55 +254,17 @@ return
 	onSubjectSelect={setSubject}
 	onScoreChange={setScore}
 	onBestNewToggle={() => setBestNew(b => !b)}
-	onClear={() => {
-          setSubject(null)
-          setScore(0)
-          setBestNew(false)
-        }}
             />
-
-            {/* Title area */}
-            <div className="wr-title-area">
-              <input
-	type="text"
-	className="wr-title-input"
-	value={headline}
-	onChange={e => setHeadline(e.target.value)}
-	placeholder="제목"
-	autoComplete="off"
-              />
-              <input
-	type="text"
-	className="wr-dek-input"
-	value={dek}
-	onChange={e => setDek(e.target.value)}
-	placeholder="부제 또는 한 줄 요약"
-	autoComplete="off"
-              />
-            </div>
-
-            {/* Byline */}
-            <div className="wr-byline">
-              {(artistName || subject?.title) && (
-                <span>
-                  {artistName && <em>{artistName}</em>}
-                  {artistName && subject?.title && ' — '}
-                  {subject?.title && <span>{subject.title}</span>}
-                  {year && ` (${year})`}
-                </span>
-              )}
-              <span>
-                {author ? `By ${author}` : 'By'}
-                {authorRole ? ` · ${authorRole}` : ''}
-              </span>
-              <span>{publishDate}</span>
-            </div>
-
-            {/* Body */}
-            <BodyArea value={body} onChange={setBody} />
-          </>
+            <TitleArea headline={headline} setHeadline={setHeadline} dek={dek} setDek={setDek} dim={!subject} />
+            <ByLine author={author} role={authorRole} date={publishDate} />
+            <BodyArea body={body} setBody={setBody} dim={!subject} />
+          </main>
+        ) :
+        (
+          <main className="surface preview-surface">
+            <PreviewView s={s} />
+          </main>
         )}
-      </main>
 
       <SettingsPanel
 	open={settingsOpen}
@@ -265,13 +285,12 @@ return
 	onTagsChange={setTags}
 	onAuthorChange={setAuthor}
 	onAuthorRoleChange={setAuthorRole}
-	onDraftSave={handleManualSave}
-	onPublish={handlePublish}
+	onDraftSave={onSaveDraft}
+	onPublish={onPublish}
+	onReset={onReset}
       />
 
-      {toast && (
-        <div className="wr-toast">{toast}</div>
-      )}
+      <Toast msg={toast} />
     </div>
   )
 }
