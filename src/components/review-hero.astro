@@ -1,0 +1,305 @@
+---
+/**
+ * 리뷰 상세 페이지 Hero — 앨범 커버 + 메타데이터 + 대형 평점
+ * musicReview 없으면 일반 글 헤더로 렌더링
+ */
+import type { CollectionEntry } from 'astro:content'
+
+export interface Props {
+  post: CollectionEntry<'blog'>['data']
+}
+
+const { post } = Astro.props
+const { title, description, date, category, albumCover, image, musicReview } = post
+
+const hasReview = !!musicReview
+const cover = albumCover || image || musicReview?.cover?.src
+const artist = musicReview?.artists?.join(', ')
+const albumTitle = musicReview?.title
+const rating = musicReview?.rating?.value
+const ratingScale = musicReview?.rating?.scale ?? 10
+const releaseDate = musicReview?.releaseDate
+  ? new Date(musicReview.releaseDate).getFullYear()
+  : null
+const genres = musicReview?.genres ?? []
+const publishedDate = new Date(date).toLocaleDateString('ko-KR', {
+  year: 'numeric', month: 'long', day: 'numeric',
+})
+---
+
+{hasReview ? (
+  <!-- Music review hero -->
+  <div class="review-hero">
+    <!-- Left: album cover -->
+    <div class="rh-cover-col">
+      <div class="rh-cover">
+        {cover ? (
+          <img src={cover} alt={albumTitle ?? title} loading="eager" class="rh-img" />
+        ) : (
+          <div class="rh-placeholder">
+            <span>{(albumTitle ?? title).slice(0, 2).toUpperCase()}</span>
+          </div>
+        )}
+      </div>
+
+      <!-- Cover caption -->
+      <div class="rh-cover-caption">
+        {genres.slice(0, 2).map(g => (
+          <span class="mono-label rh-genre">{g}</span>
+        ))}
+        {releaseDate && (
+          <span class="mono-label" style="color: var(--color-faded);">{releaseDate}</span>
+        )}
+      </div>
+    </div>
+
+    <!-- Right: metadata -->
+    <div class="rh-meta-col">
+      <!-- Category + type label -->
+      <div class="rh-labels">
+        {category && (
+          <span class="mono-label rh-category">{category.toUpperCase()}</span>
+        )}
+        <span class="mono-label rh-type" style="color: var(--color-faded);">Album Review</span>
+      </div>
+
+      <!-- Artist -->
+      {artist && <p class="rh-artist">{artist}</p>}
+
+      <!-- Album title -->
+      <h1 class="rh-title"><em>{albumTitle ?? title}</em></h1>
+
+      <!-- Description -->
+      {description && <p class="rh-dek">{description}</p>}
+
+      <!-- Score bar -->
+      {rating != null && (
+        <div class="rh-score-row">
+          <div class="rh-score-badge">
+            <span class="rh-score-num">{rating % 1 === 0 ? rating.toFixed(1) : rating}</span>
+            <span class="rh-score-denom">/{ratingScale}</span>
+          </div>
+          <div class="rh-byline">
+            <span class="mono-label">{publishedDate}</span>
+          </div>
+        </div>
+      )}
+
+      {rating == null && (
+        <div class="rh-date-only">
+          <span class="mono-label" style="color: var(--color-faded);">{publishedDate}</span>
+        </div>
+      )}
+    </div>
+  </div>
+) : (
+  <!-- Plain post header (no musicReview) -->
+  <div class="plain-hero">
+    {category && (
+      <div class="ph-labels">
+        <span class="mono-label ph-category">{category.toUpperCase()}</span>
+      </div>
+    )}
+    <h1 class="ph-title">{title}</h1>
+    {description && <p class="ph-dek">{description}</p>}
+    <div class="ph-date">
+      <span class="mono-label" style="color: var(--color-faded);">{publishedDate}</span>
+    </div>
+  </div>
+)}
+
+<style>
+  /* ─── Music review hero ─── */
+  .review-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 56px;
+    align-items: start;
+    padding: 56px 0 64px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* Cover column */
+  .rh-cover-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .rh-cover {
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border: 1px solid var(--color-border-soft);
+  }
+  .rh-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .rh-placeholder {
+    width: 100%;
+    height: 100%;
+    background: var(--color-paper);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-serif);
+    font-size: clamp(48px, 8vw, 96px);
+    font-style: italic;
+    font-weight: 700;
+    color: var(--color-faded);
+    letter-spacing: -0.04em;
+  }
+  .rh-cover-caption {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .rh-genre {
+    color: var(--color-subtle);
+  }
+  .rh-genre + .rh-genre::before {
+    content: '·';
+    margin-right: 12px;
+  }
+
+  /* Meta column */
+  .rh-meta-col {
+    padding-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .rh-labels {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .rh-category {
+    color: var(--color-accent);
+    letter-spacing: 0.12em;
+  }
+  .rh-type {
+    letter-spacing: 0.08em;
+  }
+  .rh-artist {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--color-text);
+    margin: 0;
+  }
+  .rh-title {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: clamp(40px, 5vw, 68px);
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    font-weight: 500;
+    color: var(--color-text);
+  }
+  .rh-title em {
+    font-style: italic;
+  }
+  .rh-dek {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--color-subtle);
+    max-width: 52ch;
+    margin: 0;
+  }
+
+  /* Score bar */
+  .rh-score-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+    margin-top: 8px;
+  }
+  .rh-score-badge {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    font-family: var(--font-serif);
+    font-weight: 600;
+  }
+  .rh-score-num {
+    font-size: clamp(56px, 8vw, 88px);
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--color-text);
+  }
+  .rh-score-denom {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--color-faded);
+    letter-spacing: 0.05em;
+    margin-bottom: 0.8em;
+  }
+  .rh-date-only {
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border);
+  }
+
+  /* ─── Plain post hero ─── */
+  .plain-hero {
+    padding: 56px 0 48px;
+    border-bottom: 1px solid var(--color-border);
+    max-width: 760px;
+  }
+  .ph-labels {
+    margin-bottom: 14px;
+  }
+  .ph-category {
+    color: var(--color-accent);
+    letter-spacing: 0.12em;
+  }
+  .ph-title {
+    margin: 0 0 16px;
+    font-family: var(--font-serif);
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    font-weight: 500;
+    color: var(--color-text);
+  }
+  .ph-dek {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--color-subtle);
+    max-width: 60ch;
+    margin: 0 0 16px;
+  }
+  .ph-date {
+    margin-top: 8px;
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 768px) {
+    .review-hero {
+      grid-template-columns: 1fr;
+      gap: 28px;
+      padding: 32px 0 40px;
+    }
+    .rh-meta-col {
+      padding-top: 0;
+    }
+    .rh-title {
+      font-size: clamp(32px, 8vw, 48px);
+    }
+    .rh-score-num {
+      font-size: clamp(48px, 12vw, 72px);
+    }
+    .plain-hero {
+      padding: 32px 0 36px;
+    }
+  }
+</style>
