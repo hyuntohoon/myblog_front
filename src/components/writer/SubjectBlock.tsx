@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import type { AlbumDetail, AlbumSearchResult } from './types'
 import { apiFetch } from '../../lib/api'
@@ -117,6 +118,19 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
 
   const displayStars = useMemo(() => hoverStar || Math.round(score), [hoverStar, score])
 
+  function clearSearch() {
+    setQuery('')
+    setResults([])
+    setStatus('')
+  }
+
+  function onSearchKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      void runDBSearch()
+    }
+  }
+
   async function onPick(sr: AlbumSearchResult) {
     const lookupId = sr.spotify_id || sr.id
     try {
@@ -146,9 +160,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       {subject && !searching && (
         <div className="hdr-card">
           <div className="hdr-cover">
-            {subject.cover_url
-              ? <img src={subject.cover_url} alt={subject.title} />
-              : <span className="cover-fallback">{subject.title[0]}</span>}
+            {subject.cover_url ?
+              <img src={subject.cover_url} alt={subject.title} /> :
+              <span className="cover-fallback">{subject.title[0]}</span>}
           </div>
           <div className="hdr-info">
             <div className="hdr-kicker">
@@ -170,12 +184,12 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
             <div className="hdr-stars" onMouseLeave={() => setHoverStar(0)}>
               {[1, 2, 3, 4, 5].map(i => (
                 <button
-                  key={i}
-                  type="button"
-                  className={`hdr-star${i <= displayStars ? ' on' : ''}`}
-                  onMouseEnter={() => setHoverStar(i)}
-                  onClick={() => onScoreChange(i)}
-                  aria-label={`${i}점`}
+	key={i}
+	type="button"
+	className={`hdr-star${i <= displayStars ? ' on' : ''}`}
+	onMouseEnter={() => setHoverStar(i)}
+	onClick={() => onScoreChange(i)}
+	aria-label={`${i}점`}
                 >
                   {i <= displayStars ? '★' : '☆'}
                 </button>
@@ -183,14 +197,14 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
             </div>
             <div className="hdr-num-wrap">
               <input
-                type="number"
-                className="hdr-num"
-                min={0}
-                max={5}
-                step={0.5}
-                value={score || ''}
-                placeholder="—"
-                onChange={(e) => {
+	type="number"
+	className="hdr-num"
+	min={0}
+	max={5}
+	step={0.5}
+	value={score || ''}
+	placeholder="—"
+	onChange={(e) => {
                   const v = Number.parseFloat(e.target.value)
                   if (!Number.isNaN(v))
                     onScoreChange(Math.max(0, Math.min(5, v)))
@@ -201,9 +215,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
           </div>
           <button type="button" className="hdr-change" onClick={() => setSearching(true)} title="다른 앨범 검색">↻</button>
           <button
-            type="button"
-            className={`hdr-bnm${bestNew ? ' on' : ''}`}
-            onClick={onBestNewToggle}
+	type="button"
+	className={`hdr-bnm${bestNew ? ' on' : ''}`}
+	onClick={onBestNewToggle}
           >
             BEST NEW
           </button>
@@ -216,44 +230,44 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
             <div className="hdr-search">
               <span className="hdr-search-icon">⌕</span>
               <input
-                className="hdr-search-input"
-                placeholder={subject ? '다른 앨범 검색…' : '어떤 앨범을 리뷰할까요?'}
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runDBSearch() } }}
-                autoComplete="off"
+	className="hdr-search-input"
+	placeholder={subject ? '다른 앨범 검색…' : '어떤 앨범을 리뷰할까요?'}
+	value={query}
+	onChange={e => setQuery(e.target.value)}
+	onKeyDown={onSearchKeyDown}
+	autoComplete="off"
               />
               {query && (
                 <button
-                  type="button"
-                  className="hdr-search-clear"
-                  onClick={() => { setQuery(''); setResults([]); setStatus('') }}
+	type="button"
+	className="hdr-search-clear"
+	onClick={clearSearch}
                 >
                   ✕
                 </button>
               )}
             </div>
             <button
-              type="button"
-              className="hdr-search-btn"
-              onClick={() => void runDBSearch()}
-              disabled={loading || !query.trim()}
+	type="button"
+	className="hdr-search-btn"
+	onClick={() => void runDBSearch()}
+	disabled={loading || !query.trim()}
             >
               검색
             </button>
             <button
-              type="button"
-              className="hdr-sync-btn"
-              onClick={() => void runSpotifySync()}
-              disabled={loading || syncDisabled || !query.trim()}
+	type="button"
+	className="hdr-sync-btn"
+	onClick={() => void runSpotifySync()}
+	disabled={loading || syncDisabled || !query.trim()}
             >
               Spotify 싱크
             </button>
             {subject && (
               <button
-                type="button"
-                className="hdr-cancel"
-                onClick={() => {
+	type="button"
+	className="hdr-cancel"
+	onClick={() => {
                   setSearching(false)
                   setQuery('')
                   setResults([])
@@ -268,17 +282,20 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
           <div className="hdr-filter-row">
             {FILTERS.map(f => (
               <button
-                key={f.v}
-                type="button"
-                className={`hdr-filter-btn${filter === f.v ? ' on' : ''}`}
-                onClick={() => setFilter(f.v)}
+	key={f.v}
+	type="button"
+	className={`hdr-filter-btn${filter === f.v ? ' on' : ''}`}
+	onClick={() => setFilter(f.v)}
               >
                 {f.l}
               </button>
             ))}
             <span className="hdr-filter-hint">싱크 시 적용</span>
             {results.length > 0 && (
-              <span className="hdr-count">{results.length}개</span>
+              <span className="hdr-count">
+{results.length}
+개
+              </span>
             )}
           </div>
 
@@ -288,15 +305,15 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
             <div className="hdr-grid">
               {results.map(r => (
                 <button
-                  key={r.id || r.spotify_id}
-                  type="button"
-                  className={`hdr-tile${subject?.id === r.id ? ' is-current' : ''}`}
-                  onClick={() => onPick(r)}
+	key={r.id || r.spotify_id}
+	type="button"
+	className={`hdr-tile${subject?.id === r.id ? ' is-current' : ''}`}
+	onClick={() => onPick(r)}
                 >
                   <div className="hdr-tile-cover">
-                    {r.cover_url
-                      ? <img src={r.cover_url} alt={r.title} />
-                      : <span className="cover-fallback">{r.title[0]}</span>}
+                    {r.cover_url ?
+                      <img src={r.cover_url} alt={r.title} /> :
+                      <span className="cover-fallback">{r.title[0]}</span>}
                   </div>
                   <div className="hdr-tile-body">
                     <div className="hdr-tile-name"><em>{r.title}</em></div>
