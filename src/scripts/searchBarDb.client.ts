@@ -213,7 +213,8 @@ return
 
 	try {
 		const r = await fetch(url, { headers: getAuthHeader() })
-		if (!r.ok) throw new Error(`HTTP ${r.status}`)
+		if (!r.ok)
+throw new Error(`HTTP ${r.status}`)
 		const cand = await r.json()
 		render(
 			mapCandArtists(cand).slice(0, 10),

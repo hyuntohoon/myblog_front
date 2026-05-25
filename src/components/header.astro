@@ -5,8 +5,10 @@ import Search from './search.astro'
 const { pathname } = Astro.url
 
 function normalize(p: string) {
-  if (!p.startsWith('/')) p = `/${p}`
-  if (!p.endsWith('/')) p += '/'
+  if (!p.startsWith('/'))
+p = `/${p}`
+  if (!p.endsWith('/'))
+p += '/'
   return p
 }
 
@@ -75,9 +77,9 @@ const navLinks = [
         const active = isActive(link.url)
         return (
           <a
-            href={href}
-            class={`mainnav-link${active ? ' mainnav-active' : ''}`}
-            aria-current={active ? 'page' : undefined}
+	href={href}
+	class={`mainnav-link${active ? ' mainnav-active' : ''}`}
+	aria-current={active ? 'page' : undefined}
           >
             {link.title}
           </a>
@@ -235,7 +237,9 @@ const navLinks = [
   if (dateEl) {
     const d = new Date()
     dateEl.textContent = d.toLocaleDateString('ko-KR', {
-      year: 'numeric', month: 'long', day: 'numeric'
-    })
+      year: 'numeric',
+month: 'long',
+day: 'numeric',
+  })
   }
 </script>

@@ -173,7 +173,7 @@ import Seo from '@components/seo.astro'
 </style>
 
 <script>
-  import { isLoggedIn, goLogin, getAccessToken } from '../lib/auth'
+  import { getAccessToken, goLogin, isLoggedIn } from '../lib/auth'
 
   const API = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
@@ -189,13 +189,18 @@ import Seo from '@components/seo.astro'
 
   function formatDate(iso: string) {
     return new Date(iso).toLocaleDateString('ko-KR', {
-      year: 'numeric', month: 'short', day: 'numeric',
+      year: 'numeric',
+month: 'short',
+day: 'numeric',
     })
   }
 
   function makeDraftRow(d: {
-    id: string; title: string; slug: string;
-    category: string | null; posted_date: string
+    id: string
+title: string
+slug: string
+    category: string | null
+posted_date: string
   }): HTMLTableRowElement {
     const tr = document.createElement('tr')
 
@@ -233,7 +238,9 @@ import Seo from '@components/seo.astro'
     deleteBtn.className = 'draft-action-btn danger'
     deleteBtn.textContent = 'Delete'
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm('이 초안을 삭제할까요?')) return
+      // eslint-disable-next-line no-alert
+      if (!confirm('이 초안을 삭제할까요?'))
+        return
       const token = getAccessToken()
       const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}`, {
         method: 'DELETE',
@@ -243,7 +250,10 @@ import Seo from '@components/seo.astro'
         tr.remove()
         const remaining = $tbody.querySelectorAll('tr').length
         $count.textContent = `${remaining} draft${remaining !== 1 ? 's' : ''}`
-        if (remaining === 0) { hide($table); show($empty) }
+        if (remaining === 0) {
+          hide($table)
+          show($empty)
+        }
       }
     })
     actionsDiv.appendChild(deleteBtn)
@@ -263,11 +273,15 @@ import Seo from '@components/seo.astro'
       const res = await fetch(`${API}/api/posts?status=draft`, {
         headers: { Authorization: `Bearer ${token ?? ''}` },
       })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      if (!res.ok)
+throw new Error(`HTTP ${res.status}`)
 
       const drafts: Array<{
-        id: string; title: string; slug: string;
-        category: string | null; posted_date: string
+        id: string
+title: string
+slug: string
+        category: string | null
+posted_date: string
       }> = await res.json()
 
       hide($loading)
@@ -281,7 +295,8 @@ import Seo from '@components/seo.astro'
       $count.textContent = `${drafts.length} draft${drafts.length > 1 ? 's' : ''}`
       drafts.forEach(d => $tbody.appendChild(makeDraftRow(d)))
       show($table)
-    } catch {
+    }
+ catch {
       hide($loading)
       show($error)
     }

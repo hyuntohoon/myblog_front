@@ -14,7 +14,9 @@ const albumTitle = musicReview?.title
 const rating = musicReview?.rating?.value
 const ratingScale = musicReview?.rating?.scale ?? 10
 const formattedDate = new Date(date).toLocaleDateString('ko-KR', {
-  year: 'numeric', month: 'long', day: 'numeric'
+  year: 'numeric',
+month: 'long',
+day: 'numeric',
 })
 ---
 
@@ -25,9 +27,11 @@ const formattedDate = new Date(date).toLocaleDateString('ko-KR', {
     <div class="hero-cover-wrap">
       <a href={`/blog/${slug}`} class="hero-cover-link" tabindex="-1" aria-hidden="true">
         <div class="hero-cover">
-          {cover ? (
+          {cover ?
+(
             <img src={cover} alt={albumTitle ?? title} loading="eager" class="hero-img" />
-          ) : (
+          ) :
+(
             <div class="hero-placeholder">
               <span>{(albumTitle ?? title).slice(0, 2).toUpperCase()}</span>
             </div>

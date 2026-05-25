@@ -31,10 +31,10 @@ const { Content } = await render(entry)
 
 <Layout>
   <Seo
-    slot="seo"
-    forceTitle={post.title}
-    description={post.description}
-    image={post.albumCover || post.image}
+	slot="seo"
+	forceTitle={post.title}
+	description={post.description}
+	image={post.albumCover || post.image}
   >
     <meta name="twitter:label1" content="Author" />
     <meta name="twitter:data1" data-pagefind-meta="author" content={SITE.defaultAuthor} />
@@ -51,10 +51,10 @@ const { Content } = await render(entry)
 
       <!-- Hidden album data containers for fetch script -->
       <div
-        id="music-section"
-        data-album-ids={JSON.stringify(post.albumIds ?? [])}
-        data-artist-ids={JSON.stringify(post.artistIds ?? [])}
-        style="display: none;"
+	id="music-section"
+	data-album-ids={JSON.stringify(post.albumIds ?? [])}
+	data-artist-ids={JSON.stringify(post.artistIds ?? [])}
+	style="display: none;"
       ></div>
 
       <!-- Article body: narrow centered column -->

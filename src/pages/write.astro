@@ -23,13 +23,13 @@ import SearchBar from '@components/search-bar.astro'
         <!-- Title -->
         <div class="field-group">
           <input
-            type="text"
-            id="title"
-            name="title"
-            class="write-title-input"
-            placeholder="제목을 입력하세요"
-            required
-            autocomplete="off"
+	type="text"
+	id="title"
+	name="title"
+	class="write-title-input"
+	placeholder="제목을 입력하세요"
+	required
+	autocomplete="off"
           />
           <p id="titleError" class="field-error hidden">제목을 입력하세요.</p>
         </div>
@@ -75,14 +75,14 @@ import SearchBar from '@components/search-bar.astro'
           </div>
           <div class="rating-input-row">
             <input
-              type="number"
-              id="rating"
-              name="rating"
-              min="0"
-              max="10"
-              step="0.5"
-              class="rating-input"
-              placeholder="0.0"
+	type="number"
+	id="rating"
+	name="rating"
+	min="0"
+	max="10"
+	step="0.5"
+	class="rating-input"
+	placeholder="0.0"
             />
             <span class="rating-scale mono-label">/ 10</span>
             <div id="rating-stars" class="rating-stars"></div>
@@ -113,9 +113,10 @@ import SearchBar from '@components/search-bar.astro'
   <script>
     window.addEventListener('album:detail', () => {
       const ratingSection = document.getElementById('rating-section')
-      if (ratingSection) ratingSection.classList.remove('hidden')
+      if (ratingSection)
+ratingSection.classList.remove('hidden')
     })
-  </script>
+</script>
 </Layout>
 
 <style>
