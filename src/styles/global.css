@@ -10,41 +10,44 @@
 /* ─── Design Tokens ─── */
 @theme {
 	/* Typography */
-	--font-sans: var(--font-plex-sans);
-	--font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+	--font-sans:  var(--font-plex-sans);
+	--font-serif: 'Newsreader', 'Noto Serif KR', Georgia, serif;
+	--font-mono:  'IBM Plex Mono', ui-monospace, monospace;
 
-	/* Light-mode palette (editorial: high-contrast, near-black on white) */
-	--color-bg:        #ffffff;
-	--color-text:      #111111;
+	/* Light — warm cream editorial palette (Lowfreq-inspired) */
+	--color-bg:        #f5f3ee;
+	--color-paper:     #ebe7df;
+	--color-text:      #1a1a1a;
 	--color-highlight: #000000;
-	--color-subtle:    #6b6b6b;
-	--color-faded:     #999999;
-	--color-border:    #e5e5e5;
-	--color-accent:    #ff3c00;
+	--color-subtle:    #5a5651;
+	--color-faded:     #918a80;
+	--color-border:    rgba(26, 26, 26, 0.18);
+	--color-border-soft: rgba(26, 26, 26, 0.10);
+	--color-accent:    #c8332b;
+	--color-primary:   #1a1a1a;
 
 	/* Icon chip */
-	--color-ic-bg:     #f5f5f5;
-	--color-ic-border: #e5e5e5;
-
-	/* Keep blue for interactive/link states */
-	--color-primary:   #1a1a1a;
+	--color-ic-bg:     #ebe7df;
+	--color-ic-border: rgba(26, 26, 26, 0.12);
 }
 
 /* ─── Dark-mode overrides ─── */
 @layer theme {
 	:root {
 		@variant dark {
-			--color-bg:        #0f0f0f;
-			--color-text:      #f0f0f0;
-			--color-highlight: #ffffff;
-			--color-subtle:    #888888;
-			--color-faded:     #555555;
-			--color-border:    #2a2a2a;
+			--color-bg:        #141312;
+			--color-paper:     #1e1c1a;
+			--color-text:      #ebe7df;
+			--color-highlight: #f5f3ee;
+			--color-subtle:    #a09a91;
+			--color-faded:     #6e685f;
+			--color-border:    rgba(235, 231, 223, 0.18);
+			--color-border-soft: rgba(235, 231, 223, 0.10);
 
-			--color-ic-bg:     #1a1a1a;
-			--color-ic-border: #2a2a2a;
+			--color-ic-bg:     #1e1c1a;
+			--color-ic-border: rgba(235, 231, 223, 0.12);
 
-			--color-primary:   #f0f0f0;
+			--color-primary:   #ebe7df;
 		}
 	}
 }
@@ -52,18 +55,10 @@
 /* ─── Container ─── */
 @utility container {
 	margin-inline: auto;
-	padding-inline: 1rem;
-
-	@media (width >= --theme(--breakpoint-sm)) {
-		padding-inline: 1.5rem;
-	}
-
-	@media (width >= --theme(--breakpoint-md)) {
-		padding-inline: 2rem;
-	}
+	padding-inline: 2rem;
 
 	@media (width >= --theme(--breakpoint-lg)) {
-		max-width: 1280px;
+		max-width: 1320px;
 		padding-inline: 2rem;
 	}
 }
@@ -75,7 +70,7 @@
 	}
 }
 
-/* ─── Base resets ─── */
+/* ─── Base ─── */
 html {
 	font-size: 16px;
 	-webkit-font-smoothing: antialiased;
@@ -83,9 +78,19 @@ html {
 }
 
 body {
+	font-family: var(--font-serif);
 	background-color: var(--color-bg);
 	color: var(--color-text);
-	transition: background-color 0.2s ease, color 0.2s ease;
+	transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ─── Mono utility label pattern (Lowfreq) ─── */
+.mono-label {
+	font-family: var(--font-mono);
+	font-size: 10.5px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-subtle);
 }
 
 /* ─── Active nav link ─── */
@@ -94,9 +99,16 @@ a.active {
 }
 
 /* ─── Accent utilities ─── */
-.text-accent  { color: var(--color-accent); }
-.bg-accent    { background-color: var(--color-accent); }
+.text-accent   { color: var(--color-accent); }
+.bg-accent     { background-color: var(--color-accent); }
 .border-accent { border-color: var(--color-accent); }
+
+/* ─── Hairline rule ─── */
+.rule-ink {
+	height: 1px;
+	background: var(--color-text);
+	opacity: 0.85;
+}
 
 /* ─── Pagefind search modal ─── */
 #search {
@@ -167,4 +179,12 @@ select {
 select option {
 	background-color: var(--color-bg);
 	color: var(--color-text);
+}
+
+/* ─── Pagefind theming ─── */
+:root {
+	--pagefind-ui-primary: var(--color-primary);
+	--pagefind-ui-text: var(--color-text);
+	--pagefind-ui-background: var(--color-bg);
+	--pagefind-ui-border: var(--color-border);
 }

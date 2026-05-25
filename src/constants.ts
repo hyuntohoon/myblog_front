@@ -19,12 +19,11 @@ interface Header {
 	}>
 }
 
-/** Header nav (Blog/Write만) */
+/** Header nav — public links only. Write is injected by header.astro (auth-controlled) */
 export const HEADER: Header = {
 	internal: [
-		{ title: 'Home', url: '/blog' },
-		{ title: 'Write', url: '/write' },
-		{ title: 'Rate', url: '/review' },
+		{ title: 'Reviews', url: '/blog' },
+		{ title: 'Best New Music', url: '/blog/category/review' },
 	],
 	external: [],
 }
