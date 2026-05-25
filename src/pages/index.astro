@@ -2,126 +2,115 @@
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import HeroReview from '@components/hero-review.astro'
+import BestNewMusic from '@components/best-new-music.astro'
+import ReviewGrid from '@components/review-grid.astro'
 import { getCollection } from 'astro:content'
-import PostList from '@components/post-list.astro'
-import PostGrid from '@components/post-grid.astro'
-import Link from '@components/link.astro'
 
-const isHome = Astro.url.pathname === '/'
-
-type Post = {
-  data: { date: string | Date }
-}
-
-function byDateDesc(a: Post, b: Post) {
+function byDateDesc(a: { data: { date: string | Date } }, b: { data: { date: string | Date } }) {
   return new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
 }
 
 const allPosts = (await getCollection('blog')).sort(byDateDesc)
 
-const PER_PAGE = 30
-const pageParam = Number(Astro.url.searchParams.get('page') ?? '1')
-const currentPage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
-const totalPages = Math.ceil(allPosts.length / PER_PAGE)
-const start = (currentPage - 1) * PER_PAGE
-const posts = allPosts.slice(start, start + PER_PAGE)
+// Hero: most recent post that has a cover or musicReview
+const heroPost =
+  allPosts.find(p => p.data.albumCover || p.data.image || p.data.musicReview) ??
+  allPosts[0]
 
-const basePath = isHome ? '/' : '/blog'
+// Best New Music: posts with high rating (>=8/10) that have a cover — cap at 4
+const bestNewMusic = allPosts
+  .filter(p => {
+    const r = p.data.musicReview?.rating?.value
+    return r != null && r >= 8
+  })
+  .slice(0, 4)
+
+// Recent grid: exclude the hero post, show up to 9
+const recentPosts = allPosts
+  .filter(p => heroPost == null || p.id !== heroPost.id)
+  .slice(0, 9)
 ---
 
 <Layout>
-  <Seo slot="seo" title={isHome ? 'Recent Posts' : 'Blog'} />
+  <Seo slot="seo" title="RAMAMU — 음악 비평" />
 
   <SkipNavContent>
-    <section class="max-w-4xl">
-      <!-- 헤더 + 버튼 -->
-      <div class="flex items-center justify-between mb-4">
-        {isHome ?
-(
-          <h2 class="text-base font-semibold">Recent Posts</h2>
-        ) :
-(
-          <h1 class="text-lg font-semibold">Blog</h1>
-        )}
+    <div class="container">
 
-        <div class="inline-flex items-center rounded border border-gray-300 overflow-hidden text-xs">
-          <button id="listViewBtn" class="px-3 py-1 bg-gray-900 text-white">List</button>
-          <button id="gridViewBtn" class="px-3 py-1 bg-white text-gray-700 hover:bg-gray-100">Grid</button>
+      {heroPost ? (
+        <HeroReview post={heroPost} />
+      ) : (
+        <!-- 빈 상태 -->
+        <div class="empty-hero">
+          <p class="mono-label" style="color: var(--color-faded);">
+            아직 작성된 리뷰가 없습니다.
+          </p>
         </div>
-      </div>
+      )}
 
-      <!-- 리스트 뷰 -->
-      <div id="list-view">
-        <PostList posts={posts} />
-      </div>
+      {bestNewMusic.length > 0 && (
+        <BestNewMusic posts={bestNewMusic} />
+      )}
 
-      <!-- 그리드 뷰 -->
-      <div id="grid-view" class="hidden">
-        <PostGrid posts={posts} />
-      </div>
+      {recentPosts.length > 0 && (
+        <ReviewGrid posts={recentPosts} title="Latest Reviews" />
+      )}
 
-      <!-- 페이지네이션 -->
-      <div class="mt-6 flex items-center justify-between text-sm text-faded">
-        {currentPage > 1 ?
-(
-          <Link
-	href={currentPage === 2 ? basePath : `${basePath}?page=${currentPage - 1}`}
-	class="hover:text-highlight"
-          >
-            ← Prev
-          </Link>
-        ) :
-(
-          <span class="opacity-40">← Prev</span>
-        )}
+      {allPosts.length === 0 && (
+        <div class="empty-state">
+          <p class="empty-title">아직 리뷰가 없습니다</p>
+          <p class="empty-sub">첫 리뷰를 작성해 보세요.</p>
+          <a href="/write" class="empty-cta">Write →</a>
+        </div>
+      )}
 
-        <span>Page {currentPage} / {totalPages}</span>
-
-        {currentPage < totalPages ?
-(
-          <Link
-	href={`${basePath}?page=${currentPage + 1}`}
-	class="hover:text-highlight"
-          >
-            Next →
-          </Link>
-        ) :
-(
-          <span class="opacity-40">Next →</span>
-        )}
-      </div>
-    </section>
+    </div>
   </SkipNavContent>
-
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      const listBtn = document.getElementById('listViewBtn')
-  const gridBtn = document.getElementById('gridViewBtn')
-  const listView = document.getElementById('list-view')
-  const gridView = document.getElementById('grid-view')
-
-  if (!listBtn || !gridBtn || !listView || !gridView)
-return
-
-      const setView = (view: 'list' | 'grid') => {
-        const isList = view === 'list'
-    listView.classList.toggle('hidden', !isList)
-    gridView.classList.toggle('hidden', isList)
-
-    listBtn.classList.toggle('bg-gray-900', isList)
-    listBtn.classList.toggle('text-white', isList)
-    listBtn.classList.toggle('bg-white', !isList)
-    listBtn.classList.toggle('text-gray-700', !isList)
-
-    gridBtn.classList.toggle('bg-gray-900', !isList)
-    gridBtn.classList.toggle('text-white', !isList)
-    gridBtn.classList.toggle('bg-white', isList)
-    gridBtn.classList.toggle('text-gray-700', isList)
-  }
-
-      listBtn.addEventListener('click', () => setView('list'))
-  gridBtn.addEventListener('click', () => setView('grid'))
-  setView('list')
-})
-</script>
 </Layout>
+
+<style>
+  .empty-hero {
+    padding: 80px 0;
+    border-bottom: 1px solid var(--color-border);
+    text-align: center;
+  }
+  .empty-state {
+    padding: 120px 0;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .empty-title {
+    font-family: var(--font-serif);
+    font-size: 32px;
+    font-style: italic;
+    color: var(--color-text);
+    margin: 0;
+  }
+  .empty-sub {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-faded);
+    margin: 0;
+  }
+  .empty-cta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text);
+    border-bottom: 1px solid currentColor;
+    padding-bottom: 2px;
+    text-decoration: none;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+  }
+  .empty-cta:hover {
+    opacity: 0.6;
+  }
+</style>
