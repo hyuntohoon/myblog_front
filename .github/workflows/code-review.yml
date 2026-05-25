@@ -1,0 +1,45 @@
+name: Code Review (Claude)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  code-review:
+    # draft PR은 스킵
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run code review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          claude \
+            --allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*)" \
+            --no-interactive \
+            -p "Review pull request #${PR_NUMBER} in repository ${REPO}.
+
+          Follow this process:
+          1. Check if the PR is already reviewed, trivial, or automated — if so, skip.
+          2. Fetch the diff: gh pr diff ${PR_NUMBER}.
+          3. Read the CLAUDE.md files relevant to changed directories.
+          4. Run up to 3 checks: (a) CLAUDE.md compliance, (b) obvious bugs, (c) breaking API contracts.
+          5. Score each issue 0-100 confidence. Only report issues >= 80.
+          6. Post a single concise comment via: gh pr comment ${PR_NUMBER} --body '<review>'
+          7. If no issues: post '### Code review\n\nNo issues found.\n\n🤖 Generated with Claude Code'
+          Keep the comment brief."
