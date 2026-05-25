@@ -5,6 +5,7 @@ export interface AlbumSearchResult {
   release_date: string | null
   artist_name: string | null
   spotify_id: string | null
+  source?: 'db' | 'spotify'
 }
 
 export interface AlbumDetail {

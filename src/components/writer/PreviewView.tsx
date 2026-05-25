@@ -1,125 +1,137 @@
 import type { AlbumDetail } from './types'
 
-interface Props {
+interface State {
   subject: AlbumDetail | null
   score: number
   bestNew: boolean
   headline: string
   dek: string
   body: string
+  tags: string[]
+  genre: string
+  publishDate: string
   author: string
   authorRole: string
-  publishDate: string
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+function renderInline(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = []
+  let buf = ''
+  let i = 0
+  while (i < text.length) {
+    if (text.slice(i, i + 2) === '**') {
+      if (buf) {
+        parts.push(buf)
+        buf = ''
+      }
+      const end = text.indexOf('**', i + 2)
+      if (end > -1) {
+        parts.push(<strong key={i}>{text.slice(i + 2, end)}</strong>)
+        i = end + 2
+      }
+      else {
+        buf += text[i]
+        i++
+      }
+    }
+    else if (text[i] === '*') {
+      if (buf) {
+        parts.push(buf)
+        buf = ''
+      }
+      const end = text.indexOf('*', i + 1)
+      if (end > -1) {
+        parts.push(<em key={i}>{text.slice(i + 1, end)}</em>)
+        i = end + 1
+      }
+      else {
+        buf += text[i]
+        i++
+      }
+    }
+    else {
+      buf += text[i]
+      i++
+    }
+  }
+  if (buf)
+    parts.push(buf)
+  return parts
 }
 
-function renderBody(text: string): string {
-  return text
-    .split(/\n{2,}/)
-    .map((para) => {
-      para = para.trim()
-      if (!para)
-        return ''
-      const isQuote = para.startsWith('> ')
-      const content = escapeHtml(isQuote ? para.slice(2) : para)
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/_(.+?)_/g, '<em>$1</em>')
-      return isQuote ? `<blockquote>${content}</blockquote>` : `<p>${content}</p>`
-    })
-    .join('')
-}
-
-export default function PreviewView({
-  subject,
-score,
-bestNew,
-headline,
-dek,
-body,
-author,
-authorRole,
-publishDate,
-}: Props) {
-  const artistName = subject?.artists.map(a => a.name).join(', ') ?? ''
-  const year = subject?.release_date?.slice(0, 4) ?? ''
-  const dateLabel = publishDate ?
-    new Date(publishDate).toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      }) :
-    ''
-  const full = Math.floor(score)
-  const half = score % 1 >= 0.5
+export default function PreviewView({ s }: { s: State }) {
+  const stars = Math.round(s.score)
+  const paragraphs = s.body.split(/\n{2,}/).filter(Boolean)
+  const artistName = s.subject?.artists.map(a => a.name).join(', ') ?? ''
 
   return (
-    <article className="wr-preview-article">
-      {bestNew && <span className="wr-prev-bnm">Best New Music</span>}
-
-      {subject && (
-        <div className="wr-prev-subject">
-          <div className="wr-prev-cover">
-            {subject.cover_url ?
-              <img src={subject.cover_url} alt={subject.title} /> :
-              <span className="wr-cover-fallback">{subject.title[0]}</span>}
+    <article className="preview-article">
+      {s.bestNew && (
+        <div className="prev-bnm">BEST NEW MUSIC</div>
+      )}
+      <div className="prev-kicker">
+        <span style={{ color: 'var(--accent)' }}>
+          리뷰 ·
+          {' '}
+          앨범
+        </span>
+        <span>·</span>
+        <span>{s.genre}</span>
+        <span>·</span>
+        <span>{s.publishDate}</span>
+      </div>
+      <h1 className="prev-headline">{s.headline || '제목 없음'}</h1>
+      {s.dek && <p className="prev-dek"><em>{s.dek}</em></p>}
+      <div className="prev-byline">
+        <span>
+          By
+          {' '}
+          {s.author || '—'}
+          {s.authorRole ? ` · ${s.authorRole}` : ''}
+        </span>
+      </div>
+      {s.subject && (
+        <div className="prev-subject">
+          <div className="prev-cover">
+            {s.subject.cover_url ?
+              <img src={s.subject.cover_url} alt={s.subject.title} /> :
+              <span className="cover-fallback">{s.subject.title[0]}</span>}
           </div>
-          <div className="wr-prev-subj-body">
-            <span className="wr-prev-subj-by">
-{artistName}
-{year ? ` · ${year}` : ''}
-            </span>
-            <span className="wr-prev-subj-name">{subject.title}</span>
-            <div className="wr-prev-score-row">
-              <span className="wr-prev-stars">
-                {[1, 2, 3, 4, 5].map(i =>
-                  i <= full ?
-                    '★' :
-                    i === full + 1 && half ?
-                      '⯨' :
-                      '☆',
-                ).join('')}
-              </span>
-              <span className="wr-prev-num">{score.toFixed(1)}</span>
-              <span className="wr-prev-denom">/5</span>
-            </div>
+          <div className="prev-subj-body">
+            <div className="prev-subj-by">{artistName}</div>
+            <div className="prev-subj-name"><em>{s.subject.title}</em></div>
+            {s.score > 0 && (
+              <div className="prev-score-row">
+                <span className="prev-stars">
+                  {'★'.repeat(stars)}
+                  {'☆'.repeat(5 - stars)}
+                </span>
+                <span className="prev-num">{s.score.toFixed(1)}</span>
+                <span className="prev-denom">/ 5</span>
+              </div>
+            )}
           </div>
         </div>
       )}
-
-      {headline && <h1 className="wr-prev-headline">{headline}</h1>}
-      {dek && <p className="wr-prev-dek">{dek}</p>}
-
-      {(author || dateLabel) && (
-        <div className="wr-prev-byline">
-          {author && (
-            <span>
-              By
-              {' '}
-              <strong>{author}</strong>
-              {authorRole ? ` · ${authorRole}` : ''}
+      <div className="prev-body">
+        {paragraphs.length === 0 ?
+          <p className="prev-empty">본문이 비어 있습니다.</p> :
+          paragraphs.map((p, idx) => {
+              if (p.startsWith('> '))
+                return <blockquote key={idx} className="prev-quote">{renderInline(p.slice(2))}</blockquote>
+              return <p key={idx}>{renderInline(p)}</p>
+            })}
+      </div>
+      {s.tags.length > 0 && (
+        <div className="prev-tags">
+          {s.tags.map((t, idx) => (
+            <span key={idx} className="prev-tag">
+              #
+              {t}
             </span>
-          )}
-          {dateLabel && <span>{dateLabel}</span>}
+          ))}
         </div>
       )}
-
-      {body ?
-        (
-          <div
-	className="wr-prev-body"
-            // renderBody escapes all user-typed HTML before applying inline markdown transforms
-	dangerouslySetInnerHTML={{ __html: renderBody(body) }}
-          />
-        ) :
-        <p className="wr-prev-empty">미리볼 내용이 없습니다.</p>}
     </article>
   )
 }

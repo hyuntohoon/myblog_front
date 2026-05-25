@@ -1,128 +1,134 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface Props {
-  value: string
-  onChange: (v: string) => void
+  body: string
+  setBody: (v: string) => void
+  dim: boolean
 }
 
-interface BubblePos {
-  top: number
-  left: number
+interface BubblePos { top: number, left: number }
+
+function autoGrow(el: HTMLTextAreaElement) {
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
 }
 
-function wordCount(text: string) {
-  return text.trim() ? text.trim().split(/\s+/).length : 0
-}
-
-function readingTime(words: number) {
-  return Math.max(1, Math.round(words / 200))
-}
-
-function wrapSelection(textarea: HTMLTextAreaElement, before: string, after: string) {
-  const start = textarea.selectionStart
-  const end = textarea.selectionEnd
-  const selected = textarea.value.slice(start, end)
-  textarea.setRangeText(before + selected + after, start, end, 'select')
-  textarea.focus()
-  textarea.dispatchEvent(new Event('input', { bubbles: true }))
-}
-
-export default function BodyArea({ value, onChange }: Props) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+export default function BodyArea({ body, setBody, dim }: Props) {
+  const taRef = useRef<HTMLTextAreaElement>(null)
   const [bubble, setBubble] = useState<BubblePos | null>(null)
 
-  const words = wordCount(value)
-  const minutes = readingTime(words)
+  useEffect(() => {
+    if (taRef.current)
+      autoGrow(taRef.current)
+  }, [body])
 
-  const checkSelection = useCallback(() => {
-    const ta = textareaRef.current
+  const wrapSelection = useCallback((before: string, after = before) => {
+    const ta = taRef.current
     if (!ta)
       return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    if (start === end)
+      return
+    const sel = body.slice(start, end)
+    const next = `${body.slice(0, start)}${before}${sel}${after}${body.slice(end)}`
+    setBody(next)
+    setTimeout(() => {
+      ta.focus()
+      ta.setSelectionRange(start + before.length, end + before.length)
+    }, 10)
+  }, [body, setBody])
 
-    const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim()
-    if (!sel) {
+  const checkSelection = useCallback(() => {
+    const ta = taRef.current
+    if (!ta) {
       setBubble(null)
       return
     }
-
-    const rect = ta.getBoundingClientRect()
-    setBubble({
-      top: rect.top - 52,
-      left: rect.left + rect.width / 2,
-    })
-  }, [])
-
-  useEffect(() => {
-    const ta = textareaRef.current
-    if (!ta)
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    if (start === end) {
+      setBubble(null)
       return
-    ta.addEventListener('mouseup', checkSelection)
-    ta.addEventListener('keyup', checkSelection)
-    return () => {
-      ta.removeEventListener('mouseup', checkSelection)
-      ta.removeEventListener('keyup', checkSelection)
     }
-  }, [checkSelection])
+    const rect = ta.getBoundingClientRect()
+    const before = body.slice(0, start)
+    const linesBefore = before.split('\n').length
+    const lineHeight = Number.parseFloat(getComputedStyle(ta).lineHeight)
+    const top = rect.top + (linesBefore - 1) * lineHeight - 44
+    const left = rect.left + rect.width / 2
+    setBubble({ top: Math.max(8, top), left })
+  }, [body])
 
-  function handleBold() {
-    if (textareaRef.current)
-      wrapSelection(textareaRef.current, '**', '**')
-    setBubble(null)
-  }
-  function handleItalic() {
-    if (textareaRef.current)
-      wrapSelection(textareaRef.current, '_', '_')
-    setBubble(null)
-  }
-  function handleQuote() {
-    if (textareaRef.current) {
-      const ta = textareaRef.current
-      const start = ta.selectionStart
-      const selected = ta.value.slice(start, ta.selectionEnd)
-      ta.setRangeText(`> ${selected}`, start, ta.selectionEnd, 'select')
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    setBubble(null)
-  }
-  function handleParagraph() {
-    if (textareaRef.current) {
-      const ta = textareaRef.current
-      const pos = ta.selectionStart
-      ta.setRangeText('\n\n', pos, pos, 'end')
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    setBubble(null)
-  }
+  const onSelect = () => setTimeout(checkSelection, 0)
+  const onBlur = () => setTimeout(() => setBubble(null), 200)
+
+  const words = body.trim() ? body.trim().split(/\s+/).length : 0
+  const readMin = Math.max(1, Math.round(words / 220))
 
   return (
-    <div className="wr-body-area">
+    <div className={`body-area${dim ? ' is-dim' : ''}`}>
       {bubble && (
-        <div
-	className="wr-bubble"
-	style={{ top: bubble.top, left: bubble.left, transform: 'translateX(-50%)' }}
-        >
-          <button type="button" onClick={handleBold} title="굵게"><strong>B</strong></button>
-          <button type="button" onClick={handleItalic} title="기울임"><em>I</em></button>
-          <button type="button" onClick={handleQuote} title="인용">"</button>
-          <button type="button" onClick={handleParagraph} title="단락">¶</button>
+        <div className="bubble-toolbar" style={{ top: bubble.top, left: bubble.left }}>
+          <button
+	onMouseDown={(e) => {
+              e.preventDefault()
+              wrapSelection('**')
+            }}
+	title="굵게"
+          >
+            <strong>B</strong>
+          </button>
+          <button
+	onMouseDown={(e) => {
+              e.preventDefault()
+              wrapSelection('*')
+            }}
+	title="기울임"
+          >
+            <em>I</em>
+          </button>
+          <button
+	onMouseDown={(e) => {
+              e.preventDefault()
+              wrapSelection('"')
+            }}
+	title="인용부호"
+          >
+            "
+          </button>
+          <button
+	onMouseDown={(e) => {
+              e.preventDefault()
+              wrapSelection('\n\n> ', '')
+            }}
+	title="블록 인용"
+          >
+            ¶
+          </button>
         </div>
       )}
-
       <textarea
-	ref={textareaRef}
-	className="wr-body-input"
-	value={value}
-	onChange={e => onChange(e.target.value)}
-	placeholder="여기서부터 쓰세요…"
+	ref={taRef}
+	className="body-input"
+	placeholder="본문을 시작하세요…"
+	value={body}
+	onChange={(e) => {
+          setBody(e.target.value)
+          autoGrow(e.target)
+        }}
+	onSelect={onSelect}
+	onMouseUp={onSelect}
+	onKeyUp={onSelect}
+	onBlur={onBlur}
 	spellCheck={false}
       />
-
-      <div className="wr-body-footer">
+      <div className="body-footer">
         <span>
-          {words.toLocaleString()}
+          {words}
           단어 · 약
           {' '}
-          {minutes}
+          {readMin}
           분
         </span>
       </div>
