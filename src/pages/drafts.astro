@@ -1,0 +1,291 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+---
+
+<Layout>
+  <Seo slot="seo" title="Drafts — RAMAMU" noIndex />
+
+  <main class="container drafts-main">
+
+    <div class="drafts-header">
+      <h1 class="drafts-heading">Drafts</h1>
+      <span class="mono-label" style="color: var(--color-faded);" id="draft-count">—</span>
+    </div>
+
+    <div id="drafts-loading" class="drafts-empty">
+      <p class="mono-label" style="color: var(--color-faded);">불러오는 중…</p>
+    </div>
+
+    <div id="drafts-error" class="drafts-empty hidden">
+      <p class="mono-label" style="color: var(--color-accent);">불러오지 못했습니다.</p>
+      <p class="mono-label" style="color: var(--color-faded); margin-top: 8px;">로그인 상태를 확인해주세요.</p>
+    </div>
+
+    <div id="drafts-empty-msg" class="drafts-empty hidden">
+      <p class="drafts-empty-title">임시저장된 글이 없습니다</p>
+      <a href="/write" class="drafts-cta">새 글 작성 →</a>
+    </div>
+
+    <table id="drafts-table" class="drafts-table hidden">
+      <thead>
+        <tr>
+          <th class="col-title">Title</th>
+          <th class="col-cat">Category</th>
+          <th class="col-date">작성일</th>
+          <th class="col-action"></th>
+        </tr>
+      </thead>
+      <tbody id="drafts-tbody"></tbody>
+    </table>
+
+  </main>
+</Layout>
+
+<style>
+  .drafts-main {
+    padding-top: 40px;
+    padding-bottom: 80px;
+  }
+  .drafts-header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .drafts-heading {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 32px;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    color: var(--color-text);
+    margin: 0;
+  }
+  .drafts-empty {
+    padding: 80px 0;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .drafts-empty-title {
+    font-family: var(--font-serif);
+    font-size: 24px;
+    font-style: italic;
+    color: var(--color-text);
+    margin: 0;
+  }
+  .drafts-cta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-text);
+    border-bottom: 1px solid currentColor;
+    padding-bottom: 2px;
+    text-decoration: none;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+  }
+  .drafts-cta:hover { opacity: 0.6; }
+  .drafts-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .drafts-table thead {
+    border-bottom: 1px solid var(--color-border);
+  }
+  .drafts-table th {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-subtle);
+    font-weight: 500;
+    padding: 0 0 12px;
+    text-align: left;
+  }
+  .col-title  { width: auto; }
+  .col-cat    { width: 140px; }
+  .col-date   { width: 160px; }
+  .col-action { width: 120px; text-align: right; }
+  .drafts-table td {
+    padding: 18px 0;
+    border-bottom: 1px solid var(--color-border-soft);
+    vertical-align: middle;
+  }
+  .draft-title-cell {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--color-text);
+    letter-spacing: -0.01em;
+  }
+  .draft-cat-cell {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-subtle);
+  }
+  .draft-date-cell {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--color-faded);
+  }
+  .draft-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+  .draft-action-link,
+  .draft-action-btn {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--color-subtle);
+    border-bottom: 1px solid transparent;
+    padding-bottom: 1px;
+    cursor: pointer;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .draft-action-link:hover,
+  .draft-action-btn:hover {
+    color: var(--color-text);
+    border-color: var(--color-text);
+  }
+  .draft-action-btn.danger:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .hidden { display: none; }
+</style>
+
+<script>
+  import { isLoggedIn, goLogin, getAccessToken } from '../lib/auth'
+
+  const API = import.meta.env.PUBLIC_BACKEND_API_URL as string
+
+  const $loading = document.getElementById('drafts-loading')!
+  const $error   = document.getElementById('drafts-error')!
+  const $empty   = document.getElementById('drafts-empty-msg')!
+  const $table   = document.getElementById('drafts-table')!
+  const $tbody   = document.getElementById('drafts-tbody')!
+  const $count   = document.getElementById('draft-count')!
+
+  const show = (el: HTMLElement) => el.classList.remove('hidden')
+  const hide = (el: HTMLElement) => el.classList.add('hidden')
+
+  function formatDate(iso: string) {
+    return new Date(iso).toLocaleDateString('ko-KR', {
+      year: 'numeric', month: 'short', day: 'numeric',
+    })
+  }
+
+  function makeDraftRow(d: {
+    id: string; title: string; slug: string;
+    category: string | null; posted_date: string
+  }): HTMLTableRowElement {
+    const tr = document.createElement('tr')
+
+    // Title cell
+    const tdTitle = document.createElement('td')
+    tdTitle.className = 'draft-title-cell'
+    tdTitle.textContent = d.title
+    tr.appendChild(tdTitle)
+
+    // Category cell
+    const tdCat = document.createElement('td')
+    tdCat.className = 'draft-cat-cell'
+    tdCat.textContent = d.category ?? '—'
+    tr.appendChild(tdCat)
+
+    // Date cell
+    const tdDate = document.createElement('td')
+    tdDate.className = 'draft-date-cell'
+    tdDate.textContent = formatDate(d.posted_date)
+    tr.appendChild(tdDate)
+
+    // Actions cell
+    const tdActions = document.createElement('td')
+    const actionsDiv = document.createElement('div')
+    actionsDiv.className = 'draft-actions'
+
+    const editLink = document.createElement('a')
+    editLink.className = 'draft-action-link'
+    editLink.href = `/write?id=${encodeURIComponent(d.id)}`
+    editLink.textContent = 'Edit'
+    actionsDiv.appendChild(editLink)
+
+    const deleteBtn = document.createElement('button')
+    deleteBtn.type = 'button'
+    deleteBtn.className = 'draft-action-btn danger'
+    deleteBtn.textContent = 'Delete'
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm('이 초안을 삭제할까요?')) return
+      const token = getAccessToken()
+      const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+      })
+      if (r.ok) {
+        tr.remove()
+        const remaining = $tbody.querySelectorAll('tr').length
+        $count.textContent = `${remaining} draft${remaining !== 1 ? 's' : ''}`
+        if (remaining === 0) { hide($table); show($empty) }
+      }
+    })
+    actionsDiv.appendChild(deleteBtn)
+    tdActions.appendChild(actionsDiv)
+    tr.appendChild(tdActions)
+
+    return tr
+  }
+
+  async function loadDrafts() {
+    if (!isLoggedIn()) {
+      goLogin(false, '/drafts')
+      return
+    }
+    try {
+      const token = getAccessToken()
+      const res = await fetch(`${API}/api/posts?status=draft`, {
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+      const drafts: Array<{
+        id: string; title: string; slug: string;
+        category: string | null; posted_date: string
+      }> = await res.json()
+
+      hide($loading)
+
+      if (drafts.length === 0) {
+        $count.textContent = '0 drafts'
+        show($empty)
+        return
+      }
+
+      $count.textContent = `${drafts.length} draft${drafts.length > 1 ? 's' : ''}`
+      drafts.forEach(d => $tbody.appendChild(makeDraftRow(d)))
+      show($table)
+    } catch {
+      hide($loading)
+      show($error)
+    }
+  }
+
+  loadDrafts()
+</script>
