@@ -24,9 +24,10 @@ const { posts, title = 'Latest Reviews' } = Astro.props
       const artist = musicReview?.artists?.join(', ')
       const albumTitle = musicReview?.title
       const rating = musicReview?.rating?.value
-      const ratingScale = musicReview?.rating?.scale ?? 10
       const displayDate = new Date(date).toLocaleDateString('ko-KR', {
-        year: 'numeric', month: 'short', day: 'numeric'
+        year: 'numeric',
+month: 'short',
+day: 'numeric',
       })
 
       return (
@@ -34,14 +35,16 @@ const { posts, title = 'Latest Reviews' } = Astro.props
           <a href={`/blog/${slug}`} class="review-card">
             <!-- Cover -->
             <div class="rc-cover">
-              {cover ? (
+              {cover ?
+(
                 <img
-                  src={cover}
-                  alt={albumTitle ?? postTitle}
-                  loading="lazy"
-                  class="rc-img"
+	src={cover}
+	alt={albumTitle ?? postTitle}
+	loading="lazy"
+	class="rc-img"
                 />
-              ) : (
+              ) :
+(
                 <div class="rc-placeholder">
                   <span>{(albumTitle ?? postTitle).slice(0, 2).toUpperCase()}</span>
                 </div>

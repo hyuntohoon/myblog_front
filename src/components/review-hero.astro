@@ -18,24 +18,28 @@ const artist = musicReview?.artists?.join(', ')
 const albumTitle = musicReview?.title
 const rating = musicReview?.rating?.value
 const ratingScale = musicReview?.rating?.scale ?? 10
-const releaseDate = musicReview?.releaseDate
-  ? new Date(musicReview.releaseDate).getFullYear()
-  : null
+const releaseDate = musicReview?.releaseDate ?
+  new Date(musicReview.releaseDate).getFullYear() :
+  null
 const genres = musicReview?.genres ?? []
 const publishedDate = new Date(date).toLocaleDateString('ko-KR', {
-  year: 'numeric', month: 'long', day: 'numeric',
+  year: 'numeric',
+month: 'long',
+day: 'numeric',
 })
 ---
 
-{hasReview ? (
-  <!-- Music review hero -->
+{hasReview ?
+(
   <div class="review-hero">
     <!-- Left: album cover -->
     <div class="rh-cover-col">
       <div class="rh-cover">
-        {cover ? (
+        {cover ?
+(
           <img src={cover} alt={albumTitle ?? title} loading="eager" class="rh-img" />
-        ) : (
+        ) :
+(
           <div class="rh-placeholder">
             <span>{(albumTitle ?? title).slice(0, 2).toUpperCase()}</span>
           </div>
@@ -92,8 +96,8 @@ const publishedDate = new Date(date).toLocaleDateString('ko-KR', {
       )}
     </div>
   </div>
-) : (
-  <!-- Plain post header (no musicReview) -->
+) :
+(
   <div class="plain-hero">
     {category && (
       <div class="ph-labels">
