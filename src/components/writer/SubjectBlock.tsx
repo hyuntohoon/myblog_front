@@ -132,12 +132,27 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
   }
 
   async function onPick(sr: AlbumSearchResult) {
-    const lookupId = sr.spotify_id || sr.id
+    // Backend returns { album, artists, tracks, meta } — unwrap to flat AlbumDetail.
+    // Route by available identifier: spotify_id → /by-spotify, else DB UUID → /{id}.
+    // `/albums/{id}` rejects non-UUID input with 500, so spotify_id must use by-spotify.
+    const url = sr.spotify_id ?
+      `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(sr.spotify_id)}` :
+      `${API_BASE}/api/music/albums/${encodeURIComponent(sr.id)}`
     try {
-      const r = await fetch(`${API_BASE}/api/music/albums/${encodeURIComponent(lookupId)}`)
+      const r = await fetch(url)
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
-      const detail = await r.json() as AlbumDetail
+      const json = await r.json() as {
+        album: { id: string, title: string, cover_url: string | null, release_date: string | null }
+        artists: Array<{ id: string, name: string }>
+      }
+      const detail: AlbumDetail = {
+        id: json.album.id,
+        title: json.album.title,
+        cover_url: json.album.cover_url,
+        release_date: json.album.release_date,
+        artists: json.artists.map(a => ({ id: a.id, name: a.name })),
+      }
       onSubjectSelect(detail)
       setSearching(false)
       setQuery('')
@@ -145,23 +160,13 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       setStatus('')
     }
     catch {
-      if (sr.source === 'db') {
-        // DB result: sr.id is always the DB UUID — safe to use as fallback
-        onSubjectSelect({
-          id: sr.id,
-          title: sr.title,
-          cover_url: sr.cover_url,
-          release_date: sr.release_date,
-          artists: sr.artist_name ? [{ id: '', name: sr.artist_name }] : [],
-        })
-        setSearching(false)
-        setQuery('')
-        setResults([])
-        setStatus('')
-      }
-      else {
+      if (sr.source === 'spotify') {
         // Spotify result: album may not be in DB yet (sync is async)
         setStatus('앨범 동기화가 아직 완료되지 않았습니다. 잠시 후 다시 선택해주세요.')
+      }
+      else {
+        // DB result: lookup unexpectedly failed
+        setStatus('앨범 정보 조회 실패. 잠시 후 다시 시도해주세요.')
       }
     }
   }
