@@ -12,7 +12,7 @@ export default antfu(
 		formatters: false,
 		astro: true,
 		typescript: true,
-		ignores: ['**/dist/**', '**/.astro/**', 'node_modules/**', 'src/**/*.gen.ts'],
+		ignores: ['**/dist/**', '**/.astro/**', 'node_modules/**', 'src/**/*.gen.ts', '_workspace/**'],
 	},
 
 	{
