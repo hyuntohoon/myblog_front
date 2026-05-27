@@ -139,20 +139,31 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
         throw new Error(`HTTP ${r.status}`)
       const detail = await r.json() as AlbumDetail
       onSubjectSelect(detail)
+      setSearching(false)
+      setQuery('')
+      setResults([])
+      setStatus('')
     }
     catch {
-      onSubjectSelect({
-        id: lookupId,
-        title: sr.title,
-        cover_url: sr.cover_url,
-        release_date: sr.release_date,
-        artists: sr.artist_name ? [{ id: '', name: sr.artist_name }] : [],
-      })
+      if (sr.source === 'db') {
+        // DB result: sr.id is always the DB UUID — safe to use as fallback
+        onSubjectSelect({
+          id: sr.id,
+          title: sr.title,
+          cover_url: sr.cover_url,
+          release_date: sr.release_date,
+          artists: sr.artist_name ? [{ id: '', name: sr.artist_name }] : [],
+        })
+        setSearching(false)
+        setQuery('')
+        setResults([])
+        setStatus('')
+      }
+      else {
+        // Spotify result: album may not be in DB yet (sync is async)
+        setStatus('앨범 동기화가 아직 완료되지 않았습니다. 잠시 후 다시 선택해주세요.')
+      }
     }
-    setSearching(false)
-    setQuery('')
-    setResults([])
-    setStatus('')
   }
 
   return (
