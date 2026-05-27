@@ -383,8 +383,14 @@ export interface components {
         };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
+            /** Album Ids */
+            album_ids?: string[] | null;
+            /** Artist Ids */
+            artist_ids?: string[] | null;
             /** Body Mdx */
             body_mdx?: string | null;
+            /** Category */
+            category?: string | null;
             /** Description */
             description?: string | null;
             /** Posted Date */
