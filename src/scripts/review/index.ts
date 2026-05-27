@@ -212,7 +212,6 @@ return
 		artist_ids: selectedAlbum.artistIds,
 		album_cover_url: selectedAlbum.coverUrl,
 		rating,
-		rating_scale: 5,
 	}
 
 	submitBtn.disabled = true

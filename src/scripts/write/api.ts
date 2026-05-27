@@ -58,7 +58,6 @@ export async function publishToGit(params: {
 	post_id: string
 	album_cover_url: string | null
 	rating: number | null
-	rating_scale?: number
 }) {
 	const {
 		title,
@@ -72,7 +71,6 @@ export async function publishToGit(params: {
 		post_id,
 		album_cover_url,
 		rating,
-		rating_scale,
 	} = params
 
 	const payload = {
@@ -87,7 +85,6 @@ export async function publishToGit(params: {
 		post_id,
 		album_cover_url,
 		rating,
-		rating_scale,
 	}
 
 	const res = await apiFetch(`${API_BASE_URL}/api/publish`, {

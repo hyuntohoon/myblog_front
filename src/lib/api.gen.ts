@@ -266,11 +266,6 @@ export interface components {
             posted_date: string;
             /** Rating */
             rating?: number | null;
-            /**
-             * Rating Scale
-             * @default 5
-             */
-            rating_scale: number;
             /** Slug */
             slug?: string | null;
             /** Title */
@@ -350,11 +345,6 @@ export interface components {
             posted_date?: string;
             /** Rating */
             rating?: number | null;
-            /**
-             * Rating Scale
-             * @default 5
-             */
-            rating_scale: number;
             /** Recommended Tracks */
             recommended_tracks?: components["schemas"]["Backend_RecommendedTrackInput"][];
             /** Search Index */
