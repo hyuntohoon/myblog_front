@@ -163,7 +163,7 @@ return
 	})
 }
 
-// 🔢 평점 입력 제어: 숫자만, 0~10, 0.5 step
+// 🔢 평점 입력 제어: 숫자만, 0~5, 0.5 step
 function wireRatingInput() {
 	if (!ratingInput)
 return
@@ -183,8 +183,8 @@ return
 
 		if (n < 0)
 n = 0
-		if (n > 10)
-n = 10
+		if (n > 5)
+n = 5
 
 		n = Math.round(n * 2) / 2 // 0.5 step
 		ratingInput.value = n.toString()
@@ -249,7 +249,6 @@ return
 		artist_ids,
 		album_cover_url: selectedAlbum?.coverUrl ?? null,
 		rating: ratingValue,
-		rating_scale: 5,
 	}
 
 	if (!payload.title)

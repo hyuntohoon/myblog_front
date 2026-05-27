@@ -192,7 +192,6 @@ lastSaved: ts,
       album_ids: [subject.id],
       artist_ids: artistIds,
       rating: score,
-      rating_scale: 5,
       album_cover_url: subject.cover_url,
     })
     if (!res.ok) {
@@ -216,7 +215,6 @@ lastSaved: ts,
       post_id: postId,
       album_cover_url: subject.cover_url,
       rating: score,
-      rating_scale: 5,
     })
     if (!gitRes.ok) {
       flash('저장 완료, Git 발행 실패')
