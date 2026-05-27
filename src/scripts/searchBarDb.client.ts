@@ -124,7 +124,7 @@ function mapCandArtists(cand: CandidateSearchResponse): CardItem[] {
   return (cand.artists || []).map(a => ({
 		id: a.spotify_id ?? '',
 		type: 'artist',
-		title: a.name,
+		title: a.name ?? '',
 		img: a.photo_url ?? null,
 		source: 'spotify',
 		spotify_id: a.spotify_id ?? null,
@@ -137,7 +137,7 @@ function mapCandAlbums(cand: CandidateSearchResponse): CardItem[] {
   return (cand.albums || []).map(a => ({
 		id: a.spotify_id ?? '',
 		type: 'album',
-		title: a.title,
+		title: a.title ?? '',
 		img: a.cover_url ?? null,
 		source: 'spotify',
 		spotify_id: a.spotify_id ?? null,
@@ -153,7 +153,7 @@ function mapCandTracks(cand: CandidateSearchResponse): CardItem[] {
   return (cand.tracks || []).map(t => ({
 		id: t.spotify_id ?? '',
 		type: 'track',
-		title: t.title,
+		title: t.title ?? '',
 		img: t.album?.cover_url ?? null,
 		source: 'spotify',
 		spotify_id: t.spotify_id ?? null,
