@@ -257,6 +257,22 @@ input, textarea, select {
 }
 .hdr-tile-source.spotify { color: var(--accent); }
 
+.hdr-tile-kind {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 1px 4px;
+  border: 1px solid var(--rule-soft);
+  color: var(--ink-soft);
+}
+.hdr-tile-kind.kind-artist {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hdr-tile-kind.kind-track {
+  border-color: var(--ink-soft);
+}
+
 .hdr-filter-row {
   display: flex;
   align-items: center;
