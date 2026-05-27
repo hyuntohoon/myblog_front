@@ -32,6 +32,21 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Checkout workspace contracts (for types-in-sync check)
+        uses: actions/checkout@v4
+        with:
+          repository: hyuntohoon/myblog-workspace
+          token: ${{ secrets.WORKSPACE_GITHUB_TOKEN }}
+          sparse-checkout: docs/contracts
+          sparse-checkout-cone-mode: false
+          path: _workspace
+
+      - name: Verify api.gen.ts is in sync with merged spec
+        run: |
+          pnpm exec openapi-typescript _workspace/docs/contracts/openapi.json -o src/lib/api.gen.ts.ci
+          diff src/lib/api.gen.ts src/lib/api.gen.ts.ci || (echo "ERROR: api.gen.ts is out of sync. Run 'pnpm generate:types' and commit." && rm src/lib/api.gen.ts.ci && exit 1)
+          rm src/lib/api.gen.ts.ci
+
       - name: Type check
         run: pnpm exec astro check
 
