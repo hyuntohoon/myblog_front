@@ -12,14 +12,14 @@ export type PostPayload = components['schemas']['Backend_WritePostRequest'] & {
 
 export type PostDetail = components['schemas']['Backend_PostDetailResponse']
 
-export async function fetchCategories() {
+export async function fetchCategories(): Promise<string[]> {
 	const res = await fetch(`${API_BASE_URL}/api/categories`, {
 		cache: 'no-store',
 	})
 	if (!res.ok)
 throw new Error(`HTTP ${res.status}`)
-	const json = await res.json()
-	return (json?.items || json?.categories || []) as any[]
+	const json = await res.json() as components['schemas']['Backend_CategoryListResponse']
+	return json.categories ?? []
 }
 
 export async function createCategory(name: string) {

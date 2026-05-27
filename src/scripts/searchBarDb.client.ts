@@ -1,8 +1,15 @@
 // src/scripts/searchBarDb.client.ts
-import type { CardItem } from '../scripts/types/search.ts'
+import type { CandidateSearchResponse, CardItem } from '../scripts/types/search.ts'
+import type { components } from '../lib/api.gen'
 import { makeCard } from './components/makeCard.ts'
 import { PUBLIC_API_URL } from 'astro:env/client'
 import { getAuthHeader } from '../lib/auth.ts'
+
+type AlbumItem = components['schemas']['Music_AlbumItem']
+type ArtistItem = components['schemas']['Music_ArtistItem']
+type TrackItem = components['schemas']['Music_TrackItem']
+type UnifiedSearchResult = components['schemas']['Music_UnifiedSearchResult']
+type ArtistAlbumsResult = components['schemas']['Music_SearchResult']
 
 const API_BASE = PUBLIC_API_URL
 type View = 'db' | 'spotify'
@@ -67,8 +74,8 @@ function render(artists: CardItem[],	albums: CardItem[],	tracks: CardItem[]) {
 // -----------------------------
 // Mappers (DB unified)
 // -----------------------------
-function mapDBArtistsUnified(arr: any[]): CardItem[] {
-  return (arr || []).map((a: any) => ({
+function mapDBArtistsUnified(arr: ArtistItem[]): CardItem[] {
+  return (arr || []).map(a => ({
 		id: a.id,
 		type: 'artist',
 		title: a.name,
@@ -78,8 +85,8 @@ function mapDBArtistsUnified(arr: any[]): CardItem[] {
 	}))
 }
 
-function mapDBAlbumsUnified(arr: any[]): CardItem[] {
-  return (arr || []).map((al: any) => ({
+function mapDBAlbumsUnified(arr: AlbumItem[]): CardItem[] {
+  return (arr || []).map(al => ({
 		id: al.id,
 		type: 'album',
 		title: al.title,
@@ -94,8 +101,8 @@ function mapDBAlbumsUnified(arr: any[]): CardItem[] {
 }
 
 // ✅ DB TrackItem -> CardItem (트랙 클릭 시 앨범 상세로 가야 하므로 db_album_id에 album_id를 담는다)
-function mapDBTracksUnified(arr: any[]): CardItem[] {
-  return (arr || []).map((t: any) => ({
+function mapDBTracksUnified(arr: TrackItem[]): CardItem[] {
+  return (arr || []).map(t => ({
 		id: t.id, // track db uuid
 		type: 'track',
 		title: t.title,
@@ -104,7 +111,7 @@ function mapDBTracksUnified(arr: any[]): CardItem[] {
 		spotify_id: t.spotify_id ?? null,
 		release_date: t.release_date ?? null,
 		artist_name: t.artist_name ?? null,
-		album_title: t.album_title ?? t.album_title ?? null,
+		album_title: t.album_title ?? null,
 		album_spotify_id: t.album_spotify_id ?? null,
 		db_album_id: t.album_id ?? null, // ✅ 핵심: 트랙 클릭 → 이 앨범(DB)로 이동
 	}))
@@ -113,9 +120,9 @@ function mapDBTracksUnified(arr: any[]): CardItem[] {
 // -----------------------------
 // Mappers (Spotify candidates)
 // -----------------------------
-function mapCandArtists(cand: any): CardItem[] {
-  return (cand.artists || []).map((a: any) => ({
-		id: a.spotify_id,
+function mapCandArtists(cand: CandidateSearchResponse): CardItem[] {
+  return (cand.artists || []).map(a => ({
+		id: a.spotify_id ?? '',
 		type: 'artist',
 		title: a.name,
 		img: a.photo_url ?? null,
@@ -126,9 +133,9 @@ function mapCandArtists(cand: any): CardItem[] {
 	}))
 }
 
-function mapCandAlbums(cand: any): CardItem[] {
-  return (cand.albums || []).map((a: any) => ({
-		id: a.spotify_id,
+function mapCandAlbums(cand: CandidateSearchResponse): CardItem[] {
+  return (cand.albums || []).map(a => ({
+		id: a.spotify_id ?? '',
 		type: 'album',
 		title: a.title,
 		img: a.cover_url ?? null,
@@ -142,9 +149,9 @@ function mapCandAlbums(cand: any): CardItem[] {
 }
 
 // CandidateSearchService.track 응답은 { title, spotify_id, album:{spotify_id,title,release_date,cover_url}, artist_name ... }
-function mapCandTracks(cand: any): CardItem[] {
-  return (cand.tracks || []).map((t: any) => ({
-		id: t.spotify_id,
+function mapCandTracks(cand: CandidateSearchResponse): CardItem[] {
+  return (cand.tracks || []).map(t => ({
+		id: t.spotify_id ?? '',
 		type: 'track',
 		title: t.title,
 		img: t.album?.cover_url ?? null,
@@ -172,13 +179,13 @@ return
 
 	try {
 		// ✅ 1번 호출로 3섹션
-		const data = await getJSON(
+		const data = await getJSON<UnifiedSearchResult>(
 			`${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&limit=20&offset=0`,
 		)
 
-		const artists = mapDBArtistsUnified(data.artists || [])
-		const albums = mapDBAlbumsUnified(data.albums || [])
-		const tracks = mapDBTracksUnified(data.tracks || [])
+		const artists = mapDBArtistsUnified(data.artists ?? [])
+		const albums = mapDBAlbumsUnified(data.albums ?? [])
+		const tracks = mapDBTracksUnified(data.tracks ?? [])
 
 		render(artists, albums, tracks)
 
@@ -215,7 +222,7 @@ return
 		const r = await fetch(url, { headers: getAuthHeader() })
 		if (!r.ok)
 throw new Error(`HTTP ${r.status}`)
-		const cand = await r.json()
+		const cand = await r.json() as CandidateSearchResponse
 		render(
 			mapCandArtists(cand).slice(0, 10),
 			mapCandAlbums(cand).slice(0, 20),
@@ -233,12 +240,16 @@ throw new Error(`HTTP ${r.status}`)
 // -----------------------------
 // Select (상세는 DB-only)
 // -----------------------------
+type AlbumDetail = components['schemas']['Music_AlbumDetail']
+
 async function fetchAlbumDetailByDBId(dbAlbumId: string) {
-  return getJSON(`${API_BASE}/api/music/albums/${encodeURIComponent(dbAlbumId)}`)
+  return getJSON<AlbumDetail>(
+		`${API_BASE}/api/music/albums/${encodeURIComponent(dbAlbumId)}`,
+	)
 }
 
 async function fetchAlbumDetailBySpotifyId_DBOnly(spotifyAlbumId: string) {
-  return getJSON(
+  return getJSON<AlbumDetail>(
 		`${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(spotifyAlbumId)}`,
 	)
 }
@@ -305,10 +316,10 @@ async function onSelect(it: CardItem): Promise<void> {
 		// DB artist -> show albums only
 		if (it.type === 'artist' && it.source === 'db') {
 			setStatus(`🎵 ${it.title}의 앨범을 불러오는 중…`)
-			const data = await getJSON(
+			const data = await getJSON<ArtistAlbumsResult>(
 				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`,
 			)
-			const albums = mapDBAlbumsUnified((data.items || []) as any[])
+			const albums = mapDBAlbumsUnified((data.items ?? []) as AlbumItem[])
 			render([], albums, [])
 			setStatus(`✅ ${it.title}의 앨범 목록`)
 			return

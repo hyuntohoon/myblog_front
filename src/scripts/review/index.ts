@@ -1,11 +1,9 @@
 // src/scripts/review/index.ts
 import {  publishToGit, savePost } from '../write/api'
 import type { PostPayload } from '../write/api'
+import type { components } from '../../lib/api.gen'
 
-interface AlbumDetail {
-	album: { id: string, title: string, cover_url?: string | null }
-	artists?: { id: string, name: string, spotify_id?: string | null }[]
-}
+type AlbumDetail = components['schemas']['Music_AlbumDetail']
 
 function $<T extends Element = HTMLElement>(sel: string) {
   return document.querySelector(sel) as T | null

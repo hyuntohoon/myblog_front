@@ -1,8 +1,14 @@
-// /src/scripts/searchBarDb.client.ts
-import type { CardItem } from '../scripts/types/search.ts'
+// /src/scripts/searchBar.client.ts (legacy dev page — searchTest/* only)
+import type { CandidateSearchResponse, CardItem } from '../scripts/types/search.ts'
+import type { components } from '../lib/api.gen'
 import { makeCard } from './components/makeCard.ts'
 
 import { PUBLIC_API_URL } from 'astro:env/client'
+
+type AlbumItem = components['schemas']['Music_AlbumItem']
+type ArtistItem = components['schemas']['Music_ArtistItem']
+type SearchResult = components['schemas']['Music_SearchResult']
+type AlbumDetail = components['schemas']['Music_AlbumDetail']
 
 type Mode = 'none' | 'artist' | 'album'
 type View = 'db' | 'spotify'
@@ -66,8 +72,8 @@ throw new Error(`HTTP ${res.status}`)
 // --------------------------------------------------
 // Mappers
 // --------------------------------------------------
-function mapDBArtists(data: any): CardItem[] {
-  return (data.items || []).map((a: any) => ({
+function mapDBArtists(data: SearchResult): CardItem[] {
+  return ((data.items ?? []) as ArtistItem[]).map(a => ({
 		id: a.id,
 		type: 'artist',
 		title: a.name,
@@ -77,8 +83,8 @@ function mapDBArtists(data: any): CardItem[] {
 	}))
 }
 
-function mapDBAlbums(data: any): CardItem[] {
-  return (data.items || []).map((al: any) => ({
+function mapDBAlbums(data: SearchResult): CardItem[] {
+  return ((data.items ?? []) as AlbumItem[]).map(al => ({
 		id: al.id,
 		type: 'album',
 		title: al.title,
@@ -92,9 +98,9 @@ function mapDBAlbums(data: any): CardItem[] {
 }
 
 // ✅ 후보(Spotify) 앨범만 매핑 (write 화면에서 앨범 선택에 집중)
-function mapCandAlbums(cand: any): CardItem[] {
-  return (cand.albums || []).map((a: any) => ({
-		id: a.spotify_id,
+function mapCandAlbums(cand: CandidateSearchResponse): CardItem[] {
+  return (cand.albums || []).map(a => ({
+		id: a.spotify_id ?? '',
 		type: 'album',
 		title: a.title,
 		img: a.cover_url ?? null,
@@ -104,9 +110,6 @@ function mapCandAlbums(cand: any): CardItem[] {
 		artist_name: a.artist_name ?? null,
 		artist_spotify_id: a.artist_spotify_id ?? null,
 		external_url: a.external_url ?? null,
-
-		// ✅ 백엔드에서 내려주면 사용 (없어도 동작)
-		// db_album_id: a.db_album_id ?? null,
 	}))
 }
 
@@ -166,14 +169,14 @@ function renderArtistAlbums(albums: CardItem[], artistName: string) {
 async function fetchAlbumDetailBySpotifyId(spotifyAlbumId: string) {
 	// ✅ DB-only 정책: by-spotify 엔드포인트는 "DB에서 spotify_id로 조회" 용도
 	const url = `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(spotifyAlbumId)}`
-	return getJSON(url)
+	return getJSON<AlbumDetail>(url)
 }
 
 async function onSelect(it: CardItem) {
 	try {
 		// Artist(DB) → show albums
 		if (it.type === 'artist' && it.source === 'db') {
-			const data = await getJSON(
+			const data = await getJSON<SearchResult>(
 				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`,
 			)
 			const albums = mapDBAlbums(data)
@@ -183,7 +186,7 @@ async function onSelect(it: CardItem) {
 
 		// Album(DB) → show detail view (dispatch)
 		if (it.type === 'album' && it.source === 'db') {
-			const detail = await getJSON(
+			const detail = await getJSON<AlbumDetail>(
 				`${API_BASE}/api/music/albums/${encodeURIComponent(it.id)}`,
 			)
 
@@ -251,13 +254,13 @@ return
 
 	try {
 		if (mode === 'artist') {
-			const data = await getJSON(
+			const data = await getJSON<SearchResult>(
 				`${API_BASE}/api/music/search?mode=artist&q=${encodeURIComponent(q)}&limit=20&offset=0`,
 			)
 			renderResults(mapDBArtists(data))
 		}
  else {
-			const data = await getJSON(
+			const data = await getJSON<SearchResult>(
 				`${API_BASE}/api/music/search?mode=album&q=${encodeURIComponent(q)}&limit=20&offset=0`,
 			)
 			renderResults(mapDBAlbums(data))
@@ -307,7 +310,7 @@ return
 		`&market=KR&limit=20&offset=0`
 
 	try {
-		const cand = await getJSON(url)
+		const cand = await getJSON<CandidateSearchResponse>(url)
 		const items = mapCandAlbums(cand)
 
 		renderResults(items)

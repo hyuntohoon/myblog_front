@@ -1,8 +1,12 @@
 // /src/scripts/searchBarSpotify.client.ts
 
-import type { AlbumDetail, CardItem } from '../scripts/types/search.ts'
+import type { AlbumDetail, CandidateSearchResponse, CardItem } from '../scripts/types/search.ts'
+import type { components } from '../lib/api.gen'
 
 import { PUBLIC_API_URL } from 'astro:env/client'
+
+type AlbumItem = components['schemas']['Music_AlbumItem']
+type ArtistAlbumsResult = components['schemas']['Music_SearchResult']
 
 const API_BASE = PUBLIC_API_URL
 
@@ -47,11 +51,11 @@ throw new Error(`HTTP ${r.status}`)
 }
 
 // ---------- Mapping: /api/music/search/candidates 응답 → CardItem ----------
-function mapCandAlbums(cand: any): CardItem[] {
+function mapCandAlbums(cand: CandidateSearchResponse): CardItem[] {
   return (cand.albums || []).map(
-		(a: any) =>
+		a =>
 			({
-				id: a.spotify_id,
+				id: a.spotify_id ?? '',
 				type: 'album',
 				title: a.title,
 				img: a.cover_url ?? null,
@@ -64,11 +68,11 @@ function mapCandAlbums(cand: any): CardItem[] {
 	)
 }
 
-function mapCandArtists(cand: any): CardItem[] {
+function mapCandArtists(cand: CandidateSearchResponse): CardItem[] {
   return (cand.artists || []).map(
-		(a: any) =>
+		a =>
 			({
-				id: a.spotify_id,
+				id: a.spotify_id ?? '',
 				type: 'artist',
 				title: a.name,
 				img: a.photo_url ?? null,
@@ -80,11 +84,11 @@ function mapCandArtists(cand: any): CardItem[] {
 	)
 }
 
-function mapCandTracks(cand: any): CardItem[] {
+function mapCandTracks(cand: CandidateSearchResponse): CardItem[] {
   return (cand.tracks || []).map(
-		(t: any) =>
+		t =>
 			({
-				id: t.spotify_id,
+				id: t.spotify_id ?? '',
 				type: 'track',
 				title: t.title,
 				img: t.album?.cover_url ?? null,
@@ -100,9 +104,9 @@ function mapCandTracks(cand: any): CardItem[] {
 }
 
 // ⭐ 아티스트 → 앨범 리스트용 (백엔드 /api/music/artists/spotify/{id}/albums 응답, SearchResult<AlbumItem>)
-function mapArtistAlbums(data: any): CardItem[] {
-  return (data.items || []).map(
-		(al: any) =>
+function mapArtistAlbums(data: ArtistAlbumsResult): CardItem[] {
+  return ((data.items ?? []) as AlbumItem[]).map(
+		al =>
 			({
 				id: al.id, // ✅ DB 앨범 UUID
 				type: 'album',
@@ -236,7 +240,7 @@ return
 		`&market=KR&limit=50&offset=0`
 
 	try {
-		const cand = await getJSON(url)
+		const cand = await getJSON<CandidateSearchResponse>(url)
 		const artists = mapCandArtists(cand).slice(0, 3)
 		const albums = mapCandAlbums(cand).slice(0, 10)
 		const tracks = mapCandTracks(cand).slice(0, 10)
@@ -266,7 +270,7 @@ async function onSelect(it: CardItem): Promise<void> {
 					it.spotify_id,
 				)}/albums` + `?market=KR&limit=20&offset=0`
 
-			const data = await getJSON(url)
+			const data = await getJSON<ArtistAlbumsResult>(url)
 			const albums = mapArtistAlbums(data)
 			renderArtistAlbums(albums)
 			return
