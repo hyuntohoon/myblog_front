@@ -36,11 +36,34 @@ const SS_STATE = 'oauth_state'
 const SS_RETURN_TO = 'return_to'
 
 // ─────────────────────────── Helpers ────────────────────────────
+
+/**
+ * Local-dev bypass. Backend and music services both bypass Cognito JWT
+ * validation when `ENV=local`/`dev` (app/core/auth.py). To match that,
+ * the frontend pretends the user is logged in whenever the page is
+ * served from localhost — `apiFetch` will still send a Bearer header
+ * (with a dummy token), and the server accepts it.
+ *
+ * In prod (any non-localhost host), tokens come from Cognito as normal.
+ */
+function isLocalEnv(): boolean {
+	if (typeof location === 'undefined')
+		return false
+	const h = location.hostname
+	return h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local')
+}
+
+const LOCAL_DEV_TOKEN = 'local-dev'
+
 export function getAccessToken(): string | null {
+	if (isLocalEnv())
+		return LOCAL_DEV_TOKEN
 	return localStorage.getItem(LS_ACCESS)
 }
 export function isLoggedIn(): boolean {
-	return !!getAccessToken()
+	if (isLocalEnv())
+		return true
+	return !!localStorage.getItem(LS_ACCESS)
 }
 export function getAuthHeader(): Record<string, string> {
 	const t = getAccessToken()
