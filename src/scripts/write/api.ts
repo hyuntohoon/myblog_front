@@ -37,6 +37,19 @@ throw new Error(`HTTP ${res.status}`)
 // `apiFetch` returns null when the refresh fails (user redirected to login),
 // or when a transport error occurs; callers should treat null as failure.
 
+// Read FastAPI's `{detail: "..."}` body from a non-2xx response so the UI can
+// surface the backend message verbatim. Clones the response so the caller can
+// still read the body afterward if needed.
+export async function readErrorDetail(res: Response, fallback: string): Promise<string> {
+	try {
+		const err = await res.clone().json()
+		return typeof err?.detail === 'string' ? err.detail : fallback
+	}
+	catch {
+		return fallback
+	}
+}
+
 export async function savePost(payload: PostPayload) {
 	const res = await apiFetch(`${API_BASE_URL}/api/posts`, {
 		method: 'POST',

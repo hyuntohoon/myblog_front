@@ -1033,6 +1033,13 @@ export interface operations {
                     "application/json": components["schemas"]["Backend_WritePostResponse"];
                 };
             };
+            /** @description Slug derived from title already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {

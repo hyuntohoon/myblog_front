@@ -6,7 +6,7 @@ import SettingsPanel from './SettingsPanel'
 import PreviewView from './PreviewView'
 import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { GENRES, SECTIONS } from './types'
-import { fetchPostById, publishToGit, savePost, updatePost } from '../../scripts/write/api'
+import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 
 const DRAFT_KEY = 'lowfreq-draft'
 
@@ -203,7 +203,12 @@ lastSaved: ts,
       await updatePost(dbPostId, payload) :
       await savePost({ ...payload, album_cover_url: subject?.cover_url ?? null })
     if (!res.ok) {
-      flash(`임시저장 실패 (${res.status})`)
+      if (res.status === 409) {
+        flash(await readErrorDetail(res, '같은 제목의 글이 이미 있습니다. 제목을 바꿔주세요.'))
+      }
+      else {
+        flash(`임시저장 실패 (${res.status})`)
+      }
       return
     }
     if (!dbPostId) {
@@ -232,25 +237,42 @@ lastSaved: ts,
       return
     }
     const artistIds = subject.artists.map(a => a.id).filter(Boolean)
-    const res = await savePost({
-      title: headline,
-      description: dek,
-      body_mdx: body,
-      posted_date: publishDate,
-      status: 'published',
-      album_ids: [subject.id],
-      artist_ids: artistIds,
-      rating: score,
-      album_cover_url: subject.cover_url,
-    })
+    // If a draft was saved first (dbPostId set), upgrade that row to
+    // status="published" instead of creating a new one — otherwise the second
+    // row collides on the unique slug and the backend returns 409 (BUG-9).
+    const res = dbPostId ?
+      await updatePost(dbPostId, {
+        title: headline,
+        description: dek,
+        body_mdx: body,
+        posted_date: publishDate,
+        status: 'published',
+        rating: score,
+      }) :
+      await savePost({
+        title: headline,
+        description: dek,
+        body_mdx: body,
+        posted_date: publishDate,
+        status: 'published',
+        album_ids: [subject.id],
+        artist_ids: artistIds,
+        rating: score,
+        album_cover_url: subject.cover_url,
+      })
     if (!res.ok) {
-      flash(`발행 실패: ${res.status}`)
+      if (res.status === 409) {
+        flash(await readErrorDetail(res, '같은 제목의 글이 이미 있습니다. 제목을 바꿔주세요.'))
+      }
+      else {
+        flash(`발행 실패: ${res.status}`)
+      }
       return
     }
 
     const json = await res.json()
     const slug: string = json.slug ?? json.id ?? ''
-    const postId: string = json.id ?? ''
+    const postId: string = json.id ?? dbPostId ?? ''
 
     const gitRes = await publishToGit({
       title: headline,
