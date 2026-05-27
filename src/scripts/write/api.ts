@@ -10,6 +10,8 @@ export type PostPayload = components['schemas']['Backend_WritePostRequest'] & {
 	album_cover_url?: string | null
 }
 
+export type PostDetail = components['schemas']['Backend_PostDetailResponse']
+
 export async function fetchCategories() {
 	const res = await fetch(`${API_BASE_URL}/api/categories`, {
 		cache: 'no-store',
@@ -43,6 +45,29 @@ headers.Authorization = `Bearer ${token}`
 		body: JSON.stringify(payload),
 	})
 	return res
+}
+
+export async function updatePost(id: string, payload: Partial<PostPayload>) {
+	const token = localStorage.getItem('access_token')
+	const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+	if (token)
+		headers.Authorization = `Bearer ${token}`
+	return fetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`, {
+		method: 'PUT',
+		headers,
+		body: JSON.stringify(payload),
+	})
+}
+
+export async function fetchPostById(id: string): Promise<PostDetail | null> {
+	const token = localStorage.getItem('access_token')
+	const headers: Record<string, string> = {}
+	if (token)
+		headers.Authorization = `Bearer ${token}`
+	const res = await fetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`, { headers })
+	if (!res.ok)
+		return null
+	return res.json() as Promise<PostDetail>
 }
 
 // ✅ 백엔드 CreatePostReq 기준

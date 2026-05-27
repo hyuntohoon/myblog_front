@@ -6,7 +6,7 @@ import SettingsPanel from './SettingsPanel'
 import PreviewView from './PreviewView'
 import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { GENRES, SECTIONS } from './types'
-import { publishToGit, savePost } from '../../scripts/write/api'
+import { fetchPostById, publishToGit, savePost, updatePost } from '../../scripts/write/api'
 
 const DRAFT_KEY = 'lowfreq-draft'
 
@@ -98,6 +98,9 @@ export default function WriterApp() {
   const saved = loadDraft()
   const loaded = useRef(false)
 
+  // Edit mode: populated when ?id= is in URL or after first DB save
+  const [dbPostId, setDbPostId] = useState<string | null>(null)
+
   const [subject, setSubject] = useState<AlbumDetail | null>(saved.subject ?? null)
   const [score, setScore] = useState(saved.score ?? 0)
   const [bestNew, setBestNew] = useState(saved.bestNew ?? false)
@@ -126,8 +129,25 @@ export default function WriterApp() {
     toastTimer.current = setTimeout(() => setToast(''), 2600)
   }, [])
 
+  // Load draft from DB when ?id= is present in URL
   useEffect(() => {
     loaded.current = true
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get('id')
+    if (!id)
+      return
+    fetchPostById(id).then((post) => {
+      if (!post)
+        return
+      setDbPostId(post.id)
+      setHeadline(post.title)
+      setDek(post.description ?? '')
+      setBody(post.body_mdx ?? '')
+      setPublishDate(post.posted_date)
+      setScore(post.rating ?? 0)
+      if (post.category)
+        setSection(post.category)
+    })
   }, [])
 
   // Autosave
@@ -162,7 +182,36 @@ lastSaved: ts,
     return () => clearTimeout(id)
   }, [subject, score, bestNew, headline, dek, body, tags, section, genre, publishDate, author, authorRole])
 
-  const onSaveDraft = () => flash('임시저장 완료')
+  const onSaveDraft = async () => {
+    if (!headline.trim()) {
+      flash('제목을 입력하세요.')
+      return
+    }
+    const artistIds = subject?.artists.map(a => a.id).filter(Boolean) ?? []
+    const payload = {
+      title: headline,
+      description: dek,
+      body_mdx: body || null,
+      posted_date: publishDate,
+      status: 'draft' as const,
+      category: section || null,
+      album_ids: subject ? [subject.id] : [],
+      artist_ids: artistIds,
+      rating: score > 0 ? score : null,
+    }
+    const res = dbPostId ?
+      await updatePost(dbPostId, payload) :
+      await savePost({ ...payload, album_cover_url: subject?.cover_url ?? null })
+    if (!res.ok) {
+      flash(`임시저장 실패 (${res.status})`)
+      return
+    }
+    if (!dbPostId) {
+      const json = await res.json()
+      setDbPostId(json.id)
+    }
+    flash('임시저장 완료')
+  }
 
   const onReset = () => {
     localStorage.removeItem(DRAFT_KEY)
