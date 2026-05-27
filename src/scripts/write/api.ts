@@ -1,8 +1,6 @@
-import {
-	PUBLIC_BACKEND_API_URL,
-	PUBLIC_PUBLISH_BASE_URL,
-} from 'astro:env/client'
+import { PUBLIC_BACKEND_API_URL } from 'astro:env/client'
 import type { components } from '../../lib/backend-api.gen'
+import { apiFetch } from '../../lib/api'
 
 const API_BASE_URL = PUBLIC_BACKEND_API_URL
 
@@ -92,10 +90,9 @@ export async function publishToGit(params: {
 		rating_scale,
 	}
 
-	const res = await fetch(`${PUBLIC_PUBLISH_BASE_URL}/api/publish`, {
+	const res = await apiFetch(`${API_BASE_URL}/api/publish`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(payload),
 	})
-	return res
+	return res ?? new Response(null, { status: 503 })
 }
