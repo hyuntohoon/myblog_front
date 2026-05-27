@@ -83,10 +83,10 @@ helpEl.classList.add('hidden')
 		placeholder.disabled = true
 		placeholder.selected = true
 		frag.appendChild(placeholder)
-		for (const c of items) {
+		for (const name of items) {
 			const opt = document.createElement('option')
-			opt.value = String((c as any).id ?? (c as any).value ?? c)
-			opt.textContent = (c as any).name ?? (c as any).label ?? String(c)
+			opt.value = name
+			opt.textContent = name
 			frag.appendChild(opt)
 		}
 		sel.appendChild(frag)

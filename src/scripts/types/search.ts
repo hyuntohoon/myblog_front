@@ -55,3 +55,43 @@ export interface AlbumDetail {
 	tracks: Track[]
 	meta?: Record<string, any>
 }
+
+// TODO(PR-12): replace with components['schemas']['Music_CandidateSearchResult'].
+// The /api/music/search/candidates response schema is currently `{}` in the
+// merged OpenAPI contract; this captures only the fields the mappers consume.
+export interface CandidateArtist {
+	spotify_id?: string | null
+	name: string
+	photo_url?: string | null
+	external_url?: string | null
+}
+
+export interface CandidateAlbum {
+	spotify_id?: string | null
+	title: string
+	cover_url?: string | null
+	release_date?: string | null
+	artist_name?: string | null
+	artist_spotify_id?: string | null
+	external_url?: string | null
+}
+
+export interface CandidateTrack {
+	spotify_id?: string | null
+	title: string
+	artist_name?: string | null
+	album_title?: string | null
+	external_url?: string | null
+	album?: {
+		spotify_id?: string | null
+		title?: string | null
+		release_date?: string | null
+		cover_url?: string | null
+	} | null
+}
+
+export interface CandidateSearchResponse {
+	artists?: CandidateArtist[]
+	albums?: CandidateAlbum[]
+	tracks?: CandidateTrack[]
+}
