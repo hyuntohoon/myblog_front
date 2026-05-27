@@ -12,6 +12,7 @@ export default antfu(
 		formatters: false,
 		astro: true,
 		typescript: true,
+		ignores: ['**/dist/**', '**/.astro/**', 'node_modules/**', 'src/**/*.gen.ts'],
 	},
 
 	{
@@ -26,6 +27,5 @@ export default antfu(
 			'perfectionist/sort-imports': 'off',
 			'unused-imports/no-unused-imports': 'error',
 		},
-		ignores: ['**/dist/**', '**/.astro/**', 'node_modules/**'],
 	},
 )

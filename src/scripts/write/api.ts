@@ -1,12 +1,12 @@
 import { PUBLIC_BACKEND_API_URL } from 'astro:env/client'
-import type { components } from '../../lib/backend-api.gen'
+import type { components } from '../../lib/api.gen'
 import { apiFetch } from '../../lib/api'
 
 const API_BASE_URL = PUBLIC_BACKEND_API_URL
 
 // Derived from backend WritePostRequest (auto-generated — run `pnpm generate:types` to refresh).
 // album_cover_url is a frontend-only field forwarded to the publish service; the backend ignores it.
-export type PostPayload = components['schemas']['WritePostRequest'] & {
+export type PostPayload = components['schemas']['Backend_WritePostRequest'] & {
 	album_cover_url?: string | null
 }
 

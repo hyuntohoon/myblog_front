@@ -13,7 +13,7 @@
 		"lint": "eslint",
 		"lint:fix": "eslint --fix",
 		"assistant": "tsx ./scripts/assistant.ts",
-		"generate:types": "openapi-typescript ../docs/contracts/openapi-backend.json -o src/lib/backend-api.gen.ts"
+		"generate:types": "openapi-typescript ../docs/contracts/openapi.json -o src/lib/api.gen.ts"
 	},
 	"dependencies": {
 		"@astrojs/mdx": "^4.3.11",
