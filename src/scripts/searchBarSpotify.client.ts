@@ -57,7 +57,7 @@ function mapCandAlbums(cand: CandidateSearchResponse): CardItem[] {
 			({
 				id: a.spotify_id ?? '',
 				type: 'album',
-				title: a.title,
+				title: a.title ?? '',
 				img: a.cover_url ?? null,
 				source: 'spotify',
 				spotify_id: a.spotify_id ?? null,
@@ -74,7 +74,7 @@ function mapCandArtists(cand: CandidateSearchResponse): CardItem[] {
 			({
 				id: a.spotify_id ?? '',
 				type: 'artist',
-				title: a.name,
+				title: a.name ?? '',
 				img: a.photo_url ?? null,
 				source: 'spotify',
 				spotify_id: a.spotify_id ?? null,
@@ -90,13 +90,13 @@ function mapCandTracks(cand: CandidateSearchResponse): CardItem[] {
 			({
 				id: t.spotify_id ?? '',
 				type: 'track',
-				title: t.title,
+				title: t.title ?? '',
 				img: t.album?.cover_url ?? null,
 				source: 'spotify',
 				spotify_id: t.spotify_id ?? null,
 				release_date: t.album?.release_date ?? null,
 				artist_name: t.artist_name ?? null,
-				album_title: t.album_title ?? t.album?.title ?? null,
+				album_title: t.album?.title ?? null,
 				external_url: t.external_url ?? null,
 				album_spotify_id: t.album?.spotify_id ?? null,
 			}) satisfies CardItem,

@@ -102,7 +102,7 @@ function mapCandAlbums(cand: CandidateSearchResponse): CardItem[] {
   return (cand.albums || []).map(a => ({
 		id: a.spotify_id ?? '',
 		type: 'album',
-		title: a.title,
+		title: a.title ?? '',
 		img: a.cover_url ?? null,
 		source: 'spotify',
 		spotify_id: a.spotify_id ?? null,

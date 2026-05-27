@@ -555,6 +555,94 @@ export interface components {
             /** Spotify Url */
             spotify_url?: string | null;
         };
+        /** CandidateAlbumItem */
+        Music_CandidateAlbumItem: {
+            /** Album Type */
+            album_type?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /** Artist Spotify Id */
+            artist_spotify_id?: string | null;
+            /** Cover Url */
+            cover_url?: string | null;
+            /** External Url */
+            external_url?: string | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Spotify Id */
+            spotify_id?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** CandidateArtistItem */
+        Music_CandidateArtistItem: {
+            /** External Url */
+            external_url?: string | null;
+            /** Genres */
+            genres?: string[];
+            /** Name */
+            name?: string | null;
+            /** Photo Url */
+            photo_url?: string | null;
+            /** Spotify Id */
+            spotify_id?: string | null;
+        };
+        /** CandidatePagination */
+        Music_CandidatePagination: {
+            /** Href */
+            href?: string | null;
+            /** Limit */
+            limit?: number | null;
+            /** Next */
+            next?: string | null;
+            /** Offset */
+            offset?: number | null;
+            /** Previous */
+            previous?: string | null;
+            /** Total */
+            total?: number | null;
+        };
+        /** CandidateSearchResult */
+        Music_CandidateSearchResult: {
+            /** Albums */
+            albums?: components["schemas"]["Music_CandidateAlbumItem"][] | null;
+            albums_pagination?: components["schemas"]["Music_CandidatePagination"] | null;
+            /** Artists */
+            artists?: components["schemas"]["Music_CandidateArtistItem"][] | null;
+            artists_pagination?: components["schemas"]["Music_CandidatePagination"] | null;
+            /** Tracks */
+            tracks?: components["schemas"]["Music_CandidateTrackItem"][] | null;
+            tracks_pagination?: components["schemas"]["Music_CandidatePagination"] | null;
+        };
+        /** CandidateTrackAlbumRef */
+        Music_CandidateTrackAlbumRef: {
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Spotify Id */
+            spotify_id?: string | null;
+            /** Title */
+            title?: string | null;
+        };
+        /** CandidateTrackItem */
+        Music_CandidateTrackItem: {
+            album?: components["schemas"]["Music_CandidateTrackAlbumRef"] | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /** Artist Spotify Id */
+            artist_spotify_id?: string | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** External Url */
+            external_url?: string | null;
+            /** Spotify Id */
+            spotify_id?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Track Number */
+            track_number?: number | null;
+        };
         /** HTTPValidationError */
         Music_HTTPValidationError: {
             /** Detail */
@@ -936,7 +1024,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["Music_CandidateSearchResult"];
                 };
             };
             /** @description Validation Error */
