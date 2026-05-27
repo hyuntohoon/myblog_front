@@ -949,6 +949,8 @@ export interface operations {
             query: {
                 /** @description 검색어 */
                 q: string;
+                /** @description 검색 대상 (콤마 조합 허용): "album", "artist", "track" */
+                type?: string;
                 limit?: number;
                 offset?: number;
             };

@@ -1,6 +1,12 @@
 import type { KeyboardEvent } from 'react'
 import { useMemo, useRef, useState } from 'react'
-import type { AlbumDetail, AlbumSearchResult } from './types'
+import type {
+  AlbumDetail,
+  AlbumSearchResult,
+  ArtistSearchResult,
+  SearchResultItem,
+  TrackSearchResult,
+} from './types'
 import { apiFetch } from '../../lib/api'
 
 const API_BASE = import.meta.env.PUBLIC_API_URL as string
@@ -29,7 +35,7 @@ function filterToType(f: FilterType): string {
 
 export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect, onScoreChange, onBestNewToggle }: Props) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<AlbumSearchResult[]>([])
+  const [results, setResults] = useState<SearchResultItem[]>([])
   const [loading, setLoading] = useState(false)
   const [searching, setSearching] = useState(false)
   const [hoverStar, setHoverStar] = useState(0)
@@ -48,23 +54,51 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
     setStatus('')
     setResults([])
     try {
+      const typeParam = filterToType(filter)
       const r = await fetch(
-        `${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&limit=20&offset=0`,
+        `${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&type=${typeParam}&limit=20&offset=0`,
       )
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const data = await r.json()
-      const albums: AlbumSearchResult[] = (data.albums || []).map((a: any) => ({
-        id: a.id ?? '',
-        title: a.title ?? '',
-        cover_url: a.cover_url ?? null,
-        release_date: a.release_date ?? null,
-        artist_name: a.artist_name ?? null,
-        spotify_id: a.spotify_id ?? null,
-        source: 'db' as const,
-      }))
-      setResults(albums)
-      if (albums.length === 0)
+      const items: SearchResultItem[] = []
+      for (const a of (data.albums || [])) {
+        items.push({
+          kind: 'album',
+          id: a.id ?? '',
+          title: a.title ?? '',
+          cover_url: a.cover_url ?? null,
+          release_date: a.release_date ?? null,
+          artist_name: a.artist_name ?? null,
+          spotify_id: a.spotify_id ?? null,
+          source: 'db' as const,
+        } satisfies AlbumSearchResult)
+      }
+      for (const ar of (data.artists || [])) {
+        items.push({
+          kind: 'artist',
+          id: ar.id ?? '',
+          name: ar.name ?? '',
+          cover_url: ar.cover_url ?? null,
+          spotify_id: ar.spotify_id ?? null,
+          source: 'db' as const,
+        } satisfies ArtistSearchResult)
+      }
+      for (const t of (data.tracks || [])) {
+        items.push({
+          kind: 'track',
+          id: t.id ?? '',
+          title: t.title ?? '',
+          album_id: t.album_id ?? '',
+          album_title: t.album_title ?? null,
+          cover_url: t.cover_url ?? null,
+          artist_name: t.artist_name ?? null,
+          spotify_id: t.spotify_id ?? null,
+          source: 'db' as const,
+        } satisfies TrackSearchResult)
+      }
+      setResults(items)
+      if (items.length === 0)
         setStatus('DB에 결과가 없습니다. Spotify 싱크를 눌러보세요.')
     }
     catch {
@@ -96,7 +130,8 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       if (!r || !r.ok)
         throw new Error(`HTTP ${r?.status}`)
       const data = await r.json()
-      const albums: AlbumSearchResult[] = (data.albums || []).map((a: any) => ({
+      const albums: SearchResultItem[] = (data.albums || []).map((a: any) => ({
+        kind: 'album' as const,
         id: a.spotify_id ?? '',
         title: a.title ?? '',
         cover_url: a.cover_url ?? null,
@@ -131,15 +166,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
     }
   }
 
-  async function onPick(sr: AlbumSearchResult) {
-    // Backend returns { album, artists, tracks, meta } — unwrap to flat AlbumDetail.
-    // Route by available identifier: spotify_id → /by-spotify, else DB UUID → /{id}.
-    // `/albums/{id}` rejects non-UUID input with 500, so spotify_id must use by-spotify.
-    const url = sr.spotify_id ?
-      `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(sr.spotify_id)}` :
-      `${API_BASE}/api/music/albums/${encodeURIComponent(sr.id)}`
+  async function selectAlbumByLookup(args: { lookupUrl: string, source?: 'db' | 'spotify' }) {
     try {
-      const r = await fetch(url)
+      const r = await fetch(args.lookupUrl)
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const json = await r.json() as {
@@ -160,15 +189,39 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       setStatus('')
     }
     catch {
-      if (sr.source === 'spotify') {
-        // Spotify result: album may not be in DB yet (sync is async)
-        setStatus('앨범 동기화가 아직 완료되지 않았습니다. 잠시 후 다시 선택해주세요.')
-      }
-      else {
-        // DB result: lookup unexpectedly failed
-        setStatus('앨범 정보 조회 실패. 잠시 후 다시 시도해주세요.')
-      }
+      setStatus(args.source === 'spotify' ?
+        '앨범 동기화가 아직 완료되지 않았습니다. 잠시 후 다시 선택해주세요.' :
+        '앨범 정보 조회 실패. 잠시 후 다시 시도해주세요.')
     }
+  }
+
+  async function onPick(sr: SearchResultItem) {
+    if (sr.kind === 'album') {
+      // Route by available identifier: spotify_id → /by-spotify, else DB UUID → /{id}.
+      // /albums/{id} rejects non-UUID input with 500, so spotify_id must use by-spotify.
+      const url = sr.spotify_id ?
+        `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(sr.spotify_id)}` :
+        `${API_BASE}/api/music/albums/${encodeURIComponent(sr.id)}`
+      await selectAlbumByLookup({ lookupUrl: url, source: sr.source })
+      return
+    }
+    if (sr.kind === 'track') {
+      // Track click → select the parent album for review.
+      if (!sr.album_id) {
+        setStatus('이 트랙의 앨범 정보가 없습니다.')
+        return
+      }
+      await selectAlbumByLookup({
+        lookupUrl: `${API_BASE}/api/music/albums/${encodeURIComponent(sr.album_id)}`,
+        source: sr.source,
+      })
+      return
+    }
+    // Artist: refine the query to that artist's name and re-search as album.
+    // Aliases (BUG-4) help non-Latin queries find the canonical name.
+    setQuery(sr.name)
+    setFilter('album')
+    setStatus(`'${sr.name}'의 앨범을 검색하려면 검색 버튼을 누르세요.`)
   }
 
   return (
@@ -319,32 +372,46 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
 
           {results.length > 0 && (
             <div className="hdr-grid">
-              {results.map(r => (
-                <button
-	key={r.id || r.spotify_id}
+              {results.map((r) => {
+                const displayTitle = r.kind === 'artist' ? r.name : r.title
+                const subtitle = r.kind === 'album' ?
+                  r.artist_name :
+                  r.kind === 'track' ?
+                    (r.album_title ? `${r.artist_name ?? ''} · ${r.album_title}` : r.artist_name) :
+                    'Artist'
+                const fourthLine = r.kind === 'album' && r.release_date ? r.release_date.slice(0, 4) : null
+                const key = `${r.kind}:${r.id || r.spotify_id || displayTitle}`
+                const isCurrent = r.kind === 'album' && subject?.id === r.id
+                return (
+                  <button
+	key={key}
 	type="button"
-	className={`hdr-tile${subject?.id === r.id ? ' is-current' : ''}`}
-	onClick={() => onPick(r)}
-                >
-                  <div className="hdr-tile-cover">
-                    {r.cover_url ?
-                      <img src={r.cover_url} alt={r.title} /> :
-                      <span className="cover-fallback">{r.title[0]}</span>}
-                  </div>
-                  <div className="hdr-tile-body">
-                    <div className="hdr-tile-name"><em>{r.title}</em></div>
-                    <div className="hdr-tile-by">{r.artist_name}</div>
-                    <div className="hdr-tile-meta">
-                      {r.release_date && <span>{r.release_date.slice(0, 4)}</span>}
-                      {r.source && (
-                        <span className={`hdr-tile-source${r.source === 'spotify' ? ' spotify' : ''}`}>
-                          {r.source === 'spotify' ? 'SPOTIFY' : 'DB'}
-                        </span>
-                      )}
+	className={`hdr-tile${isCurrent ? ' is-current' : ''}`}
+	onClick={() => void onPick(r)}
+                  >
+                    <div className="hdr-tile-cover">
+                      {r.cover_url ?
+                        <img src={r.cover_url} alt={displayTitle} /> :
+                        <span className="cover-fallback">{(displayTitle || '?')[0]}</span>}
                     </div>
-                  </div>
-                </button>
-              ))}
+                    <div className="hdr-tile-body">
+                      <div className="hdr-tile-name"><em>{displayTitle}</em></div>
+                      <div className="hdr-tile-by">{subtitle}</div>
+                      <div className="hdr-tile-meta">
+                        <span className={`hdr-tile-kind kind-${r.kind}`}>
+                          {r.kind === 'album' ? '앨범' : r.kind === 'artist' ? '아티스트' : '트랙'}
+                        </span>
+                        {fourthLine && <span>{fourthLine}</span>}
+                        {r.source && (
+                          <span className={`hdr-tile-source${r.source === 'spotify' ? ' spotify' : ''}`}>
+                            {r.source === 'spotify' ? 'SPOTIFY' : 'DB'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
           {loading && (
