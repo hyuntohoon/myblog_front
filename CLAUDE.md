@@ -39,7 +39,6 @@ src/
 
 `PostPayload` (`src/scripts/write/api.ts`):
 - `rating: number | null` — `0–5`, null if unrated
-- `rating_scale?: number` — denominator; omit to use backend default of `5`
 
 ## Rating Rules
 
