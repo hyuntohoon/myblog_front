@@ -182,11 +182,31 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Posts */
+        get: operations["list_posts_api_posts_get"];
         put?: never;
         /** Create Post */
         post: operations["create_post_api_posts_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/posts/{post_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Post */
+        get: operations["get_post_api_posts__post_id__get"];
+        /** Update Post */
+        put: operations["update_post_api_posts__post_id__put"];
+        post?: never;
+        /** Delete Post */
+        delete: operations["delete_post_api_posts__post_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -288,6 +308,61 @@ export interface components {
                 [key: string]: components["schemas"]["Backend_PostMetrics"];
             };
         };
+        /** PostDetailResponse */
+        Backend_PostDetailResponse: {
+            /** Album Ids */
+            album_ids: string[];
+            /** Artist Ids */
+            artist_ids: string[];
+            /** Body Mdx */
+            body_mdx: string | null;
+            /** Category */
+            category: string | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /**
+             * Posted Date
+             * Format: date
+             */
+            posted_date: string;
+            /** Rating */
+            rating: number | null;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /** PostListItem */
+        Backend_PostListItem: {
+            /** Category */
+            category?: string | null;
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /**
+             * Posted Date
+             * Format: date
+             */
+            posted_date: string;
+            /** Rating */
+            rating: number | null;
+            /** Slug */
+            slug: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /** PostListResponse */
+        Backend_PostListResponse: {
+            /** Posts */
+            posts: components["schemas"]["Backend_PostListItem"][];
+        };
         /** PostMetrics */
         Backend_PostMetrics: {
             /** Comments */
@@ -305,6 +380,21 @@ export interface components {
             position?: number | null;
             /** Track Id */
             track_id: string;
+        };
+        /** UpdatePostRequest */
+        Backend_UpdatePostRequest: {
+            /** Body Mdx */
+            body_mdx?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Posted Date */
+            posted_date?: string | null;
+            /** Rating */
+            rating?: number | null;
+            /** Status */
+            status?: ("draft" | "published" | "archived") | null;
+            /** Title */
+            title?: string | null;
         };
         /** ValidationError */
         Backend_ValidationError: {
@@ -888,6 +978,37 @@ export interface operations {
             };
         };
     };
+    list_posts_api_posts_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PostListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_post_api_posts_post: {
         parameters: {
             query?: never;
@@ -909,6 +1030,101 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_WritePostResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_post_api_posts__post_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PostDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_post_api_posts__post_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_UpdatePostRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_WritePostResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_post_api_posts__post_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
