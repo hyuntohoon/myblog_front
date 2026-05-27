@@ -270,10 +270,10 @@ lastSaved: ts,
       return
     }
 
-    // Astro rebuilds the static site on the new GitHub commit (~3–5 min).
-    // The /blog/{slug} URL 404s until that finishes, so we do not auto-redirect.
-    // Reset the form to prevent accidental re-publish, and tell the user where
-    // to look once the build completes.
+    // Astro rebuilds the static site on the new GitHub commit (~3–5 min), so
+    // /blog/{slug} 404s during that window. Redirect to the /blog list page
+    // instead — it works immediately and the new post appears once the build
+    // completes. Reset state so the form is empty if the user navigates back.
     localStorage.removeItem(DRAFT_KEY)
     setSubject(null)
     setScore(0)
@@ -284,6 +284,9 @@ lastSaved: ts,
     setTags([])
     flash('발행 완료! 사이트 반영까지 약 3–5분 — /blog 에서 확인하세요.')
     setSettingsOpen(false)
+    setTimeout(() => {
+      window.location.href = '/blog/'
+    }, 1800)
   }
 
   const s = { subject, score, bestNew, headline, dek, body, tags, section, genre, publishDate, author, authorRole }
