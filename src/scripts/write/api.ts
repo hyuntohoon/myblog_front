@@ -33,39 +33,29 @@ throw new Error(`HTTP ${res.status}`)
 	return res.json()
 }
 
-export async function savePost(payload: PostPayload) {
-	const token = localStorage.getItem('access_token')
-	const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-	if (token)
-headers.Authorization = `Bearer ${token}`
+// Use apiFetch so 401 → refresh_token → retry once → goLogin only on real failure.
+// `apiFetch` returns null when the refresh fails (user redirected to login),
+// or when a transport error occurs; callers should treat null as failure.
 
-	const res = await fetch(`${API_BASE_URL}/api/posts`, {
+export async function savePost(payload: PostPayload) {
+	const res = await apiFetch(`${API_BASE_URL}/api/posts`, {
 		method: 'POST',
-		headers,
 		body: JSON.stringify(payload),
 	})
-	return res
+	return res ?? new Response(null, { status: 503 })
 }
 
 export async function updatePost(id: string, payload: Partial<PostPayload>) {
-	const token = localStorage.getItem('access_token')
-	const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-	if (token)
-		headers.Authorization = `Bearer ${token}`
-	return fetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`, {
+	const res = await apiFetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`, {
 		method: 'PUT',
-		headers,
 		body: JSON.stringify(payload),
 	})
+	return res ?? new Response(null, { status: 503 })
 }
 
 export async function fetchPostById(id: string): Promise<PostDetail | null> {
-	const token = localStorage.getItem('access_token')
-	const headers: Record<string, string> = {}
-	if (token)
-		headers.Authorization = `Bearer ${token}`
-	const res = await fetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`, { headers })
-	if (!res.ok)
+	const res = await apiFetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`)
+	if (!res || !res.ok)
 		return null
 	return res.json() as Promise<PostDetail>
 }

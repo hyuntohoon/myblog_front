@@ -1,4 +1,4 @@
-import { getAccessToken, goLogin } from './auth'
+import { getAccessToken, goLogin, refreshAccessToken } from './auth'
 
 export async function safeFetch<T>(
 	url: string,
@@ -74,29 +74,45 @@ return {}
 	}
 }
 
+function buildHeaders(options: RequestInit, token: string | null): HeadersInit {
+	const h: Record<string, string> = {
+		...(options.headers as Record<string, string> || {}),
+		'Content-Type': 'application/json',
+	}
+	if (token)
+		h.Authorization = `Bearer ${token}`
+	return h
+}
+
+/**
+ * Authed fetch. On 401, tries the refresh_token flow once. If refresh succeeds,
+ * retries the original request with the new access_token. If refresh fails,
+ * redirects to login and returns null.
+ *
+ * Network/transport errors return null without forcing a re-login (the caller
+ * can decide whether to retry).
+ */
 export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response | null> {
 	try {
-		const token = await getAccessToken()
-		const res = await fetch(path, {
-			...options,
-			headers: {
-				...(options.headers || {}),
-				Authorization: `Bearer ${token}`,
-				'Content-Type': 'application/json',
-			},
-		})
+		const token = getAccessToken()
+		let res = await fetch(path, { ...options, headers: buildHeaders(options, token) })
 
 		if (res.status === 401) {
-			console.warn('Token expired — redirecting to login')
+			const refreshed = await refreshAccessToken()
+			if (refreshed) {
+				res = await fetch(path, { ...options, headers: buildHeaders(options, refreshed) })
+				if (res.status !== 401)
+					return res
+			}
+			console.warn('Auth refresh failed — redirecting to login')
 			goLogin(true, window.location.pathname)
 			return null
 		}
 
 		return res
 	}
- catch (err) {
+	catch (err) {
 		console.error('API fetch error:', err)
-		goLogin(true, window.location.pathname)
 		return null
 	}
 }

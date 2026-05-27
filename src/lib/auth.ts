@@ -143,6 +143,45 @@ localStorage.setItem(LS_REFRESH, json.refresh_token)
 	location.replace(returnTo)
 }
 
+/**
+ * Cognito access tokens have a 60-min TTL. Refresh tokens last 5 days.
+ * Call this when an authed request returns 401: it exchanges the stored
+ * refresh_token for a new access_token. Returns the new token on success,
+ * null on failure (caller should goLogin() in that case).
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+	const refresh = localStorage.getItem(LS_REFRESH)
+	if (!refresh)
+		return null
+
+	const body = new URLSearchParams({
+		grant_type: 'refresh_token',
+		client_id: CLIENT_ID,
+		refresh_token: refresh,
+	})
+
+	try {
+		const resp = await fetch(`https://${COGNITO_DOMAIN}/oauth2/token`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body,
+		})
+		if (!resp.ok)
+			return null
+		const json = await resp.json() as { access_token?: string, id_token?: string }
+		if (!json.access_token)
+			return null
+		localStorage.setItem(LS_ACCESS, json.access_token)
+		if (json.id_token)
+			localStorage.setItem(LS_ID, json.id_token)
+		// Cognito does not rotate the refresh_token by default; keep the stored one.
+		return json.access_token
+	}
+	catch {
+		return null
+	}
+}
+
 export function logout() {
 	localStorage.removeItem(LS_ACCESS)
 	localStorage.removeItem(LS_ID)
