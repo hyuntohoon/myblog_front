@@ -33,9 +33,9 @@ const FILTERS = [
 
 type FilterType = typeof FILTERS[number]['v']
 
-function filterToType(f: FilterType): string {
-  return f === 'all' ? 'album,artist,track' : f
-}
+// Backend search always fetches all 3 types so filter toggles can be applied
+// instantly client-side without re-hitting the API.
+const BACKEND_TYPES = 'album,artist,track'
 
 function interleave<T>(...arrays: T[][]): T[] {
   const max = Math.max(0, ...arrays.map(a => a.length))
@@ -70,9 +70,8 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
     setStatus('')
     setResults([])
     try {
-      const typeParam = filterToType(filter)
       const r = await fetch(
-        `${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&type=${typeParam}&limit=20&offset=0`,
+        `${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&type=${BACKEND_TYPES}&limit=20&offset=0`,
       )
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
@@ -107,11 +106,8 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
         spotify_id: t.spotify_id ?? null,
         source: 'db' as const,
       }))
-      const items: SearchResultItem[] = filter === 'all' ?
-        interleave<SearchResultItem>(albums, artists, tracks) :
-        [...albums, ...artists, ...tracks]
-      setResults(items)
-      if (items.length === 0)
+      setResults(interleave<SearchResultItem>(albums, artists, tracks))
+      if (albums.length + artists.length + tracks.length === 0)
         setStatus('DB에 결과가 없습니다. Spotify 싱크를 눌러보세요.')
     }
     catch {
@@ -135,10 +131,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
     setLoading(true)
     setStatus('Spotify에서 검색하고 DB 동기화를 시작합니다…')
     setResults([])
-    const typeParam = filterToType(filter)
     try {
       const r = await apiFetch(
-        `${API_BASE}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=${typeParam}&limit=20`,
+        `${API_BASE}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=${BACKEND_TYPES}&limit=20`,
       )
       if (!r || !r.ok)
         throw new Error(`HTTP ${r?.status}`)
@@ -173,11 +168,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
         spotify_id: t.spotify_id ?? null,
         source: 'spotify' as const,
       }))
-      const items: SearchResultItem[] = filter === 'all' ?
-        interleave<SearchResultItem>(albums, artists, tracks) :
-        [...albums, ...artists, ...tracks]
-      setResults(items)
-      setStatus(items.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
+      const merged = interleave<SearchResultItem>(albums, artists, tracks)
+      setResults(merged)
+      setStatus(merged.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
     }
     catch {
       setStatus('Spotify 싱크 실패')
@@ -188,6 +181,11 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
   }
 
   const displayStars = useMemo(() => hoverStar || Math.round(score), [hoverStar, score])
+
+  const visibleResults = useMemo(
+    () => filter === 'all' ? results : results.filter(r => r.kind === filter),
+    [results, filter],
+  )
 
   function clearSearch() {
     setQuery('')
@@ -403,10 +401,10 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
                 {f.l}
               </button>
             ))}
-            <span className="hdr-filter-hint">DB·싱크 공통 적용</span>
-            {results.length > 0 && (
+            <span className="hdr-filter-hint">즉시 적용</span>
+            {visibleResults.length > 0 && (
               <span className="hdr-count">
-{results.length}
+{visibleResults.length}
 개
               </span>
             )}
@@ -414,9 +412,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
 
           {status && <div className="hdr-status">{status}</div>}
 
-          {results.length > 0 && (
+          {visibleResults.length > 0 && (
             <div className="hdr-grid">
-              {results.map((r) => {
+              {visibleResults.map((r) => {
                 const displayTitle = r.kind === 'artist' ? r.name : r.title
                 const subtitle = r.kind === 'album' ?
                   r.artist_name :
@@ -460,6 +458,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
           )}
           {loading && (
             <div className="hdr-results-empty">검색 중…</div>
+          )}
+          {!loading && results.length > 0 && visibleResults.length === 0 && (
+            <div className="hdr-results-empty">현재 필터에 해당하는 결과가 없습니다.</div>
           )}
         </div>
       )}
