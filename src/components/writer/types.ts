@@ -45,31 +45,14 @@ export type SaveStatus = 'saved' | 'dirty'
 export type WriterView = 'edit' | 'preview'
 
 export const SECTIONS = ['Reviews', 'Best New Music', 'Features', 'Tracks'] as const
-export const GENRES = [
-  'Electronic',
-'Rock',
-'Indie',
-'Pop',
-'Hip-Hop',
-  'Folk',
-'Jazz',
-'Experimental',
-'R&B',
-'K-Pop',
-] as const
 
 export interface DraftPersist {
   subject: AlbumDetail | null
   score: number
-  bestNew: boolean
   headline: string
   dek: string
   body: string
-  tags: string[]
   section: string
-  genre: string
   publishDate: string
-  author: string
-  authorRole: string
   lastSaved: string
 }

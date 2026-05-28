@@ -18,10 +18,8 @@ const API_BASE = import.meta.env.PUBLIC_API_URL as string
 interface Props {
   subject: AlbumDetail | null
   score: number
-  bestNew: boolean
   onSubjectSelect: (album: AlbumDetail) => void
   onScoreChange: (score: number) => void
-  onBestNewToggle: () => void
 }
 
 const FILTERS = [
@@ -49,7 +47,7 @@ function interleave<T>(...arrays: T[][]): T[] {
   return out
 }
 
-export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect, onScoreChange, onBestNewToggle }: Props) {
+export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreChange }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -325,13 +323,6 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
             </div>
           </div>
           <button type="button" className="hdr-change" onClick={() => setSearching(true)} title="다른 앨범 검색">↻</button>
-          <button
-	type="button"
-	className={`hdr-bnm${bestNew ? ' on' : ''}`}
-	onClick={onBestNewToggle}
-          >
-            BEST NEW
-          </button>
         </div>
       )}
 

@@ -5,7 +5,7 @@ import BodyArea from './BodyArea'
 import SettingsPanel from './SettingsPanel'
 import PreviewView from './PreviewView'
 import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
-import { GENRES, SECTIONS } from './types'
+import { SECTIONS } from './types'
 import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 
 const DRAFT_KEY = 'lowfreq-draft'
@@ -20,6 +20,8 @@ function nowTime() {
 }
 
 function loadDraft(): Partial<DraftPersist> {
+  // Older drafts persisted dead keys (bestNew/tags/genre/author/authorRole).
+  // Partial<DraftPersist> silently drops them on read — no migration needed.
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
     return raw ? JSON.parse(raw) as Partial<DraftPersist> : {}
@@ -71,23 +73,6 @@ function TitleArea({ headline, setHeadline, dek, setDek, dim }: {
   )
 }
 
-function ByLine({ author, role, date }: { author: string, role: string, date: string }) {
-  return (
-    <div className="byline">
-      <span className="byline-by">By</span>
-      <span className="byline-author">{author || '—'}</span>
-      {role && (
-<span className="byline-role">
-·
-{role}
-</span>
-)}
-      <span className="byline-sep">·</span>
-      <span>{date}</span>
-    </div>
-  )
-}
-
 function Toast({ msg }: { msg: string }) {
   if (!msg)
     return null
@@ -103,16 +88,11 @@ export default function WriterApp() {
 
   const [subject, setSubject] = useState<AlbumDetail | null>(saved.subject ?? null)
   const [score, setScore] = useState(saved.score ?? 0)
-  const [bestNew, setBestNew] = useState(saved.bestNew ?? false)
   const [headline, setHeadline] = useState(saved.headline ?? '')
   const [dek, setDek] = useState(saved.dek ?? '')
   const [body, setBody] = useState(saved.body ?? '')
-  const [tags, setTags] = useState<string[]>(saved.tags ?? [])
   const [section, setSection] = useState(saved.section ?? SECTIONS[0])
-  const [genre, setGenre] = useState(saved.genre ?? GENRES[0])
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
-  const [author, setAuthor] = useState(saved.author ?? '')
-  const [authorRole, setAuthorRole] = useState(saved.authorRole ?? '')
 
   const [view, setView] = useState<WriterView>('edit')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -159,18 +139,13 @@ export default function WriterApp() {
       const ts = nowTime()
       const data: DraftPersist = {
         subject,
-score,
-bestNew,
-headline,
-dek,
-body,
-tags,
+        score,
+        headline,
+        dek,
+        body,
         section,
-genre,
-publishDate,
-author,
-authorRole,
-lastSaved: ts,
+        publishDate,
+        lastSaved: ts,
       }
       try {
         localStorage.setItem(DRAFT_KEY, JSON.stringify(data))
@@ -180,7 +155,7 @@ lastSaved: ts,
       setStatus('saved')
     }, 600)
     return () => clearTimeout(id)
-  }, [subject, score, bestNew, headline, dek, body, tags, section, genre, publishDate, author, authorRole])
+  }, [subject, score, headline, dek, body, section, publishDate])
 
   const onSaveDraft = async () => {
     if (!headline.trim()) {
@@ -222,11 +197,9 @@ lastSaved: ts,
     localStorage.removeItem(DRAFT_KEY)
     setSubject(null)
     setScore(0)
-    setBestNew(false)
     setHeadline('')
     setDek('')
     setBody('')
-    setTags([])
     setSettingsOpen(false)
     flash('초안이 삭제되었습니다.')
   }
@@ -299,11 +272,9 @@ lastSaved: ts,
     localStorage.removeItem(DRAFT_KEY)
     setSubject(null)
     setScore(0)
-    setBestNew(false)
     setHeadline('')
     setDek('')
     setBody('')
-    setTags([])
     flash('발행 완료! 사이트 반영까지 약 3–5분 — /blog 에서 확인하세요.')
     setSettingsOpen(false)
     setTimeout(() => {
@@ -311,7 +282,7 @@ lastSaved: ts,
     }, 1800)
   }
 
-  const s = { subject, score, bestNew, headline, dek, body, tags, section, genre, publishDate, author, authorRole }
+  const s = { subject, score, headline, dek, body, publishDate }
 
   return (
     <div className="page">
@@ -330,13 +301,10 @@ lastSaved: ts,
             <SubjectBlock
 	subject={subject}
 	score={score}
-	bestNew={bestNew}
 	onSubjectSelect={setSubject}
 	onScoreChange={setScore}
-	onBestNewToggle={() => setBestNew(b => !b)}
             />
             <TitleArea headline={headline} setHeadline={setHeadline} dek={dek} setDek={setDek} dim={!subject} />
-            <ByLine author={author} role={authorRole} date={publishDate} />
             <BodyArea body={body} setBody={setBody} dim={!subject} />
           </main>
         ) :
@@ -350,21 +318,13 @@ lastSaved: ts,
 	open={settingsOpen}
 	onClose={() => setSettingsOpen(false)}
 	section={section}
-	genre={genre}
 	publishDate={publishDate}
-	tags={tags}
-	author={author}
-	authorRole={authorRole}
 	subject={subject}
 	score={score}
 	headline={headline}
 	body={body}
 	onSectionChange={setSection}
-	onGenreChange={setGenre}
 	onPublishDateChange={setPublishDate}
-	onTagsChange={setTags}
-	onAuthorChange={setAuthor}
-	onAuthorRoleChange={setAuthorRole}
 	onDraftSave={onSaveDraft}
 	onPublish={onPublish}
 	onReset={onReset}
