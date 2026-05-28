@@ -1,62 +1,20 @@
-import { useState } from 'react'
-import { GENRES, SECTIONS } from './types'
+import { SECTIONS } from './types'
 import type { AlbumDetail } from './types'
 
 interface Props {
   open: boolean
   onClose: () => void
   section: string
-  genre: string
   publishDate: string
-  tags: string[]
-  author: string
-  authorRole: string
   subject: AlbumDetail | null
   score: number
   headline: string
   body: string
   onSectionChange: (v: string) => void
-  onGenreChange: (v: string) => void
   onPublishDateChange: (v: string) => void
-  onTagsChange: (tags: string[]) => void
-  onAuthorChange: (v: string) => void
-  onAuthorRoleChange: (v: string) => void
   onDraftSave: () => void
   onPublish: () => void
   onReset: () => void
-}
-
-function TagsInput({ tags, onChange }: { tags: string[], onChange: (t: string[]) => void }) {
-  const [draft, setDraft] = useState('')
-  function onKey(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault()
-      const t = draft.trim()
-      if (t && !tags.includes(t))
-        onChange([...tags, t])
-      setDraft('')
-    }
-    else if (e.key === 'Backspace' && !draft && tags.length) {
-      onChange(tags.slice(0, -1))
-    }
-  }
-  return (
-    <div className="tags-wrap">
-      {tags.map((t, i) => (
-        <span key={i} className="tag-chip">
-          {t}
-          <button type="button" onClick={() => onChange(tags.filter((_, j) => j !== i))}>✕</button>
-        </span>
-      ))}
-      <input
-	className="tags-input"
-	placeholder={tags.length ? '' : '태그…'}
-	value={draft}
-	onChange={e => setDraft(e.target.value)}
-	onKeyDown={onKey}
-      />
-    </div>
-  )
 }
 
 function Check({ ok, label }: { ok: boolean, label: string }) {
@@ -70,26 +28,18 @@ function Check({ ok, label }: { ok: boolean, label: string }) {
 
 export default function SettingsPanel({
   open,
-onClose,
+  onClose,
   section,
-genre,
-publishDate,
-tags,
-author,
-authorRole,
+  publishDate,
   subject,
-score,
-headline,
-body,
+  score,
+  headline,
+  body,
   onSectionChange,
-onGenreChange,
-onPublishDateChange,
-onTagsChange,
-  onAuthorChange,
-onAuthorRoleChange,
+  onPublishDateChange,
   onDraftSave,
-onPublish,
-onReset,
+  onPublish,
+  onReset,
 }: Props) {
   return (
     <>
@@ -108,34 +58,9 @@ onReset,
             </select>
           </div>
 
-          <div className="set-row-2">
-            <div className="set-block">
-              <label className="set-l">장르</label>
-              <select className="set-select" value={genre} onChange={e => onGenreChange(e.target.value)}>
-                {GENRES.map(x => <option key={x}>{x}</option>)}
-              </select>
-            </div>
-            <div className="set-block">
-              <label className="set-l">발행일</label>
-              <input type="date" className="set-input" value={publishDate} onChange={e => onPublishDateChange(e.target.value)} />
-            </div>
-          </div>
-
           <div className="set-block">
-            <label className="set-l">태그</label>
-            <TagsInput tags={tags} onChange={onTagsChange} />
-            <div className="set-hint">엔터로 추가, ⌫로 삭제</div>
-          </div>
-
-          <div className="set-row-2">
-            <div className="set-block">
-              <label className="set-l">작성자</label>
-              <input className="set-input" value={author} onChange={e => onAuthorChange(e.target.value)} placeholder="이름" />
-            </div>
-            <div className="set-block">
-              <label className="set-l">역할</label>
-              <input className="set-input" value={authorRole} onChange={e => onAuthorRoleChange(e.target.value)} placeholder="객원필자" />
-            </div>
+            <label className="set-l">발행일</label>
+            <input type="date" className="set-input" value={publishDate} onChange={e => onPublishDateChange(e.target.value)} />
           </div>
 
           <div className="set-block set-checklist">

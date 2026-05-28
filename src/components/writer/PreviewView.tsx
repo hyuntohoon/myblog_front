@@ -3,15 +3,10 @@ import type { AlbumDetail } from './types'
 interface State {
   subject: AlbumDetail | null
   score: number
-  bestNew: boolean
   headline: string
   dek: string
   body: string
-  tags: string[]
-  genre: string
   publishDate: string
-  author: string
-  authorRole: string
 }
 
 function renderInline(text: string): React.ReactNode[] {
@@ -66,9 +61,6 @@ export default function PreviewView({ s }: { s: State }) {
 
   return (
     <article className="preview-article">
-      {s.bestNew && (
-        <div className="prev-bnm">BEST NEW MUSIC</div>
-      )}
       <div className="prev-kicker">
         <span style={{ color: 'var(--accent)' }}>
           리뷰 ·
@@ -76,20 +68,10 @@ export default function PreviewView({ s }: { s: State }) {
           앨범
         </span>
         <span>·</span>
-        <span>{s.genre}</span>
-        <span>·</span>
         <span>{s.publishDate}</span>
       </div>
       <h1 className="prev-headline">{s.headline || '제목 없음'}</h1>
       {s.dek && <p className="prev-dek"><em>{s.dek}</em></p>}
-      <div className="prev-byline">
-        <span>
-          By
-          {' '}
-          {s.author || '—'}
-          {s.authorRole ? ` · ${s.authorRole}` : ''}
-        </span>
-      </div>
       {s.subject && (
         <div className="prev-subject">
           <div className="prev-cover">
@@ -122,16 +104,6 @@ export default function PreviewView({ s }: { s: State }) {
               return <p key={idx}>{renderInline(p)}</p>
             })}
       </div>
-      {s.tags.length > 0 && (
-        <div className="prev-tags">
-          {s.tags.map((t, idx) => (
-            <span key={idx} className="prev-tag">
-              #
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
     </article>
   )
 }
