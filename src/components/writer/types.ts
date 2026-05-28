@@ -22,7 +22,8 @@ export interface TrackSearchResult {
   kind: 'track'
   id: string
   title: string
-  album_id: string
+  album_id: string | null
+  album_spotify_id: string | null
   album_title: string | null
   cover_url: string | null
   artist_name: string | null
