@@ -90,23 +90,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/music/artists/spotify/{spotify_id}/albums": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Spotify Artist Albums */
-        get: operations["get_spotify_artist_albums_api_music_artists_spotify__spotify_id__albums_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/music/artists/{artist_id}/albums": {
         parameters: {
             query?: never;
@@ -862,40 +845,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_AlbumDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Music_HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_spotify_artist_albums_api_music_artists_spotify__spotify_id__albums_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path: {
-                spotify_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Music_SearchResult"];
                 };
             };
             /** @description Validation Error */
