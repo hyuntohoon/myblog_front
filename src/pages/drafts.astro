@@ -4,13 +4,18 @@ import Seo from '@components/seo.astro'
 ---
 
 <Layout>
-  <Seo slot="seo" title="Drafts — RAMAMU" noIndex />
+  <Seo slot="seo" title="내 글 — RAMAMU" noIndex />
 
   <main class="container drafts-main">
 
     <div class="drafts-header">
-      <h1 class="drafts-heading">Drafts</h1>
+      <h1 class="drafts-heading">내 글</h1>
       <span class="mono-label" style="color: var(--color-faded);" id="draft-count">—</span>
+    </div>
+
+    <div class="view-tabs">
+      <button type="button" class="view-tab active" data-view="draft">초안</button>
+      <button type="button" class="view-tab" data-view="archived">보관함</button>
     </div>
 
     <div id="drafts-loading" class="drafts-empty">
@@ -23,7 +28,7 @@ import Seo from '@components/seo.astro'
     </div>
 
     <div id="drafts-empty-msg" class="drafts-empty hidden">
-      <p class="drafts-empty-title">임시저장된 글이 없습니다</p>
+      <p class="drafts-empty-title" id="drafts-empty-title">임시저장된 글이 없습니다</p>
       <a href="/write" class="drafts-cta">새 글 작성 →</a>
     </div>
 
@@ -39,6 +44,19 @@ import Seo from '@components/seo.astro'
       <tbody id="drafts-tbody"></tbody>
     </table>
 
+    <div id="confirm-backdrop" class="confirm-backdrop hidden">
+      <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <h2 id="confirm-title" class="confirm-title">완전 삭제할까요?</h2>
+        <p class="confirm-body">이 작업은 되돌릴 수 없습니다. 보관함에서도 복구할 수 없습니다.</p>
+        <div class="confirm-actions">
+          <button type="button" class="confirm-cancel" id="confirm-cancel">취소</button>
+          <button type="button" class="confirm-confirm" id="confirm-confirm">완전 삭제</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="drafts-toast hidden"></div>
+
   </main>
 </Layout>
 
@@ -51,7 +69,7 @@ import Seo from '@components/seo.astro'
     display: flex;
     align-items: baseline;
     gap: 16px;
-    margin-bottom: 32px;
+    margin-bottom: 16px;
     padding-bottom: 20px;
     border-bottom: 1px solid var(--color-border);
   }
@@ -63,6 +81,31 @@ import Seo from '@components/seo.astro'
     letter-spacing: -0.025em;
     color: var(--color-text);
     margin: 0;
+  }
+  .view-tabs {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .view-tab {
+    background: none;
+    border: 1px solid var(--color-border);
+    padding: 6px 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-subtle);
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .view-tab:hover {
+    color: var(--color-text);
+    border-color: var(--color-text);
+  }
+  .view-tab.active {
+    color: var(--color-text);
+    border-color: var(--color-text);
   }
   .drafts-empty {
     padding: 80px 0;
@@ -112,7 +155,7 @@ import Seo from '@components/seo.astro'
   .col-title  { width: auto; }
   .col-cat    { width: 140px; }
   .col-date   { width: 160px; }
-  .col-action { width: 120px; text-align: right; }
+  .col-action { width: 220px; text-align: right; }
   .drafts-table td {
     padding: 18px 0;
     border-bottom: 1px solid var(--color-border-soft);
@@ -169,6 +212,79 @@ import Seo from '@components/seo.astro'
     color: var(--color-accent);
     border-color: var(--color-accent);
   }
+  .confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .confirm-modal {
+    background: var(--color-bg, #fff);
+    border: 1px solid var(--color-border);
+    padding: 24px 28px;
+    max-width: 420px;
+    width: calc(100% - 32px);
+  }
+  .confirm-title {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 500;
+    margin: 0 0 12px;
+    color: var(--color-text);
+  }
+  .confirm-body {
+    font-family: var(--font-serif);
+    font-size: 14px;
+    color: var(--color-subtle);
+    margin: 0 0 24px;
+    line-height: 1.6;
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 16px;
+  }
+  .confirm-cancel,
+  .confirm-confirm {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: none;
+    border: 1px solid var(--color-border);
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--color-text);
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .confirm-confirm {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  .confirm-confirm:hover {
+    background: var(--color-accent);
+    color: var(--color-bg, #fff);
+  }
+  .confirm-cancel:hover {
+    border-color: var(--color-text);
+  }
+  .drafts-toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-text);
+    color: var(--color-bg, #fff);
+    padding: 12px 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    z-index: 1001;
+    transition: opacity 0.2s;
+  }
   .hidden { display: none; }
 </style>
 
@@ -177,106 +293,198 @@ import Seo from '@components/seo.astro'
 
   const API = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
+  type View = 'draft' | 'archived'
+  let currentView: View = 'draft'
+
   const $loading = document.getElementById('drafts-loading')!
   const $error   = document.getElementById('drafts-error')!
   const $empty   = document.getElementById('drafts-empty-msg')!
+  const $emptyTitle = document.getElementById('drafts-empty-title')!
   const $table   = document.getElementById('drafts-table')!
   const $tbody   = document.getElementById('drafts-tbody')!
   const $count   = document.getElementById('draft-count')!
+  const $confirmBackdrop = document.getElementById('confirm-backdrop')!
+  const $confirmCancel = document.getElementById('confirm-cancel')! as HTMLButtonElement
+  const $confirmConfirm = document.getElementById('confirm-confirm')! as HTMLButtonElement
+  const $toast = document.getElementById('toast')!
 
   const show = (el: HTMLElement) => el.classList.remove('hidden')
   const hide = (el: HTMLElement) => el.classList.add('hidden')
 
-  function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString('ko-KR', {
-      year: 'numeric',
-month: 'short',
-day: 'numeric',
+  let toastTimer: number | undefined
+  function flash(msg: string) {
+    $toast.textContent = msg
+    show($toast)
+    if (toastTimer)
+window.clearTimeout(toastTimer)
+    toastTimer = window.setTimeout(() => hide($toast), 2400)
+  }
+
+  function confirmHardDelete(): Promise<boolean> {
+    return new Promise((resolve) => {
+      show($confirmBackdrop)
+      // Hoisted function declarations so cleanup can refer to the listener
+      // identities — arrow consts would forward-reference and fail
+      // ts/no-use-before-define.
+      function onCancel() {
+        finish(false)
+      }
+      function onConfirm() {
+        finish(true)
+      }
+      function onBackdrop(e: Event) {
+        if (e.target === $confirmBackdrop)
+          finish(false)
+      }
+      function finish(result: boolean) {
+        hide($confirmBackdrop)
+        $confirmCancel.removeEventListener('click', onCancel)
+        $confirmConfirm.removeEventListener('click', onConfirm)
+        $confirmBackdrop.removeEventListener('click', onBackdrop)
+        resolve(result)
+      }
+      $confirmCancel.addEventListener('click', onCancel)
+      $confirmConfirm.addEventListener('click', onConfirm)
+      $confirmBackdrop.addEventListener('click', onBackdrop)
     })
   }
 
-  function makeDraftRow(d: {
+  function formatDate(iso: string) {
+    return new Date(iso).toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  }
+
+  function authHeaders(): HeadersInit {
+    const token = getAccessToken()
+    return { Authorization: `Bearer ${token ?? ''}` }
+  }
+
+  function makeActionLink(text: string, href: string): HTMLAnchorElement {
+    const a = document.createElement('a')
+    a.className = 'draft-action-link'
+    a.href = href
+    a.textContent = text
+    return a
+  }
+
+  function makeActionBtn(text: string, danger: boolean, onClick: () => void): HTMLButtonElement {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = `draft-action-btn${danger ? ' danger' : ''}`
+    b.textContent = text
+    b.addEventListener('click', onClick)
+    return b
+  }
+
+  function rowVanish(tr: HTMLTableRowElement) {
+    tr.remove()
+    const remaining = $tbody.querySelectorAll('tr').length
+    $count.textContent = `${remaining}개`
+    if (remaining === 0) {
+      hide($table)
+      show($empty)
+    }
+  }
+
+  function makeRow(d: {
     id: string
-title: string
-slug: string
+    title: string
+    slug: string
     category: string | null
-posted_date: string
+    posted_date: string
   }): HTMLTableRowElement {
     const tr = document.createElement('tr')
 
-    // Title cell
     const tdTitle = document.createElement('td')
     tdTitle.className = 'draft-title-cell'
     tdTitle.textContent = d.title
     tr.appendChild(tdTitle)
 
-    // Category cell
     const tdCat = document.createElement('td')
     tdCat.className = 'draft-cat-cell'
     tdCat.textContent = d.category ?? '—'
     tr.appendChild(tdCat)
 
-    // Date cell
     const tdDate = document.createElement('td')
     tdDate.className = 'draft-date-cell'
     tdDate.textContent = formatDate(d.posted_date)
     tr.appendChild(tdDate)
 
-    // Actions cell
     const tdActions = document.createElement('td')
     const actionsDiv = document.createElement('div')
     actionsDiv.className = 'draft-actions'
 
-    const editLink = document.createElement('a')
-    editLink.className = 'draft-action-link'
-    editLink.href = `/write?id=${encodeURIComponent(d.id)}`
-    editLink.textContent = 'Edit'
-    actionsDiv.appendChild(editLink)
+    if (currentView === 'draft') {
+      actionsDiv.appendChild(makeActionLink('편집', `/write?id=${encodeURIComponent(d.id)}`))
+      actionsDiv.appendChild(makeActionBtn('보관', false, async () => {
+        const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}`, {
+          method: 'DELETE',
+          headers: authHeaders(),
+        })
+        if (r.ok) {
+          rowVanish(tr)
+          flash('보관됨 — 복구 가능')
+        }
+        else { flash(`보관 실패 (${r.status})`) }
+      }))
+    }
+    else {
+      actionsDiv.appendChild(makeActionBtn('복구', false, async () => {
+        const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}/restore`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+        })
+        if (r.ok) {
+          rowVanish(tr)
+          flash('복구 완료')
+        }
+        else { flash(`복구 실패 (${r.status})`) }
+      }))
+    }
 
-    const deleteBtn = document.createElement('button')
-    deleteBtn.type = 'button'
-    deleteBtn.className = 'draft-action-btn danger'
-    deleteBtn.textContent = 'Delete'
-    deleteBtn.addEventListener('click', async () => {
-      // eslint-disable-next-line no-alert
-      if (!confirm('이 초안을 삭제할까요?'))
-        return
-      const token = getAccessToken()
-      const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}`, {
+    actionsDiv.appendChild(makeActionBtn('완전 삭제', true, async () => {
+      if (!await confirmHardDelete())
+return
+      const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}?hard=true`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token ?? ''}` },
+        headers: authHeaders(),
       })
       if (r.ok) {
-        tr.remove()
-        const remaining = $tbody.querySelectorAll('tr').length
-        $count.textContent = `${remaining} draft${remaining !== 1 ? 's' : ''}`
-        if (remaining === 0) {
-          hide($table)
-          show($empty)
-        }
+        rowVanish(tr)
+        flash('완전 삭제됨')
       }
-    })
-    actionsDiv.appendChild(deleteBtn)
+      else { flash(`삭제 실패 (${r.status})`) }
+    }))
+
     tdActions.appendChild(actionsDiv)
     tr.appendChild(tdActions)
 
     return tr
   }
 
-  async function loadDrafts() {
+  async function loadPosts() {
+    hide($error)
+    hide($empty)
+    hide($table)
+    show($loading)
+    $tbody.replaceChildren()
+
     if (!isLoggedIn()) {
       goLogin(false, '/drafts')
       return
     }
     try {
-      const token = getAccessToken()
-      const res = await fetch(`${API}/api/posts?status=draft`, {
-        headers: { Authorization: `Bearer ${token ?? ''}` },
-      })
+      const url = currentView === 'draft' ?
+      `${API}/api/posts?status=draft` :
+      `${API}/api/posts?status=archived&include_archived=true`
+      const res = await fetch(url, { headers: authHeaders() })
       if (!res.ok)
 throw new Error(`HTTP ${res.status}`)
 
-      const { posts: drafts } = await res.json() as {
+      const { posts } = await res.json() as {
         posts: Array<{
           id: string
           title: string
@@ -288,21 +496,36 @@ throw new Error(`HTTP ${res.status}`)
 
       hide($loading)
 
-      if (drafts.length === 0) {
-        $count.textContent = '0 drafts'
+      if (posts.length === 0) {
+        $count.textContent = '0개'
+        $emptyTitle.textContent = currentView === 'draft' ?
+        '임시저장된 글이 없습니다' :
+        '보관함이 비어 있습니다'
         show($empty)
         return
       }
 
-      $count.textContent = `${drafts.length} draft${drafts.length > 1 ? 's' : ''}`
-      drafts.forEach(d => $tbody.appendChild(makeDraftRow(d)))
+      $count.textContent = `${posts.length}개`
+      posts.forEach(d => $tbody.appendChild(makeRow(d)))
       show($table)
     }
- catch {
+    catch {
       hide($loading)
       show($error)
     }
   }
 
-  loadDrafts()
+  document.querySelectorAll<HTMLButtonElement>('.view-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = btn.dataset.view as View
+      if (next === currentView)
+return
+      currentView = next
+      document.querySelectorAll('.view-tab').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      loadPosts()
+    })
+  })
+
+  loadPosts()
 </script>

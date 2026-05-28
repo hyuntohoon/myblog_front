@@ -73,6 +73,31 @@ export async function fetchPostById(id: string): Promise<PostDetail | null> {
 	return res.json() as Promise<PostDetail>
 }
 
+// Soft archive — backend flips status to 'archived'; row stays in DB and is
+// restorable. The default DELETE on a post does this.
+export async function archivePost(id: string) {
+	const res = await apiFetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}`, {
+		method: 'DELETE',
+	})
+	return res ?? new Response(null, { status: 503 })
+}
+
+// Hard delete — CASCADE removes M:M rows. Irreversible. Routes use ?hard=true.
+export async function hardDeletePost(id: string) {
+	const res = await apiFetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}?hard=true`, {
+		method: 'DELETE',
+	})
+	return res ?? new Response(null, { status: 503 })
+}
+
+// Restore an archived row back to 'published'.
+export async function restorePost(id: string) {
+	const res = await apiFetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(id)}/restore`, {
+		method: 'PATCH',
+	})
+	return res ?? new Response(null, { status: 503 })
+}
+
 // ✅ 백엔드 CreatePostReq 기준
 export async function publishToGit(params: {
 	title: string
