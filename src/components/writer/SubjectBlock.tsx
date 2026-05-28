@@ -37,6 +37,18 @@ function filterToType(f: FilterType): string {
   return f === 'all' ? 'album,artist,track' : f
 }
 
+function interleave<T>(...arrays: T[][]): T[] {
+  const max = Math.max(0, ...arrays.map(a => a.length))
+  const out: T[] = []
+  for (let i = 0; i < max; i++) {
+    for (const arr of arrays) {
+      if (i < arr.length)
+        out.push(arr[i])
+    }
+  }
+  return out
+}
+
 export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect, onScoreChange, onBestNewToggle }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultItem[]>([])
@@ -65,42 +77,39 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const data = await r.json() as UnifiedSearchResult
-      const items: SearchResultItem[] = []
-      for (const a of (data.albums ?? [])) {
-        items.push({
-          kind: 'album',
-          id: a.id ?? '',
-          title: a.title ?? '',
-          cover_url: a.cover_url ?? null,
-          release_date: a.release_date ?? null,
-          artist_name: a.artist_name ?? null,
-          spotify_id: a.spotify_id ?? null,
-          source: 'db' as const,
-        } satisfies AlbumSearchResult)
-      }
-      for (const ar of (data.artists ?? [])) {
-        items.push({
-          kind: 'artist',
-          id: ar.id ?? '',
-          name: ar.name ?? '',
-          cover_url: ar.cover_url ?? null,
-          spotify_id: ar.spotify_id ?? null,
-          source: 'db' as const,
-        } satisfies ArtistSearchResult)
-      }
-      for (const t of (data.tracks ?? [])) {
-        items.push({
-          kind: 'track',
-          id: t.id ?? '',
-          title: t.title ?? '',
-          album_id: t.album_id ?? '',
-          album_title: t.album_title ?? null,
-          cover_url: t.cover_url ?? null,
-          artist_name: t.artist_name ?? null,
-          spotify_id: t.spotify_id ?? null,
-          source: 'db' as const,
-        } satisfies TrackSearchResult)
-      }
+      const albums: AlbumSearchResult[] = (data.albums ?? []).map(a => ({
+        kind: 'album' as const,
+        id: a.id ?? '',
+        title: a.title ?? '',
+        cover_url: a.cover_url ?? null,
+        release_date: a.release_date ?? null,
+        artist_name: a.artist_name ?? null,
+        spotify_id: a.spotify_id ?? null,
+        source: 'db' as const,
+      }))
+      const artists: ArtistSearchResult[] = (data.artists ?? []).map(ar => ({
+        kind: 'artist' as const,
+        id: ar.id ?? '',
+        name: ar.name ?? '',
+        cover_url: ar.cover_url ?? null,
+        spotify_id: ar.spotify_id ?? null,
+        source: 'db' as const,
+      }))
+      const tracks: TrackSearchResult[] = (data.tracks ?? []).map(t => ({
+        kind: 'track' as const,
+        id: t.id ?? '',
+        title: t.title ?? '',
+        album_id: t.album_id ?? null,
+        album_spotify_id: t.album_spotify_id ?? null,
+        album_title: t.album_title ?? null,
+        cover_url: t.cover_url ?? null,
+        artist_name: t.artist_name ?? null,
+        spotify_id: t.spotify_id ?? null,
+        source: 'db' as const,
+      }))
+      const items: SearchResultItem[] = filter === 'all' ?
+        interleave<SearchResultItem>(albums, artists, tracks) :
+        [...albums, ...artists, ...tracks]
       setResults(items)
       if (items.length === 0)
         setStatus('DB에 결과가 없습니다. Spotify 싱크를 눌러보세요.')
@@ -134,7 +143,7 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       if (!r || !r.ok)
         throw new Error(`HTTP ${r?.status}`)
       const data = await r.json() as CandidateSearchResult
-      const albums: SearchResultItem[] = (data.albums ?? []).map(a => ({
+      const albums: AlbumSearchResult[] = (data.albums ?? []).map(a => ({
         kind: 'album' as const,
         id: a.spotify_id ?? '',
         title: a.title ?? '',
@@ -143,9 +152,32 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
         artist_name: a.artist_name ?? null,
         spotify_id: a.spotify_id ?? null,
         source: 'spotify' as const,
-      } satisfies AlbumSearchResult))
-      setResults(albums)
-      setStatus(albums.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
+      }))
+      const artists: ArtistSearchResult[] = (data.artists ?? []).map(ar => ({
+        kind: 'artist' as const,
+        id: ar.spotify_id ?? '',
+        name: ar.name ?? '',
+        cover_url: ar.photo_url ?? null,
+        spotify_id: ar.spotify_id ?? null,
+        source: 'spotify' as const,
+      }))
+      const tracks: TrackSearchResult[] = (data.tracks ?? []).map(t => ({
+        kind: 'track' as const,
+        id: t.spotify_id ?? '',
+        title: t.title ?? '',
+        album_id: null,
+        album_spotify_id: t.album?.spotify_id ?? null,
+        album_title: t.album?.title ?? null,
+        cover_url: t.album?.cover_url ?? null,
+        artist_name: t.artist_name ?? null,
+        spotify_id: t.spotify_id ?? null,
+        source: 'spotify' as const,
+      }))
+      const items: SearchResultItem[] = filter === 'all' ?
+        interleave<SearchResultItem>(albums, artists, tracks) :
+        [...albums, ...artists, ...tracks]
+      setResults(items)
+      setStatus(items.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
     }
     catch {
       setStatus('Spotify 싱크 실패')
@@ -211,14 +243,22 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
     }
     if (sr.kind === 'track') {
       // Track click → select the parent album for review.
-      if (!sr.album_id) {
-        setStatus('이 트랙의 앨범 정보가 없습니다.')
+      // Spotify candidates carry album.spotify_id (no DB UUID yet); DB tracks carry album_id (UUID).
+      if (sr.source === 'spotify' && sr.album_spotify_id) {
+        await selectAlbumByLookup({
+          lookupUrl: `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(sr.album_spotify_id)}`,
+          source: 'spotify',
+        })
         return
       }
-      await selectAlbumByLookup({
-        lookupUrl: `${API_BASE}/api/music/albums/${encodeURIComponent(sr.album_id)}`,
-        source: sr.source,
-      })
+      if (sr.album_id) {
+        await selectAlbumByLookup({
+          lookupUrl: `${API_BASE}/api/music/albums/${encodeURIComponent(sr.album_id)}`,
+          source: sr.source,
+        })
+        return
+      }
+      setStatus('이 트랙의 앨범 정보가 없습니다.')
       return
     }
     // Artist: refine the query to that artist's name and re-search as album.
@@ -363,7 +403,7 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
                 {f.l}
               </button>
             ))}
-            <span className="hdr-filter-hint">싱크 시 적용</span>
+            <span className="hdr-filter-hint">DB·싱크 공통 적용</span>
             {results.length > 0 && (
               <span className="hdr-count">
 {results.length}
