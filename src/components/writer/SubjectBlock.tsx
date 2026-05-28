@@ -55,7 +55,7 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
   const [loading, setLoading] = useState(false)
   const [searching, setSearching] = useState(false)
   const [hoverStar, setHoverStar] = useState(0)
-  const [filter, setFilter] = useState<FilterType>('album')
+  const [filter, setFilter] = useState<FilterType>('all')
   const [status, setStatus] = useState('')
   const [syncDisabled, setSyncDisabled] = useState(false)
   const syncCooldownRef = useRef(false)
