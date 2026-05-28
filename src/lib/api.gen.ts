@@ -124,23 +124,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/music/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 기본 검색(DB) */
-        get: operations["basic_search_api_music_search_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/music/search/candidates": {
         parameters: {
             query?: never;
@@ -936,44 +919,6 @@ export interface operations {
             path: {
                 artist_id: string;
             };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Music_SearchResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Music_HTTPValidationError"];
-                };
-            };
-        };
-    };
-    basic_search_api_music_search_get: {
-        parameters: {
-            query: {
-                /** @description 검색 모드: "artist" 또는 "album" */
-                mode: string;
-                /** @description 검색어 */
-                q: string;
-                /** @description 페이지 크기(1~100) */
-                limit?: number;
-                /** @description 오프셋(0부터) */
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
             cookie?: never;
         };
         requestBody?: never;
