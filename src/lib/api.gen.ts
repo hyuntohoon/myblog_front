@@ -178,6 +178,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/posts/{post_id}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Post Reviews */
+        get: operations["get_post_reviews_api_posts__post_id__reviews_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/posts/{post_id}/reviews/tracks/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Batch Upsert Track Reviews */
+        post: operations["batch_upsert_track_reviews_api_posts__post_id__reviews_tracks_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/posts/{post_id}/reviews/tracks/{track_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Track Review */
+        put: operations["put_track_review_api_posts__post_id__reviews_tracks__track_id__put"];
+        post?: never;
+        /** Delete Track Review */
+        delete: operations["delete_track_review_api_posts__post_id__reviews_tracks__track_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/publish": {
         parameters: {
             query?: never;
@@ -336,6 +388,36 @@ export interface components {
             /** Likes */
             likes: number;
         };
+        /** PostReviewAlbum */
+        Backend_PostReviewAlbum: {
+            /** Rating */
+            rating: number;
+            /**
+             * Scale
+             * @default 5
+             */
+            scale: number;
+        };
+        /** PostReviewBundle */
+        Backend_PostReviewBundle: {
+            album?: components["schemas"]["Backend_PostReviewAlbum"] | null;
+            /** Tracks */
+            tracks?: components["schemas"]["Backend_PostReviewTrack"][];
+        };
+        /** PostReviewTrack */
+        Backend_PostReviewTrack: {
+            /** Notes */
+            notes?: string | null;
+            /** Rating */
+            rating: number;
+            /**
+             * Scale
+             * @default 5
+             */
+            scale: number;
+            /** Track Id */
+            track_id: string;
+        };
         /** RecommendedTrackInput */
         Backend_RecommendedTrackInput: {
             /** Album Id */
@@ -346,6 +428,37 @@ export interface components {
             position?: number | null;
             /** Track Id */
             track_id: string;
+        };
+        /** TrackReviewBatchItem */
+        Backend_TrackReviewBatchItem: {
+            /** Notes */
+            notes?: string | null;
+            /** Rating */
+            rating: number;
+            /**
+             * Scale
+             * @default 5
+             */
+            scale: number;
+            /** Track Id */
+            track_id: string;
+        };
+        /** TrackReviewBatchRequest */
+        Backend_TrackReviewBatchRequest: {
+            /** Tracks */
+            tracks?: components["schemas"]["Backend_TrackReviewBatchItem"][];
+        };
+        /** TrackReviewUpsert */
+        Backend_TrackReviewUpsert: {
+            /** Notes */
+            notes?: string | null;
+            /** Rating */
+            rating: number;
+            /**
+             * Scale
+             * @default 5
+             */
+            scale: number;
         };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
@@ -1111,6 +1224,138 @@ export interface operations {
             header?: never;
             path: {
                 post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_post_reviews_api_posts__post_id__reviews_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PostReviewBundle"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_upsert_track_reviews_api_posts__post_id__reviews_tracks_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_TrackReviewBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PostReviewBundle"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_track_review_api_posts__post_id__reviews_tracks__track_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_TrackReviewUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PostReviewTrack"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_track_review_api_posts__post_id__reviews_tracks__track_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                post_id: string;
+                track_id: string;
             };
             cookie?: never;
         };
