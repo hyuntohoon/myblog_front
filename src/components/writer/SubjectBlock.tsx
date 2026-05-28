@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from 'react'
 import { useMemo, useRef, useState } from 'react'
+import type { components } from '../../lib/api.gen'
 import type {
   AlbumDetail,
   AlbumSearchResult,
@@ -8,6 +9,9 @@ import type {
   TrackSearchResult,
 } from './types'
 import { apiFetch } from '../../lib/api'
+
+type UnifiedSearchResult = components['schemas']['Music_UnifiedSearchResult']
+type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult']
 
 const API_BASE = import.meta.env.PUBLIC_API_URL as string
 
@@ -60,9 +64,9 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       )
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
-      const data = await r.json()
+      const data = await r.json() as UnifiedSearchResult
       const items: SearchResultItem[] = []
-      for (const a of (data.albums || [])) {
+      for (const a of (data.albums ?? [])) {
         items.push({
           kind: 'album',
           id: a.id ?? '',
@@ -74,7 +78,7 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
           source: 'db' as const,
         } satisfies AlbumSearchResult)
       }
-      for (const ar of (data.artists || [])) {
+      for (const ar of (data.artists ?? [])) {
         items.push({
           kind: 'artist',
           id: ar.id ?? '',
@@ -84,7 +88,7 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
           source: 'db' as const,
         } satisfies ArtistSearchResult)
       }
-      for (const t of (data.tracks || [])) {
+      for (const t of (data.tracks ?? [])) {
         items.push({
           kind: 'track',
           id: t.id ?? '',
@@ -129,8 +133,8 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
       )
       if (!r || !r.ok)
         throw new Error(`HTTP ${r?.status}`)
-      const data = await r.json()
-      const albums: SearchResultItem[] = (data.albums || []).map((a: any) => ({
+      const data = await r.json() as CandidateSearchResult
+      const albums: SearchResultItem[] = (data.albums ?? []).map(a => ({
         kind: 'album' as const,
         id: a.spotify_id ?? '',
         title: a.title ?? '',
@@ -139,7 +143,7 @@ export default function SubjectBlock({ subject, score, bestNew, onSubjectSelect,
         artist_name: a.artist_name ?? null,
         spotify_id: a.spotify_id ?? null,
         source: 'spotify' as const,
-      }))
+      } satisfies AlbumSearchResult))
       setResults(albums)
       setStatus(albums.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
     }
