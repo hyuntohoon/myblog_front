@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import WriterChrome from './WriterChrome'
 import SubjectBlock from './SubjectBlock'
+import RecommendedTracksBlock from './RecommendedTracksBlock'
 import BodyArea from './BodyArea'
 import SettingsPanel from './SettingsPanel'
 import PreviewView from './PreviewView'
-import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
+import type { AlbumDetail, DraftPersist, RecommendedTrack, SaveStatus, WriterView } from './types'
 import { SECTIONS } from './types'
 import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 
@@ -93,6 +94,17 @@ export default function WriterApp() {
   const [body, setBody] = useState(saved.body ?? '')
   const [section, setSection] = useState(saved.section ?? SECTIONS[0])
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
+  const [recommendedTracks, setRecommendedTracks] = useState<RecommendedTrack[]>(saved.recommendedTracks ?? [])
+
+  // Album switch invalidates any previously-picked tracks (they belonged to the
+  // old album). Clear silently — the user is starting fresh under the new subject.
+  const onSubjectSelect = useCallback((next: AlbumDetail) => {
+    setSubject((prev) => {
+      if (prev && prev.id !== next.id)
+        setRecommendedTracks([])
+      return next
+    })
+  }, [])
 
   const [view, setView] = useState<WriterView>('edit')
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -127,6 +139,17 @@ export default function WriterApp() {
       setScore(post.rating ?? 0)
       if (post.category)
         setSection(post.category)
+      const loadedTracks = post.recommended_tracks ?? []
+      if (loadedTracks.length > 0) {
+        setRecommendedTracks(
+          loadedTracks.map((rt, i) => ({
+            album_id: rt.album_id,
+            track_id: rt.track_id,
+            position: rt.position ?? i,
+            note: rt.note ?? undefined,
+          })),
+        )
+      }
     })
   }, [])
 
@@ -145,6 +168,7 @@ export default function WriterApp() {
         body,
         section,
         publishDate,
+        recommendedTracks,
         lastSaved: ts,
       }
       try {
@@ -155,7 +179,7 @@ export default function WriterApp() {
       setStatus('saved')
     }, 600)
     return () => clearTimeout(id)
-  }, [subject, score, headline, dek, body, section, publishDate])
+  }, [subject, score, headline, dek, body, section, publishDate, recommendedTracks])
 
   const onSaveDraft = async () => {
     if (!headline.trim()) {
@@ -173,6 +197,12 @@ export default function WriterApp() {
       album_ids: subject ? [subject.id] : [],
       artist_ids: artistIds,
       rating: score > 0 ? score : null,
+      recommended_tracks: recommendedTracks.map(rt => ({
+        album_id: rt.album_id,
+        track_id: rt.track_id,
+        position: rt.position,
+        note: rt.note ?? null,
+      })),
     }
     const res = dbPostId ?
       await updatePost(dbPostId, payload) :
@@ -200,6 +230,7 @@ export default function WriterApp() {
     setHeadline('')
     setDek('')
     setBody('')
+    setRecommendedTracks([])
     setSettingsOpen(false)
     flash('초안이 삭제되었습니다.')
   }
@@ -213,6 +244,12 @@ export default function WriterApp() {
     // If a draft was saved first (dbPostId set), upgrade that row to
     // status="published" instead of creating a new one — otherwise the second
     // row collides on the unique slug and the backend returns 409 (BUG-9).
+    const recommendedPayload = recommendedTracks.map(rt => ({
+      album_id: rt.album_id,
+      track_id: rt.track_id,
+      position: rt.position,
+      note: rt.note ?? null,
+    }))
     const res = dbPostId ?
       await updatePost(dbPostId, {
         title: headline,
@@ -221,6 +258,7 @@ export default function WriterApp() {
         posted_date: publishDate,
         status: 'published',
         rating: score,
+        recommended_tracks: recommendedPayload,
       }) :
       await savePost({
         title: headline,
@@ -232,6 +270,7 @@ export default function WriterApp() {
         artist_ids: artistIds,
         rating: score,
         album_cover_url: subject.cover_url,
+        recommended_tracks: recommendedPayload,
       })
     if (!res.ok) {
       if (res.status === 409) {
@@ -275,6 +314,7 @@ export default function WriterApp() {
     setHeadline('')
     setDek('')
     setBody('')
+    setRecommendedTracks([])
     flash('발행 완료! 사이트 반영까지 약 3–5분 — /blog 에서 확인하세요.')
     setSettingsOpen(false)
     setTimeout(() => {
@@ -301,8 +341,13 @@ export default function WriterApp() {
             <SubjectBlock
 	subject={subject}
 	score={score}
-	onSubjectSelect={setSubject}
+	onSubjectSelect={onSubjectSelect}
 	onScoreChange={setScore}
+            />
+            <RecommendedTracksBlock
+	subject={subject}
+	value={recommendedTracks}
+	onChange={setRecommendedTracks}
             />
             <TitleArea headline={headline} setHeadline={setHeadline} dek={dek} setDek={setDek} dim={!subject} />
             <BodyArea body={body} setBody={setBody} dim={!subject} />

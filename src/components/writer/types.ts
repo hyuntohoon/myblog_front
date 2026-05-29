@@ -33,13 +33,29 @@ export interface TrackSearchResult {
 
 export type SearchResultItem = AlbumSearchResult | ArtistSearchResult | TrackSearchResult
 
+export interface TrackInfo {
+  id: string
+  title: string
+  track_no: number | null
+}
+
 export interface AlbumDetail {
   id: string
   title: string
   cover_url: string | null
   release_date: string | null
   artists: Array<{ id: string, name: string }>
+  tracks: TrackInfo[]
 }
+
+export interface RecommendedTrack {
+  album_id: string
+  track_id: string
+  position: number
+  note?: string
+}
+
+export const RECOMMENDED_TRACK_LIMIT = 5
 
 export type SaveStatus = 'saved' | 'dirty'
 export type WriterView = 'edit' | 'preview'
@@ -54,5 +70,6 @@ export interface DraftPersist {
   body: string
   section: string
   publishDate: string
+  recommendedTracks: RecommendedTrack[]
   lastSaved: string
 }
