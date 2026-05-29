@@ -101,6 +101,7 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
         album_title: t.album_title ?? null,
         cover_url: t.cover_url ?? null,
         artist_name: t.artist_name ?? null,
+        feat_artist_names: t.feat_artist_names ?? [],
         spotify_id: t.spotify_id ?? null,
         source: 'db' as const,
       }))
@@ -163,6 +164,7 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
         album_title: t.album?.title ?? null,
         cover_url: t.album?.cover_url ?? null,
         artist_name: t.artist_name ?? null,
+        feat_artist_names: [],
         spotify_id: t.spotify_id ?? null,
         source: 'spotify' as const,
       }))
@@ -409,11 +411,19 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
             <div className="hdr-grid">
               {visibleResults.map((r) => {
                 const displayTitle = r.kind === 'artist' ? r.name : r.title
-                const subtitle = r.kind === 'album' ?
-                  r.artist_name :
-                  r.kind === 'track' ?
-                    (r.album_title ? `${r.artist_name ?? ''} · ${r.album_title}` : r.artist_name) :
-                    'Artist'
+                let subtitle: string | null = null
+                if (r.kind === 'album') {
+                  subtitle = r.artist_name
+                }
+                else if (r.kind === 'track') {
+                  const feat = r.feat_artist_names ?? []
+                  const artistPart = r.artist_name ?? ''
+                  const withFeat = feat.length ? `${artistPart} (feat. ${feat.join(', ')})` : artistPart
+                  subtitle = r.album_title ? `${withFeat} · ${r.album_title}` : (withFeat || r.artist_name)
+                }
+                else {
+                  subtitle = 'Artist'
+                }
                 const fourthLine = r.kind === 'album' && r.release_date ? r.release_date.slice(0, 4) : null
                 const key = `${r.kind}:${r.id || r.spotify_id || displayTitle}`
                 const isCurrent = r.kind === 'album' && subject?.id === r.id

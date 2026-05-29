@@ -27,6 +27,7 @@ export interface TrackSearchResult {
   album_title: string | null
   cover_url: string | null
   artist_name: string | null
+  feat_artist_names: string[]
   spotify_id: string | null
   source?: 'db' | 'spotify'
 }

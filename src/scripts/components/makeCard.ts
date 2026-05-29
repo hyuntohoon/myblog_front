@@ -39,8 +39,12 @@ export function makeCard(
 	}
  else if (it.type === 'track') {
 		let txt = ''
-		if (it.artist_name)
-txt += it.artist_name
+		if (it.artist_name) {
+			txt += it.artist_name
+			const feat = it.feat_artist_names ?? []
+			if (feat.length)
+txt += ` (feat. ${feat.join(', ')})`
+		}
 		if (it.album_title)
 txt += (txt ? ' • ' : '') + it.album_title
 		sub.textContent =

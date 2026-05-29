@@ -669,6 +669,8 @@ export interface components {
             cover_url?: string | null;
             /** Duration Sec */
             duration_sec?: number | null;
+            /** Feat Artist Names */
+            feat_artist_names?: string[];
             /** Id */
             id: string;
             /** Release Date */

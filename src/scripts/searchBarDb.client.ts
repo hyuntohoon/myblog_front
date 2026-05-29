@@ -111,6 +111,7 @@ function mapDBTracksUnified(arr: TrackItem[]): CardItem[] {
 		spotify_id: t.spotify_id ?? null,
 		release_date: t.release_date ?? null,
 		artist_name: t.artist_name ?? null,
+		feat_artist_names: t.feat_artist_names ?? [],
 		album_title: t.album_title ?? null,
 		album_spotify_id: t.album_spotify_id ?? null,
 		db_album_id: t.album_id ?? null, // ✅ 핵심: 트랙 클릭 → 이 앨범(DB)로 이동

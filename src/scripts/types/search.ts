@@ -18,6 +18,7 @@ export interface CardItem {
 
 	artist_name?: string | null
 	artist_spotify_id?: string | null
+	feat_artist_names?: string[]
 	album_title?: string | null
 	album_spotify_id?: string | null
 
