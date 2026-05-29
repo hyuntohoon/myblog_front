@@ -32,6 +32,30 @@ const resultsWrap = byId<HTMLDivElement>('resultsWrap')
 const artistsRow = byId<HTMLDivElement>('artistsRow')
 const albumsRow = byId<HTMLDivElement>('albumsRow')
 const tracksRow = byId<HTMLDivElement>('tracksRow')
+const artistsLoadMore = byId<HTMLButtonElement>('artistsLoadMore')
+const albumsLoadMore = byId<HTMLButtonElement>('albumsLoadMore')
+const tracksLoadMore = byId<HTMLButtonElement>('tracksLoadMore')
+
+// BUG-19: per-bucket pagination state. `offsets[k]` = next offset to request;
+// row toggles its load-more button hidden when a round returns zero new rows.
+type BucketKey = 'artist' | 'album' | 'track'
+const PAGE_LIMIT = 20
+let _offsets: Record<BucketKey, number> = { artist: 0, album: 0, track: 0 }
+const _seenIds: Record<BucketKey, Set<string>> = {
+	artist: new Set(),
+	album: new Set(),
+	track: new Set(),
+}
+const _loadMoreEls: Record<BucketKey, HTMLButtonElement> = {
+	artist: artistsLoadMore,
+	album: albumsLoadMore,
+	track: tracksLoadMore,
+}
+const _rowEls: Record<BucketKey, HTMLDivElement> = {
+	artist: artistsRow,
+	album: albumsRow,
+	track: tracksRow,
+}
 
 // state
 let _view: View = 'db'
@@ -57,6 +81,17 @@ function clearResults() {
 	albumsRow.innerHTML = ''
 	tracksRow.innerHTML = ''
 	resultsWrap.hidden = true
+	_offsets = { artist: 0, album: 0, track: 0 }
+	_seenIds.artist.clear()
+	_seenIds.album.clear()
+	_seenIds.track.clear()
+	for (const k of ['artist', 'album', 'track'] as BucketKey[])
+		_loadMoreEls[k].hidden = true
+}
+
+function _trackSeen(kind: BucketKey, items: CardItem[]) {
+	for (const it of items)
+		_seenIds[kind].add(it.id)
 }
 
 function render(artists: CardItem[],	albums: CardItem[],	tracks: CardItem[]) {
@@ -69,6 +104,69 @@ function render(artists: CardItem[],	albums: CardItem[],	tracks: CardItem[]) {
 	tracks.forEach(it => tracksRow.appendChild(makeCard(it, onSelect)))
 
 	resultsWrap.hidden = artists.length + albums.length + tracks.length === 0
+
+	// BUG-19: reset per-bucket pagination state from this initial render.
+	_offsets = { artist: artists.length, album: albums.length, track: tracks.length }
+	_seenIds.artist.clear()
+	_seenIds.album.clear()
+	_seenIds.track.clear()
+	_trackSeen('artist', artists)
+	_trackSeen('album', albums)
+	_trackSeen('track', tracks)
+	// Show "더 보기" only when the bucket received something on the initial round.
+	// (Spotify view also calls render() — but runSync resets _view='spotify',
+	// and we keep load-more visible only for DB rounds via the spotify guard below.)
+	artistsLoadMore.hidden = _view !== 'db' || artists.length === 0
+	albumsLoadMore.hidden = _view !== 'db' || albums.length === 0
+	tracksLoadMore.hidden = _view !== 'db' || tracks.length === 0
+}
+
+async function loadMoreBucket(kind: BucketKey) {
+	const q = input.value.trim()
+	if (!q || _view !== 'db')
+		return
+	const btn = _loadMoreEls[kind]
+	const prevText = btn.textContent
+	btn.disabled = true
+	btn.textContent = '불러오는 중…'
+	try {
+		const url =
+			`${API_BASE}/api/music/search/unified` +
+			`?q=${encodeURIComponent(q)}` +
+			`&limit=${PAGE_LIMIT}` +
+			`&offset=0` +
+			`&${kind}_offset=${_offsets[kind]}`
+		const data = await getJSON<UnifiedSearchResult>(url)
+		let cards: CardItem[] = []
+		let returned = 0
+		if (kind === 'artist') {
+			cards = mapDBArtistsUnified(data.artists ?? [])
+			returned = cards.length
+		}
+		else if (kind === 'album') {
+			cards = mapDBAlbumsUnified(data.albums ?? [])
+			returned = cards.length
+		}
+		else {
+			cards = mapDBTracksUnified(data.tracks ?? [])
+			returned = cards.length
+		}
+		// De-dupe — unified expansion can re-surface a row already shown.
+		const fresh = cards.filter(c => !_seenIds[kind].has(c.id))
+		fresh.forEach(it => _rowEls[kind].appendChild(makeCard(it, onSelect)))
+		_trackSeen(kind, fresh)
+		_offsets[kind] += returned
+		if (returned === 0 || fresh.length === 0)
+			btn.hidden = true
+	}
+	catch (e) {
+		console.error(e)
+		setStatus('❌ 추가 로드 실패')
+	}
+	finally {
+		btn.disabled = false
+		btn.textContent = prevText
+	}
 }
 
 // -----------------------------
@@ -342,6 +440,9 @@ async function onSelect(it: CardItem): Promise<void> {
 // events
 submitBtn.addEventListener('click', () => void runDBSearch())
 syncBtn.addEventListener('click', () => void runSync())
+artistsLoadMore.addEventListener('click', () => void loadMoreBucket('artist'))
+albumsLoadMore.addEventListener('click', () => void loadMoreBucket('album'))
+tracksLoadMore.addEventListener('click', () => void loadMoreBucket('track'))
 
 input.addEventListener('keydown', (e) => {
 	if (e.key === 'Enter') {
