@@ -76,6 +76,20 @@
     padding-bottom:.5rem;
   }
 
+  .results-load-more{
+    align-self:center;
+    padding:.4rem 1rem;
+    font-size:.78rem;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    background:transparent;
+    border:1px solid currentColor;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .results-load-more:hover:not(:disabled){ opacity:.7; }
+  .results-load-more:disabled{ opacity:.5; cursor:not-allowed; }
+
   :global(.card){
     display:flex;
     flex-direction:column;
@@ -166,16 +180,19 @@
     <div class="results-col" id="artistsCol">
       <div class="results-heading">Artists</div>
       <div class="results-row" id="artistsRow"></div>
+      <button type="button" class="results-load-more" id="artistsLoadMore" hidden>더 보기</button>
     </div>
 
     <div class="results-col" id="albumsCol">
       <div class="results-heading">Albums</div>
       <div class="results-row" id="albumsRow"></div>
+      <button type="button" class="results-load-more" id="albumsLoadMore" hidden>더 보기</button>
     </div>
 
     <div class="results-col" id="tracksCol">
       <div class="results-heading">Tracks</div>
       <div class="results-row" id="tracksRow"></div>
+      <button type="button" class="results-load-more" id="tracksLoadMore" hidden>더 보기</button>
     </div>
   </div>
 </div>

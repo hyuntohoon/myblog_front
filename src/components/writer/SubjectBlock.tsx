@@ -47,18 +47,72 @@ function interleave<T>(...arrays: T[][]): T[] {
   return out
 }
 
+type BucketKey = 'album' | 'artist' | 'track'
+type BucketOffsets = Record<BucketKey, number>
+type BucketLastReturned = Record<BucketKey, number>
+
+const ZERO_OFFSETS: BucketOffsets = { album: 0, artist: 0, track: 0 }
+const ZERO_RETURNED: BucketLastReturned = { album: 0, artist: 0, track: 0 }
+const PAGE_LIMIT = 20
+
 export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreChange }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState<BucketKey | null>(null)
   const [searching, setSearching] = useState(false)
   const [hoverStar, setHoverStar] = useState(0)
   const [filter, setFilter] = useState<FilterType>('all')
   const [status, setStatus] = useState('')
   const [syncDisabled, setSyncDisabled] = useState(false)
   const syncCooldownRef = useRef(false)
+  // BUG-19: per-bucket pagination — `offsets[kind]` is the next offset to ask
+  // for; `lastReturned[kind]` controls "더 보기" visibility (hide once a
+  // round returns zero rows for that bucket).
+  const [offsets, setOffsets] = useState<BucketOffsets>(ZERO_OFFSETS)
+  const [lastReturned, setLastReturned] = useState<BucketLastReturned>(ZERO_RETURNED)
 
   const showSearch = !subject || searching
+
+  function mapAlbums(arr: UnifiedSearchResult['albums']): AlbumSearchResult[] {
+    return (arr ?? []).map(a => ({
+      kind: 'album' as const,
+      id: a.id ?? '',
+      title: a.title ?? '',
+      cover_url: a.cover_url ?? null,
+      release_date: a.release_date ?? null,
+      artist_name: a.artist_name ?? null,
+      spotify_id: a.spotify_id ?? null,
+      source: 'db' as const,
+    }))
+  }
+
+  function mapArtists(arr: UnifiedSearchResult['artists']): ArtistSearchResult[] {
+    return (arr ?? []).map(ar => ({
+      kind: 'artist' as const,
+      id: ar.id ?? '',
+      name: ar.name ?? '',
+      cover_url: ar.cover_url ?? null,
+      spotify_id: ar.spotify_id ?? null,
+      source: 'db' as const,
+    }))
+  }
+
+  function mapTracks(arr: UnifiedSearchResult['tracks']): TrackSearchResult[] {
+    return (arr ?? []).map(t => ({
+      kind: 'track' as const,
+      id: t.id ?? '',
+      title: t.title ?? '',
+      album_id: t.album_id ?? null,
+      album_spotify_id: t.album_spotify_id ?? null,
+      album_title: t.album_title ?? null,
+      cover_url: t.cover_url ?? null,
+      artist_name: t.artist_name ?? null,
+      feat_artist_names: t.feat_artist_names ?? [],
+      spotify_id: t.spotify_id ?? null,
+      source: 'db' as const,
+    }))
+  }
 
   async function runDBSearch() {
     const q = query.trim()
@@ -67,45 +121,21 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
     setLoading(true)
     setStatus('')
     setResults([])
+    setOffsets(ZERO_OFFSETS)
+    setLastReturned(ZERO_RETURNED)
     try {
       const r = await fetch(
-        `${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&type=${BACKEND_TYPES}&limit=20&offset=0`,
+        `${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&type=${BACKEND_TYPES}&limit=${PAGE_LIMIT}&offset=0`,
       )
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const data = await r.json() as UnifiedSearchResult
-      const albums: AlbumSearchResult[] = (data.albums ?? []).map(a => ({
-        kind: 'album' as const,
-        id: a.id ?? '',
-        title: a.title ?? '',
-        cover_url: a.cover_url ?? null,
-        release_date: a.release_date ?? null,
-        artist_name: a.artist_name ?? null,
-        spotify_id: a.spotify_id ?? null,
-        source: 'db' as const,
-      }))
-      const artists: ArtistSearchResult[] = (data.artists ?? []).map(ar => ({
-        kind: 'artist' as const,
-        id: ar.id ?? '',
-        name: ar.name ?? '',
-        cover_url: ar.cover_url ?? null,
-        spotify_id: ar.spotify_id ?? null,
-        source: 'db' as const,
-      }))
-      const tracks: TrackSearchResult[] = (data.tracks ?? []).map(t => ({
-        kind: 'track' as const,
-        id: t.id ?? '',
-        title: t.title ?? '',
-        album_id: t.album_id ?? null,
-        album_spotify_id: t.album_spotify_id ?? null,
-        album_title: t.album_title ?? null,
-        cover_url: t.cover_url ?? null,
-        artist_name: t.artist_name ?? null,
-        feat_artist_names: t.feat_artist_names ?? [],
-        spotify_id: t.spotify_id ?? null,
-        source: 'db' as const,
-      }))
+      const albums = mapAlbums(data.albums)
+      const artists = mapArtists(data.artists)
+      const tracks = mapTracks(data.tracks)
       setResults(interleave<SearchResultItem>(albums, artists, tracks))
+      setOffsets({ album: albums.length, artist: artists.length, track: tracks.length })
+      setLastReturned({ album: albums.length, artist: artists.length, track: tracks.length })
       if (albums.length + artists.length + tracks.length === 0)
         setStatus('DB에 결과가 없습니다. Spotify 싱크를 눌러보세요.')
     }
@@ -114,6 +144,60 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
     }
     finally {
       setLoading(false)
+    }
+  }
+
+  // BUG-19 Q3 (a): per-bucket "load more" using `<kind>_offset` overrides.
+  // Only fires when a single bucket is selected so the user sees deterministic
+  // append semantics for that kind (no interleaving surprise).
+  async function loadMore(kind: BucketKey) {
+    const q = query.trim()
+    if (!q || loadingMore)
+      return
+    setLoadingMore(kind)
+    try {
+      const params = new URLSearchParams({
+        q,
+        type: BACKEND_TYPES,
+        limit: String(PAGE_LIMIT),
+        offset: '0',
+        [`${kind}_offset`]: String(offsets[kind]),
+      })
+      const r = await fetch(`${API_BASE}/api/music/search/unified?${params.toString()}`)
+      if (!r.ok)
+        throw new Error(`HTTP ${r.status}`)
+      const data = await r.json() as UnifiedSearchResult
+      let appended: SearchResultItem[] = []
+      let returned = 0
+      if (kind === 'album') {
+        appended = mapAlbums(data.albums)
+        returned = appended.length
+      }
+      else if (kind === 'artist') {
+        appended = mapArtists(data.artists)
+        returned = appended.length
+      }
+      else {
+        appended = mapTracks(data.tracks)
+        returned = appended.length
+      }
+      // De-dupe by id when appending (unified expansion can re-surface the same row).
+      const existingIds = new Set(results.filter(r => r.kind === kind).map(r => r.id))
+      const fresh = appended.filter(r => !existingIds.has(r.id))
+      if (fresh.length === 0 && returned > 0) {
+        // backend returned rows but all were duplicates — treat as "exhausted"
+        setLastReturned(prev => ({ ...prev, [kind]: 0 }))
+        return
+      }
+      setResults(prev => [...prev, ...fresh])
+      setOffsets(prev => ({ ...prev, [kind]: prev[kind] + returned }))
+      setLastReturned(prev => ({ ...prev, [kind]: returned }))
+    }
+    catch {
+      setStatus('추가 로드 실패')
+    }
+    finally {
+      setLoadingMore(null)
     }
   }
 
@@ -130,6 +214,10 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
     setLoading(true)
     setStatus('Spotify에서 검색하고 DB 동기화를 시작합니다…')
     setResults([])
+    // BUG-19: Spotify candidates don't support per-bucket offset paging,
+    // so hide "더 보기" while in Spotify view.
+    setOffsets(ZERO_OFFSETS)
+    setLastReturned(ZERO_RETURNED)
     try {
       const r = await apiFetch(
         `${API_BASE}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=${BACKEND_TYPES}&limit=20`,
@@ -191,6 +279,8 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
     setQuery('')
     setResults([])
     setStatus('')
+    setOffsets(ZERO_OFFSETS)
+    setLastReturned(ZERO_RETURNED)
   }
 
   function onSearchKeyDown(e: KeyboardEvent) {
@@ -465,6 +555,24 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
           {!loading && results.length > 0 && visibleResults.length === 0 && (
             <div className="hdr-results-empty">현재 필터에 해당하는 결과가 없습니다.</div>
           )}
+          {(() => {
+            const k = filter as BucketKey
+            const showLoadMore = !loading && filter !== 'all' && results.length > 0 && lastReturned[k] > 0
+            if (!showLoadMore)
+              return null
+            return (
+            <div className="hdr-load-more-row">
+              <button
+	type="button"
+	className="hdr-load-more-btn"
+	disabled={loadingMore !== null}
+	onClick={() => void loadMore(filter as BucketKey)}
+              >
+                {loadingMore === filter ? '불러오는 중…' : '더 보기'}
+              </button>
+            </div>
+            )
+          })()}
         </div>
       )}
     </div>

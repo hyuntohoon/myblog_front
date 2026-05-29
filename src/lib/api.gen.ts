@@ -978,7 +978,14 @@ export interface operations {
                 /** @description 검색 대상 (콤마 조합 허용): "album", "artist", "track" */
                 type?: string;
                 limit?: number;
+                /** @description Fallback offset applied to any bucket without an explicit override. */
                 offset?: number;
+                /** @description Per-bucket offset for the artists slice (overrides `offset`). */
+                artist_offset?: number | null;
+                /** @description Per-bucket offset for the albums slice (overrides `offset`). */
+                album_offset?: number | null;
+                /** @description Per-bucket offset for the tracks slice (overrides `offset`). */
+                track_offset?: number | null;
             };
             header?: never;
             path?: never;
