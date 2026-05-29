@@ -1,25 +1,7 @@
-interface Artist { id: string, name: string, spotify_id?: string | null }
-interface Track {
-	id: string
-	title: string
-	track_no: number | null
-	duration_sec: number | null
-	spotify_id?: string | null
-}
-interface Album {
-	id: string
-	title: string
-	release_date?: string | null
-	cover_url?: string | null
-	album_type?: string | null
-	spotify_id?: string | null
-}
-interface AlbumDetail {
-	album: Album
-	artists: Artist[]
-	tracks: Track[]
-	meta?: Record<string, any>
-}
+import type { components } from '../lib/api.gen'
+
+type AlbumDetail = components['schemas']['Music_AlbumDetail']
+type Track = components['schemas']['Music_TrackOut']
 
 /**
  * 선택 가능 여부를 외부에서 제어할 수 있도록 확장
@@ -42,11 +24,11 @@ const root = $('albumDetail')
 // ----------------- 공통 util -----------------
 
 function fmtDur(s?: number | null) {
-	if (!s && s !== 0)
+	if (s == null || Number.isNaN(s))
 return '-'
 	const m = Math.floor(s / 60)
 	const r = s % 60
-	return `${m}:${String(r).padStart(2, '0')}`
+	return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
 }
 
 function escapeHtml(s: string) {
@@ -105,6 +87,26 @@ return ''
 	return `<div style="margin-top:4px; display:flex; gap:2px; align-items:center;">${stars}</div>`
 }
 
+function buildReleaseLineHtml(date: string, label: string): string {
+	const parts: string[] = []
+	if (date)
+parts.push(`<span>${escapeHtml(date)}</span>`)
+	if (date && label)
+parts.push(`<span style="color:#cbd5e1;">·</span>`)
+	if (label)
+parts.push(`<span style="font-style:italic;">${escapeHtml(label)}</span>`)
+	if (parts.length === 0)
+return ''
+	return `<div style="font-size:0.85rem; color:#9ca3af; display:flex; gap:6px; align-items:baseline; flex-wrap:wrap;">${parts.join('')}</div>`
+}
+
+function buildFeatHtml(names?: string[] | null): string {
+	if (!names || names.length === 0)
+return ''
+	const joined = names.map(n => escapeHtml(n)).join(', ')
+	return `<span style="color:#9ca3af; font-size:0.8rem; margin-left:6px; font-style:italic;"><span style="font-style:normal; letter-spacing:0.02em;">feat.</span> ${joined}</span>`
+}
+
 function buildTrackListHtml(tracks: Track[]): string {
 	if (!tracks.length)
 return ''
@@ -115,12 +117,12 @@ return ''
         display:grid;
         grid-template-columns: 2ch 1fr 6ch;
         gap:8px;
-        align-items:center;
+        align-items:baseline;
         padding:4px 0;
       ">
-        <span style="color:#9ca3af; font-size:0.8rem;">${t.track_no ?? ''}</span>
-        <span style="font-size:0.9rem;">${escapeHtml(t.title)}</span>
-        <span style="text-align:right; color:#9ca3af; font-size:0.8rem;">
+        <span style="color:#9ca3af; font-size:0.8rem; font-variant-numeric: tabular-nums;">${t.track_no ?? ''}</span>
+        <span style="font-size:0.9rem;">${escapeHtml(t.title)}${buildFeatHtml(t.feat_artist_names)}</span>
+        <span style="text-align:right; color:#9ca3af; font-size:0.8rem; font-variant-numeric: tabular-nums;">
           ${fmtDur(t.duration_sec)}
         </span>
       </li>
@@ -149,6 +151,8 @@ function buildAlbumDetailHtml(d: AlbumDetailPayload): string {
 	const hasTracks = tracks.length > 0
 
 	const fullDate = formatReleaseDate(a.release_date)
+	const label = a.label ?? ''
+	const releaseLineHtml = buildReleaseLineHtml(fullDate, label)
 	const rating5 = getRating5(d.meta)
 	const ratingBlock = buildRatingHtml(rating5)
 
@@ -227,7 +231,7 @@ function buildAlbumDetailHtml(d: AlbumDetailPayload): string {
           ">
             ${escapeHtml(artistText)}
           </div>
-          <div style="font-size:0.85rem; color:#9ca3af;">${fullDate || ''}</div>
+          ${releaseLineHtml}
           ${ratingBlock}
         </div>
 
