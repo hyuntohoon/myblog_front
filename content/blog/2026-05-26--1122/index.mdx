@@ -1,0 +1,210 @@
+---
+title: '1122'
+slug: '1122'
+description: '1122'
+date: 2026-05-26
+category: 'Reviews'
+draft: false
+albumIds: ["948aca41-66b1-4700-9459-603b00c31a43"]
+artistIds: ["9ead37cb-5b4a-41dd-9c02-b49ddbeafe9f", "3de0939f-fb39-403a-8860-8d3e1b2ee7c1"]
+postId: '46ed36a1-e41d-4ebc-8f82-1f1e7d3f3686'
+albumCover: "https://i.scdn.co/image/ab67616d0000b27373353f72d6760d107a955847"
+rating: 5.0
+ratingScale: 5
+---
+현재 배포된 사이트의 글쓰기 화면에서 음악 검색 결과가 기대와 다르게 보인다. 관련 코드를 검토하고 원인과 개선 방향을 판단해 달라.
+
+## 배경
+
+글쓰기 화면에서 음악 검색을 할 때, 검색 결과가 아티스트와 트랙 위주로만 보이는 경우가 있다. 앨범 결과가 기대만큼 나오지 않고, 트랙 결과도 곡 제목에 `feat.` 같은 문자열이 직접 포함된 경우에만 참여 아티스트 정보가 보이는 것처럼 느껴진다.
+
+내가 보기에는 현재 검색이 “검색어와 직접 일치하는 artist / album / track”만 각각 조회하고, 검색된 엔티티와 관련된 다른 엔티티까지 확장해서 보여주지는 않는 것 같다.
+
+예를 들어 특정 아티스트 이름으로 검색했을 때:
+
+* 해당 아티스트는 검색된다.
+* 하지만 그 아티스트의 앨범이나 트랙은 같이 잘 안 나오는 것 같다.
+* 트랙에 참여한 아티스트 정보도 검색 결과 UI에 충분히 드러나지 않는 것 같다.
+
+## 검토해 볼 주요 쟁점
+
+### 1. 현재 검색 구조가 단순 병렬 검색인지 확인
+
+현재 `/api/music/search/unified` 또는 관련 검색 로직이 아래처럼 동작하는지 확인해 달라.
+
+* artist는 artist name 또는 alias 기준 검색
+* album은 album title 기준 검색
+* track은 track title 기준 검색
+
+만약 이 구조라면, artist name으로 검색했을 때 해당 artist의 album/track이 자연스럽게 나오지 않는 것이 설명된다.
+
+확인할 부분:
+
+* artist 검색 결과와 album/track 검색 결과가 서로 관계 기반으로 연결되어 있는지
+* artist match 이후 album/track을 추가로 조회하는 로직이 있는지
+* album match 이후 artist/track을 함께 보강하는 로직이 있는지
+* track match 이후 album/artist context를 함께 보강하는 로직이 있는지
+
+### 2. “관련 결과”를 어디까지 보여줘야 하는지
+
+검색어와 직접 매칭된 결과만 보여줄지, 아니면 관련된 결과까지 함께 보여줄지 판단이 필요하다.
+
+예를 들어 `Radiohead`로 검색했을 때:
+
+* Radiohead 아티스트만 보여주는 것이 맞는지
+* Radiohead의 앨범도 같이 보여주는 것이 맞는지
+* Radiohead의 트랙도 같이 보여주는 것이 맞는지
+* 모든 트랙을 보여주면 너무 많아질 수 있는데, 어디까지 제한해야 하는지
+
+이 부분은 단순 구현 문제가 아니라 UX 정책 문제라고 본다.
+현재 구조와 데이터 규모를 보고 적절한 범위를 제안해 달라.
+
+### 3. 프론트가 분류해야 하는지, 백엔드가 관련성을 판단해야 하는지
+
+내 생각에는 프론트는 결과를 artist / album / track으로 표시하는 역할을 하고, 어떤 결과가 검색어와 관련 있는지는 백엔드가 판단하는 편이 자연스러워 보인다.
+
+다만 확정하지 말고 현재 구조를 보고 판단해 달라.
+
+검토할 부분:
+
+* 프론트가 여러 API를 호출해서 관련 결과를 조립하는 것이 좋은지
+* 백엔드가 관계를 따라 조회한 뒤 grouped result로 내려주는 것이 좋은지
+* 현재 API 구조에서 가장 작은 변경으로 가능한 방식은 무엇인지
+* 응답 크기, 중복 제거, 정렬 기준은 어디에서 처리하는 게 나은지
+
+### 4. track 참여 아티스트 정보가 실제로 저장되고 있는지
+
+현재 트랙 검색 결과에서 참여 아티스트 정보가 부족해 보인다.
+
+검토할 부분:
+
+* DB에 track과 artist의 관계가 저장되어 있는지
+* Spotify sync 시 track artists 전체를 저장하고 있는지
+* track에 여러 artist가 있는 경우 첫 번째 artist만 쓰고 있는지
+* album artist를 track artist처럼 fallback으로 쓰고 있는지
+* 검색 응답 스키마에서 전체 참여 artist 정보를 내려줄 수 있는지
+* 프론트에서 해당 정보를 받고도 버리고 있는지
+
+특히 “곡 제목에 feat 문자열이 포함된 경우에만 feat가 보이는 것처럼 보이는 문제”가 실제로 응답 데이터 부족 때문인지, 프론트 표시 로직 때문인지 확인해 달라.
+
+### 5. album detail과 writer UI 사이에서 데이터가 누락되는지
+
+이미 album detail API에는 track duration, feat artist 같은 정보가 있을 가능성이 있다.
+그런데 writer UI에서 해당 정보를 mapping하는 과정에서 일부 필드를 버리고 있을 수도 있다.
+
+검토할 부분:
+
+* album detail API 응답에 어떤 track fields가 있는지
+* frontend writer component가 그 필드를 모두 보존하는지
+* recommended tracks UI 또는 track selection UI에서 표시 가능한 정보를 누락하고 있는지
+
+### 6. 검색 결과의 중복과 정렬 문제
+
+관련 결과를 확장하면 같은 album/track/artist가 여러 경로로 중복될 수 있다.
+
+예:
+
+* track title이 직접 매칭됨
+* 같은 track이 artist match의 related track으로도 조회됨
+* 같은 track이 album match의 related track으로도 조회됨
+
+이 경우 중복 제거와 정렬 기준이 필요하다.
+
+고민할 부분:
+
+* 직접 매칭을 관련 매칭보다 우선해야 하는지
+* name/title exact match, partial match, alias match, relation match의 우선순위를 어떻게 둘지
+* 검색 결과를 너무 많이 보여주지 않기 위한 limit이 필요한지
+* limit을 전체 기준으로 둘지, type별로 둘지
+
+### 7. 기존 API 호환성
+
+현재 프론트가 이미 search/unified 응답을 사용하고 있으므로, 응답 구조를 크게 깨는 변경은 부담이 있을 수 있다.
+
+검토할 부분:
+
+* 기존 응답 구조를 유지하면서 필드를 확장하는 방식이 가능한지
+* 새로운 endpoint가 필요한지
+* 기존 endpoint의 의미를 related search로 확장해도 되는지
+* type filter가 있을 때 related result를 어떻게 다룰지
+
+## 가능한 해결 방향 후보
+
+아래는 확정안이 아니라 검토 후보이다. 현재 코드와 DB 구조를 보고 더 적절한 방향을 제안해 달라.
+
+### 후보 A. 현재 unified search를 related search로 확장
+
+검색어로 직접 매칭된 artist / album / track을 찾은 뒤, 해당 엔티티와 관련된 album / track / artist를 추가로 보강해서 내려주는 방식이다.
+
+장점:
+
+* 현재 API 흐름을 유지할 수 있다.
+* 글쓰기 검색 UX가 자연스러워질 가능성이 크다.
+
+우려:
+
+* 응답이 커질 수 있다.
+* 중복 제거와 ranking이 필요하다.
+* 잘못 구현하면 관련성이 낮은 결과가 너무 많이 나온다.
+
+### 후보 B. 검색은 그대로 두고, artist 선택 후 album/track 조회를 별도 흐름으로 분리
+
+artist 검색 결과를 클릭하면 해당 artist의 albums/tracks를 별도 API로 조회하는 방식이다.
+
+장점:
+
+* 검색 결과가 과도하게 넓어지는 것을 막을 수 있다.
+* 동작이 명확하다.
+
+우려:
+
+* 사용자가 한 번 더 클릭해야 한다.
+* 현재 글쓰기 검색 UX가 끊길 수 있다.
+* 프론트 상태 관리가 복잡해질 수 있다.
+
+### 후보 C. search result에는 context만 보강하고, 상세 정보는 선택 시 조회
+
+검색 결과에서는 artist/album/track context만 충분히 보여주고, 실제 상세 트랙 목록이나 전체 관련 결과는 선택 이후 조회하는 방식이다.
+
+장점:
+
+* 검색 응답 크기를 줄일 수 있다.
+* UI가 과도하게 복잡해지는 것을 막을 수 있다.
+
+우려:
+
+* 검색 단계에서 원하는 앨범/트랙을 바로 찾기 어려울 수 있다.
+
+### 후보 D. track artist 응답만 우선 보강
+
+related search까지 바로 바꾸지 않고, 우선 track 검색 결과에 참여 artist 정보를 제대로 표시하도록 개선하는 방식이다.
+
+장점:
+
+* 변경 범위가 작을 수 있다.
+* 현재 “feat/참여 artist가 안 보이는 문제”를 빠르게 줄일 수 있다.
+
+우려:
+
+* artist 이름으로 검색했을 때 album/track이 안 나오는 문제는 그대로 남을 수 있다.
+
+## 요청 사항
+
+현재 코드와 DB 모델을 검토한 뒤 아래를 정리해 달라.
+
+1. 현재 검색이 실제로 어떻게 동작하는지
+2. 내가 관찰한 증상이 현재 구조상 발생 가능한 문제인지
+3. 문제의 핵심이 backend 검색 범위인지, frontend 표시 로직인지, DB 적재 문제인지
+4. track 참여 artist 정보가 DB와 API 응답에 존재하는지
+5. album detail 응답의 track 정보가 writer UI에서 누락되고 있는지
+6. related search가 필요한지, 아니면 더 작은 수정으로 충분한지
+7. 변경한다면 가장 작은 안전한 변경 단위는 무엇인지
+8. 구현 전 추가로 확인해야 할 데이터/로그/API 응답이 무엇인지
+9. 추천하는 해결 방향과 그 이유
+10. 예상 리스크와 테스트 범위
+
+중요한 점:
+
+* 바로 구현부터 하지 말고, 현재 구조와 원인을 먼저 확인해 달라.
+* MusicBrainz alias 정교화 문제로 다시 빠지지 말고, 이번에는 writer 음악 검색 UX와 DB/API 응답 구조를 중심으로 봐 달라.
+* 특정 방식으로 고정하지 말고, 현재 repo 구조에서 가장 단순하고 유지보수 가능한 방향을 판단해 달라.
