@@ -508,6 +508,8 @@ export interface components {
             external_url?: string | null;
             /** Id */
             id: string;
+            /** Label */
+            label?: string | null;
             /** Release Date */
             release_date?: string | null;
             /** Spotify Id */
@@ -682,6 +684,8 @@ export interface components {
         Music_TrackOut: {
             /** Duration Sec */
             duration_sec?: number | null;
+            /** Feat Artist Names */
+            feat_artist_names?: string[];
             /** Id */
             id: string;
             /** Spotify Id */
