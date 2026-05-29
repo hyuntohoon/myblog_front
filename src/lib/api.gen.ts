@@ -312,6 +312,8 @@ export interface components {
             posted_date: string;
             /** Rating */
             rating: number | null;
+            /** Recommended Tracks */
+            recommended_tracks?: components["schemas"]["Backend_RecommendedTrackOutput"][];
             /** Slug */
             slug: string;
             /** Status */
@@ -364,6 +366,17 @@ export interface components {
             /** Track Id */
             track_id: string;
         };
+        /** RecommendedTrackOutput */
+        Backend_RecommendedTrackOutput: {
+            /** Album Id */
+            album_id: string;
+            /** Note */
+            note?: string | null;
+            /** Position */
+            position?: number | null;
+            /** Track Id */
+            track_id: string;
+        };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
             /** Album Ids */
@@ -380,6 +393,8 @@ export interface components {
             posted_date?: string | null;
             /** Rating */
             rating?: number | null;
+            /** Recommended Tracks */
+            recommended_tracks?: components["schemas"]["Backend_RecommendedTrackInput"][] | null;
             /** Status */
             status?: ("draft" | "published" | "archived") | null;
             /** Title */

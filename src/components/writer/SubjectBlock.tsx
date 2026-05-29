@@ -206,6 +206,7 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
       const json = await r.json() as {
         album: { id: string, title: string, cover_url: string | null, release_date: string | null }
         artists: Array<{ id: string, name: string }>
+        tracks?: Array<{ id: string, title: string, track_no: number | null }>
       }
       const detail: AlbumDetail = {
         id: json.album.id,
@@ -213,6 +214,7 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
         cover_url: json.album.cover_url,
         release_date: json.album.release_date,
         artists: json.artists.map(a => ({ id: a.id, name: a.name })),
+        tracks: (json.tracks ?? []).map(t => ({ id: t.id, title: t.title, track_no: t.track_no })),
       }
       onSubjectSelect(detail)
       setSearching(false)
