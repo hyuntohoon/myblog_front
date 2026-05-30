@@ -186,7 +186,14 @@ export default function WriterApp() {
       flash('제목을 입력하세요.')
       return
     }
-    const artistIds = subject?.artists.map(a => a.id).filter(Boolean) ?? []
+    // FEAT-writer-lowfreq-redesign Step 4: when the subject is an artist
+    // (drill-in "이 아티스트를 리뷰 →"), send album_ids=[] + artist_ids=[id].
+    // For album subjects (the common path), behavior is unchanged.
+    const isArtistSubject = subject?.kind === 'artist'
+    const artistIds = isArtistSubject ?
+      (subject ? [subject.id] : []) :
+      (subject?.artists.map(a => a.id).filter(Boolean) ?? [])
+    const albumIds = subject && !isArtistSubject ? [subject.id] : []
     const payload = {
       title: headline,
       description: dek,
@@ -194,7 +201,7 @@ export default function WriterApp() {
       posted_date: publishDate,
       status: 'draft' as const,
       category: section || null,
-      album_ids: subject ? [subject.id] : [],
+      album_ids: albumIds,
       artist_ids: artistIds,
       rating: score > 0 ? score : null,
       recommended_tracks: recommendedTracks.map(rt => ({
@@ -240,7 +247,11 @@ export default function WriterApp() {
       flash('발행 조건이 충족되지 않았습니다.')
       return
     }
-    const artistIds = subject.artists.map(a => a.id).filter(Boolean)
+    const isArtistSubject = subject.kind === 'artist'
+    const artistIds = isArtistSubject ?
+      [subject.id] :
+      subject.artists.map(a => a.id).filter(Boolean)
+    const albumIds = isArtistSubject ? [] : [subject.id]
     // If a draft was saved first (dbPostId set), upgrade that row to
     // status="published" instead of creating a new one — otherwise the second
     // row collides on the unique slug and the backend returns 409 (BUG-9).
@@ -266,7 +277,7 @@ export default function WriterApp() {
         body_mdx: body,
         posted_date: publishDate,
         status: 'published',
-        album_ids: [subject.id],
+        album_ids: albumIds,
         artist_ids: artistIds,
         rating: score,
         album_cover_url: subject.cover_url,
@@ -293,7 +304,7 @@ export default function WriterApp() {
       categoryName: section,
       description: dek,
       posted_date: publishDate,
-      album_ids: [subject.id],
+      album_ids: albumIds,
       artist_ids: artistIds,
       post_id: postId,
       album_cover_url: subject.cover_url,
