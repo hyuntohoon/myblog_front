@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /drafts/
+Disallow: /write/
+
+Sitemap: https://www.ratemymusic.blog/sitemap-index.xml
