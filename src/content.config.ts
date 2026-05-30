@@ -96,6 +96,13 @@ const blog = defineCollection({
 			rating: z.number().min(0).max(10).optional(),
 			ratingScale: z.union([z.literal(5), z.literal(10)]).default(5),
 
+			// FEAT-writer-lowfreq-redesign Step 5: editor-set BEST NEW MUSIC.
+			bestNew: z.boolean().default(false),
+
+			// FEAT-view-redesign Step 5: writer's ★ picks (track IDs). The
+			// read-page tracklist marks these as picks.
+			recommendedTrackIds: z.array(z.string()).default([]),
+
 			// ✅ 선택적: 음악 리뷰 / 평점 블록
 			musicReview: MusicReview.optional(),
 		})

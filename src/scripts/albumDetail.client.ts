@@ -3,321 +3,82 @@ import type { components } from '../lib/api.gen'
 type AlbumDetail = components['schemas']['Music_AlbumDetail']
 type Track = components['schemas']['Music_TrackOut']
 
-/**
- * 선택 가능 여부를 외부에서 제어할 수 있도록 확장
- * - 글쓰기 화면: selectable 생략(기본 true) → "이 앨범 선택" 버튼 노출 (현재 마크업은 없음)
- * - 글 보기 화면: selectable: false 로 넘기면 버튼 숨김
- */
-type AlbumDetailPayload = AlbumDetail & {
-	selectable?: boolean
+// FEAT-view-redesign Step 5: read page tracklist. The full album tracklist
+// renders flat (no toggle), with ★ on tracks that the writer picked. Picks
+// come from the post's MDX frontmatter via #music-section[data-recommended-track-ids].
+// No rating column or per-track meter — album-only rating is the product
+// decision; see RFC Non-goals.
+
+type AlbumDetailPayload = AlbumDetail
+
+const root = document.getElementById('albumDetail')
+const musicSection = document.getElementById('music-section')
+let pickedTrackIds: Set<string> = new Set()
+if (musicSection) {
+  try {
+    const raw = musicSection.dataset.recommendedTrackIds || '[]'
+    const arr = JSON.parse(raw) as string[]
+    pickedTrackIds = new Set(arr)
+  }
+  catch {
+    pickedTrackIds = new Set()
+  }
 }
 
-function $(id: string): HTMLElement {
-	const el = document.getElementById(id)
-	if (!el)
-throw new Error(`#${id} not found`)
-	return el
+function fmtDur(s?: number | null): string {
+  if (s == null || Number.isNaN(s))
+    return ''
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
 }
 
-const root = $('albumDetail')
-
-// ----------------- 공통 util -----------------
-
-function fmtDur(s?: number | null) {
-	if (s == null || Number.isNaN(s))
-return '-'
-	const m = Math.floor(s / 60)
-	const r = s % 60
-	return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`
-}
-
-function escapeHtml(s: string) {
+function escapeHtml(s: string): string {
   return s
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
-function formatReleaseDate(dateStr?: string | null): string {
-	if (!dateStr)
-return ''
-	const t = Date.parse(dateStr)
-	if (Number.isNaN(t))
-return ''
-	// 2025.11.25
-	return new Date(t)
-		.toLocaleDateString('ko-KR', {
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit',
-		})
-		.replace(/\. /g, '.')
-		.replace(/\.$/, '')
+function featNames(names?: string[] | null): string {
+  if (!names || names.length === 0)
+    return ''
+  const joined = names.map(escapeHtml).join(', ')
+  return ` <span class="lfq-tt-feat"><span class="lfq-tt-feat-mark">feat.</span> ${joined}</span>`
 }
 
-function getRating5(meta?: Record<string, any>): number | null {
-	if (!meta || meta.rating == null)
-return null
-	const raw = Number(meta.rating)
-	if (Number.isNaN(raw))
-return null
-	const v = raw > 5 ? raw / 2 : raw
-	return Math.max(0, Math.min(5, v))
+function buildTracklistHtml(tracks: Track[]): string {
+  if (tracks.length === 0)
+    return '<p class="lfq-tt-empty">트랙 정보가 아직 동기화되지 않았습니다.</p>'
+  const rows = tracks
+    .map((t) => {
+      const id = t.id ?? ''
+      const isPick = id && pickedTrackIds.has(id)
+      const title = escapeHtml(t.title ?? '')
+      const num = t.track_no ?? ''
+      const dur = fmtDur(t.duration_sec)
+      return `
+        <li class="lfq-tt-row${isPick ? ' is-pick' : ''}">
+          <span class="lfq-tt-no">${num}</span>
+          <span class="lfq-tt-title">${title}${featNames(t.feat_artist_names)}${isPick ? ' <span class="lfq-tt-star" aria-label="비평가의 픽">★</span>' : ''}</span>
+          <span class="lfq-tt-dur">${dur}</span>
+        </li>
+      `
+    })
+    .join('')
+  return `<ol class="lfq-tt-list">${rows}</ol>`
 }
 
-function buildRatingHtml(rating5: number | null): string {
-	if (rating5 == null)
-return ''
-	const full = Math.floor(rating5)
-	const hasHalf = rating5 - full >= 0.5
-	const total = 5
-
-	const stars = Array.from({ length: total }, (_, i) => {
-		const filled = i < full
-		if (!filled && hasHalf && i === full) {
-			return `<span style="font-size:0.9rem; color:#fdba74;">★</span>`
-		}
-		return `<span style="font-size:0.9rem; color:${
-			filled ? '#f97316' : '#e5e7eb'
-		};">★</span>`
-	}).join('')
-
-	return `<div style="margin-top:4px; display:flex; gap:2px; align-items:center;">${stars}</div>`
+function render(d: AlbumDetailPayload): void {
+  if (!root)
+    return
+  const tracks = d.tracks ?? []
+  root.innerHTML = buildTracklistHtml(tracks)
 }
 
-function buildReleaseLineHtml(date: string, label: string): string {
-	const parts: string[] = []
-	if (date)
-parts.push(`<span>${escapeHtml(date)}</span>`)
-	if (date && label)
-parts.push(`<span style="color:#cbd5e1;">·</span>`)
-	if (label)
-parts.push(`<span style="font-style:italic;">${escapeHtml(label)}</span>`)
-	if (parts.length === 0)
-return ''
-	return `<div style="font-size:0.85rem; color:#9ca3af; display:flex; gap:6px; align-items:baseline; flex-wrap:wrap;">${parts.join('')}</div>`
-}
-
-function buildFeatHtml(names?: string[] | null): string {
-	if (!names || names.length === 0)
-return ''
-	const joined = names.map(n => escapeHtml(n)).join(', ')
-	return `<span style="color:#9ca3af; font-size:0.8rem; margin-left:6px; font-style:italic;"><span style="font-style:normal; letter-spacing:0.02em;">feat.</span> ${joined}</span>`
-}
-
-function buildTrackListHtml(tracks: Track[]): string {
-	if (!tracks.length)
-return ''
-	const items = tracks
-		.map(
-			t => `
-      <li style="
-        display:grid;
-        grid-template-columns: 2ch 1fr 6ch;
-        gap:8px;
-        align-items:baseline;
-        padding:4px 0;
-      ">
-        <span style="color:#9ca3af; font-size:0.8rem; font-variant-numeric: tabular-nums;">${t.track_no ?? ''}</span>
-        <span style="font-size:0.9rem;">${escapeHtml(t.title)}${buildFeatHtml(t.feat_artist_names)}</span>
-        <span style="text-align:right; color:#9ca3af; font-size:0.8rem; font-variant-numeric: tabular-nums;">
-          ${fmtDur(t.duration_sec)}
-        </span>
-      </li>
-    `,
-		)
-		.join('')
-
-	return `
-    <div id="trackWrapper" style="display:none; margin-top:8px;">
-      <ol style="list-style:none; padding:0; margin:0; display:grid; gap:4px;">
-        ${items}
-      </ol>
-    </div>
-  `
-}
-
-// 선택 상태(글쓰기 화면에서만 의미 있음)
-let selectedAlbumId: string | null = null
-
-// ----------------- 마크업 빌더 -----------------
-
-function buildAlbumDetailHtml(d: AlbumDetailPayload): string {
-	const a = d.album
-	const artists = d.artists || []
-	const tracks = d.tracks || []
-	const hasTracks = tracks.length > 0
-
-	const fullDate = formatReleaseDate(a.release_date)
-	const label = a.label ?? ''
-	const releaseLineHtml = buildReleaseLineHtml(fullDate, label)
-	const rating5 = getRating5(d.meta)
-	const ratingBlock = buildRatingHtml(rating5)
-
-	const artistText = artists.map(x => x.name).join(', ')
-
-	const toggleButtonHtml = hasTracks ?
-		`
-      <button
-        id="toggleDetailBtn"
-        aria-label="toggle tracks"
-        style="
-          border:none;
-          background:transparent;
-          color:#9ca3af;
-          font-size:1.2rem;
-          width:24px;
-          height:24px;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          cursor:pointer;
-          transition:transform 0.2s;
-          transform:rotate(0deg);
-        "
-      >
-        ▽
-      </button>
-    ` :
-		''
-
-	const trackListHtml = hasTracks ? buildTrackListHtml(tracks) : ''
-
-	return `
-  <div style="padding-top:28px;">
-    <!-- 한 행: 이미지 + 정보 (높이 고정 100) -->
-    <div
-      style="
-        display:flex;
-        align-items:center;
-        gap:16px;
-        height:100px;
-      "
-    >
-      <!-- 앨범 커버 -->
-      <div
-        style="
-          width:100px;
-          height:100px;
-          border-radius:12px;
-          overflow:hidden;
-          flex-shrink:0;
-          background:url('${a.cover_url ?? 'https://placehold.co/300x300?text=No+Cover'}') center/cover no-repeat;
-        "
-        aria-label="${escapeHtml(a.title)}"
-      ></div>
-
-      <!-- 오른쪽 정보 -->
-      <div style="flex:1; display:flex; justify-content:space-between; align-items:center;">
-        <div style="display:flex; flex-direction:column; justify-content:center; gap:2px; min-width:0;">
-          <div style="
-              font-size:1.05rem;
-              font-weight:700;
-              color:#111827;
-              white-space:nowrap;
-              overflow:hidden;
-              text-overflow:ellipsis;
-          ">
-            ${escapeHtml(a.title)}
-          </div>
-          <div style="
-              font-size:0.9rem;
-              color:#6b7280;
-              white-space:nowrap;
-              overflow:hidden;
-              text-overflow:ellipsis;
-          ">
-            ${escapeHtml(artistText)}
-          </div>
-          ${releaseLineHtml}
-          ${ratingBlock}
-        </div>
-
-        ${toggleButtonHtml}
-      </div>
-    </div>
-
-    ${trackListHtml}
-  </div>
-  `
-}
-
-// ----------------- 이벤트 바인딩 -----------------
-
-function bindSelectionHandler(d: AlbumDetailPayload) {
-	// 지금은 선택 버튼 마크업이 없어서 항상 null일 거지만,
-	// 나중에 글쓰기 화면에서 재활용할 수 있게 로직만 유지
-	const selectBtn = document.getElementById(
-		'selectAlbumBtn',
-	) as HTMLButtonElement | null
-
-	if (!selectBtn)
-return
-	const a = d.album
-	const artists = d.artists || []
-
-	selectBtn.addEventListener('click', () => {
-		const nowSelected = selectedAlbumId === a.id
-
-		if (!nowSelected) {
-			selectedAlbumId = a.id
-			window.dispatchEvent(
-				new CustomEvent('album:selected', {
-					detail: {
-						id: a.id,
-						title: a.title,
-						spotify_id: a.spotify_id,
-						artists: artists.map(x => ({
-							id: x.id,
-							name: x.name,
-							spotify_id: x.spotify_id ?? null,
-						})),
-					},
-				}),
-			)
-		}
- else {
-			selectedAlbumId = null
-			window.dispatchEvent(
-				new CustomEvent('album:deselected', {
-					detail: { id: a.id },
-				}),
-			)
-		}
-	})
-}
-
-function bindTrackToggleHandler() {
-	const toggleBtn = document.getElementById(
-		'toggleDetailBtn',
-	) as HTMLButtonElement | null
-	const trackWrapper = document.getElementById(
-		'trackWrapper',
-	) as HTMLDivElement | null
-
-	if (!toggleBtn || !trackWrapper)
-return
-
-	toggleBtn.addEventListener('click', () => {
-		const isHidden =
-			trackWrapper.style.display === 'none' || trackWrapper.style.display === ''
-		trackWrapper.style.display = isHidden ? 'block' : 'none'
-		toggleBtn.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)'
-	})
-}
-
-// ----------------- 메인 render -----------------
-
-function render(d: AlbumDetailPayload) {
-	root.innerHTML = buildAlbumDetailHtml(d)
-	bindSelectionHandler(d)
-	bindTrackToggleHandler()
-}
-
-// 이벤트 진입점: 어디서든 `album:detail`만 쏴주면 렌더됨
 window.addEventListener('album:detail', (e: Event) => {
-	const payload = (e as CustomEvent<AlbumDetailPayload>).detail
-	render(payload)
+  const payload = (e as CustomEvent<AlbumDetailPayload>).detail
+  render(payload)
 })
