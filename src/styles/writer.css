@@ -299,7 +299,10 @@ input, textarea, select {
 
 .hdr-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* minmax(0, 1fr) (not bare 1fr = minmax(auto, 1fr)): a long nowrap tile
+     subtitle's min-content would otherwise blow the track past its share and
+     push columns uneven. See fix/search-tile-grid-blowout. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   max-height: 480px;
   overflow-y: auto;
@@ -317,6 +320,7 @@ input, textarea, select {
   cursor: pointer;
   transition: all 0.15s;
   width: 100%;
+  min-width: 0; /* let the tile shrink to its track instead of overflowing it */
 }
 .hdr-tile:hover { border-color: var(--ink); transform: translateY(-1px); }
 .hdr-tile.is-current { border-color: var(--accent); background: var(--paper); }
@@ -1088,7 +1092,7 @@ input, textarea, select {
   .hdr-cover { width: 56px; height: 56px; }
   .hdr-rating, .hdr-change, .hdr-bnm { grid-column: 1 / -1; }
   .hdr-rating { flex-direction: row; align-items: center; justify-content: space-between; }
-  .hdr-grid { grid-template-columns: repeat(2, 1fr); }
+  .hdr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .prev-subject { grid-template-columns: 1fr; }
   .prev-cover { width: 160px; height: 160px; }
   .settings-panel { width: 100%; }
