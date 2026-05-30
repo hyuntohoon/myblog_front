@@ -1,0 +1,57 @@
+---
+/**
+ * Reusable partial-fill star display — 5 stars, fill width = value/max.
+ * Number is never shown to the reader (per RFC FEAT-view-redesign Step 4).
+ *
+ * Light/dark aware via design tokens; accent-colored fill via --color-accent.
+ */
+export interface Props {
+  value: number
+  max?: number
+  size?: number
+  ariaLabel?: string
+}
+
+const { value, max = 5, size = 22, ariaLabel } = Astro.props
+const clamped = Math.max(0, Math.min(max, Number.isFinite(value) ? value : 0))
+const pct = (clamped / max) * 100
+---
+
+<span
+	class="partial-stars"
+	role="img"
+	aria-label={ariaLabel ?? `${clamped} / ${max}`}
+	style={`--ps-size:${size}px; --ps-pct:${pct}%;`}
+>
+  <span class="ps-bg" aria-hidden="true">★★★★★</span>
+  <span class="ps-fg" aria-hidden="true">★★★★★</span>
+</span>
+
+<style>
+  .partial-stars {
+    position: relative;
+    display: inline-block;
+    font-size: var(--ps-size);
+    line-height: 1;
+    letter-spacing: 0.05em;
+    color: transparent;
+    user-select: none;
+  }
+  .ps-bg,
+  .ps-fg {
+    font-family: inherit;
+    display: inline-block;
+  }
+  .ps-bg {
+    color: var(--color-faded);
+  }
+  .ps-fg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--ps-pct);
+    overflow: hidden;
+    white-space: nowrap;
+    color: var(--color-accent);
+  }
+</style>
