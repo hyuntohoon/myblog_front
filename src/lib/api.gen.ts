@@ -90,6 +90,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/music/artists/by-spotify/{spotify_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Artist By Spotify */
+        get: operations["get_artist_by_spotify_api_music_artists_by_spotify__spotify_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/music/artists/{artist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Artist */
+        get: operations["get_artist_api_music_artists__artist_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/music/artists/{artist_id}/albums": {
         parameters: {
             query?: never;
@@ -99,6 +133,23 @@ export interface paths {
         };
         /** Get Artist Albums */
         get: operations["get_artist_albums_api_music_artists__artist_id__albums_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/music/artists/{artist_id}/top-tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Artist Top Tracks */
+        get: operations["get_artist_top_tracks_api_music_artists__artist_id__top_tracks_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -517,6 +568,40 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** ArtistHero */
+        Music_ArtistHero: {
+            /**
+             * Album Count
+             * @default 0
+             */
+            album_count: number;
+            /** Followers */
+            followers?: number | null;
+            /** Genres */
+            genres?: string[];
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /** Photo Url */
+            photo_url?: string | null;
+            /** Popularity */
+            popularity?: number | null;
+            /** Spotify Id */
+            spotify_id?: string | null;
+            /** Spotify Url */
+            spotify_url?: string | null;
+            /**
+             * Status
+             * @default ready
+             */
+            status: string;
+            /**
+             * Track Count
+             * @default 0
+             */
+            track_count: number;
+        };
         /** ArtistItem */
         Music_ArtistItem: {
             /** Cover Url */
@@ -896,6 +981,68 @@ export interface operations {
             };
         };
     };
+    get_artist_by_spotify_api_music_artists_by_spotify__spotify_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotify_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_ArtistHero"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_artist_api_music_artists__artist_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_ArtistHero"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_artist_albums_api_music_artists__artist_id__albums_get: {
         parameters: {
             query?: {
@@ -917,6 +1064,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_SearchResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_artist_top_tracks_api_music_artists__artist_id__top_tracks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                artist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_TrackItem"][];
                 };
             };
             /** @description Validation Error */

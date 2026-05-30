@@ -47,6 +47,11 @@ export interface AlbumDetail {
   release_date: string | null
   artists: Array<{ id: string, name: string }>
   tracks: TrackInfo[]
+  // FEAT-writer-lowfreq-redesign Step 4: when the user picks an artist (not
+  // an album) as the subject, we still flow through AlbumDetail so the writer
+  // chrome doesn't fork. WriterApp branches on `kind` when building the post
+  // payload — artist subjects send album_ids=[] + artist_ids=[id].
+  kind?: 'album' | 'artist'
 }
 
 export interface RecommendedTrack {

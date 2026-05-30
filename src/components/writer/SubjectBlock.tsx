@@ -8,7 +8,15 @@ import type {
   SearchResultItem,
   TrackSearchResult,
 } from './types'
+import type { AlbumListItem, ArtistHero, TopTrackItem } from '../../scripts/write/artistApi'
+import {
+  fetchArtistAlbums,
+  fetchArtistHero,
+  fetchArtistHeroBySpotify,
+  fetchArtistTopTracks,
+} from '../../scripts/write/artistApi'
 import { apiFetch } from '../../lib/api'
+import ArtistDetail from './ArtistDetail'
 
 type UnifiedSearchResult = components['schemas']['Music_UnifiedSearchResult']
 type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult']
@@ -73,6 +81,18 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
   const [source, setSource] = useState<SourceMode>('db')
   const [spotifyCooldown, setSpotifyCooldown] = useState(false)
   const spotifyCooldownRef = useRef(false)
+  // FEAT-writer-lowfreq-redesign Step 4: artist drill-in state. When set, the
+  // search grid is hidden and ArtistDetail renders instead. `viewArtistSource`
+  // remembers which source the click came from so the panel can label itself
+  // and the artist-as-subject pick preserves provenance.
+  const [viewArtistSource, setViewArtistSource] = useState<SourceMode>('db')
+  const [viewArtistHero, setViewArtistHero] = useState<ArtistHero | null>(null)
+  const [viewArtistTracks, setViewArtistTracks] = useState<TopTrackItem[]>([])
+  const [viewArtistAlbums, setViewArtistAlbums] = useState<AlbumListItem[]>([])
+  const [viewArtistPending, setViewArtistPending] = useState(false)
+  const [viewArtistFailed, setViewArtistFailed] = useState(false)
+  const [viewArtistOrigin, setViewArtistOrigin] = useState<ArtistSearchResult | null>(null)
+  const viewArtistPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // BUG-19: per-bucket pagination — `offsets[kind]` is the next offset to ask
   // for; `lastReturned[kind]` controls "더 보기" visibility (hide once a
   // round returns zero rows for that bucket).
@@ -381,12 +401,139 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
       setStatus('이 트랙의 앨범 정보가 없습니다.')
       return
     }
-    // Artist: refine the query to that artist's name and re-search as album.
-    // Aliases (BUG-4) help non-Latin queries find the canonical name.
-    // Step 4 of FEAT-writer-lowfreq-redesign replaces this with drill-in.
-    setQuery(sr.name)
-    setFilter('album')
-    setStatus(`'${sr.name}'의 앨범을 검색하려면 Enter를 누르세요.`)
+    // Artist: open the drill-in panel. Replaces the previous query-refine
+    // behavior. For DB artists we look up by internal UUID; for Spotify-only
+    // tiles (no UUID yet) we go via spotify_id and poll on 404 until the
+    // worker absorbs the candidate.
+    void openArtistDrillIn(sr)
+  }
+
+  async function openArtistDrillIn(sr: ArtistSearchResult) {
+    cancelArtistPoll()
+    setViewArtistOrigin(sr)
+    setViewArtistSource(sr.source ?? 'db')
+    setViewArtistHero(null)
+    setViewArtistTracks([])
+    setViewArtistAlbums([])
+    setViewArtistFailed(false)
+    setStatus('')
+
+    if (sr.source !== 'spotify' && sr.id) {
+      // DB artist → direct lookup
+      setViewArtistPending(true)
+      const r = await fetchArtistHero(sr.id)
+      if (r.ok) {
+        await loadArtistDetail(r.hero)
+      }
+      else {
+        setViewArtistPending(false)
+        setViewArtistFailed(true)
+      }
+      return
+    }
+
+    // Spotify-only tile — by-spotify lookup, possibly pending while the worker
+    // absorbs the candidate that the prior candidates search enqueued.
+    if (!sr.spotify_id) {
+      setViewArtistFailed(true)
+      return
+    }
+    setViewArtistPending(true)
+    await pollArtistBySpotify(sr.spotify_id, /* attempt */ 0)
+  }
+
+  async function pollArtistBySpotify(spotifyId: string, attempt: number) {
+    const MAX_ATTEMPTS = 15  // 15 × 2 s = 30 s window
+    const r = await fetchArtistHeroBySpotify(spotifyId)
+    if (r.ok) {
+      await loadArtistDetail(r.hero)
+      return
+    }
+    if (attempt >= MAX_ATTEMPTS) {
+      setViewArtistPending(false)
+      setViewArtistFailed(true)
+      return
+    }
+    viewArtistPollRef.current = setTimeout(() => {
+      void pollArtistBySpotify(spotifyId, attempt + 1)
+    }, 2000)
+  }
+
+  async function loadArtistDetail(hero: ArtistHero) {
+    cancelArtistPoll()
+    setViewArtistHero(hero)
+    setViewArtistPending(false)
+    setViewArtistFailed(false)
+    if (hero.id) {
+      const [tracks, albums] = await Promise.all([
+        fetchArtistTopTracks(hero.id, 10),
+        fetchArtistAlbums(hero.id, 24),
+      ])
+      setViewArtistTracks(tracks)
+      setViewArtistAlbums(albums)
+    }
+  }
+
+  function cancelArtistPoll() {
+    if (viewArtistPollRef.current) {
+      clearTimeout(viewArtistPollRef.current)
+      viewArtistPollRef.current = null
+    }
+  }
+
+  function closeArtistDrillIn() {
+    cancelArtistPoll()
+    setViewArtistOrigin(null)
+    setViewArtistHero(null)
+    setViewArtistTracks([])
+    setViewArtistAlbums([])
+    setViewArtistPending(false)
+    setViewArtistFailed(false)
+  }
+
+  async function onPickAlbumFromDrillIn(album: AlbumListItem) {
+    // ArtistDetail's discography items are AlbumItem rows from the DB albums
+    // endpoint — every entry already has an internal id, no by-spotify hop.
+    if (!album.id)
+      return
+    await selectAlbumByLookup({
+      lookupUrl: `${API_BASE}/api/music/albums/${encodeURIComponent(album.id)}`,
+      source: viewArtistSource,
+    })
+    closeArtistDrillIn()
+  }
+
+  async function onPickTrackFromDrillIn(track: TopTrackItem) {
+    // TrackItem carries album_id (DB UUID, always set in top-tracks payload).
+    if (!track.album_id)
+      return
+    await selectAlbumByLookup({
+      lookupUrl: `${API_BASE}/api/music/albums/${encodeURIComponent(track.album_id)}`,
+      source: viewArtistSource,
+    })
+    closeArtistDrillIn()
+  }
+
+  function onPickArtistAsSubject(hero: ArtistHero) {
+    // Artist-as-subject: WriterApp branches on kind='artist' when building the
+    // payload (album_ids=[] + artist_ids=[id]). Cover falls back to photo_url.
+    if (!hero.id)
+      return
+    const detail: AlbumDetail = {
+      id: hero.id,
+      title: hero.name,
+      cover_url: hero.photo_url ?? null,
+      release_date: null,
+      artists: [{ id: hero.id, name: hero.name }],
+      tracks: [],
+      kind: 'artist',
+    }
+    onSubjectSelect(detail)
+    setSearching(false)
+    setQuery('')
+    setResults([])
+    setStatus('')
+    closeArtistDrillIn()
   }
 
   return (
@@ -451,7 +598,28 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
         </div>
       )}
 
-      {showSearch && (
+      {showSearch && (viewArtistHero || viewArtistPending || viewArtistFailed) && (
+        <ArtistDetail
+	hero={viewArtistHero}
+	topTracks={viewArtistTracks}
+	albums={viewArtistAlbums}
+	isPending={viewArtistPending}
+	loadFailed={viewArtistFailed}
+	source={viewArtistSource}
+	onBack={closeArtistDrillIn}
+	onPickTrack={track => void onPickTrackFromDrillIn(track)}
+	onPickAlbum={album => void onPickAlbumFromDrillIn(album)}
+	onPickArtist={onPickArtistAsSubject}
+	onRetry={() => {
+            // Re-fire the original artist click — re-attempts the same DB or
+            // by-spotify lookup with a fresh poll budget.
+            if (viewArtistOrigin)
+              void openArtistDrillIn(viewArtistOrigin)
+          }}
+        />
+      )}
+
+      {showSearch && !viewArtistHero && !viewArtistPending && !viewArtistFailed && (
         <div className="hdr-search-block">
           <div className="hdr-source-row">
             <button
