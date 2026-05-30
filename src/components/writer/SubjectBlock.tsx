@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from 'react'
 import { useMemo, useRef, useState } from 'react'
+import DragRatingInput from './DragRatingInput'
 import type { components } from '../../lib/api.gen'
 import type {
   AlbumDetail,
@@ -82,7 +83,6 @@ onSubjectBestNewChange,
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState<BucketKey | null>(null)
   const [searching, setSearching] = useState(false)
-  const [hoverStar, setHoverStar] = useState(0)
   const [filter, setFilter] = useState<FilterType>('all')
   const [status, setStatus] = useState('')
   const [source, setSource] = useState<SourceMode>('db')
@@ -302,8 +302,6 @@ onSubjectBestNewChange,
       setLoading(false)
     }
   }
-
-  const displayStars = useMemo(() => hoverStar || Math.round(score), [hoverStar, score])
 
   const visibleResults = useMemo(
     () => filter === 'all' ? results : results.filter(r => r.kind === filter),
@@ -571,37 +569,7 @@ onSubjectBestNewChange,
             </div>
           </div>
           <div className="hdr-rating">
-            <div className="hdr-stars" onMouseLeave={() => setHoverStar(0)}>
-              {[1, 2, 3, 4, 5].map(i => (
-                <button
-	key={i}
-	type="button"
-	className={`hdr-star${i <= displayStars ? ' on' : ''}`}
-	onMouseEnter={() => setHoverStar(i)}
-	onClick={() => onScoreChange(i)}
-	aria-label={`${i}점`}
-                >
-                  {i <= displayStars ? '★' : '☆'}
-                </button>
-              ))}
-            </div>
-            <div className="hdr-num-wrap">
-              <input
-	type="number"
-	className="hdr-num"
-	min={0}
-	max={5}
-	step={0.5}
-	value={score || ''}
-	placeholder="—"
-	onChange={(e) => {
-                  const v = Number.parseFloat(e.target.value)
-                  if (!Number.isNaN(v))
-                    onScoreChange(Math.max(0, Math.min(5, v)))
-                }}
-              />
-              <span className="hdr-num-denom">/5</span>
-            </div>
+            <DragRatingInput value={score} onChange={onScoreChange} max={5} size={26} />
           </div>
           <button type="button" className="hdr-change" onClick={() => setSearching(true)} title="다른 앨범 검색">↻</button>
           {/* Step 6: BEST NEW pill — hidden for artist subjects (no album to flag) */}

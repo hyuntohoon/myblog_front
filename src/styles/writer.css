@@ -880,41 +880,51 @@ input, textarea, select {
 .hdr-by { color: var(--ink-soft); }
 .hdr-dash { color: var(--ink-faint); margin: 0 6px; }
 .hdr-name { font-weight: 500; }
-.hdr-rating { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.hdr-stars { display: inline-flex; gap: 1px; }
-.hdr-star {
-  background: transparent;
-  border: none;
-  font-size: 18px;
-  color: var(--ink-faint);
-  padding: 0;
-  line-height: 1;
-  transition: color 0.12s, transform 0.12s;
-}
-.hdr-star:hover { transform: scale(1.1); }
-.hdr-star.on { color: var(--accent); }
-.hdr-num-wrap {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 3px;
-  font-family: var(--mono);
-}
-.hdr-num {
-  width: 38px;
-  font-family: var(--mono);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--accent);
-  text-align: right;
-  -moz-appearance: textfield;
-  background: transparent;
-  border: none;
+.hdr-rating { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+/* FEAT-view-redesign Step 4 — drag-continuous rating strip + partial stars. */
+.hdr-rating-drag { display: inline-flex; align-items: center; gap: 8px; }
+.hdr-rating-strip {
+  cursor: pointer;
+  padding: 4px 2px;
+  border-radius: 4px;
+  touch-action: none;
   outline: none;
 }
-.hdr-num::-webkit-outer-spin-button,
-.hdr-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.hdr-num::placeholder { color: var(--ink-faint); }
-.hdr-num-denom { color: var(--ink-faint); font-size: 11px; }
+.hdr-rating-strip:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.hdr-rating-strip.is-dragging { cursor: grabbing; }
+.hdr-rating-live {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.12s;
+  min-width: 32px;
+  text-align: right;
+}
+.hdr-rating-live.on { opacity: 1; color: var(--accent); }
+
+/* Partial-fill star group — React mirror of partial-stars.astro. Tracks
+   writer-side tokens (--accent, --ink-faint) so it stays in sync with
+   the writer chrome rather than the public read-page palette. */
+.hdr-pstars {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  user-select: none;
+}
+.hpd-bg, .hpd-fg { display: inline-block; }
+.hpd-bg { color: var(--ink-faint); }
+.hpd-fg {
+  position: absolute;
+  inset: 0;
+  width: var(--hpd-pct);
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--accent);
+}
 .hdr-change {
   background: transparent;
   border: 1px solid var(--rule);

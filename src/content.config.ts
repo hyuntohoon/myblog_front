@@ -89,6 +89,13 @@ const blog = defineCollection({
 			// ✅ 앨범 커버 이미지 리스트 (대표 커버 포함)
 			albumCover: z.string().optional(),
 
+			// FEAT-view-redesign Step 4: top-level rating written by the publish
+			// service. Range 0–5 (legacy posts on 0–10 scale handled via
+			// `ratingScale` below; review-hero normalizes to 0–5 for partial-fill
+			// star rendering).
+			rating: z.number().min(0).max(10).optional(),
+			ratingScale: z.union([z.literal(5), z.literal(10)]).default(5),
+
 			// ✅ 선택적: 음악 리뷰 / 평점 블록
 			musicReview: MusicReview.optional(),
 		})

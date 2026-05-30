@@ -4,6 +4,7 @@
  * musicReview 없으면 일반 글 헤더로 렌더링
  */
 import type { CollectionEntry } from 'astro:content'
+import PartialStars from './partial-stars.astro'
 
 export interface Props {
   post: CollectionEntry<'blog'>['data']
@@ -12,12 +13,22 @@ export interface Props {
 const { post } = Astro.props
 const { title, description, date, category, albumCover, image, musicReview } = post
 
-const hasReview = !!musicReview
+// FEAT-view-redesign Step 4: rating sources, in priority order:
+//   1) post.rating (top-level, written by publish service since 2026-05-31)
+//   2) musicReview.rating.value (legacy MDX-authored posts)
+// Normalize to 0–5 — partial-fill stars render in [0, 5] regardless of source.
+const rawRating = post.rating ?? musicReview?.rating?.value
+const rawScale = post.rating != null ?
+  post.ratingScale :
+  (musicReview?.rating?.scale ?? 10)
+const ratingForStars = rawRating != null ?
+  (rawScale === 10 ? rawRating / 2 : rawRating) :
+  null
+
+const hasReview = !!musicReview || ratingForStars != null
 const cover = albumCover || image || musicReview?.cover?.src
 const artist = musicReview?.artists?.join(', ')
 const albumTitle = musicReview?.title
-const rating = musicReview?.rating?.value
-const ratingScale = musicReview?.rating?.scale ?? 10
 const releaseDate = musicReview?.releaseDate ?
   new Date(musicReview.releaseDate).getFullYear() :
   null
@@ -76,20 +87,17 @@ day: 'numeric',
       <!-- Description -->
       {description && <p class="rh-dek">{description}</p>}
 
-      <!-- Score bar -->
-      {rating != null && (
+      <!-- Score bar — partial-fill stars only, no number (RFC Step 4) -->
+      {ratingForStars != null && (
         <div class="rh-score-row">
-          <div class="rh-score-badge">
-            <span class="rh-score-num">{rating % 1 === 0 ? rating.toFixed(1) : rating}</span>
-            <span class="rh-score-denom">/{ratingScale}</span>
-          </div>
+          <PartialStars value={ratingForStars} max={5} size={32} />
           <div class="rh-byline">
             <span class="mono-label">{publishedDate}</span>
           </div>
         </div>
       )}
 
-      {rating == null && (
+      {ratingForStars == null && (
         <div class="rh-date-only">
           <span class="mono-label" style="color: var(--color-faded);">{publishedDate}</span>
         </div>
@@ -217,35 +225,15 @@ day: 'numeric',
     margin: 0;
   }
 
-  /* Score bar */
+  /* Score bar — partial-fill stars (no number per RFC Step 4) */
   .rh-score-row {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
     gap: 20px;
     padding-top: 20px;
     border-top: 1px solid var(--color-border);
     margin-top: 8px;
-  }
-  .rh-score-badge {
-    display: flex;
-    align-items: baseline;
-    gap: 3px;
-    font-family: var(--font-serif);
-    font-weight: 600;
-  }
-  .rh-score-num {
-    font-size: clamp(56px, 8vw, 88px);
-    letter-spacing: -0.04em;
-    line-height: 1;
-    color: var(--color-text);
-  }
-  .rh-score-denom {
-    font-family: var(--font-mono);
-    font-size: 14px;
-    color: var(--color-faded);
-    letter-spacing: 0.05em;
-    margin-bottom: 0.8em;
   }
   .rh-date-only {
     padding-top: 12px;
@@ -298,9 +286,6 @@ day: 'numeric',
     }
     .rh-title {
       font-size: clamp(32px, 8vw, 48px);
-    }
-    .rh-score-num {
-      font-size: clamp(48px, 12vw, 72px);
     }
     .plain-hero {
       padding: 32px 0 36px;
