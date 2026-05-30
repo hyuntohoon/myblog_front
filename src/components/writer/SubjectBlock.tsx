@@ -48,19 +48,14 @@ type FilterType = typeof FILTERS[number]['v']
 // instantly client-side without re-hitting the API.
 const BACKEND_TYPES = 'album,artist,track'
 
-function interleave<T>(...arrays: T[][]): T[] {
-  const max = Math.max(0, ...arrays.map(a => a.length))
-  const out: T[] = []
-  for (let i = 0; i < max; i++) {
-    for (const arr of arrays) {
-      if (i < arr.length)
-        out.push(arr[i])
-    }
-  }
-  return out
-}
-
 type BucketKey = 'album' | 'artist' | 'track'
+
+// Sections render in this order (Spotify-style: artists first, then albums, then tracks).
+const SECTION_ORDER: { kind: BucketKey, label: string }[] = [
+  { kind: 'artist', label: '아티스트' },
+  { kind: 'album', label: '앨범' },
+  { kind: 'track', label: '트랙' },
+]
 type BucketOffsets = Record<BucketKey, number>
 type BucketLastReturned = Record<BucketKey, number>
 
@@ -172,7 +167,8 @@ onSubjectBestNewChange,
       const albums = mapAlbums(data.albums)
       const artists = mapArtists(data.artists)
       const tracks = mapTracks(data.tracks)
-      setResults(interleave<SearchResultItem>(albums, artists, tracks))
+      // Sections are grouped at render time, so storage order doesn't matter.
+      setResults([...artists, ...albums, ...tracks])
       setOffsets({ album: albums.length, artist: artists.length, track: tracks.length })
       setLastReturned({ album: albums.length, artist: artists.length, track: tracks.length })
       if (albums.length + artists.length + tracks.length === 0)
@@ -295,7 +291,7 @@ onSubjectBestNewChange,
         spotify_id: t.spotify_id ?? null,
         source: 'spotify' as const,
       }))
-      const merged = interleave<SearchResultItem>(albums, artists, tracks)
+      const merged: SearchResultItem[] = [...artists, ...albums, ...tracks]
       setResults(merged)
       setStatus(merged.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
     }
@@ -737,59 +733,71 @@ onSubjectBestNewChange,
           {status && <div className="hdr-status">{status}</div>}
 
           {visibleResults.length > 0 && (
-            <div className="hdr-grid">
-              {visibleResults.map((r) => {
-                const displayTitle = r.kind === 'artist' ? r.name : r.title
-                let subtitle: string | null = null
-                if (r.kind === 'album') {
-                  subtitle = r.artist_name
-                }
-                else if (r.kind === 'track') {
-                  const feat = r.feat_artist_names ?? []
-                  const artistPart = r.artist_name ?? ''
-                  const withFeat = feat.length ? `${artistPart} (feat. ${feat.join(', ')})` : artistPart
-                  subtitle = r.album_title ? `${withFeat} · ${r.album_title}` : (withFeat || r.artist_name)
-                }
-                else {
-                  subtitle = 'Artist'
-                }
-                const fourthLine = r.kind === 'album' && r.release_date ? r.release_date.slice(0, 4) : null
-                const key = `${r.kind}:${r.id || r.spotify_id || displayTitle}`
-                const isCurrent = r.kind === 'album' && subject?.id === r.id
-                const isSpotify = r.source === 'spotify'
+            <div className="hdr-sections">
+              {SECTION_ORDER.map(({ kind, label }) => {
+                const items = visibleResults.filter(r => r.kind === kind)
+                if (items.length === 0)
+                  return null
                 return (
-                  <button
+                  <section key={kind} className="hdr-section">
+                    <header className="hdr-section-head">
+                      <span className={`hdr-section-label kind-${kind}`}>{label}</span>
+                      <span className="hdr-section-count">{items.length}</span>
+                    </header>
+                    <div className="hdr-grid">
+                      {items.map((r) => {
+                        const displayTitle = r.kind === 'artist' ? r.name : r.title
+                        let subtitle: string | null = null
+                        if (r.kind === 'album') {
+                          subtitle = r.artist_name
+                        }
+                        else if (r.kind === 'track') {
+                          const feat = r.feat_artist_names ?? []
+                          const artistPart = r.artist_name ?? ''
+                          const withFeat = feat.length ? `${artistPart} (feat. ${feat.join(', ')})` : artistPart
+                          subtitle = r.album_title ? `${withFeat} · ${r.album_title}` : (withFeat || r.artist_name)
+                        }
+                        else {
+                          subtitle = 'Artist'
+                        }
+                        const fourthLine = r.kind === 'album' && r.release_date ? r.release_date.slice(0, 4) : null
+                        const key = `${r.kind}:${r.id || r.spotify_id || displayTitle}`
+                        const isCurrent = r.kind === 'album' && subject?.id === r.id
+                        const isSpotify = r.source === 'spotify'
+                        return (
+                          <button
 	key={key}
 	type="button"
 	className={`hdr-tile${isCurrent ? ' is-current' : ''}${isSpotify ? ' is-spotify' : ''}`}
 	onClick={() => void onPick(r)}
-                  >
-                    <div className="hdr-tile-cover">
-                      {r.cover_url ?
-                        <img src={r.cover_url} alt={displayTitle} /> :
-                        <span className="cover-fallback">{(displayTitle || '?')[0]}</span>}
-                      {isSpotify && (
-                        <span className="hdr-tile-badge" title="Spotify">
-                          <SpotifyMark size={14} />
-                        </span>
-                      )}
+                          >
+                            <div className="hdr-tile-cover">
+                              {r.cover_url ?
+                                <img src={r.cover_url} alt={displayTitle} /> :
+                                <span className="cover-fallback">{(displayTitle || '?')[0]}</span>}
+                              {isSpotify && (
+                                <span className="hdr-tile-badge" title="Spotify">
+                                  <SpotifyMark size={14} />
+                                </span>
+                              )}
+                            </div>
+                            <div className="hdr-tile-body">
+                              <div className="hdr-tile-name"><em>{displayTitle}</em></div>
+                              <div className="hdr-tile-by">{subtitle}</div>
+                              <div className="hdr-tile-meta">
+                                {fourthLine && <span>{fourthLine}</span>}
+                                {r.source && (
+                                  <span className={`hdr-tile-source${r.source === 'spotify' ? ' spotify' : ''}`}>
+                                    {r.source === 'spotify' ? 'SPOTIFY' : 'DB'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
-                    <div className="hdr-tile-body">
-                      <div className="hdr-tile-name"><em>{displayTitle}</em></div>
-                      <div className="hdr-tile-by">{subtitle}</div>
-                      <div className="hdr-tile-meta">
-                        <span className={`hdr-tile-kind kind-${r.kind}`}>
-                          {r.kind === 'album' ? '앨범' : r.kind === 'artist' ? '아티스트' : '트랙'}
-                        </span>
-                        {fourthLine && <span>{fourthLine}</span>}
-                        {r.source && (
-                          <span className={`hdr-tile-source${r.source === 'spotify' ? ' spotify' : ''}`}>
-                            {r.source === 'spotify' ? 'SPOTIFY' : 'DB'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
+                  </section>
                 )
               })}
             </div>
