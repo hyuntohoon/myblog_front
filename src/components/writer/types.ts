@@ -58,15 +58,6 @@ export interface AlbumDetail {
   best_new?: boolean
 }
 
-export interface RecommendedTrack {
-  album_id: string
-  track_id: string
-  position: number
-  note?: string
-}
-
-export const RECOMMENDED_TRACK_LIMIT = 5
-
 export type SaveStatus = 'saved' | 'dirty'
 export type WriterView = 'edit' | 'preview'
 
@@ -80,7 +71,8 @@ export interface DraftPersist {
   body: string
   section: string
   publishDate: string
-  recommendedTracks: RecommendedTrack[]
+  // FEAT-view-redesign Step 3: set of picked track IDs (no order, no limit).
+  recommendedTrackIds: string[]
   lastSaved: string
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC flag.
   // Optional so older drafts in localStorage deserialize cleanly (undefined → off).

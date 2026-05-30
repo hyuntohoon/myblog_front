@@ -1431,23 +1431,12 @@ input, textarea, select {
   text-align: right;
 }
 .rt-track-title { font-size: 14px; color: var(--ink); }
-.rt-track-position {
-  font-family: var(--mono);
-  font-size: 11px;
+.rt-track-pick {
+  margin-left: auto;
+  font-size: 14px;
   color: var(--accent);
   letter-spacing: 0.04em;
 }
-.rt-track-note {
-  width: 100%;
-  resize: vertical;
-  font-family: inherit;
-  font-size: 13px;
-  padding: 6px 8px;
-  background: var(--paper);
-  border: 1px solid var(--rule-soft);
-  color: var(--ink);
-}
-.rt-track-note:focus { outline: 1px solid var(--accent); }
 
 /* ────────── TOAST ────────── */
 .toast {

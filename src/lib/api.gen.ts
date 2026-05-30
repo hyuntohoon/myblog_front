@@ -363,8 +363,8 @@ export interface components {
             posted_date: string;
             /** Rating */
             rating: number | null;
-            /** Recommended Tracks */
-            recommended_tracks?: components["schemas"]["Backend_RecommendedTrackOutput"][];
+            /** Recommended Track Ids */
+            recommended_track_ids?: string[];
             /** Slug */
             slug: string;
             /** Status */
@@ -408,28 +408,6 @@ export interface components {
             /** Likes */
             likes: number;
         };
-        /** RecommendedTrackInput */
-        Backend_RecommendedTrackInput: {
-            /** Album Id */
-            album_id: string;
-            /** Note */
-            note?: string | null;
-            /** Position */
-            position?: number | null;
-            /** Track Id */
-            track_id: string;
-        };
-        /** RecommendedTrackOutput */
-        Backend_RecommendedTrackOutput: {
-            /** Album Id */
-            album_id: string;
-            /** Note */
-            note?: string | null;
-            /** Position */
-            position?: number | null;
-            /** Track Id */
-            track_id: string;
-        };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
             /** Album Ids */
@@ -446,8 +424,8 @@ export interface components {
             posted_date?: string | null;
             /** Rating */
             rating?: number | null;
-            /** Recommended Tracks */
-            recommended_tracks?: components["schemas"]["Backend_RecommendedTrackInput"][] | null;
+            /** Recommended Track Ids */
+            recommended_track_ids?: string[] | null;
             /** Status */
             status?: ("draft" | "published" | "archived") | null;
             /** Subject Best New */
@@ -494,8 +472,8 @@ export interface components {
             posted_date?: string;
             /** Rating */
             rating?: number | null;
-            /** Recommended Tracks */
-            recommended_tracks?: components["schemas"]["Backend_RecommendedTrackInput"][];
+            /** Recommended Track Ids */
+            recommended_track_ids?: string[];
             /** Search Index */
             search_index?: boolean | null;
             /**
