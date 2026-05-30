@@ -1,0 +1,85 @@
+---
+/**
+ * FEAT-view-redesign Step 6 — Accent color picker.
+ * Lets the reader override `--color-accent` for the site. Four swatches
+ * matching the Lowfreq prototype. Persisted in localStorage; takes effect
+ * immediately. Inlined provider script avoids FOUC on subsequent page loads.
+ */
+
+const SWATCHES = [
+  { key: 'red', hex: '#c8332b', label: '레드' },
+  { key: 'blue', hex: '#1f3fa8', label: '블루' },
+  { key: 'green', hex: '#1f7a4a', label: '그린' },
+  { key: 'purple', hex: '#8a5cf0', label: '퍼플' },
+]
+---
+
+<atmb-accent-select class="atmb-accent-select" role="group" aria-label="강조색">
+  {SWATCHES.map(s => (
+    <button
+	type="button"
+	class="acc-swatch"
+	data-accent={s.key}
+	data-hex={s.hex}
+	title={s.label}
+	aria-label={s.label}
+	style={`background:${s.hex};`}
+    ></button>
+  ))}
+</atmb-accent-select>
+
+<style>
+  .atmb-accent-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .acc-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    padding: 0;
+    cursor: pointer;
+    transition: transform 0.12s, border-color 0.12s;
+  }
+  .acc-swatch:hover { transform: scale(1.1); }
+  .acc-swatch.is-active {
+    border-color: var(--color-text);
+  }
+</style>
+
+<script is:inline>
+  // Inlined to avoid FOUC. Mirrors the theme-provider pattern.
+  (function () {
+    const KEY = 'atmb-accent'
+    const stored = (typeof localStorage !== 'undefined' && localStorage.getItem(KEY)) || ''
+    if (stored)
+      document.documentElement.style.setProperty('--color-accent', stored)
+  })()
+</script>
+
+<script>
+  const KEY = 'atmb-accent'
+
+  class AtmbAccentSelect extends HTMLElement {
+    connectedCallback() {
+      const stored = (typeof localStorage !== 'undefined' && localStorage.getItem(KEY)) || ''
+      this.querySelectorAll<HTMLButtonElement>('.acc-swatch').forEach((btn) => {
+        const hex = btn.dataset.hex ?? ''
+        btn.classList.toggle('is-active', hex === stored)
+        btn.addEventListener('click', () => {
+          document.documentElement.style.setProperty('--color-accent', hex)
+          try {
+            localStorage.setItem(KEY, hex)
+          }
+          catch { /* quota */ }
+          this.querySelectorAll<HTMLButtonElement>('.acc-swatch').forEach((b) => {
+            b.classList.toggle('is-active', b === btn)
+          })
+        })
+      })
+    }
+  }
+  customElements.define('atmb-accent-select', AtmbAccentSelect)
+</script>

@@ -1,16 +1,16 @@
 ---
 import Spacer from './spacer.astro'
 import ThemeSelect from './theme-select.astro'
+import AccentSelect from './accent-select.astro'
 ---
 
 <footer class="container">
   <Spacer axis="vertical" size={4} />
   <div class="flex flex-row justify-between items-center pt-6 border-t border-border">
-    <!-- ✅ 좌측: 테마 선택기만 남김 -->
     <div class="flex items-center gap-4">
       <ThemeSelect />
+      <AccentSelect />
     </div>
-    <!-- ✅ 우측: 아무 내용 없음 (또는 필요하면 간단한 문구 추가 가능) -->
     <div></div>
   </div>
   <Spacer axis="vertical" size={8} />
