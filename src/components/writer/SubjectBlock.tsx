@@ -55,6 +55,12 @@ const ZERO_OFFSETS: BucketOffsets = { album: 0, artist: 0, track: 0 }
 const ZERO_RETURNED: BucketLastReturned = { album: 0, artist: 0, track: 0 }
 const PAGE_LIMIT = 20
 
+type SourceMode = 'db' | 'spotify'
+
+// Spotify candidates endpoint enqueues SQS absorb jobs; rapid re-firing wastes
+// quota and crowds the queue. 3 s cooldown matches BUG-19 era guard.
+const SPOTIFY_COOLDOWN_MS = 3000
+
 export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreChange }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultItem[]>([])
@@ -64,8 +70,9 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
   const [hoverStar, setHoverStar] = useState(0)
   const [filter, setFilter] = useState<FilterType>('all')
   const [status, setStatus] = useState('')
-  const [syncDisabled, setSyncDisabled] = useState(false)
-  const syncCooldownRef = useRef(false)
+  const [source, setSource] = useState<SourceMode>('db')
+  const [spotifyCooldown, setSpotifyCooldown] = useState(false)
+  const spotifyCooldownRef = useRef(false)
   // BUG-19: per-bucket pagination — `offsets[kind]` is the next offset to ask
   // for; `lastReturned[kind]` controls "더 보기" visibility (hide once a
   // round returns zero rows for that bucket).
@@ -203,14 +210,14 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
 
   async function runSpotifySync() {
     const q = query.trim()
-    if (!q || syncCooldownRef.current)
+    if (!q || spotifyCooldownRef.current)
       return
-    syncCooldownRef.current = true
-    setSyncDisabled(true)
+    spotifyCooldownRef.current = true
+    setSpotifyCooldown(true)
     setTimeout(() => {
-      syncCooldownRef.current = false
-      setSyncDisabled(false)
-    }, 3000)
+      spotifyCooldownRef.current = false
+      setSpotifyCooldown(false)
+    }, SPOTIFY_COOLDOWN_MS)
     setLoading(true)
     setStatus('Spotify에서 검색하고 DB 동기화를 시작합니다…')
     setResults([])
@@ -283,11 +290,34 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
     setLastReturned(ZERO_RETURNED)
   }
 
+  function runActiveSearch() {
+    if (source === 'spotify')
+      void runSpotifySync()
+    else
+      void runDBSearch()
+  }
+
   function onSearchKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault()
-      void runDBSearch()
+      runActiveSearch()
     }
+  }
+
+  // Toggle click: switch source and, if there's a query, immediately re-search
+  // through the new source. Empty query → color-only flip, no API call (DB
+  // search has no "browse all" endpoint and Spotify candidates with empty q
+  // would enqueue a junk absorb job).
+  function selectSource(next: SourceMode) {
+    if (next === source)
+      return
+    setSource(next)
+    if (!query.trim())
+      return
+    if (next === 'spotify')
+      void runSpotifySync()
+    else
+      void runDBSearch()
   }
 
   async function selectAlbumByLookup(args: { lookupUrl: string, source?: 'db' | 'spotify' }) {
@@ -353,9 +383,10 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
     }
     // Artist: refine the query to that artist's name and re-search as album.
     // Aliases (BUG-4) help non-Latin queries find the canonical name.
+    // Step 4 of FEAT-writer-lowfreq-redesign replaces this with drill-in.
     setQuery(sr.name)
     setFilter('album')
-    setStatus(`'${sr.name}'의 앨범을 검색하려면 검색 버튼을 누르세요.`)
+    setStatus(`'${sr.name}'의 앨범을 검색하려면 Enter를 누르세요.`)
   }
 
   return (
@@ -422,12 +453,44 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
 
       {showSearch && (
         <div className="hdr-search-block">
+          <div className="hdr-source-row">
+            <button
+	type="button"
+	className={`hdr-source-btn${source === 'db' ? ' on' : ''}`}
+	onClick={() => selectSource('db')}
+	disabled={loading && source !== 'db'}
+            >
+              <span className="hdr-source-icon">▣</span>
+              <span className="hdr-source-label">
+                <strong>내부 DB</strong>
+                <span>Lowfreq 카탈로그</span>
+              </span>
+            </button>
+            <button
+	type="button"
+	className={`hdr-source-btn hdr-source-spotify${source === 'spotify' ? ' on' : ''}`}
+	onClick={() => selectSource('spotify')}
+	disabled={(loading && source !== 'spotify') || (source !== 'spotify' && spotifyCooldown)}
+	title={source !== 'spotify' && spotifyCooldown ? '잠시 후 다시 시도 (Spotify 쿨다운)' : undefined}
+            >
+              <span className="hdr-source-icon hdr-spotify-mark" aria-hidden="true">
+                <SpotifyMark size={16} />
+              </span>
+              <span className="hdr-source-label">
+                <strong>Spotify</strong>
+                <span>{source === 'spotify' && loading ? '검색 중…' : '전 세계 카탈로그'}</span>
+              </span>
+              {source === 'spotify' && loading && (
+                <span className="hdr-spinner" aria-hidden="true"></span>
+              )}
+            </button>
+          </div>
           <div className="hdr-search-row">
             <div className="hdr-search">
               <span className="hdr-search-icon">⌕</span>
               <input
 	className="hdr-search-input"
-	placeholder={subject ? '다른 앨범 검색…' : '어떤 앨범을 리뷰할까요?'}
+	placeholder={source === 'spotify' ? 'Spotify에서 검색…' : (subject ? '다른 앨범 검색…' : '어떤 앨범을 리뷰할까요?')}
 	value={query}
 	onChange={e => setQuery(e.target.value)}
 	onKeyDown={onSearchKeyDown}
@@ -443,22 +506,6 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
                 </button>
               )}
             </div>
-            <button
-	type="button"
-	className="hdr-search-btn"
-	onClick={() => void runDBSearch()}
-	disabled={loading || !query.trim()}
-            >
-              검색
-            </button>
-            <button
-	type="button"
-	className="hdr-sync-btn"
-	onClick={() => void runSpotifySync()}
-	disabled={loading || syncDisabled || !query.trim()}
-            >
-              Spotify 싱크
-            </button>
             {subject && (
               <button
 	type="button"
@@ -517,17 +564,23 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
                 const fourthLine = r.kind === 'album' && r.release_date ? r.release_date.slice(0, 4) : null
                 const key = `${r.kind}:${r.id || r.spotify_id || displayTitle}`
                 const isCurrent = r.kind === 'album' && subject?.id === r.id
+                const isSpotify = r.source === 'spotify'
                 return (
                   <button
 	key={key}
 	type="button"
-	className={`hdr-tile${isCurrent ? ' is-current' : ''}`}
+	className={`hdr-tile${isCurrent ? ' is-current' : ''}${isSpotify ? ' is-spotify' : ''}`}
 	onClick={() => void onPick(r)}
                   >
                     <div className="hdr-tile-cover">
                       {r.cover_url ?
                         <img src={r.cover_url} alt={displayTitle} /> :
                         <span className="cover-fallback">{(displayTitle || '?')[0]}</span>}
+                      {isSpotify && (
+                        <span className="hdr-tile-badge" title="Spotify">
+                          <SpotifyMark size={14} />
+                        </span>
+                      )}
                     </div>
                     <div className="hdr-tile-body">
                       <div className="hdr-tile-name"><em>{displayTitle}</em></div>
@@ -576,5 +629,17 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
         </div>
       )}
     </div>
+  )
+}
+
+function SpotifyMark({ size }: { size: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size}>
+      <circle cx="12" cy="12" r="12" fill="#1DB954" />
+      <path
+	d="M6.5 9.2c3-.9 7.7-.8 10.6.9.4.3.5.8.3 1.2-.3.4-.8.5-1.2.3-2.5-1.5-6.7-1.6-9.3-.8-.5.2-1-.1-1.1-.6-.1-.4.2-.9.7-1zm.4 2.7c2.6-.8 6.4-.7 8.9.8.4.2.5.7.3 1-.2.4-.7.5-1 .3-2.1-1.3-5.5-1.4-7.6-.7-.4.1-.8-.1-.9-.4-.2-.4 0-.8.3-1zm.5 2.6c2.1-.6 4.7-.5 6.8.8.3.2.4.5.2.8-.2.3-.5.4-.8.2-1.8-1.1-4.1-1.2-5.9-.6-.3.1-.7-.1-.7-.4-.1-.3.1-.7.4-.8z"
+	fill="#fff"
+      />
+    </svg>
   )
 }
