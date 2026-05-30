@@ -320,6 +320,8 @@ export interface components {
             posted_date: string;
             /** Rating */
             rating?: number | null;
+            /** Recommended Track Ids */
+            recommended_track_ids?: string[];
             /** Slug */
             slug?: string | null;
             /** Title */
