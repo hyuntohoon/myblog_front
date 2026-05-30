@@ -2,7 +2,7 @@
 
 /** Site metadata (필요 최소) */
 export const SITE: Record<string, string> = {
-	url: 'http://localhost:4321', // RSS 등에서 사용
+	url: 'https://www.ratemymusic.blog',
 	title: 'RAMAMU',
 	titleDefault: 'Rate Your Music',
 	lang: 'ko-KR',

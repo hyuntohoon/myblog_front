@@ -35,6 +35,7 @@ const { Content } = await render(entry)
 	forceTitle={post.title}
 	description={post.description}
 	image={post.albumCover || post.image}
+	type="article"
   >
     <meta name="twitter:label1" content="Author" />
     <meta name="twitter:data1" data-pagefind-meta="author" content={SITE.defaultAuthor} />

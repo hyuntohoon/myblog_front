@@ -7,9 +7,10 @@ interface Props {
   description?: string
   image?: string
   noIndex?: boolean
+  type?: 'website' | 'article'
 }
 
-const { title, forceTitle, description, image, noIndex = false } = Astro.props
+const { title, forceTitle, description, image, noIndex = false, type = 'website' } = Astro.props
 
 const {
   title: siteTitle,
@@ -50,7 +51,7 @@ const seo = {
 <meta property="og:url" content={seo.url} />
 <meta property="og:description" content={seo.description} />
 <meta property="og:image" content={seo.image} />
-<meta property="og:type" content="website" />
+<meta property="og:type" content={type} />
 
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content={seo.title} />

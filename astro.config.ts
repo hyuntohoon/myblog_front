@@ -42,7 +42,9 @@ export default defineConfig({
 	integrations: [
 		expressiveCode(),
 		mdx(),
-		sitemap(),
+		sitemap({
+			filter: page => !/\/(?:drafts|write|admin|test)\//.test(page),
+		}),
 		pagefindIntegration(),
 		react(),
 	],
