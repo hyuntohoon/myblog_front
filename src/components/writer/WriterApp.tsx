@@ -5,7 +5,7 @@ import RecommendedTracksBlock from './RecommendedTracksBlock'
 import BodyArea from './BodyArea'
 import SettingsPanel from './SettingsPanel'
 import PreviewView from './PreviewView'
-import type { AlbumDetail, DraftPersist, RecommendedTrack, SaveStatus, WriterView } from './types'
+import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { SECTIONS } from './types'
 import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 
@@ -94,7 +94,7 @@ export default function WriterApp() {
   const [body, setBody] = useState(saved.body ?? '')
   const [section, setSection] = useState(saved.section ?? SECTIONS[0])
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
-  const [recommendedTracks, setRecommendedTracks] = useState<RecommendedTrack[]>(saved.recommendedTracks ?? [])
+  const [recommendedTrackIds, setRecommendedTrackIds] = useState<string[]>(saved.recommendedTrackIds ?? [])
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC. Seeds
   // from saved draft on mount; reseeds from fetched album.best_new on subject
   // pick (handled inside SubjectBlock via the seed callback); reseeds from
@@ -106,7 +106,7 @@ export default function WriterApp() {
   const onSubjectSelect = useCallback((next: AlbumDetail) => {
     setSubject((prev) => {
       if (prev && prev.id !== next.id)
-        setRecommendedTracks([])
+        setRecommendedTrackIds([])
       return next
     })
     // Step 6: seed the BEST NEW toggle from the newly-picked album's flag.
@@ -151,17 +151,9 @@ export default function WriterApp() {
       setScore(post.rating ?? 0)
       if (post.category)
         setSection(post.category)
-      const loadedTracks = post.recommended_tracks ?? []
-      if (loadedTracks.length > 0) {
-        setRecommendedTracks(
-          loadedTracks.map((rt, i) => ({
-            album_id: rt.album_id,
-            track_id: rt.track_id,
-            position: rt.position ?? i,
-            note: rt.note ?? undefined,
-          })),
-        )
-      }
+      const loadedIds = post.recommended_track_ids ?? []
+      if (loadedIds.length > 0)
+        setRecommendedTrackIds(loadedIds)
       // Step 6: seed the BEST NEW toggle from the DB-joined value the backend
       // returns. Null when the post has no single album subject.
       if (typeof post.subject_best_new === 'boolean')
@@ -184,7 +176,7 @@ export default function WriterApp() {
         body,
         section,
         publishDate,
-        recommendedTracks,
+        recommendedTrackIds,
         subjectBestNew,
         lastSaved: ts,
       }
@@ -196,7 +188,7 @@ export default function WriterApp() {
       setStatus('saved')
     }, 600)
     return () => clearTimeout(id)
-  }, [subject, score, headline, dek, body, section, publishDate, recommendedTracks, subjectBestNew])
+  }, [subject, score, headline, dek, body, section, publishDate, recommendedTrackIds, subjectBestNew])
 
   const onSaveDraft = async () => {
     if (!headline.trim()) {
@@ -221,12 +213,7 @@ export default function WriterApp() {
       album_ids: albumIds,
       artist_ids: artistIds,
       rating: score > 0 ? score : null,
-      recommended_tracks: recommendedTracks.map(rt => ({
-        album_id: rt.album_id,
-        track_id: rt.track_id,
-        position: rt.position,
-        note: rt.note ?? null,
-      })),
+      recommended_track_ids: recommendedTrackIds,
       // FEAT-writer-lowfreq-redesign Step 6: send only when there's an album
       // subject — for artist-only subjects or no subject, the field has no
       // meaning and the backend would no-op anyway.
@@ -258,7 +245,7 @@ export default function WriterApp() {
     setHeadline('')
     setDek('')
     setBody('')
-    setRecommendedTracks([])
+    setRecommendedTrackIds([])
     setSettingsOpen(false)
     flash('초안이 삭제되었습니다.')
   }
@@ -276,12 +263,6 @@ export default function WriterApp() {
     // If a draft was saved first (dbPostId set), upgrade that row to
     // status="published" instead of creating a new one — otherwise the second
     // row collides on the unique slug and the backend returns 409 (BUG-9).
-    const recommendedPayload = recommendedTracks.map(rt => ({
-      album_id: rt.album_id,
-      track_id: rt.track_id,
-      position: rt.position,
-      note: rt.note ?? null,
-    }))
     const res = dbPostId ?
       await updatePost(dbPostId, {
         title: headline,
@@ -290,7 +271,7 @@ export default function WriterApp() {
         posted_date: publishDate,
         status: 'published',
         rating: score,
-        recommended_tracks: recommendedPayload,
+        recommended_track_ids: recommendedTrackIds,
         // Step 6: same single-album-subject rule as draft path.
         subject_best_new: !isArtistSubject ? subjectBestNew : null,
       }) :
@@ -304,7 +285,7 @@ export default function WriterApp() {
         artist_ids: artistIds,
         rating: score,
         album_cover_url: subject.cover_url,
-        recommended_tracks: recommendedPayload,
+        recommended_track_ids: recommendedTrackIds,
         subject_best_new: !isArtistSubject ? subjectBestNew : null,
       })
     if (!res.ok) {
@@ -349,7 +330,7 @@ export default function WriterApp() {
     setHeadline('')
     setDek('')
     setBody('')
-    setRecommendedTracks([])
+    setRecommendedTrackIds([])
     flash('발행 완료! 사이트 반영까지 약 3–5분 — /blog 에서 확인하세요.')
     setSettingsOpen(false)
     setTimeout(() => {
@@ -383,8 +364,8 @@ export default function WriterApp() {
             />
             <RecommendedTracksBlock
 	subject={subject}
-	value={recommendedTracks}
-	onChange={setRecommendedTracks}
+	value={recommendedTrackIds}
+	onChange={setRecommendedTrackIds}
             />
             <TitleArea headline={headline} setHeadline={setHeadline} dek={dek} setDek={setDek} dim={!subject} />
             <BodyArea body={body} setBody={setBody} dim={!subject} />
