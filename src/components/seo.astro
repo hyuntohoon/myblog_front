@@ -28,36 +28,32 @@ let seoTitle = title ? `${title} | ${siteTitle}` : siteTitleDefault
 if (forceTitle)
 seoTitle = forceTitle
 
+// emit image meta only when a real image is supplied — defaultOgImage is empty (no /og-image.png asset)
+const ogImageSrc = image || siteImage
 const seo = {
   title: seoTitle,
   description: desc,
   url: new URL(Astro.url.pathname, siteUrl),
-  image: new URL(image || siteImage, siteUrl),
+  image: ogImageSrc ? new URL(ogImageSrc, siteUrl).toString() : undefined,
 }
 ---
 
 <title>{seo.title}</title>
 <meta name="description" content={seo.description} />
-<meta name="image" content={seo.image} />
-<link
-	rel="alternate"
-	type="application/rss+xml"
-	title={SITE.titleDefault}
-	href={new URL('rss.xml', siteUrl)}
-/>
+{seo.image && <meta name="image" content={seo.image} />}
 <link rel="canonical" href={seo.url} />
 
 <meta property="og:title" content={seo.title} />
 <meta property="og:url" content={seo.url} />
 <meta property="og:description" content={seo.description} />
-<meta property="og:image" content={seo.image} />
+{seo.image && <meta property="og:image" content={seo.image} />}
 <meta property="og:type" content={type} />
 
-<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:card" content={seo.image ? 'summary_large_image' : 'summary'} />
 <meta name="twitter:title" content={seo.title} />
 <meta name="twitter:url" content={seo.url} />
 <meta name="twitter:description" content={seo.description} />
-<meta name="twitter:image" content={seo.image} />
+{seo.image && <meta name="twitter:image" content={seo.image} />}
 
 {noIndex && <meta name="robots" content="noindex, nofollow" />}
 <slot />

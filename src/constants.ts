@@ -6,7 +6,7 @@ export const SITE: Record<string, string> = {
 	title: 'RAMAMU',
 	titleDefault: 'Rate Your Music',
 	lang: 'ko-KR',
-	defaultOgImage: '/og-image.png',
+	defaultOgImage: '', // no default OG asset yet — emit og:image only when a page supplies one (avoids 404 to /og-image.png)
 	defaultAuthor: 'hyuntohoon',
 }
 
