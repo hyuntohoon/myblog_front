@@ -369,6 +369,8 @@ export interface components {
             slug: string;
             /** Status */
             status: string;
+            /** Subject Best New */
+            subject_best_new?: boolean | null;
             /** Title */
             title: string;
         };
@@ -448,6 +450,8 @@ export interface components {
             recommended_tracks?: components["schemas"]["Backend_RecommendedTrackInput"][] | null;
             /** Status */
             status?: ("draft" | "published" | "archived") | null;
+            /** Subject Best New */
+            subject_best_new?: boolean | null;
             /** Title */
             title?: string | null;
         };
@@ -500,6 +504,8 @@ export interface components {
              * @enum {string}
              */
             status: "draft" | "published" | "archived";
+            /** Subject Best New */
+            subject_best_new?: boolean | null;
             /** Title */
             title: string;
         };
@@ -530,6 +536,11 @@ export interface components {
             artist_name?: string | null;
             /** Artist Spotify Id */
             artist_spotify_id?: string | null;
+            /**
+             * Best New
+             * @default false
+             */
+            best_new: boolean;
             /** Cover Url */
             cover_url?: string | null;
             /** External Url */
@@ -553,6 +564,11 @@ export interface components {
         Music_AlbumOut: {
             /** Album Type */
             album_type?: string | null;
+            /**
+             * Best New
+             * @default false
+             */
+            best_new: boolean;
             /** Cover Url */
             cover_url?: string | null;
             /** External Url */

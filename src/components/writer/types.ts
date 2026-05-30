@@ -52,6 +52,10 @@ export interface AlbumDetail {
   // chrome doesn't fork. WriterApp branches on `kind` when building the post
   // payload — artist subjects send album_ids=[] + artist_ids=[id].
   kind?: 'album' | 'artist'
+  // FEAT-writer-lowfreq-redesign Step 6: writer seeds the BEST NEW pill from
+  // this on subject pick. SubjectBlock reads it from the album lookup; for
+  // artist subjects it stays undefined and the pill stays off.
+  best_new?: boolean
 }
 
 export interface RecommendedTrack {
@@ -78,4 +82,7 @@ export interface DraftPersist {
   publishDate: string
   recommendedTracks: RecommendedTrack[]
   lastSaved: string
+  // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC flag.
+  // Optional so older drafts in localStorage deserialize cleanly (undefined → off).
+  subjectBestNew?: boolean
 }

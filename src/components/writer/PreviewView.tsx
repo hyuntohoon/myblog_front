@@ -7,6 +7,7 @@ interface State {
   dek: string
   body: string
   publishDate: string
+  subjectBestNew: boolean
 }
 
 function renderInline(text: string): React.ReactNode[] {
@@ -61,6 +62,9 @@ export default function PreviewView({ s }: { s: State }) {
 
   return (
     <article className="preview-article">
+      {s.subjectBestNew && (
+        <div className="prev-bnm">BEST NEW MUSIC</div>
+      )}
       <div className="prev-kicker">
         <span style={{ color: 'var(--accent)' }}>
           리뷰 ·

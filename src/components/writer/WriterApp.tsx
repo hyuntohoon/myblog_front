@@ -95,6 +95,11 @@ export default function WriterApp() {
   const [section, setSection] = useState(saved.section ?? SECTIONS[0])
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
   const [recommendedTracks, setRecommendedTracks] = useState<RecommendedTrack[]>(saved.recommendedTracks ?? [])
+  // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC. Seeds
+  // from saved draft on mount; reseeds from fetched album.best_new on subject
+  // pick (handled inside SubjectBlock via the seed callback); reseeds from
+  // post.subject_best_new on edit-mode load below.
+  const [subjectBestNew, setSubjectBestNew] = useState<boolean>(saved.subjectBestNew ?? false)
 
   // Album switch invalidates any previously-picked tracks (they belonged to the
   // old album). Clear silently — the user is starting fresh under the new subject.
@@ -104,6 +109,13 @@ export default function WriterApp() {
         setRecommendedTracks([])
       return next
     })
+    // Step 6: seed the BEST NEW toggle from the newly-picked album's flag.
+    // For artist subjects (kind='artist') there's no album-level flag — leave
+    // the toggle off; SubjectBlock hides the pill anyway.
+    if (next.kind !== 'artist')
+      setSubjectBestNew(next.best_new ?? false)
+    else
+      setSubjectBestNew(false)
   }, [])
 
   const [view, setView] = useState<WriterView>('edit')
@@ -150,6 +162,10 @@ export default function WriterApp() {
           })),
         )
       }
+      // Step 6: seed the BEST NEW toggle from the DB-joined value the backend
+      // returns. Null when the post has no single album subject.
+      if (typeof post.subject_best_new === 'boolean')
+        setSubjectBestNew(post.subject_best_new)
     })
   }, [])
 
@@ -169,6 +185,7 @@ export default function WriterApp() {
         section,
         publishDate,
         recommendedTracks,
+        subjectBestNew,
         lastSaved: ts,
       }
       try {
@@ -179,7 +196,7 @@ export default function WriterApp() {
       setStatus('saved')
     }, 600)
     return () => clearTimeout(id)
-  }, [subject, score, headline, dek, body, section, publishDate, recommendedTracks])
+  }, [subject, score, headline, dek, body, section, publishDate, recommendedTracks, subjectBestNew])
 
   const onSaveDraft = async () => {
     if (!headline.trim()) {
@@ -210,6 +227,10 @@ export default function WriterApp() {
         position: rt.position,
         note: rt.note ?? null,
       })),
+      // FEAT-writer-lowfreq-redesign Step 6: send only when there's an album
+      // subject — for artist-only subjects or no subject, the field has no
+      // meaning and the backend would no-op anyway.
+      subject_best_new: subject && !isArtistSubject ? subjectBestNew : null,
     }
     const res = dbPostId ?
       await updatePost(dbPostId, payload) :
@@ -270,6 +291,8 @@ export default function WriterApp() {
         status: 'published',
         rating: score,
         recommended_tracks: recommendedPayload,
+        // Step 6: same single-album-subject rule as draft path.
+        subject_best_new: !isArtistSubject ? subjectBestNew : null,
       }) :
       await savePost({
         title: headline,
@@ -282,6 +305,7 @@ export default function WriterApp() {
         rating: score,
         album_cover_url: subject.cover_url,
         recommended_tracks: recommendedPayload,
+        subject_best_new: !isArtistSubject ? subjectBestNew : null,
       })
     if (!res.ok) {
       if (res.status === 409) {
@@ -333,7 +357,7 @@ export default function WriterApp() {
     }, 1800)
   }
 
-  const s = { subject, score, headline, dek, body, publishDate }
+  const s = { subject, score, headline, dek, body, publishDate, subjectBestNew }
 
   return (
     <div className="page">
@@ -354,6 +378,8 @@ export default function WriterApp() {
 	score={score}
 	onSubjectSelect={onSubjectSelect}
 	onScoreChange={setScore}
+	subjectBestNew={subjectBestNew}
+	onSubjectBestNewChange={setSubjectBestNew}
             />
             <RecommendedTracksBlock
 	subject={subject}
