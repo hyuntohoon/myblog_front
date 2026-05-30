@@ -952,6 +952,7 @@ input, textarea, select {
   font-size: 17px;
   line-height: 1.75;
   color: var(--ink);
+  text-wrap: pretty;
 }
 .prev-body p { margin: 0 0 1.2em; text-indent: 1.5em; }
 .prev-body p:first-of-type { text-indent: 0; }
@@ -963,6 +964,16 @@ input, textarea, select {
   padding: 4px 8px 0 0;
   font-weight: 600;
   color: var(--accent);
+}
+/* Suppress drop-cap on the empty-state placeholder so "본" doesn't render at 4em. */
+.prev-body p.prev-empty { text-indent: 0; }
+.prev-body p.prev-empty::first-letter {
+  font-size: inherit;
+  float: none;
+  color: inherit;
+  padding: 0;
+  font-weight: inherit;
+  line-height: inherit;
 }
 .prev-quote {
   margin: 1.5em 0;
