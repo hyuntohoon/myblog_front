@@ -1196,31 +1196,6 @@ input, textarea, select {
   outline: none;
 }
 .tags-input::placeholder { color: var(--ink-faint); }
-.set-checklist { gap: 8px; }
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--ink-faint);
-}
-.check-row.ok { color: var(--ink); }
-.check-mark {
-  width: 18px; height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 1px solid var(--rule);
-  font-size: 10px;
-  flex-shrink: 0;
-}
-.check-row.ok .check-mark {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
 .set-foot {
   display: flex;
   align-items: center;

@@ -7,8 +7,6 @@ interface Props {
   section: string
   publishDate: string
   subject: AlbumDetail | null
-  score: number
-  headline: string
   body: string
   onSectionChange: (v: string) => void
   onPublishDateChange: (v: string) => void
@@ -17,23 +15,12 @@ interface Props {
   onReset: () => void
 }
 
-function Check({ ok, label }: { ok: boolean, label: string }) {
-  return (
-    <div className={`check-row${ok ? ' ok' : ''}`}>
-      <span className="check-mark">{ok ? '✓' : '○'}</span>
-      <span>{label}</span>
-    </div>
-  )
-}
-
 export default function SettingsPanel({
   open,
   onClose,
   section,
   publishDate,
   subject,
-  score,
-  headline,
   body,
   onSectionChange,
   onPublishDateChange,
@@ -62,14 +49,6 @@ export default function SettingsPanel({
             <label className="set-l">발행일</label>
             <input type="date" className="set-input" value={publishDate} onChange={e => onPublishDateChange(e.target.value)} />
           </div>
-
-          <div className="set-block set-checklist">
-            <label className="set-l">발행 체크리스트</label>
-            <Check ok={!!subject} label="작품 선택" />
-            <Check ok={!!headline.trim()} label="헤드라인" />
-            <Check ok={score > 0} label="평점" />
-            <Check ok={body.trim().length >= 80} label={`본문 80자 이상 (현재 ${body.trim().length}자)`} />
-          </div>
         </div>
 
         <footer className="set-foot">
@@ -80,7 +59,7 @@ export default function SettingsPanel({
 	type="button"
 	className="set-btn-primary"
 	onClick={onPublish}
-	disabled={!subject || !headline.trim() || score <= 0 || body.trim().length < 80}
+	disabled={!subject || body.trim().length === 0}
           >
             발행 →
           </button>

@@ -264,8 +264,8 @@ export default function WriterApp() {
   }
 
   const onPublish = async () => {
-    if (!subject || !headline.trim() || score <= 0 || body.trim().length < 80) {
-      flash('발행 조건이 충족되지 않았습니다.')
+    if (!subject || body.trim().length === 0) {
+      flash('발행 조건이 충족되지 않았습니다. (작품과 본문이 필요합니다)')
       return
     }
     const isArtistSubject = subject.kind === 'artist'
@@ -402,8 +402,6 @@ export default function WriterApp() {
 	section={section}
 	publishDate={publishDate}
 	subject={subject}
-	score={score}
-	headline={headline}
 	body={body}
 	onSectionChange={setSection}
 	onPublishDateChange={setPublishDate}
