@@ -768,10 +768,40 @@ input, textarea, select {
 }
 .art-retry:hover { background: var(--ink); color: var(--bg); }
 
+/* FEAT-writer-lowfreq-redesign Step 6: BEST NEW pill (inside hdr-card) +
+   preview banner (above headline in PreviewView). */
+.hdr-bnm {
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  padding: 5px 9px;
+  border-radius: 3px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.hdr-bnm:hover { color: var(--ink); border-color: var(--ink); }
+.hdr-bnm.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.prev-bnm {
+  align-self: flex-start;
+  padding: 5px 11px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
 /* Filled state card */
 .hdr-card {
   display: grid;
-  grid-template-columns: 64px 1fr auto auto auto;
+  /* 64 cover | title | rating | change btn | hdr-bnm pill (Step 6) */
+  grid-template-columns: 64px 1fr auto auto auto auto;
   align-items: center;
   gap: 16px;
   padding: 12px 16px 12px 12px;

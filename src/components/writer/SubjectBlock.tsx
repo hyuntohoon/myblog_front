@@ -28,6 +28,11 @@ interface Props {
   score: number
   onSubjectSelect: (album: AlbumDetail) => void
   onScoreChange: (score: number) => void
+  // FEAT-writer-lowfreq-redesign Step 6: BEST NEW toggle in the filled card.
+  // Hidden when no subject is selected (the flag has no meaning without an
+  // album target).
+  subjectBestNew: boolean
+  onSubjectBestNewChange: (next: boolean) => void
 }
 
 const FILTERS = [
@@ -69,7 +74,14 @@ type SourceMode = 'db' | 'spotify'
 // quota and crowds the queue. 3 s cooldown matches BUG-19 era guard.
 const SPOTIFY_COOLDOWN_MS = 3000
 
-export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreChange }: Props) {
+export default function SubjectBlock({
+  subject,
+score,
+onSubjectSelect,
+onScoreChange,
+  subjectBestNew,
+onSubjectBestNewChange,
+}: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -346,7 +358,7 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const json = await r.json() as {
-        album: { id: string, title: string, cover_url: string | null, release_date: string | null }
+        album: { id: string, title: string, cover_url: string | null, release_date: string | null, best_new?: boolean }
         artists: Array<{ id: string, name: string }>
         tracks?: Array<{ id: string, title: string, track_no: number | null }>
       }
@@ -357,6 +369,7 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
         release_date: json.album.release_date,
         artists: json.artists.map(a => ({ id: a.id, name: a.name })),
         tracks: (json.tracks ?? []).map(t => ({ id: t.id, title: t.title, track_no: t.track_no })),
+        best_new: json.album.best_new ?? false,
       }
       onSubjectSelect(detail)
       setSearching(false)
@@ -595,6 +608,17 @@ export default function SubjectBlock({ subject, score, onSubjectSelect, onScoreC
             </div>
           </div>
           <button type="button" className="hdr-change" onClick={() => setSearching(true)} title="다른 앨범 검색">↻</button>
+          {/* Step 6: BEST NEW pill — hidden for artist subjects (no album to flag) */}
+          {subject.kind !== 'artist' && (
+            <button
+	type="button"
+	className={`hdr-bnm${subjectBestNew ? ' on' : ''}`}
+	onClick={() => onSubjectBestNewChange(!subjectBestNew)}
+	title={subjectBestNew ? '베스트 신보 해제' : '베스트 신보로 표시'}
+            >
+              BEST NEW
+            </button>
+          )}
         </div>
       )}
 
