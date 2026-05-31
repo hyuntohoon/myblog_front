@@ -18,13 +18,6 @@ async function run() {
 		const verifier = sessionStorage.getItem('pkce_verifier')
 		const savedState = sessionStorage.getItem('oauth_state')
 
-		console.log('[callback]', {
-			code,
-			state,
-			verifierExists: !!verifier,
-			savedState,
-		})
-
 		if (!code) {
 			log('❌ code 없음. 다시 로그인합니다…')
 			await goLogin(true)
