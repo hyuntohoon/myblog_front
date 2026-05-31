@@ -8,8 +8,8 @@ const zodEnum = <T>(arr: T[]): [T, ...T[]] => arr as [T, ...T[]]
 
 /** ---------- 선택적: 음악 리뷰/평점 블록 ---------- */
 const Rating = z.object({
-	value: z.number().min(0).max(10), // 0~10 평점
-	scale: z.literal(10).default(10), // 필요시 5점제로 바꿔도 됨
+	value: z.number().min(0).max(10), // 0~10 평점 (0~5도 허용)
+	scale: z.union([z.literal(5), z.literal(10)]).default(5),
 	label: z.string().optional(), // 코멘트(예: "재청취 강추")
 })
 
@@ -34,6 +34,9 @@ const MusicReview = z
 		artists: z.array(z.string()).default([]),
 		releaseDate: z.coerce.date().optional(),
 		genres: z.array(z.string()).default([]),
+		// FEAT-view-redesign Step 5 follow-up: publish_service writes the
+		// record label (e.g. "Half Light Recordings") for the hero meta row.
+		label: z.string().optional(),
 		cover: z
 			.object({
 				src: z.string(),
@@ -42,7 +45,10 @@ const MusicReview = z
 			})
 			.optional(),
 		links: MusicLink.optional(),
-		rating: Rating, // ✅ 핵심: 평점
+		// `rating` lives on the post (top-level `rating` + `ratingScale`) since
+		// FEAT-view-redesign Step 4; keep it optional inside musicReview so
+		// frontmatter parses cleanly when only the meta block is present.
+		rating: Rating.optional(),
 		favoriteTracks: z.array(z.string()).default([]),
 		tracks: z.array(Track).default([]), // 앨범 리뷰일 때 트랙리스트
 	})
