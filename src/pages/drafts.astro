@@ -15,6 +15,7 @@ import Seo from '@components/seo.astro'
 
     <div class="view-tabs">
       <button type="button" class="view-tab active" data-view="draft">초안</button>
+      <button type="button" class="view-tab" data-view="published">발행됨</button>
       <button type="button" class="view-tab" data-view="archived">보관함</button>
     </div>
 
@@ -293,7 +294,7 @@ import Seo from '@components/seo.astro'
 
   const API = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
-  type View = 'draft' | 'archived'
+  type View = 'draft' | 'published' | 'archived'
   let currentView: View = 'draft'
 
   const $loading = document.getElementById('drafts-loading')!
@@ -417,18 +418,24 @@ window.clearTimeout(toastTimer)
     const actionsDiv = document.createElement('div')
     actionsDiv.className = 'draft-actions'
 
-    if (currentView === 'draft') {
+    if (currentView === 'draft' || currentView === 'published') {
       actionsDiv.appendChild(makeActionLink('편집', `/write?id=${encodeURIComponent(d.id)}`))
-      actionsDiv.appendChild(makeActionBtn('보관', false, async () => {
+      // Both views soft-archive via DELETE (status→archived). For a published
+      // post the backend also un-publishes the static MDX (Step 3); 복구 from
+      // 보관함 re-publishes it. Only the label/toast differ.
+      const isPublished = currentView === 'published'
+      const archiveLabel = isPublished ? '발행 취소' : '보관'
+      const archiveToast = isPublished ? '발행 취소됨 — 보관함에서 복구 가능' : '보관됨 — 복구 가능'
+      actionsDiv.appendChild(makeActionBtn(archiveLabel, false, async () => {
         const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}`, {
           method: 'DELETE',
           headers: authHeaders(),
         })
         if (r.ok) {
           rowVanish(tr)
-          flash('보관됨 — 복구 가능')
+          flash(archiveToast)
         }
-        else { flash(`보관 실패 (${r.status})`) }
+        else { flash(`${archiveLabel} 실패 (${r.status})`) }
       }))
     }
     else {
@@ -479,6 +486,8 @@ return
     try {
       const url = currentView === 'draft' ?
       `${API}/api/posts?status=draft` :
+      currentView === 'published' ?
+      `${API}/api/posts?status=published` :
       `${API}/api/posts?status=archived&include_archived=true`
       const res = await fetch(url, { headers: authHeaders() })
       if (!res.ok)
@@ -500,6 +509,8 @@ throw new Error(`HTTP ${res.status}`)
         $count.textContent = '0개'
         $emptyTitle.textContent = currentView === 'draft' ?
         '임시저장된 글이 없습니다' :
+        currentView === 'published' ?
+        '발행된 글이 없습니다' :
         '보관함이 비어 있습니다'
         show($empty)
         return

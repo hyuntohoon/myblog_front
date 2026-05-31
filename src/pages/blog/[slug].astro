@@ -112,6 +112,9 @@ const recordLabel = post.musicReview?.label ?? null
             {post.description && <p class="lfq-dek"><em>{post.description}</em></p>}
             <div class="lfq-byline">
               <span class="mono-label">{SITE.defaultAuthor}</span>
+              {post.postId && (
+                <a class="lfq-edit-link mono-label" id="lfqEditLink" href={`/write?id=${post.postId}`} hidden>편집</a>
+              )}
             </div>
           </header>
 
@@ -397,8 +400,24 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-dek em { font-style: italic; }
   .lfq-byline {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
     padding-top: 14px;
     border-top: 1px solid var(--color-border);
+  }
+  /* Author-only edit affordance — unhidden client-side when isLoggedIn(). */
+  .lfq-edit-link {
+    color: var(--color-subtle);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 1px;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .lfq-edit-link:hover {
+    color: var(--color-text);
+    border-color: var(--color-text);
   }
 
   /* ──────── Album hero ──────── */
@@ -562,6 +581,17 @@ const recordLabel = post.musicReview?.label ?? null
     }
  catch { /* ignore */ }
   }
+</script>
+
+<script>
+  // FEAT-post-edit-delete-ui Step 2: reveal the author 편집 link only when a
+  // valid session token is present. Rendered hidden server-side so logged-out
+  // / crawler views never expose it (and the static HTML stays cache-safe).
+  import { isLoggedIn } from '../../lib/auth'
+
+  const editLink = document.getElementById('lfqEditLink')
+  if (editLink && isLoggedIn())
+    editLink.hidden = false
 </script>
 
 <script type="module" src={detailClient}></script>
