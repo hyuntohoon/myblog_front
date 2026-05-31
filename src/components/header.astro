@@ -7,17 +7,26 @@ const { pathname } = Astro.url
 function normalize(p: string) {
   if (!p.startsWith('/'))
 p = `/${p}`
-  if (!p.endsWith('/'))
-p += '/'
-  return p
+  // Keep the query/hash out of the trailing-slash logic, else a link like
+  // /reviews?bnm=1 would normalize to /reviews?bnm=1/ (broken).
+  const qIndex = p.search(/[?#]/)
+  const path = qIndex === -1 ? p : p.slice(0, qIndex)
+  const rest = qIndex === -1 ? '' : p.slice(qIndex)
+  return (path.endsWith('/') ? path : `${path}/`) + rest
 }
 
-const isActive = (url: string) => normalize(pathname) === normalize(url)
+// Compare by path only — a filtered link (e.g. /reviews?bnm=1) is still "on"
+// the same page as its base route.
+const pathOnly = (url: string) => normalize(url.split(/[?#]/)[0])
+const isActive = (url: string) => pathOnly(pathname) === pathOnly(url)
 
 const navLinks = [
   { title: 'Reviews', url: '/reviews' },
   { title: 'Archive', url: '/blog' },
-  { title: 'Best New Music', url: '/blog/category/review' },
+  // Best New Music is a filter on the reviews index, not a category route.
+  // The old /blog/category/review slug never existed (writer slug is
+  // "best new music"/"reviews"), so it 404'd. ReviewsIndex reads ?bnm=1.
+  { title: 'Best New Music', url: '/reviews?bnm=1' },
 ]
 ---
 

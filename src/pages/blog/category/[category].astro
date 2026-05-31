@@ -6,6 +6,7 @@ import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import { defaultDateFormat, sortAsc } from '@utils'
 import Link from '@components/link.astro'
 import PostMetricsItem from '@components/post-metrics'
+import PartialStars from '@components/partial-stars.astro'
 
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
@@ -18,6 +19,27 @@ export const prerender = true
 const all = await getCollection('blog')
 const current = Astro.params.category!
 const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === current))
+
+/**
+ * Canonical rating is top-level (publish service writes rating + ratingScale,
+ * 0–5); fall back to the legacy nested musicReview.rating. Normalize to 0–5 for
+ * stars-only display (site-wide, RFC FEAT-view-redesign Step 4). null = unrated.
+ */
+function ratingStars(post: (typeof posts)[number]['data']): number | null {
+  let value: number | null = null
+  let scale: 5 | 10 = 5
+  if (post.rating != null) {
+    value = post.rating
+    scale = post.ratingScale
+  }
+  else if (post.musicReview?.rating?.value != null) {
+    value = post.musicReview.rating.value
+    scale = post.musicReview.rating.scale
+  }
+  if (value == null)
+    return null
+  return scale === 10 ? value / 2 : value
+}
 ---
 
 <Layout>
@@ -42,9 +64,11 @@ const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === curre
           <div class="py-6 text-faded">No posts in this category.</div>
         ) :
 (
-          posts.map(({ data: post }) => (
+          posts.map(({ data: post }) => {
+            const stars = ratingStars(post)
+            return (
             <div class="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-3">
-              <!-- Title (+ 평점 뱃지) -->
+              <!-- Title (+ 평점 별) -->
               <div class="flex items-center gap-2 min-w-0">
                 <Link
 	variant="highlight"
@@ -55,12 +79,9 @@ const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === curre
                   {post.title}
                 </Link>
 
-                {post.musicReview && post.musicReview.rating && (
-                  <span
-	class="shrink-0 rounded px-2 py-0.5 text-xs bg-muted text-highlight"
-	title="Rating"
-                  >
-                    ★ {post.musicReview.rating.value}/{post.musicReview.rating.scale}
+                {stars != null && (
+                  <span class="shrink-0">
+                    <PartialStars value={stars} size={14} ariaLabel={`${stars} / 5`} />
                   </span>
                 )}
               </div>
@@ -75,7 +96,8 @@ const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === curre
                 <PostMetricsItem client:load slug={post.slug} />
               </span>
             </div>
-          ))
+            )
+          })
         )
       }
     </div>
