@@ -88,6 +88,11 @@ const blog = defineCollection({
 			// 검색/인덱싱 포함 여부
 			searchIndex: z.boolean().default(true),
 
+			// DB post id (publish_service writes `postId:` to frontmatter).
+			// FEAT-post-edit-delete-ui Step 2: surfaced so the read page can
+			// deep-link an author into the editor at /write?id=<postId>.
+			postId: z.string().optional(),
+
 			// 앨범 / 아티스트 참조용 ID 리스트
 			albumIds: z.array(z.string()).default([]),
 			artistIds: z.array(z.string()).default([]),
