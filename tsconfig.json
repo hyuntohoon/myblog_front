@@ -14,6 +14,7 @@
 			"@assets/*": ["./src/assets/*"],
 			"@components/*": ["./src/components/*"],
 			"@layouts/*": ["./src/layouts/*"],
+			"@lib/*": ["./src/lib/*"],
 			"@constants": ["./src/constants.ts"],
 			"@utils": ["./src/utils.ts"],
 			"@styles/*": ["./src/styles/*"]
