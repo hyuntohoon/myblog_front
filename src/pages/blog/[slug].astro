@@ -59,6 +59,7 @@ const albumTitle = post.musicReview?.title ?? null
 const cover = post.albumCover || post.image || post.musicReview?.cover?.src
 const genres = post.musicReview?.genres ?? []
 const genreLabel = genres[0] ?? post.category ?? ''
+const recordLabel = post.musicReview?.label ?? null
 ---
 
 <Layout>
@@ -122,8 +123,10 @@ const genreLabel = genres[0] ?? post.category ?? ''
                 <div class="lfq-hero-placeholder">{(albumTitle ?? post.title).slice(0, 2).toUpperCase()}</div>}
             </div>
             <div class="lfq-hero-meta">
-              {(post.musicReview?.links?.spotify || releaseYear) && (
+              {(recordLabel || releaseYear) && (
                 <div class="lfq-hero-label">
+                  {recordLabel && <span class="mono-label">{recordLabel}</span>}
+                  {recordLabel && releaseYear && <span class="lfq-hero-dot">·</span>}
                   {releaseYear && <span class="mono-label">{releaseYear}</span>}
                 </div>
               )}
@@ -430,7 +433,14 @@ const genreLabel = genres[0] ?? post.category ?? ''
     color: var(--color-faded);
   }
   .lfq-hero-meta { display: flex; flex-direction: column; gap: 10px; }
+  .lfq-hero-label {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
   .lfq-hero-label .mono-label { color: var(--color-faded); }
+  .lfq-hero-dot { color: var(--color-faded); opacity: 0.6; }
   .lfq-hero-artist {
     font-family: var(--font-mono);
     font-size: 13px;
