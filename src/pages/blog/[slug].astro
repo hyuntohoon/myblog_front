@@ -352,9 +352,9 @@ const recordLabel = post.musicReview?.label ?? null
   .lfq-size-btn.is-active { background: var(--color-text); color: var(--color-bg); }
 
   .lfq-shell {
-    /* width (not max-width) so the column keeps a side gutter between
-       --measure and --measure-wide instead of touching the viewport edge. */
-    width: min(var(--measure), 100% - 2 * var(--space-4));
+    /* The parent .container already supplies the side gutter (its padding),
+       so a plain max-width here avoids double-gutter on narrow viewports. */
+    max-width: var(--measure);
     margin: 0 auto;
     padding: 24px 0 80px;
   }
