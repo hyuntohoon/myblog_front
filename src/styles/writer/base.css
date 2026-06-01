@@ -1,0 +1,44 @@
+/* ============================================================
+   Lowfreq Writer — CSS variables bridged to site vars (global.css)
+   Class names are exactly as in the design file (no prefix).
+   Only imported by write-layout.astro → no collision with other pages.
+   ============================================================ */
+
+:root {
+  --bg:       var(--color-bg);
+  --paper:    var(--color-paper);
+  --ink:      var(--color-text);
+  --ink-soft: var(--color-subtle);
+  --ink-faint: var(--color-faded);
+  --rule:     var(--color-border);
+  --rule-soft: var(--color-border-soft);
+  --accent:   var(--color-accent);
+  --spotify:  var(--color-spotify);
+  --serif:    var(--font-serif);
+  --sans:     var(--font-sans);
+  --mono:     var(--font-mono);
+  --kr-serif: 'Noto Serif KR', 'Newsreader', Georgia, serif;
+}
+
+/* ────────── RESET ────────── */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; cursor: pointer; }
+button { font-family: inherit; cursor: pointer; }
+input, textarea, select {
+  font-family: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
