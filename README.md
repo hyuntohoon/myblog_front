@@ -22,9 +22,9 @@
 
 **관리자 (글쓰기)**
 
-- Cognito 인증 후 글 작성 화면 진입
-- 에디터에서 앨범·아티스트 검색 및 연결, 평점(0~10) 입력
-- 글 저장 후 Publish API 호출로 정적 사이트 갱신 트리거
+- Cognito 인증 후 글 작성 화면 진입 (`/write`, `/drafts`)
+- 에디터에서 앨범·아티스트 검색 및 연결, 평점(0~5, 0.5 단위) 입력
+- 임시저장 / 발행 / 발행글 편집 · 아카이브 · 복원(restore) · 삭제
 
 ---
 
@@ -32,10 +32,11 @@
 
 | 항목       | 기술                        |
 | ---------- | --------------------------- |
-| 프레임워크 | Astro                       |
+| 프레임워크 | Astro 5 + React 19 (island) |
 | 배포       | S3 + CloudFront             |
 | CI/CD      | GitHub Actions              |
 | 인증       | AWS Cognito (관리자 글쓰기) |
+| 타입 계약  | `docs/contracts/openapi.json` → `pnpm generate:types` → `src/lib/api.gen.ts` |
 
 ---
 
@@ -43,20 +44,20 @@
 
 ```
 myblog_front
-  ├── → myblog_backend   : 글/카테고리 CRUD (POST, GET /posts, /categories)
-  ├── → myblog_music     : 음악 검색 (GET /search/unified, /search/candidates)
-  └── → myblog_publish   : 글 발행 트리거 (POST /publish)
+  ├── → myblog_backend   : 글/카테고리 CRUD + 발행 (POST /api/publish)
+  └── → myblog_music     : 음악 검색 (GET /api/music/search/{unified,candidates})
 ```
+
+> 옛 `myblog_publish` 서비스는 ARCH-11 으로 backend 에 흡수되었음. `/api/publish` 는 이제 backend 에서 직접 처리.
 
 ---
 
 ## 환경 변수
 
-| 변수                      | 설명                      |
-| ------------------------- | ------------------------- |
-| `PUBLIC_API_URL`          | 공개 API URL (Music API)  |
-| `PUBLIC_BACKEND_API_URL`  | 백엔드 API URL (Blog API) |
-| `PUBLIC_PUBLISH_BASE_URL` | 퍼블리싱 트리거 URL       |
+| 변수                      | 설명                                       |
+| ------------------------- | ------------------------------------------ |
+| `PUBLIC_API_URL`          | Music API 베이스 URL                       |
+| `PUBLIC_BACKEND_API_URL`  | Backend API 베이스 URL (글/카테고리/발행)  |
 
 ---
 
@@ -74,10 +75,12 @@ GitHub Actions가 `main` 브랜치 push 시 자동으로 Astro 빌드 → S3 업
 
 ## 관련 리포지토리
 
-| 리포                                                             | 역할                          |
-| ---------------------------------------------------------------- | ----------------------------- |
-| **myblog_front** (현재)                                          | 정적 사이트 + 글쓰기 UI       |
-| [`myblog_backend`](https://github.com/hyuntohoon/myblog_backend) | 글·카테고리 API + 인증        |
-| [`myblog_music`](https://github.com/hyuntohoon/myblog_music)     | DB-first 검색 + Sync 트리거   |
-| [`myblog_worker`](https://github.com/hyuntohoon/myblog_worker)   | SQS Consumer + Spotify 동기화 |
-| [`myblog_publish`](https://github.com/hyuntohoon/myblog_publish) | 정적 사이트 발행              |
+| 리포                                                                   | 역할                                  |
+| ---------------------------------------------------------------------- | ------------------------------------- |
+| **myblog_front** (현재)                                                | 정적 사이트 + 글쓰기 UI               |
+| [`myblog_backend`](https://github.com/hyuntohoon/myblog_backend)       | 글·카테고리 API + 인증 + 발행         |
+| [`myblog_music`](https://github.com/hyuntohoon/myblog_music)           | DB-first 검색 + Sync 트리거           |
+| [`myblog_worker`](https://github.com/hyuntohoon/myblog_worker)         | SQS Consumer + Spotify 동기화         |
+| [`myblog_shared_db`](https://github.com/hyuntohoon/myblog_shared_db)   | 공유 SQLAlchemy 모델 (git-pinned)     |
+
+> 옛 `myblog_publish` 서비스는 ARCH-11 으로 backend 에 흡수되었고 업스트림은 archived 됨.
