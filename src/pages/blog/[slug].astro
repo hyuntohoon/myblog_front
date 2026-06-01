@@ -359,9 +359,10 @@ const recordLabel = post.musicReview?.label ?? null
     padding: 24px 0 80px;
   }
 
-  /* Pitchfork-style break-out: album hero + tracklist extend past the prose
-     measure to --measure-wide, staying centered on the column. Prose, header,
-     and byline keep the narrow --measure for readability. */
+  /* Pitchfork-style break-out: header + album hero + tracklist extend past the
+     prose measure to --measure-wide, staying centered on the column. The reading
+     prose keeps the narrow --measure for readability. */
+  .lfq-header,
   .lfq-hero,
   .lfq-tracklist {
     width: min(var(--measure-wide), 100vw - 2 * var(--space-4));
