@@ -315,7 +315,7 @@ const recordLabel = post.musicReview?.label ?? null
     top: 0; left: 0; right: 0;
     height: 2px;
     background: transparent;
-    z-index: 60;
+    z-index: var(--z-progress);
     pointer-events: none;
   }
   .lfq-prog-fill {
@@ -329,7 +329,7 @@ const recordLabel = post.musicReview?.label ?? null
   .lfq-size-toggle {
     position: sticky;
     top: 10px;
-    z-index: 40;
+    z-index: var(--z-nav);
     display: flex;
     gap: 0;
     margin: 0 0 0 auto;
@@ -352,9 +352,20 @@ const recordLabel = post.musicReview?.label ?? null
   .lfq-size-btn.is-active { background: var(--color-text); color: var(--color-bg); }
 
   .lfq-shell {
-    max-width: 720px;
+    /* The parent .container already supplies the side gutter (its padding),
+       so a plain max-width here avoids double-gutter on narrow viewports. */
+    max-width: var(--measure);
     margin: 0 auto;
     padding: 24px 0 80px;
+  }
+
+  /* Pitchfork-style break-out: album hero + tracklist extend past the prose
+     measure to --measure-wide, staying centered on the column. Prose, header,
+     and byline keep the narrow --measure for readability. */
+  .lfq-hero,
+  .lfq-tracklist {
+    width: min(var(--measure-wide), 100vw - 2 * var(--space-4));
+    margin-left: calc(50% - min(var(--measure-wide), 100vw - 2 * var(--space-4)) / 2);
   }
 
   /* ──────── Header ──────── */
@@ -536,7 +547,8 @@ const recordLabel = post.musicReview?.label ?? null
 
   /* ──────── Responsive ──────── */
   @media (max-width: 720px) {
-    .lfq-shell { padding: 16px 16px 56px; }
+    /* width formula already supplies the side gutter; vertical padding only. */
+    .lfq-shell { padding: 16px 0 56px; }
     .lfq-hero { grid-template-columns: 1fr; gap: 24px; }
     .lfq-hero-cover { width: 100%; max-width: 320px; }
     .lfq-size-toggle { top: 6px; }

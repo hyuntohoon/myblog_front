@@ -1,0 +1,22 @@
+/* ────────── TOAST ────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 12px 22px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+  z-index: var(--z-toast);
+  animation: toastIn 0.25s ease-out;
+  border-left: 3px solid var(--accent);
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+

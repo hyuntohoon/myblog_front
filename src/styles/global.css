@@ -29,6 +29,47 @@
 	/* Icon chip */
 	--color-ic-bg:     #ebe7df;
 	--color-ic-border: rgba(26, 26, 26, 0.12);
+
+	/* Brand — Spotify green (fixed, no dark variant) */
+	--color-spotify:   #1DB954;
+
+	/* ─── Content measure ─── */
+	/* Single source of truth for the reading/writing column. ≈76ch at 18px serif.
+	   --measure-wide is the Pitchfork-style break-out band for album hero + tracklist. */
+	--measure:         800px;
+	--measure-wide:    1080px;
+
+	/* ─── z-index scale ─── */
+	/* Values preserve the previous literals 1:1 so substitution is visually inert.
+	   Order: raised < bubble < nav < sticky < progress < overlay < panel < toast. */
+	--z-raised:        2;
+	--z-bubble:        30;
+	--z-nav:           40;
+	--z-sticky:        50;
+	--z-progress:      60;
+	--z-overlay:       80;
+	--z-panel:         90;
+	--z-toast:         100;
+
+	/* ─── Spacing scale ─── (--spacing is Tailwind's own namespace; --space-* is ours) */
+	--space-1:         4px;
+	--space-2:         8px;
+	--space-3:         12px;
+	--space-4:         16px;
+	--space-5:         20px;
+	--space-6:         24px;
+	--space-7:         28px;
+	--space-8:         32px;
+	--space-10:        40px;
+	--space-14:        56px;
+	--space-20:        80px;
+	--space-30:        120px;
+
+	/* ─── Radius scale ─── */
+	--radius-sm:       3px;
+	--radius-md:       6px;
+	--radius-lg:       8px;
+	--radius-pill:     999px;
 }
 
 /* ─── Dark-mode overrides ─── */

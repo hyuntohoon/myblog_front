@@ -1,0 +1,24 @@
+/* ────────── RESPONSIVE ────────── */
+@media (max-width: 760px) {
+  .chrome {
+    padding: 10px 16px;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+  }
+  .chrome-c { display: none; }
+  .chrome-status { display: none; }
+  .chrome-l { flex-wrap: wrap; gap: 6px; }
+  .surface { padding: 32px 18px 100px; }
+  .hdr-card {
+    grid-template-columns: 56px 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 10px;
+  }
+  .hdr-cover { width: 56px; height: 56px; }
+  .hdr-rating, .hdr-change, .hdr-bnm { grid-column: 1 / -1; }
+  .hdr-rating { flex-direction: row; align-items: center; justify-content: space-between; }
+  .hdr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .prev-subject { grid-template-columns: 1fr; }
+  .prev-cover { width: 160px; height: 160px; }
+  .settings-panel { width: 100%; }
+}
