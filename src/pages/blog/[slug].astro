@@ -12,9 +12,6 @@ import Playground from '@components/playground.astro'
 import ReviewHero from '@components/review-hero.astro'
 import PartialStars from '@components/partial-stars.astro'
 
-const detailClient = '/src/scripts/albumDetail.client.ts'
-const detailFetchClient = '/src/scripts/albumDetail.fetch.client.ts'
-
 export const prerender = true
 
 export async function getStaticPaths() {
@@ -606,5 +603,12 @@ const recordLabel = post.musicReview?.label ?? null
     editLink.hidden = false
 </script>
 
-<script type="module" src={detailClient}></script>
-<script type="module" src={detailFetchClient}></script>
+<script>
+  // Album tracklist: renderer first (registers the album:detail listener),
+  // then fetcher (dispatches album:detail). Imported as side-effect modules so
+  // Astro bundles + fingerprints them to /_astro/*.js — referencing the raw
+  // /src/scripts/*.ts paths via src={...} shipped un-transpiled .ts to prod,
+  // which the browser can't execute (no fetch ever fired).
+  import '../../scripts/albumDetail.client.ts'
+  import '../../scripts/albumDetail.fetch.client.ts'
+</script>
