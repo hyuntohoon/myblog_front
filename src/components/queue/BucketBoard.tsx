@@ -18,6 +18,7 @@ import { AlbumCardBody } from './AlbumCard'
 import AddAlbumModal from './AddAlbumModal'
 import type { AddOutcome } from './AddAlbumModal'
 import AlbumDetailPanel from './AlbumDetailPanel'
+import ReviewDrawer from './ReviewDrawer'
 import * as api from './api'
 import type { Bucket, BucketItem } from './api'
 
@@ -27,6 +28,7 @@ export default function BucketBoard() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [addTarget, setAddTarget] = useState<Bucket | null>(null)
   const [detailItem, setDetailItem] = useState<BucketItem | null>(null)
+  const [drawerItem, setDrawerItem] = useState<{ item: BucketItem, bucketId: string } | null>(null)
   const [composing, setComposing] = useState(false)
   const [newName, setNewName] = useState('')
   const [toast, setToast] = useState<string | null>(null)
@@ -271,6 +273,43 @@ export default function BucketBoard() {
     }
   }
 
+  function openDrawer(item: BucketItem) {
+    const bucketId = containerOf(item.id)
+    if (!bucketId)
+      return
+    setDetailItem(null)
+    setDrawerItem({ item, bucketId })
+  }
+
+  // After a successful inline publish: mark the item published + link the post
+  // (the drawer already persisted status/post_id), then move it into the
+  // "작성 완료" (is_done) bucket if one exists. The drawer owns the post-link
+  // persistence; the board owns the cross-bucket move (reorder).
+  function handlePublished(srcBucketId: string, itemId: string, postId: string) {
+    const done = buckets.find(b => b.is_done)
+    let snapshot = buckets.map(b => ({
+      ...b,
+      items: (b.items ?? []).map(i => (i.id === itemId ? { ...i, status: 'published', post_id: postId } : i)),
+    }))
+    const moving = snapshot.flatMap(b => b.items ?? []).find(i => i.id === itemId)
+    const willMove = !!done && !!moving && done.id !== srcBucketId
+    if (willMove && done && moving) {
+      snapshot = snapshot.map((b) => {
+        if (b.id === srcBucketId)
+          return { ...b, items: (b.items ?? []).filter(i => i.id !== itemId) }
+        if (b.id === done.id)
+          return { ...b, items: [...(b.items ?? []), moving] }
+        return b
+      })
+      setBuckets(snapshot)
+      void persist(snapshot)
+    }
+    else {
+      setBuckets(snapshot)
+    }
+    flashToast(willMove ? '발행 완료 — “작성 완료”로 이동했습니다' : '발행 완료')
+  }
+
   // ── render ─────────────────────────────────────────────────────────────────
   if (load === 'loading')
     return <div className="qb-state">버킷을 불러오는 중…</div>
@@ -366,7 +405,21 @@ setComposing(false)
 	onClose={() => setAddTarget(null)}
         />
       )}
-      {detailItem && <AlbumDetailPanel item={detailItem} onClose={() => setDetailItem(null)} />}
+      {detailItem && (
+        <AlbumDetailPanel
+	item={detailItem}
+	onClose={() => setDetailItem(null)}
+	onWriteReview={() => openDrawer(detailItem)}
+        />
+      )}
+      {drawerItem && (
+        <ReviewDrawer
+	item={drawerItem.item}
+	bucketId={drawerItem.bucketId}
+	onClose={() => setDrawerItem(null)}
+	onPublished={postId => handlePublished(drawerItem.bucketId, drawerItem.item.id, postId)}
+        />
+      )}
       {toast && <div className="qb-toast" role="status">{toast}</div>}
     </div>
   )

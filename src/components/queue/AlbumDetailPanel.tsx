@@ -17,9 +17,10 @@ interface AlbumDetail {
 interface Props {
   item: BucketItem
   onClose: () => void
+  onWriteReview: () => void
 }
 
-export default function AlbumDetailPanel({ item, onClose }: Props) {
+export default function AlbumDetailPanel({ item, onClose, onWriteReview }: Props) {
   const [detail, setDetail] = useState<AlbumDetail | null>(null)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
 
@@ -97,6 +98,12 @@ export default function AlbumDetailPanel({ item, onClose }: Props) {
               {item.status === 'published' && <span className="qb-chip qb-chip-done">발행됨</span>}
             </div>
           </div>
+        </div>
+
+        <div className="qb-detail-actions">
+          <button type="button" className="qb-detail-write" onClick={onWriteReview}>
+            {item.status === 'published' ? '평론 다시 보기' : '평론 작성'}
+          </button>
         </div>
 
         {item.note && (
