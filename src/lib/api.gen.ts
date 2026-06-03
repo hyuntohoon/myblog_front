@@ -4,6 +4,94 @@
  */
 
 export interface paths {
+    "/api/buckets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Buckets */
+        get: operations["list_buckets_api_buckets_get"];
+        put?: never;
+        /** Create Bucket */
+        post: operations["create_bucket_api_buckets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder */
+        put: operations["reorder_api_buckets_reorder_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets/{bucket_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Bucket */
+        delete: operations["delete_bucket_api_buckets__bucket_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Bucket */
+        patch: operations["update_bucket_api_buckets__bucket_id__patch"];
+        trace?: never;
+    };
+    "/api/buckets/{bucket_id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Item */
+        post: operations["add_item_api_buckets__bucket_id__items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets/{bucket_id}/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Item */
+        delete: operations["delete_item_api_buckets__bucket_id__items__item_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Item */
+        patch: operations["update_item_api_buckets__bucket_id__items__item_id__patch"];
+        trace?: never;
+    };
     "/api/categories": {
         parameters: {
             query?: never;
@@ -284,15 +372,87 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AddBucketItemRequest */
+        Backend_AddBucketItemRequest: {
+            /** Album Id */
+            album_id: string;
+            /** Note */
+            note?: string | null;
+        };
         /** AddCategoryRequest */
         Backend_AddCategoryRequest: {
             /** Name */
             name: string;
         };
+        /** AlbumBrief */
+        Backend_AlbumBrief: {
+            /** Artist Names */
+            artist_names?: string[];
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Id */
+            id: string;
+            /** Popularity */
+            popularity?: number | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** BucketItemResponse */
+        Backend_BucketItemResponse: {
+            album: components["schemas"]["Backend_AlbumBrief"];
+            /** Album Id */
+            album_id: string;
+            /**
+             * Already Reviewed
+             * @default false
+             */
+            already_reviewed: boolean;
+            /** Id */
+            id: string;
+            /** Note */
+            note?: string | null;
+            /** Position */
+            position: number;
+            /** Post Id */
+            post_id?: string | null;
+            /** Rec Reason */
+            rec_reason?: string | null;
+            /** Status */
+            status: string;
+        };
+        /** BucketResponse */
+        Backend_BucketResponse: {
+            /** Color */
+            color?: string | null;
+            /** Id */
+            id: string;
+            /** Is Done */
+            is_done: boolean;
+            /** Items */
+            items?: components["schemas"]["Backend_BucketItemResponse"][];
+            /** Name */
+            name: string;
+            /** Position */
+            position: number;
+        };
+        /** BucketsResponse */
+        Backend_BucketsResponse: {
+            /** Buckets */
+            buckets?: components["schemas"]["Backend_BucketResponse"][];
+        };
         /** CategoryListResponse */
         Backend_CategoryListResponse: {
             /** Categories */
             categories: string[];
+        };
+        /** CreateBucketRequest */
+        Backend_CreateBucketRequest: {
+            /** Color */
+            color?: string | null;
+            /** Name */
+            name: string;
         };
         /** CreatePostReq */
         Backend_CreatePostReq: {
@@ -409,6 +569,38 @@ export interface components {
             comments: number;
             /** Likes */
             likes: number;
+        };
+        /** ReorderBucket */
+        Backend_ReorderBucket: {
+            /** Id */
+            id: string;
+            /** Item Ids */
+            item_ids?: string[];
+        };
+        /** ReorderRequest */
+        Backend_ReorderRequest: {
+            /** Buckets */
+            buckets?: components["schemas"]["Backend_ReorderBucket"][];
+        };
+        /** UpdateBucketItemRequest */
+        Backend_UpdateBucketItemRequest: {
+            /** Note */
+            note?: string | null;
+            /** Post Id */
+            post_id?: string | null;
+            /** Status */
+            status?: ("candidate" | "drafting" | "published") | null;
+        };
+        /** UpdateBucketRequest */
+        Backend_UpdateBucketRequest: {
+            /** Color */
+            color?: string | null;
+            /** Is Done */
+            is_done?: boolean | null;
+            /** Name */
+            name?: string | null;
+            /** Position */
+            position?: number | null;
         };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
@@ -809,6 +1001,262 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_buckets_api_buckets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_BucketsResponse"];
+                };
+            };
+        };
+    };
+    create_bucket_api_buckets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_CreateBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_BucketResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_api_buckets_reorder_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_ReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_bucket_api_buckets__bucket_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_bucket_api_buckets__bucket_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_UpdateBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_BucketResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_item_api_buckets__bucket_id__items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AddBucketItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_BucketItemResponse"];
+                };
+            };
+            /** @description Album already in this bucket */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_item_api_buckets__bucket_id__items__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_item_api_buckets__bucket_id__items__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_UpdateBucketItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_BucketItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_categories_api_categories_get: {
         parameters: {
             query?: never;
