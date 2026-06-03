@@ -10,6 +10,7 @@ import { SECTIONS } from './types'
 import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 
 const DRAFT_KEY = 'lowfreq-draft'
+const MUSIC = import.meta.env.PUBLIC_API_URL as string
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -133,13 +134,44 @@ export default function WriterApp() {
     toastTimer.current = setTimeout(() => setToast(''), 2600)
   }, [])
 
-  // Load draft from DB when ?id= is present in URL
+  // FEAT-review-bucket-board Step 5: prefill the album subject from ?album=<id>
+  // when arriving from the queue's "전체 편집기로 열기". Only the album is seeded;
+  // the writer's own `lowfreq-draft` body/score are left untouched.
+  const prefillAlbum = useCallback(async (albumId: string) => {
+    try {
+      const r = await fetch(`${MUSIC}/api/music/albums/${encodeURIComponent(albumId)}`)
+      if (!r.ok)
+        return
+      const json = await r.json() as {
+        album: { id: string, title: string, cover_url: string | null, release_date: string | null, best_new?: boolean }
+        artists?: Array<{ id: string, name: string }>
+        tracks?: Array<{ id: string, title: string, track_no: number | null }>
+      }
+      onSubjectSelect({
+        id: json.album.id,
+        title: json.album.title,
+        cover_url: json.album.cover_url,
+        release_date: json.album.release_date,
+        artists: (json.artists ?? []).map(a => ({ id: a.id, name: a.name })),
+        tracks: (json.tracks ?? []).map(t => ({ id: t.id, title: t.title, track_no: t.track_no })),
+        kind: 'album',
+        best_new: json.album.best_new ?? false,
+      })
+    }
+    catch { /* leave the form empty — user can search manually */ }
+  }, [onSubjectSelect])
+
+  // Load draft from DB when ?id= is present; otherwise prefill from ?album=.
   useEffect(() => {
     loaded.current = true
     const params = new URLSearchParams(window.location.search)
     const id = params.get('id')
-    if (!id)
+    if (!id) {
+      const albumParam = params.get('album')
+      if (albumParam)
+        void prefillAlbum(albumParam)
       return
+    }
     fetchPostById(id).then((post) => {
       if (!post)
         return
@@ -159,7 +191,7 @@ export default function WriterApp() {
       if (typeof post.subject_best_new === 'boolean')
         setSubjectBestNew(post.subject_best_new)
     })
-  }, [])
+  }, [prefillAlbum])
 
   // Autosave
   useEffect(() => {
