@@ -1,0 +1,245 @@
+/* ============================================================
+   Member dashboard (/profile) — component classes.
+   Design tokens already live in global.css; this only adds the
+   component vocabulary from the prototype's ds.css, `lf-`-prefixed
+   so it is globally safe (drag overlays portal to <body>).
+   ============================================================ */
+
+/* ── type helpers ───────────────────────────────────────── */
+.lf-mono { font-family: var(--font-mono); }
+.lf-serif { font-family: var(--font-serif); }
+.lf-sans { font-family: var(--font-sans); }
+.lf-italic { font-style: italic; }
+
+.lf-kicker {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+.lf-meta {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+/* ── surfaces ───────────────────────────────────────────── */
+.lf-panel {
+	background: var(--color-paper);
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-md);
+}
+
+/* ── cover (square editorial placeholder) ───────────────── */
+.lf-cover {
+	position: relative;
+	overflow: hidden;
+	background: var(--color-paper);
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-sm);
+	flex: 0 0 auto;
+}
+.lf-cover-ph {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	font-family: var(--font-serif);
+	font-style: italic;
+	font-weight: 600;
+	color: var(--color-faded);
+	letter-spacing: -0.03em;
+}
+
+/* ── chips ──────────────────────────────────────────────── */
+.lf-chip {
+	flex-shrink: 0;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid var(--color-border);
+	border-radius: 0;
+	padding: 6px 11px;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.lf-chip:hover { border-color: var(--color-text); }
+.lf-chip[data-on='true'] {
+	background: var(--color-text);
+	color: var(--color-bg);
+	border-color: var(--color-text);
+}
+
+/* ── buttons ────────────────────────────────────────────── */
+.lf-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	padding: 10px 16px;
+	transition: background 0.16s, color 0.16s, border-color 0.16s, opacity 0.16s;
+}
+.lf-btn:hover { border-color: var(--color-text); }
+.lf-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.lf-btn-solid {
+	color: var(--color-bg);
+	background: var(--color-text);
+	border-color: var(--color-text);
+}
+.lf-btn-solid:hover { opacity: 0.84; border-color: var(--color-text); }
+.lf-btn-accent {
+	color: #fff;
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+}
+.lf-btn-accent:hover { opacity: 0.88; }
+
+/* ── partial-fill stars (0–5) ───────────────────────────── */
+.lf-stars {
+	position: relative;
+	display: inline-block;
+	font-size: var(--star-size, 16px);
+	line-height: 1;
+	letter-spacing: 0.05em;
+	color: transparent;
+	user-select: none;
+}
+.lf-stars-bg,
+.lf-stars-fg { display: inline-block; font-family: inherit; }
+.lf-stars-bg { color: var(--color-faded); }
+.lf-stars-fg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: var(--star-pct, 0%);
+	overflow: hidden;
+	white-space: nowrap;
+	color: var(--color-accent);
+}
+.lf-unrated {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+/* ── sample badge ───────────────────────────────────────── */
+.lf-sample {
+	font-family: var(--font-mono);
+	font-size: 9px;
+	font-weight: 500;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--color-accent);
+	border: 1px solid color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
+	border-radius: var(--radius-pill);
+	padding: 2px 7px;
+	white-space: nowrap;
+}
+
+/* ── slide-over (album detail) ──────────────────────────── */
+.lf-scrim {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-panel);
+	display: flex;
+	justify-content: flex-end;
+	background: rgba(10, 9, 8, 0.5);
+	backdrop-filter: blur(2px);
+	animation: lf-fade 0.16s ease;
+}
+.lf-slideover {
+	position: relative;
+	width: min(440px, 100%);
+	height: 100%;
+	overflow-y: auto;
+	background: var(--color-bg);
+	border-left: 1px solid var(--color-border);
+	padding: 32px 26px 44px;
+	animation: lf-slide 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* ── drag & drop affordances ────────────────────────────── */
+.lf-drag-handle { cursor: grab; }
+.lf-drag-handle:active { cursor: grabbing; }
+.lf-is-dragging { opacity: 0.45; }
+.lf-drop-on {
+	background: color-mix(in srgb, var(--color-accent) 8%, transparent) !important;
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+/* ── mini icon button ───────────────────────────────────── */
+.lf-iconbtn {
+	width: 26px;
+	height: 26px;
+	display: grid;
+	place-items: center;
+	font-size: 12px;
+	line-height: 1;
+	color: var(--color-faded);
+	background: none;
+	border: 1px solid transparent;
+	border-radius: 3px;
+	cursor: pointer;
+	transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.lf-iconbtn:hover { color: var(--color-text); border-color: var(--color-border); }
+.lf-iconbtn.danger:hover { color: var(--color-accent); border-color: var(--color-accent); }
+
+/* ── entrance + equalizer ───────────────────────────────── */
+@keyframes lf-rise {
+	from { opacity: 0; transform: translateY(8px); }
+	to { opacity: 1; transform: none; }
+}
+.lf-rise { animation: lf-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+@keyframes lf-eq {
+	0%, 100% { transform: scaleY(0.3); }
+	50% { transform: scaleY(1); }
+}
+@keyframes lf-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lf-slide {
+	from { transform: translateX(28px); opacity: 0; }
+	to { transform: none; opacity: 1; }
+}
+
+/* ── layout shell ───────────────────────────────────────── */
+.member-root {
+	font-family: var(--font-serif);
+	max-width: var(--measure-wide);
+	margin: 0 auto;
+	padding: 28px clamp(14px, 4vw, 44px) 80px;
+}
+.member-root *::-webkit-scrollbar { width: 9px; height: 9px; }
+.member-root *::-webkit-scrollbar-thumb {
+	background: var(--color-border);
+	border-radius: 20px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+
+@media (max-width: 880px) {
+	.lf-sidebar-grid { grid-template-columns: 1fr !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.lf-rise, .lf-scrim, .lf-slideover { animation: none; }
+}

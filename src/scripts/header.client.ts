@@ -5,6 +5,7 @@ const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null
 const loginBtn = $('#login-btn')
 const logoutBtn = $('#logout-btn')
 const writeLink = $('#write-link')
+const profileLink = $('#profile-link')
 
 function syncAuthUI() {
 	const logged = isLoggedIn()
@@ -12,11 +13,13 @@ function syncAuthUI() {
 		loginBtn?.classList.add('hidden')
 		logoutBtn?.classList.remove('hidden')
 		writeLink?.classList.remove('hidden')
+		profileLink?.classList.remove('hidden')
 	}
  else {
 		loginBtn?.classList.remove('hidden')
 		logoutBtn?.classList.add('hidden')
 		writeLink?.classList.add('hidden')
+		profileLink?.classList.add('hidden')
 	}
 }
 
