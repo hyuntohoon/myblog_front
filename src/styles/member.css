@@ -223,11 +223,14 @@
 
 /* ── layout shell ───────────────────────────────────────── */
 .member-root {
+	--mr-pad: 22px; /* density: regular */
 	font-family: var(--font-serif);
 	max-width: var(--measure-wide);
 	margin: 0 auto;
-	padding: 28px clamp(14px, 4vw, 44px) 80px;
+	padding: var(--mr-pad) clamp(var(--mr-pad), 4vw, 44px) 80px;
 }
+.member-root[data-density='compact'] { --mr-pad: 14px; }
+.member-root[data-density='comfy'] { --mr-pad: 30px; }
 .member-root *::-webkit-scrollbar { width: 9px; height: 9px; }
 .member-root *::-webkit-scrollbar-thumb {
 	background: var(--color-border);

@@ -5,7 +5,7 @@
 import type { ChartStyle } from './charts'
 import type { NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlbumDetail } from './AlbumDetail'
 import { BucketBoard } from './BucketBoard'
 import { LibraryTab } from './LibraryTab'
@@ -22,15 +22,64 @@ const TABS = [
   { id: 'stats', label: '통계' },
 ]
 
+/* ── view preferences (layout + density), persisted to localStorage ──────── */
+type Layout = 'sidebar' | 'stacked' | 'dashboard'
+type Density = 'compact' | 'regular' | 'comfy'
+
+const LAYOUT_KEY = 'lf_layout'
+const DENSITY_KEY = 'lf_density'
+
+const LAYOUT_OPTS: { v: Layout, label: string }[] = [
+  { v: 'sidebar', label: '사이드바' },
+  { v: 'stacked', label: '에디토리얼' },
+  { v: 'dashboard', label: '대시보드' },
+]
+const DENSITY_OPTS: { v: Density, label: string }[] = [
+  { v: 'compact', label: '콤팩트' },
+  { v: 'regular', label: '보통' },
+  { v: 'comfy', label: '넓게' },
+]
+
+/** Read a persisted enum pref, falling back when storage/value is unusable. */
+function readPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+  if (typeof localStorage === 'undefined')
+    return fallback
+  try {
+    const v = localStorage.getItem(key)
+    if (v && (allowed as readonly string[]).includes(v))
+      return v as T
+  }
+  catch { /* ignore */ }
+  return fallback
+}
+
+function STAT_ITEMS(s: MemberProfile['stats']): [string, string | number][] {
+  return [
+  ['평론', s.reviews],
+  ['들은 앨범', s.albums.toLocaleString()],
+  ['평균 평점', s.avgRating == null ? '—' : s.avgRating.toFixed(1)],
+]
+}
+
+/** Stacked stat grid for the sidebar panel. */
 function StatGrid({ s }: { s: MemberProfile['stats'] }) {
-  const items: [string, string | number][] = [
-    ['평론', s.reviews],
-    ['들은 앨범', s.albums.toLocaleString()],
-    ['평균 평점', s.avgRating == null ? '—' : s.avgRating.toFixed(1)],
-  ]
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '18px 14px' }}>
-      {items.map(([l, v], i) => <Stat key={l} label={l} value={v} accent={i === 2} />)}
+      {STAT_ITEMS(s).map(([l, v], i) => <Stat key={l} label={l} value={v} accent={i === 2} />)}
+    </div>
+  )
+}
+
+/**
+ * Horizontal stat row for the hero / bar layouts. The prototype showed six
+ * stats; the three social ones (followers/following/lists) stay hidden in
+ * Step 1 (RFC non-goal: hidden, not faked), so we lay out the real three.
+ */
+function StatRow({ s }: { s: MemberProfile['stats'] }) {
+  const items = STAT_ITEMS(s)
+  return (
+    <div style={{ display: 'flex', gap: 'clamp(22px, 5vw, 52px)', flexWrap: 'wrap' }}>
+      {items.map(([l, v], i) => <Stat key={l} label={l} value={v} accent={i === items.length - 1} />)}
     </div>
   )
 }
@@ -67,6 +116,124 @@ SINCE
   )
 }
 
+/** Editorial layout header: full-width hero with a big serif headline. */
+function ProfileHero({ u }: { u: MemberProfile }) {
+  return (
+    <header style={{ display: 'flex', flexDirection: 'column', gap: 22, borderBottom: '1px solid var(--color-text)', paddingBottom: 28, marginBottom: 30 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
+        <Avatar size={88} name={u.name} />
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <div className="lf-kicker" style={{ marginBottom: 8 }}>MEMBER · CRITIC</div>
+          <h1 className="lf-serif" style={{ fontSize: 'clamp(34px, 6vw, 52px)', fontWeight: 500, letterSpacing: '-.025em', lineHeight: 1, margin: 0 }}>{u.name}</h1>
+          <p className="lf-serif lf-italic" style={{ margin: '12px 0 0', fontSize: 16, color: 'var(--color-subtle)', lineHeight: 1.5 }}>
+            “
+            {u.tagline}
+            ”
+          </p>
+        </div>
+        <a href="/write" className="lf-btn lf-btn-solid" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>새 평론 쓰기</a>
+      </div>
+      <StatRow s={u.stats} />
+    </header>
+  )
+}
+
+/** Dashboard layout header: a single compact bar above full-width content. */
+function ProfileBar({ u }: { u: MemberProfile }) {
+  return (
+    <header className="lf-panel" style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '16px 20px', marginBottom: 28, flexWrap: 'wrap' }}>
+      <Avatar size={48} name={u.name} />
+      <div style={{ minWidth: 130 }}>
+        <h1 className="lf-serif" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1.05, margin: 0 }}>{u.name}</h1>
+        <div className="lf-mono" style={{ fontSize: 11, color: 'var(--color-subtle)', marginTop: 3 }}>
+          @
+          {u.handle}
+        </div>
+      </div>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 200 }}>
+        <StatRow s={u.stats} />
+      </div>
+      <a href="/write" className="lf-btn lf-btn-solid" style={{ textDecoration: 'none' }}>새 평론 쓰기</a>
+    </header>
+  )
+}
+
+/** A labeled group of mutually-exclusive options inside the settings menu. */
+function MenuGroup<T extends string>({ label, value, options, onChange }: { label: string, value: T, options: { v: T, label: string }[], onChange: (v: T) => void }) {
+  return (
+    <div>
+      <div className="lf-kicker" style={{ marginBottom: 8 }}>{label}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+        {options.map(o => (
+          <button
+	key={o.v}
+	type="button"
+	onClick={() => onChange(o.v)}
+	className="lf-mono"
+	aria-pressed={value === o.v}
+	style={{
+              border: '1px solid var(--color-border)',
+              padding: '7px 4px',
+              fontSize: 10.5,
+              letterSpacing: '0.03em',
+              cursor: 'pointer',
+              background: value === o.v ? 'var(--color-text)' : 'transparent',
+              color: value === o.v ? 'var(--color-bg)' : 'var(--color-text)',
+              transition: 'background .14s, color .14s',
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** ⚙ dropdown beside the theme toggle: pick layout + density. */
+function SettingsMenu({ layout, setLayout, density, setDensity }: { layout: Layout, setLayout: (v: Layout) => void, density: Density, setDensity: (v: Density) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open)
+      return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape')
+        setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-label="보기 설정" aria-expanded={open} className="lf-btn" style={{ padding: '7px 9px', borderRadius: 3 }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+      {open && (
+        <div
+	className="lf-panel"
+	role="menu"
+	style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 'var(--z-nav)', width: 224, padding: 14, display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 10px 30px rgba(10, 9, 8, 0.16)' }}
+        >
+          <MenuGroup label="레이아웃" value={layout} options={LAYOUT_OPTS} onChange={setLayout} />
+          <MenuGroup label="여백" value={density} options={DENSITY_OPTS} onChange={setDensity} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ThemeToggle() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => (typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'))
   useEffect(() => {
@@ -95,7 +262,22 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   const [npStyle, setNpStyle] = useState<NpStyle>('banner')
   const [chartStyle, setChartStyle] = useState<ChartStyle>('bar')
   const [detail, setDetail] = useState<DetailTarget | null>(null)
+  const [layout, setLayout] = useState<Layout>(() => readPref(LAYOUT_KEY, LAYOUT_OPTS.map(o => o.v), 'sidebar'))
+  const [density, setDensity] = useState<Density>(() => readPref(DENSITY_KEY, DENSITY_OPTS.map(o => o.v), 'regular'))
   const openDetail = (a: DetailTarget) => setDetail(a)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYOUT_KEY, layout)
+    }
+    catch { /* ignore */ }
+  }, [layout])
+  useEffect(() => {
+    try {
+      localStorage.setItem(DENSITY_KEY, density)
+    }
+    catch { /* ignore */ }
+  }, [density])
 
   const tabNav = (
     <div className="lf-mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginBottom: 26, overflowX: 'auto' }}>
@@ -122,22 +304,43 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
     </div>
   )
 
+  const body = (
+    <div>
+      {tabNav}
+      {content}
+    </div>
+  )
+
   return (
-    <div className="member-root">
+    <div className="member-root" data-density={density}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 18 }}>
         <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-subtle)' }}>
 @
 {profile.handle}
         </span>
+        <SettingsMenu layout={layout} setLayout={setLayout} density={density} setDensity={setDensity} />
         <ThemeToggle />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '318px 1fr', gap: 30, alignItems: 'start' }} className="lf-sidebar-grid">
-        <ProfileSidebar u={profile} />
-        <div>
-{tabNav}
-{content}
+
+      {layout === 'sidebar' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '318px 1fr', gap: 30, alignItems: 'start' }} className="lf-sidebar-grid">
+          <ProfileSidebar u={profile} />
+          {body}
         </div>
-      </div>
+      )}
+      {layout === 'stacked' && (
+        <>
+          <ProfileHero u={profile} />
+          <div style={{ maxWidth: 860, margin: '0 auto' }}>{body}</div>
+        </>
+      )}
+      {layout === 'dashboard' && (
+        <>
+          <ProfileBar u={profile} />
+          {body}
+        </>
+      )}
+
       {detail && <AlbumDetail album={detail} onClose={() => setDetail(null)} />}
     </div>
   )
