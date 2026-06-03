@@ -1,0 +1,478 @@
+// Member dashboard — 개요 customizable widget dashboard.
+//
+// Row-based board: `rows` is an array of rows, each row an array of widget ids
+// sharing the row width equally (1 → full, 2 → ½, 3 → ⅓ …). Rows are explicit
+// and fixed: dragging shows an insertion indicator (vertical bar = into a row,
+// horizontal bar = new row) computed from a geometry snapshot taken at drag
+// start, so nothing reflows mid-drag — only the lifted overlay (portaled to
+// <body>) moves. On drop the new arrangement commits. Layout persists to
+// localStorage. Ported from overview.jsx (kept pointer-based, NOT @dnd-kit).
+import type { CSSProperties, ReactNode } from 'react'
+import type { ChartStyle } from './charts'
+import type { NpStyle } from './NowPlaying'
+import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/member'
+import { useEffect, useReducer, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { bucketCount, getActivity, getArtists, getGenres, getRecentAlbums, getRecentTracks, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
+import { DistChart } from './charts'
+import { NowPlaying } from './NowPlaying'
+import { BucketShortcut, Cover, SampleBadge, SectionTitle, Seg, Stars } from './ui'
+
+type ViewKey = 'list' | 'grid' | 'card'
+
+interface DashCtx {
+  views: Record<string, ViewKey>
+  setView: (id: string, v: ViewKey) => void
+  onOpen: (t: DetailTarget) => void
+  npStyle: NpStyle
+  setNpStyle: (s: NpStyle) => void
+  chartStyle: ChartStyle
+  goBucket: () => void
+  reviews: MemberReview[]
+}
+
+interface HandleProps { onPointerDown?: (e: React.PointerEvent) => void, style: CSSProperties }
+
+/* ── album / track collections (list · grid · card) ──────── */
+function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKey, onOpen: (t: DetailTarget) => void }) {
+  if (view === 'grid') {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
+        {items.map(a => (
+          <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+            <Cover label={a.album} square radius={3} />
+            <div className="lf-serif lf-italic" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
+            <div className="lf-mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
+          </button>
+        ))}
+      </div>
+    )
+  }
+  if (view === 'card') {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+        {items.map(a => (
+          <button key={a.id} type="button" onClick={() => onOpen(a)} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
+            <Cover label={a.album} size={56} radius={3} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="lf-meta" style={{ marginBottom: 3 }}>{a.when}</div>
+              <div className="lf-serif lf-italic" style={{ fontSize: 16, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
+              <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.artist}</div>
+              <div style={{ marginTop: 5 }}>{a.rating != null ? <Stars score={a.rating} size={12} /> : <span className="lf-meta" style={{ fontSize: 9 }}>미평가</span>}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {items.map((a, i) => (
+        <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
+          <Cover label={a.album} size={38} radius={2} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="lf-serif lf-italic" style={{ fontSize: 15, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
+            <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
+          </div>
+          {a.rating != null && <Stars score={a.rating} size={12} />}
+          <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 44, textAlign: 'right' }}>{a.when}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void }) {
+  const open = (t: SampleTrack) => onOpen({ album: t.album, artist: t.artist, track: t.track })
+  if (view === 'grid') {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
+        {items.map(t => (
+          <button key={t.id} type="button" onClick={() => open(t)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+            <Cover label={t.album} square radius={3} />
+            <div className="lf-serif" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
+            <div className="lf-mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{t.artist}</div>
+          </button>
+        ))}
+      </div>
+    )
+  }
+  if (view === 'card') {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+        {items.map(t => (
+          <button key={t.id} type="button" onClick={() => open(t)} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
+            <Cover label={t.album} size={50} radius={3} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="lf-serif" style={{ fontSize: 15, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
+              <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+{t.artist}
+{' '}
+·
+{' '}
+{t.album}
+              </div>
+              <div className="lf-meta" style={{ marginTop: 4 }}>
+{t.when}
+{' '}
+·
+{' '}
+{t.len}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {items.map((t, i) => (
+        <button key={t.id} type="button" onClick={() => open(t)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
+          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 20 }}>{String(i + 1).padStart(2, '0')}</span>
+          <Cover label={t.album} size={34} radius={2} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="lf-serif" style={{ fontSize: 14.5, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
+            <div className="lf-sans" style={{ fontSize: 11, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{t.artist}</div>
+          </div>
+          <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>{t.len}</span>
+          <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 46, textAlign: 'right' }}>{t.when}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ViewToggle({ value, onChange }: { value: ViewKey, onChange: (v: ViewKey) => void }) {
+  const opts: { v: ViewKey, label: string }[] = [{ v: 'list', label: '리스트' }, { v: 'grid', label: '그리드' }, { v: 'card', label: '카드' }]
+  return (
+    <div style={{ display: 'inline-flex', border: '1px solid var(--color-border)' }}>
+      {opts.map((o, i) => (
+        <button
+	key={o.v}
+	type="button"
+	onClick={() => onChange(o.v)}
+	className="lf-mono"
+	style={{ border: 'none', borderLeft: i ? '1px solid var(--color-border)' : 'none', padding: '5px 9px', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', cursor: 'pointer', background: value === o.v ? 'var(--color-text)' : 'transparent', color: value === o.v ? 'var(--color-bg)' : 'var(--color-text)' }}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/* ── widget registry ─────────────────────────────────────── */
+const WIDGET_TITLES: Record<string, string> = {
+  'nowplaying': '지금 듣는 음악',
+  'recent-albums': '최근 들은 앨범',
+  'recent-tracks': '최근 들은 노래',
+  'bucket': '평론 버킷',
+  'genre': '장르 분포',
+  'artists': '톱 아티스트',
+  'latest-reviews': '최근 평론',
+  'activity': '감상 활동',
+}
+const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
+/** widgets whose body is sample data → show a 샘플 badge in the header. */
+const SAMPLE_WIDGETS = new Set(['nowplaying', 'recent-albums', 'recent-tracks', 'genre', 'artists', 'activity'])
+
+function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
+  return (
+    <button type="button" onClick={() => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating })} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
+      <Cover label={r.album} size={44} radius={3} />
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div className="lf-meta">
+{r.type}
+{' '}
+·
+{' '}
+{new Date(r.date).getFullYear()}
+        </div>
+        <div className="lf-serif lf-italic" style={{ fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.album}</div>
+      </div>
+      {r.rating != null && <Stars score={r.rating} size={12} />}
+    </button>
+  )
+}
+
+function Activity({ data }: { data: number[] }) {
+  const max = Math.max(...data)
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 56 }}>
+      {data.map((v, i) => <div key={i} title={`${v}장`} style={{ flex: 1, height: `${(v / max) * 100}%`, background: i === data.length - 1 ? 'var(--color-accent)' : 'var(--color-text)', opacity: i === data.length - 1 ? 1 : 0.3, minHeight: 3 }} />)}
+    </div>
+  )
+}
+
+function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
+  switch (id) {
+    case 'nowplaying': return <NowPlaying variant={ctx.npStyle} />
+    case 'recent-albums': return <AlbumColl items={getRecentAlbums()} view={ctx.views['recent-albums']} onOpen={ctx.onOpen} />
+    case 'recent-tracks': return <TrackColl items={getRecentTracks()} view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
+    case 'bucket': return <BucketShortcut count={bucketCount()} onGo={ctx.goBucket} />
+    case 'genre': return <DistChart style={ctx.chartStyle === 'donut' ? 'donut' : 'bar'} items={getGenres().slice(0, 6)} />
+    case 'artists': return <DistChart style="list" items={getArtists().slice(0, 5)} />
+    case 'latest-reviews': return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{ctx.reviews.slice(0, 2).map(r => <MiniReview key={r.slug} r={r} onOpen={ctx.onOpen} />)}</div>
+    case 'activity': return <Activity data={getActivity()} />
+    default: return null
+  }
+}
+
+/* ── row-based board ─────────────────────────────────────── */
+interface RowGeom { top: number, bottom: number, cells: { left: number, right: number, cx: number }[] }
+interface Geom { rows: RowGeom[], left: number, right: number }
+type Target = { kind: 'newrow', at: number } | { kind: 'slot', row: number, slot: number } | null
+interface DragState { id: string, w: number, grabX: number, grabY: number, px: number, py: number, target: Target }
+
+function RowsBoard({ rows, setRows, render }: { rows: string[][], setRows: (fn: (prev: string[][]) => string[][]) => void, render: (id: string, handleProps: HandleProps, dragging: boolean) => ReactNode }) {
+  const cellRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const geom = useRef<Geom | null>(null)
+  const drag = useRef<DragState | null>(null)
+  const [, force] = useReducer((c: number) => c + 1, 0)
+
+  const computeTarget = (px: number, py: number): Target => {
+    const g = geom.current
+    if (!g)
+      return null
+    const R = g.rows
+    if (py < R[0].top)
+      return { kind: 'newrow', at: 0 }
+    if (py > R[R.length - 1].bottom)
+      return { kind: 'newrow', at: R.length }
+    for (let ri = 0; ri < R.length; ri++) {
+      const r = R[ri]
+      if (py >= r.top && py <= r.bottom) {
+        const t = (py - r.top) / Math.max(1, r.bottom - r.top)
+        if (t < 0.22)
+          return { kind: 'newrow', at: ri }
+        if (t > 0.78)
+          return { kind: 'newrow', at: ri + 1 }
+        let slot = 0
+        r.cells.forEach((c) => {
+ if (px > c.cx)
+slot++
+})
+        return { kind: 'slot', row: ri, slot }
+      }
+      const nx = R[ri + 1]
+      if (nx && py > r.bottom && py < nx.top)
+        return { kind: 'newrow', at: ri + 1 }
+    }
+    return null
+  }
+
+  const move = (e: PointerEvent) => {
+    const dd = drag.current
+    if (!dd)
+      return
+    dd.px = e.clientX
+    dd.py = e.clientY
+    dd.target = computeTarget(e.clientX, e.clientY)
+    force()
+  }
+  const end = () => {
+    const dd = drag.current
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', end)
+    window.removeEventListener('pointercancel', end)
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    if (!dd)
+      return
+    drag.current = null
+    const tg = dd.target
+    if (tg) {
+      setRows((prev) => {
+        let Rn = prev.map(r => r.slice())
+        let sri = -1
+        let ssi = -1
+        Rn.forEach((row, ri) => {
+          const i = row.indexOf(dd.id)
+          if (i >= 0) {
+            sri = ri
+            ssi = i
+          }
+        })
+        if (sri < 0)
+          return prev
+        Rn[sri].splice(ssi, 1)
+        if (tg.kind === 'newrow') {
+          Rn.splice(tg.at, 0, [dd.id])
+        }
+        else {
+          let slot = tg.slot
+          if (tg.row === sri && slot > ssi)
+            slot--
+          Rn[tg.row].splice(slot, 0, dd.id)
+        }
+        Rn = Rn.filter(r => r.length > 0)
+        return Rn
+      })
+    }
+    else {
+      force()
+    }
+  }
+  const begin = (e: React.PointerEvent, id: string) => {
+    if (e.button != null && e.button !== 0)
+      return
+    e.preventDefault()
+    const el = cellRefs.current[id]
+    if (!el)
+      return
+    const r = el.getBoundingClientRect()
+    const grows: RowGeom[] = rows.map((row) => {
+      const cs = row.map(cid => cellRefs.current[cid]!.getBoundingClientRect())
+      return { top: Math.min(...cs.map(c => c.top)), bottom: Math.max(...cs.map(c => c.bottom)), cells: cs.map(c => ({ left: c.left, right: c.right, cx: c.left + c.width / 2 })) }
+    })
+    const allLeft = Math.min(...grows.flatMap(rr => rr.cells.map(c => c.left)))
+    const allRight = Math.max(...grows.flatMap(rr => rr.cells.map(c => c.right)))
+    geom.current = { rows: grows, left: allLeft, right: allRight }
+    drag.current = { id, w: r.width, grabX: e.clientX - r.left, grabY: e.clientY - r.top, px: e.clientX, py: e.clientY, target: null }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'grabbing'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    force()
+  }
+
+  const d = drag.current
+  const tg = d && d.target
+  const g = geom.current
+
+  return (
+    <div>
+      {rows.map((row, ri) => (
+        <div key={ri} style={{ display: 'flex', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
+          {row.map(id => (
+            <div key={id} ref={(el) => { cellRefs.current[id] = el }} style={{ flex: 1, minWidth: 0, opacity: d && d.id === id ? 0.3 : 1 }}>
+              {render(id, { onPointerDown: e => begin(e, id), style: { touchAction: 'none', cursor: 'grab' } }, !!(d && d.id === id))}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {tg && g && d && createPortal(
+        <div className="member-root" style={{ padding: 0, margin: 0, maxWidth: 'none' }}>
+          <div style={{ position: 'fixed', left: d.px - d.grabX, top: d.py - d.grabY, width: d.w, zIndex: 1000, pointerEvents: 'none', transform: 'scale(1.02)', transformOrigin: 'top left' }}>
+            {render(d.id, { style: {} }, true)}
+          </div>
+          {tg.kind === 'slot' && (() => {
+            const r = g.rows[tg.row]
+            const cells = r.cells
+            const x = tg.slot < cells.length ? cells[tg.slot].left - 9 : cells[cells.length - 1].right + 6
+            return <div style={{ position: 'fixed', left: x, top: r.top - 4, height: (r.bottom - r.top) + 8, width: 3, background: 'var(--color-accent)', borderRadius: 2, zIndex: 999, pointerEvents: 'none' }} />
+          })()}
+          {tg.kind === 'newrow' && (() => {
+            const y = tg.at < g.rows.length ? g.rows[tg.at].top - 9 : g.rows[g.rows.length - 1].bottom + 6
+            return <div style={{ position: 'fixed', left: g.left, top: y, width: g.right - g.left, height: 3, background: 'var(--color-accent)', borderRadius: 2, zIndex: 999, pointerEvents: 'none' }} />
+          })()}
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
+/* ── one widget shell ────────────────────────────────────── */
+function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx: DashCtx, onRemove: (id: string) => void, handleProps: HandleProps, dragging: boolean }) {
+  const hasView = id === 'recent-albums' || id === 'recent-tracks'
+  return (
+    <div
+	className="lf-panel"
+	style={{ padding: 18, transition: 'box-shadow .18s, border-color .18s', boxShadow: dragging ? '0 22px 50px -16px rgba(0,0,0,.45)' : undefined, borderColor: dragging ? 'color-mix(in srgb, var(--color-accent) 55%, var(--color-border))' : undefined }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, borderBottom: '1px solid var(--color-text)', paddingBottom: 10 }}>
+        <span {...handleProps} className="lf-drag-handle lf-mono" style={{ ...handleProps.style, color: dragging ? 'var(--color-accent)' : 'var(--color-faded)', fontSize: 15, lineHeight: 1, userSelect: 'none' }} title="드래그하여 순서 변경">⠿</span>
+        <span className="lf-mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{WIDGET_TITLES[id]}</span>
+        {SAMPLE_WIDGETS.has(id) && <SampleBadge />}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {id === 'nowplaying' && <Seg value={ctx.npStyle} onChange={v => ctx.setNpStyle(v as NpStyle)} options={[{ v: 'banner', label: '배너' }, { v: 'full', label: '플레이어' }, { v: 'list', label: '리스트' }]} />}
+          {hasView && <ViewToggle value={ctx.views[id]} onChange={v => ctx.setView(id, v)} />}
+          <button type="button" className="lf-iconbtn danger" title="컴포넌트 제거" onClick={() => onRemove(id)}>✕</button>
+        </div>
+      </div>
+      <WidgetBody id={id} ctx={ctx} />
+    </div>
+  )
+}
+
+/* ── dashboard ───────────────────────────────────────────── */
+const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['bucket'], ['genre', 'artists']]
+
+export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket, reviews }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, chartStyle: ChartStyle, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[] }) {
+  const [rows, setRows] = useState<string[][]>(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(OV_ROWS_KEY) || 'null')
+      if (Array.isArray(s) && s.length)
+        return s.map((r: string[]) => r.filter(x => ALL_WIDGETS.includes(x))).filter((r: string[]) => r.length)
+    }
+    catch { /* ignore */ }
+    return DEFAULT_ROWS()
+  })
+  const [views, setViews] = useState<Record<string, ViewKey>>(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(OV_VIEWS_KEY) || 'null')
+      if (s)
+        return s
+    }
+    catch { /* ignore */ }
+    return { 'recent-albums': 'grid', 'recent-tracks': 'grid' }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(OV_ROWS_KEY, JSON.stringify(rows))
+    }
+    catch { /* ignore */ }
+  }, [rows])
+  useEffect(() => {
+    try {
+      localStorage.setItem(OV_VIEWS_KEY, JSON.stringify(views))
+    }
+    catch { /* ignore */ }
+  }, [views])
+
+  const [addOpen, setAddOpen] = useState(false)
+  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, chartStyle, goBucket, reviews }
+  const flat = rows.flat()
+  const remove = (id: string) => setRows(prev => prev.map(r => r.filter(x => x !== id)).filter(r => r.length))
+  const add = (id: string) => {
+    setRows(prev => [...prev, [id]])
+    setAddOpen(false)
+  }
+  const available = ALL_WIDGETS.filter(w => !flat.includes(w))
+
+  return (
+    <div>
+      <SectionTitle
+	kicker="대시보드"
+	title="개요"
+	right={(
+          <div style={{ position: 'relative' }}>
+            <button type="button" className="lf-btn" onClick={() => setAddOpen(o => !o)} disabled={!available.length}>＋ 컴포넌트 추가</button>
+            {addOpen && available.length > 0 && (
+              <div className="lf-panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, padding: 6, minWidth: 180, background: 'var(--color-bg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.4)' }}>
+                {available.map(w => (
+                  <button key={w} type="button" onClick={() => add(w)} className="lf-mono" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', background: 'none', border: 'none', color: 'var(--color-text)', cursor: 'pointer', borderRadius: 3 }}>
+＋
+{WIDGET_TITLES[w]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      />
+      <p className="lf-serif lf-italic" style={{ marginTop: -10, marginBottom: 22, color: 'var(--color-subtle)', fontSize: 14 }}>
+        <span className="lf-mono" style={{ fontStyle: 'normal', fontSize: 12 }}>⠿</span>
+{' '}
+핸들을 끌어 위치를 옮기세요. 같은 줄에 놓으면 너비를 나눠 갖고(빨강 세로줄), 줄 사이에 놓으면 새 줄이 됩니다(빨강 가로줄).
+      </p>
+      {flat.length === 0 ?
+        <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}><span className="lf-meta">컴포넌트가 없습니다 · 우측 상단에서 추가하세요</span></div> :
+        <RowsBoard rows={rows} setRows={setRows} render={(id, handleProps, dragging) => <Widget id={id} ctx={ctx} onRemove={remove} handleProps={handleProps} dragging={dragging} />} />}
+    </div>
+  )
+}
