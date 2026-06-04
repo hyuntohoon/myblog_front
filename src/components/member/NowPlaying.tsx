@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react'
 import { getNowPlayingData, listRecentlyListened } from './spotify.api'
 import type { NowPlaying as NowPlayingData, RecentlyListenedItem } from './spotify.api'
-import { Cover, Equalizer, fmtTime, Progress } from './ui'
+import { Cover, Equalizer } from './ui'
 
 export type NpStyle = 'banner' | 'full' | 'list'
 
@@ -30,12 +30,6 @@ function fmtSince(iso?: string | null): string {
   if (hrs < 24)
     return `${hrs}시간 전`
   return t.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
-}
-
-function pctOf(np: NowPlayingData): number {
-  if (!np.duration_ms)
-    return 0
-  return Math.min(100, Math.max(0, ((np.progress_ms ?? 0) / np.duration_ms) * 100))
 }
 
 function SyncNote({ iso }: { iso?: string | null }) {
@@ -102,13 +96,8 @@ function NowPlayingFull() {
           <span style={{ marginLeft: 'auto' }}><SyncNote iso={np.updated_at} /></span>
         </div>
         <div className="lf-serif lf-italic" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
-        <div className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, marginBottom: 14 }}>
+        <div className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3 }}>
           {[np.artist, np.album].filter(Boolean).join(' — ')}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 34 }}>{fmtTime((np.progress_ms ?? 0) / 1000)}</span>
-          <div style={{ flex: 1 }}><Progress pct={pctOf(np)} accent /></div>
-          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 34, textAlign: 'right' }}>{fmtTime((np.duration_ms ?? 0) / 1000)}</span>
         </div>
       </div>
     </div>
@@ -211,12 +200,6 @@ function NowPlayingBanner() {
                         }}
                       />
                     ))}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <span className="lf-mono" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>
-                      {`${fmtTime((live.progress_ms ?? 0) / 1000)} / ${fmtTime((live.duration_ms ?? 0) / 1000)}`}
-                    </span>
-                    <div style={{ flex: 1 }}><Progress pct={pctOf(live)} accent /></div>
                   </div>
                 </>
               ) :

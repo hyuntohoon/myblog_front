@@ -656,15 +656,11 @@ export interface components {
             album_id?: string | null;
             /** Artist */
             artist?: string | null;
-            /** Duration Ms */
-            duration_ms?: number | null;
             /**
              * Is Playing
              * @default false
              */
             is_playing: boolean;
-            /** Progress Ms */
-            progress_ms?: number | null;
             /** Track */
             track?: string | null;
             /** Updated At */
