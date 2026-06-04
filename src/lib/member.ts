@@ -48,6 +48,17 @@ export interface DetailTarget {
 	genre?: string
 	year?: number | null
 	rating?: number | null
+	/**
+	 * Real-album marker. When true the slide-over renders the real metadata below
+	 *  (cover, title, artist, year) and omits the sample tracklist/tags/"샘플" badge.
+	 *  Set by surfaces backed by a real API (e.g. 최근 들은 앨범); sample placeholders
+	 *  leave it unset and keep the sample slide-over.
+	 */
+	real?: boolean
+	/** Real DB album id (when `real`). */
+	albumId?: string
+	/** Real cover image URL (when `real`); null falls back to the letter tile. */
+	cover?: string | null
 }
 
 export interface MemberProfile {

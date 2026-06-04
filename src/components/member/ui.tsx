@@ -16,6 +16,21 @@ export function Cover({ label, size = 56, radius = 3, square = false }: { label:
   )
 }
 
+/** Real album art when the API supplies a cover URL, else the editorial letter tile. */
+export function AlbumArt({ url, label, size = 160 }: { url?: string | null, label: string, size?: number }) {
+  if (url) {
+    return (
+      <img
+	src={url}
+	alt={label}
+	loading="lazy"
+	style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 3, display: 'block', border: '1px solid var(--color-border)' }}
+      />
+    )
+  }
+  return <Cover label={label} square radius={3} size={size} />
+}
+
 export function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)

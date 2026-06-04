@@ -22,7 +22,7 @@ import {
 import type { ReviewedAlbum, ToListenItem } from './library.api'
 import { listRecentlyListened, refreshRecent } from './spotify.api'
 import type { RecentlyListenedItem } from './spotify.api'
-import { Cover, SectionTitle, Stars } from './ui'
+import { AlbumArt, SectionTitle, Stars } from './ui'
 
 /** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
 function fmtWhen(iso: string): string {
@@ -37,21 +37,6 @@ function fmtWhen(iso: string): string {
   if (days < 7)
     return `${days}일 전`
   return then.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
-}
-
-/** Real album art when the API supplies it, else the editorial letter tile. */
-function AlbumArt({ url, label, size = 160 }: { url?: string | null, label: string, size?: number }) {
-  if (url) {
-    return (
-      <img
-	src={url}
-	alt={label}
-	loading="lazy"
-	style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 3, display: 'block', border: '1px solid var(--color-border)' }}
-      />
-    )
-  }
-  return <Cover label={label} square radius={3} size={size} />
 }
 
 /* ── 들을 것 (to-listen) ──────────────────────────────────────────────────── */
@@ -468,7 +453,14 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
               <div
 	key={it.album_id}
 	style={{ display: 'flex', flexDirection: 'column', gap: 9, cursor: 'pointer' }}
-	onClick={() => onOpen({ album: title, artist })}
+	onClick={() => onOpen({
+		album: title,
+		artist,
+		real: true,
+		albumId: it.album_id,
+		cover: album?.cover_url ?? null,
+		year: album?.release_date ? Number(String(album.release_date).slice(0, 4)) || null : null,
+	})}
               >
                 <div style={{ position: 'relative' }}>
                   <AlbumArt url={album?.cover_url} label={title} />
