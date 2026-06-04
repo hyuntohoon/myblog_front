@@ -787,6 +787,13 @@ export interface components {
              * @default false
              */
             connected: boolean;
+            /** Last Successful Refresh At */
+            last_successful_refresh_at?: string | null;
+            /**
+             * Needs Reauth
+             * @default false
+             */
+            needs_reauth: boolean;
         };
         /** ToListenItemResponse */
         Backend_ToListenItemResponse: {

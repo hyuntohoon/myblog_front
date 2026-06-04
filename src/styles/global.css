@@ -24,6 +24,7 @@
 	--color-border:    rgba(26, 26, 26, 0.18);
 	--color-border-soft: rgba(26, 26, 26, 0.10);
 	--color-accent:    #c8332b;
+	--color-warn:      #b3681a;  /* ochre — token-validity warning (e.g. 재인증 필요), distinct from accent/faded */
 	--color-primary:   #1a1a1a;
 
 	/* Icon chip */
@@ -88,6 +89,7 @@
 			--color-ic-bg:     #1e1c1a;
 			--color-ic-border: rgba(235, 231, 223, 0.12);
 
+			--color-warn:      #d28b3a;  /* brighter ochre for legibility on the dark paper */
 			--color-primary:   #ebe7df;
 		}
 	}
