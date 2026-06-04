@@ -47,6 +47,7 @@ const reviews: MemberReview[] = (await getCollection('blog'))
     const date = new Date(d.date)
     return {
       slug: d.slug ?? entry.id,
+      postId: d.postId,
       type,
       album: mr?.title ?? d.title,
       artist: mr?.artists?.join(', ') ?? '',

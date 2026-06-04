@@ -20,6 +20,13 @@ export type MemberReviewType = '앨범 리뷰' | '칼럼' | '트랙 리뷰'
 /** JSON-safe review shape passed from profile.astro to the island. */
 export interface MemberReview {
 	slug: string
+	/**
+	 * DB post id (frontmatter `postId`, written by publish_service). Lets the
+	 * 평론 tab archive a review via `DELETE /api/posts/{id}`. Optional because
+	 * the field is optional in the content schema — older posts may lack it,
+	 * in which case the delete action is disabled.
+	 */
+	postId?: string
 	type: MemberReviewType
 	/** Album title (or column headline). */
 	album: string
