@@ -11,6 +11,7 @@ import { BucketBoard } from './BucketBoard'
 import { LibraryTab } from './LibraryTab'
 import { OverviewDash } from './OverviewDash'
 import { ReviewsTab } from './ReviewsTab'
+import { SpotifyIntegrationTab } from './SpotifyIntegrationTab'
 import { StatsTab } from './StatsTab'
 import { Avatar, Stat } from './ui'
 
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'bucket', label: '평론 버킷' },
   { id: 'library', label: '라이브러리' },
   { id: 'stats', label: '통계' },
+  { id: 'integration', label: '연동' },
 ]
 
 /* ── view preferences (layout + density), persisted to localStorage ──────── */
@@ -301,6 +303,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       {tab === 'bucket' && <BucketBoard onOpen={openDetail} />}
       {tab === 'library' && <LibraryTab onOpen={openDetail} reviews={reviews} />}
       {tab === 'stats' && <StatsTab chartStyle={chartStyle} setChartStyle={setChartStyle} />}
+      {tab === 'integration' && <SpotifyIntegrationTab />}
     </div>
   )
 

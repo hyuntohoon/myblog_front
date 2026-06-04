@@ -127,6 +127,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/now-playing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Now Playing */
+        get: operations["now_playing_api_library_now_playing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/recently-listened": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recently Listened */
+        get: operations["list_recently_listened_api_library_recently_listened_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/refresh-recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Recent */
+        post: operations["refresh_recent_api_library_refresh_recent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/reviewed": {
         parameters: {
             query?: never;
@@ -136,6 +187,23 @@ export interface paths {
         };
         /** List Reviewed */
         get: operations["list_reviewed_api_library_reviewed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/spotify-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spotify Connection */
+        get: operations["spotify_connection_api_library_spotify_connection_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -580,6 +648,28 @@ export interface components {
                 [key: string]: components["schemas"]["Backend_PostMetrics"];
             };
         };
+        /** NowPlayingResponse */
+        Backend_NowPlayingResponse: {
+            /** Album */
+            album?: string | null;
+            /** Album Id */
+            album_id?: string | null;
+            /** Artist */
+            artist?: string | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /**
+             * Is Playing
+             * @default false
+             */
+            is_playing: boolean;
+            /** Progress Ms */
+            progress_ms?: number | null;
+            /** Track */
+            track?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
         /** PostDetailResponse */
         Backend_PostDetailResponse: {
             /** Album Ids */
@@ -646,6 +736,27 @@ export interface components {
             /** Likes */
             likes: number;
         };
+        /** RecentlyListenedItem */
+        Backend_RecentlyListenedItem: {
+            album: components["schemas"]["Backend_AlbumBrief"];
+            /** Album Id */
+            album_id: string;
+            /**
+             * Last Played At
+             * Format: date-time
+             */
+            last_played_at: string;
+        };
+        /** RecentlyListenedResponse */
+        Backend_RecentlyListenedResponse: {
+            /** Items */
+            items?: components["schemas"]["Backend_RecentlyListenedItem"][];
+        };
+        /** RefreshRecentResponse */
+        Backend_RefreshRecentResponse: {
+            /** Status */
+            status: string;
+        };
         /** ReorderBucket */
         Backend_ReorderBucket: {
             /** Id */
@@ -670,6 +781,14 @@ export interface components {
         Backend_ReviewedResponse: {
             /** Items */
             items?: components["schemas"]["Backend_ReviewedAlbumResponse"][];
+        };
+        /** SpotifyConnectionResponse */
+        Backend_SpotifyConnectionResponse: {
+            /**
+             * Connected
+             * @default false
+             */
+            connected: boolean;
         };
         /** ToListenItemResponse */
         Backend_ToListenItemResponse: {
@@ -1446,6 +1565,66 @@ export interface operations {
             };
         };
     };
+    now_playing_api_library_now_playing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_NowPlayingResponse"];
+                };
+            };
+        };
+    };
+    list_recently_listened_api_library_recently_listened_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_RecentlyListenedResponse"];
+                };
+            };
+        };
+    };
+    refresh_recent_api_library_refresh_recent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_RefreshRecentResponse"];
+                };
+            };
+        };
+    };
     list_reviewed_api_library_reviewed_get: {
         parameters: {
             query?: {
@@ -1473,6 +1652,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spotify_connection_api_library_spotify_connection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_SpotifyConnectionResponse"];
                 };
             };
         };
