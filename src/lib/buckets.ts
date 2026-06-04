@@ -138,6 +138,12 @@ export async function addBucketItem(bucketId: string, albumId: string): Promise<
   return { item: mapItem(await asJson<ApiItem>(res)), conflict: false }
 }
 
+/** DELETE /api/buckets/{bucketId}/items/{itemId} — remove a single album (204). */
+export async function deleteBucketItem(bucketId: string, itemId: string): Promise<void> {
+  const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items/${itemId}`, { method: 'DELETE' })
+  await expectNoContent(res)
+}
+
 /**
  * PUT /api/buckets/reorder — bulk item reassignment. Used to move an album
  * between buckets: list both affected buckets with their new item_ids order
