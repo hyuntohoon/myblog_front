@@ -111,7 +111,7 @@ function NowPlayingList() {
   const [recent, setRecent] = useState<RecentlyListenedItem[] | null>(null)
   useEffect(() => {
     let on = true
-    listRecentlyListened().then(r => on && setRecent(r)).catch(() => on && setRecent([]))
+    listRecentlyListened().then(r => on && setRecent(r.items)).catch(() => on && setRecent([]))
     return () => {
       on = false
     }

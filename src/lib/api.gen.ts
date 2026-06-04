@@ -747,6 +747,8 @@ export interface components {
         Backend_RecentlyListenedResponse: {
             /** Items */
             items?: components["schemas"]["Backend_RecentlyListenedItem"][];
+            /** Last Synced At */
+            last_synced_at?: string | null;
         };
         /** RefreshRecentResponse */
         Backend_RefreshRecentResponse: {
