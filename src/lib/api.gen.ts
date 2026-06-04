@@ -92,6 +92,23 @@ export interface paths {
         patch: operations["update_item_api_buckets__bucket_id__items__item_id__patch"];
         trace?: never;
     };
+    "/api/buckets/{bucket_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Move Bucket */
+        put: operations["move_bucket_api_buckets__bucket_id__move_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/categories": {
         parameters: {
             query?: never;
@@ -568,6 +585,8 @@ export interface components {
         };
         /** BucketResponse */
         Backend_BucketResponse: {
+            /** Children */
+            children?: components["schemas"]["Backend_BucketResponse"][];
             /** Color */
             color?: string | null;
             /** Id */
@@ -647,6 +666,13 @@ export interface components {
             data: {
                 [key: string]: components["schemas"]["Backend_PostMetrics"];
             };
+        };
+        /** MoveBucketRequest */
+        Backend_MoveBucketRequest: {
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Position */
+            position: number;
         };
         /** NowPlayingResponse */
         Backend_NowPlayingResponse: {
@@ -1484,6 +1510,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_BucketItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_bucket_api_buckets__bucket_id__move_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_MoveBucketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_BucketsResponse"];
                 };
             };
             /** @description Validation Error */

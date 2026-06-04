@@ -1,47 +1,40 @@
-// Member dashboard — 평론 버킷 board (nested redesign).
+// Member dashboard — 평론 버킷 board (nested, API-backed).
 //
-// Horizontal-row buckets, nestable sub-buckets, native HTML5 DnD with a
-// cycle guard. Step 1 persists the tree to localStorage (SAMPLE seed); a later
-// RFC step adds a nested-bucket backend (parent_id + recursive API) and unifies
-// this with the existing flat /reviews/queue board. Ported from bucket.jsx.
-import type { BucketNode, DetailTarget, SampleAlbum } from '@lib/member'
+// Horizontal-row buckets, nestable sub-buckets, native HTML5 DnD with a cycle
+// guard. FEAT-member-dashboard Step 5 wires this to the nested-bucket backend
+// (parent_id + recursive GET + PUT /{id}/move) via src/lib/buckets.ts, replacing
+// Step 1's localStorage seed and retiring the old flat /reviews/queue board.
+import type { DetailTarget } from '@lib/member'
+import type { AddOutcome } from './AddAlbumModal'
+import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import { useEffect, useState } from 'react'
-import { ADD_POOL, BUCKETS_KEY, getBucketsInit } from '@lib/member'
-import { Cover, SampleBadge, SectionTitle, Stars } from './ui'
+import * as api from '@lib/buckets'
+import { BUCKETS_KEY } from '@lib/member'
+import AddAlbumModal from './AddAlbumModal'
+import { AlbumArt, SectionTitle } from './ui'
 
-interface DndItem { kind: 'album' | 'bucket', albumId?: string, fromBucketId?: string, bucketId?: string }
+interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string }
 // Module-level drag payload (native DnD can't carry live object refs reliably).
 let dnd: DndItem | null = null
 
-const clone = (t: BucketNode[]): BucketNode[] => JSON.parse(JSON.stringify(t))
-function visit(buckets: BucketNode[], fn: (b: BucketNode) => void) {
+const clone = (t: BoardBucket[]): BoardBucket[] => JSON.parse(JSON.stringify(t))
+function visit(buckets: BoardBucket[], fn: (b: BoardBucket) => void) {
   for (const b of buckets) {
     fn(b)
     visit(b.children, fn)
   }
 }
-function findBucket(buckets: BucketNode[], id: string): BucketNode | null {
-  let f: BucketNode | null = null
+function findBucket(buckets: BoardBucket[], id: string): BoardBucket | null {
+  let f: BoardBucket | null = null
   visit(buckets, (b) => {
     if (b.id === id)
       f = b
   })
   return f
 }
-function removeAlbum(buckets: BucketNode[], albumId: string): SampleAlbum | null {
-  let removed: SampleAlbum | null = null
-  visit(buckets, (b) => {
-    const i = b.albums.findIndex(a => a.id === albumId)
-    if (i >= 0) {
-      removed = b.albums[i]
-      b.albums.splice(i, 1)
-    }
-  })
-  return removed
-}
-function removeBucket(buckets: BucketNode[], id: string): BucketNode | null {
-  let removed: BucketNode | null = null
-  const rec = (arr: BucketNode[]): boolean => {
+function removeBucketNode(buckets: BoardBucket[], id: string): BoardBucket | null {
+  let removed: BoardBucket | null = null
+  const rec = (arr: BoardBucket[]): boolean => {
     const i = arr.findIndex(b => b.id === id)
     if (i >= 0) {
       removed = arr[i]
@@ -57,7 +50,7 @@ function removeBucket(buckets: BucketNode[], id: string): BucketNode | null {
   rec(buckets)
   return removed
 }
-function subtreeHas(bucket: BucketNode, id: string): boolean {
+function subtreeHas(bucket: BoardBucket, id: string): boolean {
   let y = false
   visit([bucket], (b) => {
     if (b.id === id)
@@ -65,56 +58,53 @@ function subtreeHas(bucket: BucketNode, id: string): boolean {
   })
   return y
 }
-function countAlbums(b: BucketNode): number {
+function countAlbums(b: BoardBucket): number {
   let n = b.albums.length
   for (const c of b.children)
     n += countAlbums(c)
   return n
 }
 
-let _localId = 0
-const newId = (p: string) => `${p}-${Date.now().toString(36)}-${++_localId}`
-
 interface Ops {
-  tree: BucketNode[]
-  moveAlbum: (albumId: string, toId: string) => void
+  tree: BoardBucket[]
+  moveAlbum: (itemId: string, fromBucketId: string, toBucketId: string) => void
   moveBucketInto: (bucketId: string, targetId: string | null) => void
   addBucket: (parentId: string | null) => void
   rename: (id: string, name: string) => void
   deleteBucket: (id: string) => void
-  addAlbum: (id: string, a: SampleAlbum) => void
+  requestAdd: (bucketId: string, bucketName: string) => void
 }
 
-function AlbumChip({ album, bucketId, onOpen, draggingId, setDraggingId }: { album: SampleAlbum, bucketId: string, onOpen: (t: DetailTarget) => void, draggingId: string | null, setDraggingId: (id: string | null) => void }) {
+function AlbumChip({ album, bucketId, onOpen, draggingId, setDraggingId }: { album: BoardAlbum, bucketId: string, onOpen: (t: DetailTarget) => void, draggingId: string | null, setDraggingId: (id: string | null) => void }) {
   return (
     <div
 	draggable
 	onDragStart={(e) => {
-        dnd = { kind: 'album', albumId: album.id, fromBucketId: bucketId }
+        dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId }
         e.dataTransfer.effectAllowed = 'move'
-        setDraggingId(album.id)
+        setDraggingId(album.itemId)
       }}
 	onDragEnd={() => {
         dnd = null
         setDraggingId(null)
       }}
-	onClick={() => onOpen(album)}
-	className={`lf-drag-handle${draggingId === album.id ? ' lf-is-dragging' : ''}`}
-	title={`${album.album} — ${album.artist}`}
+	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year })}
+	className={`lf-drag-handle${draggingId === album.itemId ? ' lf-is-dragging' : ''}`}
+	title={`${album.title} — ${album.artist}`}
 	style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 8, width: 184, flex: '0 0 auto', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', borderRadius: 4 }}
     >
-      <Cover label={album.album} size={42} radius={3} />
+      <AlbumArt url={album.cover} label={album.title} size={42} />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="lf-serif" style={{ fontSize: 13.5, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.album}</div>
+        <div className="lf-serif" style={{ fontSize: 13.5, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
         <div className="lf-sans" style={{ fontSize: 11, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{album.artist}</div>
-        <div style={{ marginTop: 3 }}>{album.rating != null ? <Stars score={album.rating} size={11} /> : <span className="lf-meta" style={{ fontSize: 9 }}>미평가</span>}</div>
+        <div style={{ marginTop: 3 }}>{album.alreadyReviewed ? <span className="lf-mono" style={{ fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-accent)' }}>평론함</span> : <span className="lf-meta" style={{ fontSize: 9 }}>미평론</span>}</div>
       </div>
     </div>
   )
 }
 
 interface RowProps {
-  bucket: BucketNode
+  bucket: BoardBucket
   depth: number
   ops: Ops
   onOpen: (t: DetailTarget) => void
@@ -129,7 +119,6 @@ interface RowProps {
 function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket }: RowProps) {
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
-  const [adding, setAdding] = useState(false)
   const hot = dropTarget === bucket.id
 
   const canAcceptBucket = (): boolean => {
@@ -158,8 +147,8 @@ function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, drag
     setDropTarget(null)
     if (!it)
       return
-    if (it.kind === 'album' && it.albumId)
-      ops.moveAlbum(it.albumId, bucket.id)
+    if (it.kind === 'album' && it.itemId && it.fromBucketId && it.fromBucketId !== bucket.id)
+      ops.moveAlbum(it.itemId, it.fromBucketId, bucket.id)
     else if (it.kind === 'bucket' && it.bucketId && canAcceptBucket())
       ops.moveBucketInto(it.bucketId, bucket.id)
     dnd = null
@@ -204,7 +193,9 @@ function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, drag
 	value={name}
 	onChange={e => setName(e.target.value)}
 	onBlur={() => {
-                    ops.rename(bucket.id, name.trim() || bucket.name)
+                    const next = name.trim() || bucket.name
+                    if (next !== bucket.name)
+                      ops.rename(bucket.id, next)
                     setEditing(false)
                   }}
 	onKeyDown={(e) => {
@@ -235,40 +226,18 @@ function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, drag
               )}
           <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', flexShrink: 0 }}>{countAlbums(bucket)}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 2 }}>
-            <button type="button" className="lf-iconbtn" title="앨범 추가" onClick={() => setAdding(a => !a)}>＋</button>
+            <button type="button" className="lf-iconbtn" title="앨범 추가" onClick={() => ops.requestAdd(bucket.id, bucket.name)}>＋</button>
             <button type="button" className="lf-iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
             <button type="button" className="lf-iconbtn danger" title="버킷 삭제" onClick={() => ops.deleteBucket(bucket.id)}>✕</button>
           </div>
         </div>
-
-        {adding && (
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--color-border-soft)', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            <span className="lf-meta" style={{ width: '100%', marginBottom: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
-추가할 앨범 선택
-<SampleBadge />
-            </span>
-            {ADD_POOL.map(p => (
-              <button
-	key={p.id}
-	type="button"
-	className="lf-chip"
-	onClick={() => {
-                  ops.addAlbum(bucket.id, p)
-                  setAdding(false)
-                }}
-              >
-                {p.album}
-              </button>
-            ))}
-          </div>
-        )}
 
         <div style={{ display: 'flex', gap: 8, padding: 12, overflowX: 'auto', minHeight: 78, alignItems: 'stretch' }}>
           {bucket.albums.length === 0 && bucket.children.length === 0 && (
             <div className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: '16px 18px', width: '100%', textAlign: 'center', lineHeight: 1.6 }}>비어 있음 · 앨범이나 버킷을 여기로 드래그</div>
           )}
           {bucket.albums.map(a => (
-            <AlbumChip key={a.id} album={a} bucketId={bucket.id} onOpen={onOpen} draggingId={draggingId} setDraggingId={setDraggingId} />
+            <AlbumChip key={a.itemId} album={a} bucketId={bucket.id} onOpen={onOpen} draggingId={draggingId} setDraggingId={setDraggingId} />
           ))}
         </div>
       </div>
@@ -281,110 +250,164 @@ function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, drag
 }
 
 export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
-  const [tree, setTree] = useState<BucketNode[]>(() => {
-    try {
-      const s = localStorage.getItem(BUCKETS_KEY)
-      if (s)
-        return JSON.parse(s)
-    }
-    catch { /* ignore */ }
-    return getBucketsInit()
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem(BUCKETS_KEY, JSON.stringify(tree))
-    }
-    catch { /* ignore */ }
-  }, [tree])
+  const [tree, setTree] = useState<BoardBucket[] | null>(null)
+  const [error, setError] = useState(false)
+  const [addingTo, setAddingTo] = useState<{ id: string, name: string } | null>(null)
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [rootHot, setRootHot] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
 
+  // Load the real tree on mount.
+  useEffect(() => {
+    let alive = true
+    api.listBuckets()
+      .then(t => alive && setTree(t))
+      .catch(() => alive && setError(true))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // Mirror the album count to localStorage so the overview's bucket shortcut
+  // (lib/member.ts bucketCount(), read synchronously) matches the live board.
+  useEffect(() => {
+    if (tree == null)
+      return
+    try {
+      localStorage.setItem(BUCKETS_KEY, JSON.stringify(tree))
+    }
+    catch { /* ignore */ }
+  }, [tree])
+
+  async function refresh() {
+    try {
+      setTree(await api.listBuckets())
+    }
+    catch {
+      setError(true)
+    }
+  }
+
   const ops: Ops = {
-    tree,
-    moveAlbum(albumId, toId) {
-      setTree((prev) => {
-        const t = clone(prev)
-        const al = removeAlbum(t, albumId)
-        const dst = findBucket(t, toId)
-        if (al && dst)
-          dst.albums.push(al)
-        return t
-      })
+    tree: tree ?? [],
+    moveAlbum(itemId, fromBucketId, toBucketId) {
+      if (fromBucketId === toBucketId || tree == null)
+        return
+      const t = clone(tree)
+      const src = findBucket(t, fromBucketId)
+      const dst = findBucket(t, toBucketId)
+      if (!src || !dst)
+        return
+      const idx = src.albums.findIndex(a => a.itemId === itemId)
+      if (idx < 0)
+        return
+      const [moved] = src.albums.splice(idx, 1)
+      dst.albums.push(moved)
+      setTree(t)
+      api.reorderItems([
+        { id: fromBucketId, item_ids: src.albums.map(a => a.itemId) },
+        { id: toBucketId, item_ids: dst.albums.map(a => a.itemId) },
+      ]).catch(() => void refresh())
     },
     moveBucketInto(bucketId, targetId) {
-      setTree((prev) => {
-        const src = findBucket(prev, bucketId)
-        if (targetId && src && subtreeHas(src, targetId))
-          return prev
-        const t = clone(prev)
-        const rm = removeBucket(t, bucketId)
-        if (!rm)
-          return prev
-        if (targetId == null) {
-          t.push(rm)
-        }
-        else {
-          const dst = findBucket(t, targetId)
-          ;(dst ? dst.children : t).push(rm)
-        }
-        return t
-      })
+      if (tree == null)
+        return
+      const src = findBucket(tree, bucketId)
+      if (targetId && src && subtreeHas(src, targetId))
+        return
+      const siblings = targetId ? (findBucket(tree, targetId)?.children ?? []) : tree
+      const position = siblings.length
+      const t = clone(tree)
+      const rm = removeBucketNode(t, bucketId)
+      if (!rm)
+        return
+      if (targetId == null) {
+        t.push(rm)
+      }
+      else {
+        const dst = findBucket(t, targetId)
+        ;(dst ? dst.children : t).push(rm)
+      }
+      setTree(t)
+      api.moveBucket(bucketId, targetId, position)
+        .then(canonical => setTree(canonical))
+        .catch(() => void refresh())
     },
     addBucket(parentId) {
-      setTree((prev) => {
-        const t = clone(prev)
-        const nb: BucketNode = { id: newId('bk'), name: '새 버킷', albums: [], children: [] }
-        if (parentId == null)
-          t.push(nb)
-        else
-          findBucket(t, parentId)?.children.push(nb)
-        return t
-      })
+      if (tree == null)
+        return
+      const position = parentId ? (findBucket(tree, parentId)?.children.length ?? 0) : tree.length
+      api.createBucket('새 버킷')
+        .then((created) => {
+          if (parentId == null) {
+            setTree(prev => [...(prev ?? []), created])
+            return undefined
+          }
+          return api.moveBucket(created.id, parentId, position).then(canonical => setTree(canonical))
+        })
+        .catch(() => void refresh())
     },
     rename(id, name) {
-      setTree((prev) => {
-        const t = clone(prev)
-        const b = findBucket(t, id)
-        if (b)
-          b.name = name
-        return t
-      })
+      if (tree == null)
+        return
+      const t = clone(tree)
+      const b = findBucket(t, id)
+      if (b)
+        b.name = name
+      setTree(t)
+      api.renameBucket(id, name).catch(() => void refresh())
     },
     deleteBucket(id) {
-      setTree((prev) => {
-        const t = clone(prev)
-        removeBucket(t, id)
-        return t
-      })
+      if (tree == null)
+        return
+      const t = clone(tree)
+      removeBucketNode(t, id)
+      setTree(t)
+      api.deleteBucket(id).catch(() => void refresh())
     },
-    addAlbum(id, a) {
-      setTree((prev) => {
-        const t = clone(prev)
-        const b = findBucket(t, id)
-        if (b)
-          b.albums.push({ ...a, id: newId('al') })
-        return t
-      })
+    requestAdd(bucketId, bucketName) {
+      setAddingTo({ id: bucketId, name: bucketName })
     },
+  }
+
+  async function onAddAlbum(album: { id: string, title: string }): Promise<AddOutcome> {
+    if (!addingTo)
+      return { status: 'error', message: '버킷을 찾을 수 없습니다' }
+    try {
+      const { item, conflict } = await api.addBucketItem(addingTo.id, album.id)
+      if (conflict)
+        return { status: 'conflict' }
+      if (item && tree != null) {
+        const t = clone(tree)
+        findBucket(t, addingTo.id)?.albums.push(item)
+        setTree(t)
+      }
+      return { status: 'added', alreadyReviewed: item?.alreadyReviewed ?? false }
+    }
+    catch {
+      return { status: 'error', message: '담기 실패' }
+    }
+  }
+
+  if (error && tree == null) {
+    return (
+      <div>
+        <SectionTitle title="평론 버킷" />
+        <div className="lf-panel" style={{ padding: 32, textAlign: 'center' }}>
+          <span className="lf-meta">버킷을 불러오지 못했습니다</span>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div>
       <SectionTitle
-	kicker={(
-<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-{tree.length}
-{' '}
-버킷
-{' '}
-<SampleBadge />
-</span>
-)}
+	kicker={tree == null ? '불러오는 중…' : `${tree.length} 버킷`}
 	title="평론 버킷"
-	right={<button type="button" className="lf-btn" onClick={() => ops.addBucket(null)}>＋ 버킷 추가</button>}
+	right={<button type="button" className="lf-btn" disabled={tree == null} onClick={() => ops.addBucket(null)}>＋ 버킷 추가</button>}
       />
       <p className="lf-serif lf-italic" style={{ marginTop: -10, marginBottom: 22, color: 'var(--color-subtle)', fontSize: 15 }}>
         가로줄 하나가 버킷입니다.
@@ -394,32 +417,50 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
 를 끌어 버킷끼리 중첩하거나, 앨범 카드를 다른 버킷으로 옮겨보세요. 앨범을 클릭하면 상세가 열립니다.
       </p>
 
-      {tree.map(b => (
+      {tree == null && <div className="lf-meta" style={{ padding: '8px 0' }}>불러오는 중…</div>}
+
+      {tree != null && tree.length === 0 && (
+        <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
+          <span className="lf-meta">아직 버킷이 없습니다 · “＋ 버킷 추가”로 시작해보세요</span>
+        </div>
+      )}
+
+      {tree != null && tree.map(b => (
         <BucketRow key={b.id} bucket={b} depth={0} ops={ops} onOpen={onOpen} dropTarget={dropTarget} setDropTarget={setDropTarget} draggingId={draggingId} setDraggingId={setDraggingId} draggingBucket={draggingBucket} setDraggingBucket={setDraggingBucket} />
       ))}
 
-      <div
+      {tree != null && tree.length > 0 && (
+        <div
 	onDragOver={(e) => {
-          const it = dnd
-          if (it && it.kind === 'bucket') {
-            e.preventDefault()
-            setRootHot(true)
-          }
-        }}
+            const it = dnd
+            if (it && it.kind === 'bucket') {
+              e.preventDefault()
+              setRootHot(true)
+            }
+          }}
 	onDragLeave={() => setRootHot(false)}
 	onDrop={(e) => {
-          e.preventDefault()
-          const it = dnd
-          setRootHot(false)
-          if (it && it.kind === 'bucket' && it.bucketId)
-            ops.moveBucketInto(it.bucketId, null)
-          dnd = null
-        }}
+            e.preventDefault()
+            const it = dnd
+            setRootHot(false)
+            if (it && it.kind === 'bucket' && it.bucketId)
+              ops.moveBucketInto(it.bucketId, null)
+            dnd = null
+          }}
 	className={`lf-mono${rootHot ? ' lf-drop-on' : ''}`}
 	style={{ marginTop: 6, padding: '14px', textAlign: 'center', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4 }}
-      >
-        여기로 끌어 최상위 버킷으로 빼기
-      </div>
+        >
+          여기로 끌어 최상위 버킷으로 빼기
+        </div>
+      )}
+
+      {addingTo && (
+        <AddAlbumModal
+	bucketName={addingTo.name}
+	onAdd={onAddAlbum}
+	onClose={() => setAddingTo(null)}
+        />
+      )}
     </div>
   )
 }
