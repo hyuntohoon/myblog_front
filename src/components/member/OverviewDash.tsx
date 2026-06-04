@@ -222,9 +222,44 @@ function Activity({ data }: { data: number[] }) {
   )
 }
 
+/** How many 최근 들은 앨범 the widget shows inline; the rest live behind 더 보기. */
+const RECENT_ALBUMS_LIMIT = 6
+
+/** Modal listing every 최근 들은 앨범 (grid). Reuses the slide-over shell + scrim. */
+function RecentAlbumsModal({ items, onOpen, onClose }: { items: SampleAlbum[], onOpen: (t: DetailTarget) => void, onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape')
+        onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const openAndClose = (t: DetailTarget) => {
+    onClose()
+    onOpen(t)
+  }
+  return createPortal(
+    <div className="lf-scrim" onClick={onClose} role="presentation">
+      <aside className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 들은 앨범 전체">
+        <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
+        <div className="lf-kicker" style={{ marginBottom: 4 }}>최근 들은 앨범</div>
+        <div className="lf-meta" style={{ marginBottom: 18 }}>
+          {items.length}
+          장
+        </div>
+        <AlbumColl items={items} view="grid" onOpen={openAndClose} />
+      </aside>
+    </div>,
+    document.body,
+  )
+}
+
 /** 최근 들은 앨범 widget — real (worker-fed cache, Step 3 D25), mapped to AlbumColl. */
 function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: DetailTarget) => void }) {
   const [items, setItems] = useState<SampleAlbum[] | null>(null)
+  const [showAll, setShowAll] = useState(false)
   useEffect(() => {
     let on = true
     listRecentlyListened()
@@ -246,7 +281,24 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
     return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
   if (items.length === 0)
     return <div className="lf-meta" style={{ padding: '6px 2px' }}>최근 들은 앨범이 없습니다</div>
-  return <AlbumColl items={items} view={view} onOpen={onOpen} />
+  const shown = items.slice(0, RECENT_ALBUMS_LIMIT)
+  const hidden = items.length - shown.length
+  return (
+    <>
+      <AlbumColl items={shown} view={view} onOpen={onOpen} />
+      {hidden > 0 && (
+        <button
+	type="button"
+	onClick={() => setShowAll(true)}
+	className="lf-mono"
+	style={{ marginTop: 12, width: '100%', padding: '8px 0', background: 'none', border: '1px solid var(--color-border-soft)', borderRadius: 3, color: 'var(--color-subtle)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', cursor: 'pointer' }}
+        >
+          {`더 보기 (+${hidden})`}
+        </button>
+      )}
+      {showAll && <RecentAlbumsModal items={items} onOpen={onOpen} onClose={() => setShowAll(false)} />}
+    </>
+  )
 }
 
 function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
