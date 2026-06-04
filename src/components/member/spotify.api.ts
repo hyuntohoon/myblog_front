@@ -19,6 +19,16 @@ export interface RecentlyListened {
   lastSyncedAt: string | null
 }
 
+/** Spotify connection status — token validity, not mere presence (D30). */
+export interface SpotifyConnection {
+  /** a refresh token is stored */
+  connected: boolean
+  /** the worker's last refresh hit invalid_grant → "재인증 필요" */
+  needsReauth: boolean
+  /** ISO8601 of when the token last worked, or null */
+  lastSuccessfulRefreshAt: string | null
+}
+
 async function asJson<T>(res: Response | null): Promise<T> {
   if (!res)
     throw new Error('network error (no response)')
@@ -43,11 +53,15 @@ export async function getNowPlayingData(): Promise<NowPlaying> {
   return asJson<NowPlaying>(res)
 }
 
-/** GET /api/library/spotify-connection — whether a refresh token is bootstrapped. */
-export async function getSpotifyConnection(): Promise<boolean> {
+/** GET /api/library/spotify-connection — connection status incl. token validity (D30). */
+export async function getSpotifyConnection(): Promise<SpotifyConnection> {
   const res = await apiFetch(`${BASE}/api/library/spotify-connection`, { method: 'GET' })
   const data = await asJson<SpotifyConnectionResponse>(res)
-  return Boolean(data.connected)
+  return {
+    connected: Boolean(data.connected),
+    needsReauth: Boolean(data.needs_reauth),
+    lastSuccessfulRefreshAt: data.last_successful_refresh_at ?? null,
+  }
 }
 
 /** POST /api/library/refresh-recent — enqueue an async Spotify re-sync (rule #9). */
