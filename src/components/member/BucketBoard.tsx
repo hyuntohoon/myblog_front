@@ -11,11 +11,18 @@ import { useEffect, useState } from 'react'
 import * as api from '@lib/buckets'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
+import { listRecentlyListened } from './spotify.api'
 import { AlbumArt, SectionTitle } from './ui'
 
-interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string }
+// `copy` (with `albumId`) marks a drag originating from the pinned 최근 들은 앨범
+// strip: dropping it on a bucket copies the album in (addBucketItem) instead of
+// moving a bucket item. Synthetic id; not a real review_bucket_items row.
+interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string }
 // Module-level drag payload (native DnD can't carry live object refs reliably).
 let dnd: DndItem | null = null
+
+// Synthetic id of the read-only 최근 들은 앨범 strip (never persisted server-side).
+const RECENT_ID = '__recent__'
 
 const clone = (t: BoardBucket[]): BoardBucket[] => JSON.parse(JSON.stringify(t))
 function visit(buckets: BoardBucket[], fn: (b: BoardBucket) => void) {
@@ -77,6 +84,7 @@ function findAlbum(buckets: BoardBucket[], itemId: string): { album: BoardAlbum,
 interface Ops {
   tree: BoardBucket[]
   moveAlbum: (itemId: string, fromBucketId: string, toBucketId: string) => void
+  copyAlbum: (albumId: string, toBucketId: string) => void
   moveBucketInto: (bucketId: string, targetId: string | null) => void
   addBucket: (parentId: string | null) => void
   rename: (id: string, name: string) => void
@@ -89,13 +97,17 @@ interface Ops {
 // a full-width square cover on top, then title + artist on a full-width block
 // (nowrap+ellipsis), which is structurally immune to the old chip's vertical-text
 // squeeze. A hover ✕ removes the album (via the board's confirm modal).
-function AlbumChip({ album, bucketId, onOpen, onDelete, draggingId, setDraggingId }: { album: BoardAlbum, bucketId: string, onOpen: (t: DetailTarget) => void, onDelete: () => void, draggingId: string | null, setDraggingId: (id: string | null) => void }) {
+// `copySource` tiles (the 최근 들은 앨범 strip) drag as a copy and have no ✕ —
+// they are not bucket items, so they can be copied into a bucket but not removed.
+function AlbumChip({ album, bucketId, onOpen, onDelete, copySource, draggingId, setDraggingId }: { album: BoardAlbum, bucketId: string, onOpen: (t: DetailTarget) => void, onDelete?: () => void, copySource?: boolean, draggingId: string | null, setDraggingId: (id: string | null) => void }) {
   return (
     <div
 	draggable
 	onDragStart={(e) => {
-        dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId }
-        e.dataTransfer.effectAllowed = 'move'
+        dnd = copySource ?
+          { kind: 'album', copy: true, albumId: album.albumId, fromBucketId: bucketId } :
+          { kind: 'album', itemId: album.itemId, fromBucketId: bucketId }
+        e.dataTransfer.effectAllowed = copySource ? 'copy' : 'move'
         setDraggingId(album.itemId)
       }}
 	onDragEnd={() => {
@@ -104,25 +116,27 @@ function AlbumChip({ album, bucketId, onOpen, onDelete, draggingId, setDraggingI
       }}
 	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year })}
 	className={`lf-drag-handle bb-tile${draggingId === album.itemId ? ' lf-is-dragging' : ''}`}
-	title={`${album.title} — ${album.artist}`}
+	title={copySource ? `${album.title} — ${album.artist} · 드래그하면 버킷에 복사` : `${album.title} — ${album.artist}`}
     >
       <div style={{ position: 'relative' }}>
         <AlbumArt url={album.cover} label={album.title} />
         {album.alreadyReviewed && (
           <span className="lf-mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
         )}
-        <button
+        {!copySource && onDelete && (
+          <button
 	type="button"
 	className="bb-tile-del"
 	title="이 앨범을 버킷에서 빼기"
 	aria-label={`${album.title} 버킷에서 빼기`}
 	onClick={(e) => {
-            e.stopPropagation()
-            onDelete()
-          }}
-        >
-          ✕
-        </button>
+              e.stopPropagation()
+              onDelete()
+            }}
+          >
+            ✕
+          </button>
+        )}
       </div>
       <div style={{ marginTop: 8 }}>
         <div className="lf-serif lf-italic" style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
@@ -176,7 +190,9 @@ function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, drag
     setDropTarget(null)
     if (!it)
       return
-    if (it.kind === 'album' && it.itemId && it.fromBucketId && it.fromBucketId !== bucket.id)
+    if (it.kind === 'album' && it.copy && it.albumId)
+      ops.copyAlbum(it.albumId, bucket.id)
+    else if (it.kind === 'album' && it.itemId && it.fromBucketId && it.fromBucketId !== bucket.id)
       ops.moveAlbum(it.itemId, it.fromBucketId, bucket.id)
     else if (it.kind === 'bucket' && it.bucketId && canAcceptBucket())
       ops.moveBucketInto(it.bucketId, bucket.id)
@@ -280,6 +296,7 @@ function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, drag
 
 export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
   const [tree, setTree] = useState<BoardBucket[] | null>(null)
+  const [recent, setRecent] = useState<BoardAlbum[] | null>(null)
   const [error, setError] = useState(false)
   const [addingTo, setAddingTo] = useState<{ id: string, name: string } | null>(null)
 
@@ -296,6 +313,32 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
     api.listBuckets()
       .then(t => alive && setTree(t))
       .catch(() => alive && setError(true))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // Load the pinned 최근 들은 앨범 strip — same worker-fed cache the overview uses
+  // (GET /api/library/recently-listened, no synchronous Spotify call, rule #9).
+  // Mapped to BoardAlbum with a synthetic `recent:` itemId; these are copy-source
+  // only. A failure (e.g. Spotify not connected) just hides the strip.
+  useEffect(() => {
+    let alive = true
+    listRecentlyListened()
+      .then((r) => {
+        if (!alive)
+          return
+        setRecent(r.items.map(it => ({
+          itemId: `recent:${it.album_id}`,
+          albumId: it.album_id,
+          title: it.album?.title ?? '제목 미상',
+          artist: (it.album?.artist_names ?? []).join(', ') || '—',
+          cover: it.album?.cover_url ?? null,
+          year: it.album?.release_date ? Number(String(it.album.release_date).slice(0, 4)) || null : null,
+          alreadyReviewed: false,
+        })))
+      })
+      .catch(() => alive && setRecent([]))
     return () => {
       alive = false
     }
@@ -341,6 +384,26 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
         { id: fromBucketId, item_ids: src.albums.map(a => a.itemId) },
         { id: toBucketId, item_ids: dst.albums.map(a => a.itemId) },
       ]).catch(() => void refresh())
+    },
+    // Copy a 최근 들은 앨범 tile into a real bucket: add the item server-side, then
+    // splice the canonical item (with its real itemId) into the tree. A 409 means
+    // it's already in that bucket — silent no-op. The recent strip is untouched.
+    copyAlbum(albumId, toBucketId) {
+      if (tree == null)
+        return
+      api.addBucketItem(toBucketId, albumId)
+        .then(({ item, conflict }) => {
+          if (conflict || !item)
+            return
+          setTree((prev) => {
+            if (prev == null)
+              return prev
+            const t = clone(prev)
+            findBucket(t, toBucketId)?.albums.push(item)
+            return t
+          })
+        })
+        .catch(() => void refresh())
     },
     moveBucketInto(bucketId, targetId) {
       if (tree == null)
@@ -471,6 +534,21 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
 를 끌어 버킷끼리 중첩하거나, 앨범 카드를 다른 버킷으로 옮겨보세요. 앨범을 클릭하면 상세가 열립니다.
       </p>
 
+      {recent != null && recent.length > 0 && (
+        <div className="lf-panel" style={{ background: 'var(--color-paper)', padding: 0, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderBottom: '1px solid var(--color-border-soft)' }}>
+            <span className="lf-mono" style={{ fontSize: 12, fontWeight: 500, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-text)' }}>최근 들은 앨범</span>
+            <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{recent.length}</span>
+            <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>드래그하면 버킷에 복사 · 원본 유지</span>
+          </div>
+          <div style={{ display: 'flex', gap: 14, padding: 14, overflowX: 'auto', minHeight: 200, alignItems: 'flex-start' }}>
+            {recent.map(a => (
+              <AlbumChip key={a.itemId} album={a} bucketId={RECENT_ID} onOpen={onOpen} copySource draggingId={draggingId} setDraggingId={setDraggingId} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {tree == null && <div className="lf-meta" style={{ padding: '8px 0' }}>불러오는 중…</div>}
 
       {tree != null && tree.length === 0 && (
@@ -510,7 +588,7 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
           <div
 	onDragOver={(e) => {
               const it = dnd
-              if (it && it.kind === 'album') {
+              if (it && it.kind === 'album' && !it.copy) {
                 e.preventDefault()
                 setTrashHot(true)
               }
@@ -520,7 +598,7 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
               e.preventDefault()
               const it = dnd
               setTrashHot(false)
-              if (it && it.kind === 'album' && it.itemId && it.fromBucketId) {
+              if (it && it.kind === 'album' && !it.copy && it.itemId && it.fromBucketId) {
                 const found = findAlbum(tree, it.itemId)
                 setPendingDelete({ itemId: it.itemId, fromBucketId: it.fromBucketId, title: found?.album.title ?? '' })
               }
