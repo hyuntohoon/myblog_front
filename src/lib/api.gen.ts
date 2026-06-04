@@ -127,6 +127,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/reviewed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Reviewed */
+        get: operations["list_reviewed_api_library_reviewed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/to-listen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List To Listen */
+        get: operations["list_to_listen_api_library_to_listen_get"];
+        put?: never;
+        /** Add To Listen */
+        post: operations["add_to_listen_api_library_to_listen_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/to-listen/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder To Listen */
+        put: operations["reorder_to_listen_api_library_to_listen_reorder_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/to-listen/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete To Listen */
+        delete: operations["delete_to_listen_api_library_to_listen__item_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/batch": {
         parameters: {
             query?: never;
@@ -384,6 +453,13 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** AddToListenRequest */
+        Backend_AddToListenRequest: {
+            /** Album Id */
+            album_id: string;
+            /** Note */
+            note?: string | null;
+        };
         /** AlbumBrief */
         Backend_AlbumBrief: {
             /** Artist Names */
@@ -581,6 +657,46 @@ export interface components {
         Backend_ReorderRequest: {
             /** Buckets */
             buckets?: components["schemas"]["Backend_ReorderBucket"][];
+        };
+        /** ReviewedAlbumResponse */
+        Backend_ReviewedAlbumResponse: {
+            album: components["schemas"]["Backend_AlbumBrief"];
+            /** Album Id */
+            album_id: string;
+            /** Review Ids */
+            review_ids?: string[];
+        };
+        /** ReviewedResponse */
+        Backend_ReviewedResponse: {
+            /** Items */
+            items?: components["schemas"]["Backend_ReviewedAlbumResponse"][];
+        };
+        /** ToListenItemResponse */
+        Backend_ToListenItemResponse: {
+            /**
+             * Added At
+             * Format: date-time
+             */
+            added_at: string;
+            album: components["schemas"]["Backend_AlbumBrief"];
+            /** Album Id */
+            album_id: string;
+            /** Id */
+            id: string;
+            /** Note */
+            note?: string | null;
+            /** Position */
+            position: number;
+        };
+        /** ToListenReorderRequest */
+        Backend_ToListenReorderRequest: {
+            /** Item Ids */
+            item_ids?: string[];
+        };
+        /** ToListenResponse */
+        Backend_ToListenResponse: {
+            /** Items */
+            items?: components["schemas"]["Backend_ToListenItemResponse"][];
         };
         /** UpdateBucketItemRequest */
         Backend_UpdateBucketItemRequest: {
@@ -1326,6 +1442,157 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_reviewed_api_library_reviewed_get: {
+        parameters: {
+            query?: {
+                group_by?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ReviewedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_to_listen_api_library_to_listen_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ToListenResponse"];
+                };
+            };
+        };
+    };
+    add_to_listen_api_library_to_listen_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AddToListenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ToListenItemResponse"];
+                };
+            };
+            /** @description Album already in the to-listen queue */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_to_listen_api_library_to_listen_reorder_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_ToListenReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_to_listen_api_library_to_listen__item_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };
