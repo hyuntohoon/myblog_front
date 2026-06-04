@@ -299,7 +299,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       {tab === 'overview' && <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} chartStyle={chartStyle} onOpen={openDetail} goBucket={() => setTab('bucket')} reviews={reviews} />}
       {tab === 'reviews' && <ReviewsTab reviews={reviews} onOpen={openDetail} />}
       {tab === 'bucket' && <BucketBoard onOpen={openDetail} />}
-      {tab === 'library' && <LibraryTab onOpen={openDetail} />}
+      {tab === 'library' && <LibraryTab onOpen={openDetail} reviews={reviews} />}
       {tab === 'stats' && <StatsTab chartStyle={chartStyle} setChartStyle={setChartStyle} />}
     </div>
   )

@@ -56,6 +56,7 @@ const reviews: MemberReview[] = (await getCollection('blog'))
       date: date.toISOString(),
       excerpt: d.description || stripExcerpt(entry.body),
       cover: d.albumCover ?? d.image ?? mr?.cover?.src ?? null,
+      albumIds: d.albumIds ?? [],
     } satisfies MemberReview
   })
 

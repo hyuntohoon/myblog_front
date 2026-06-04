@@ -32,6 +32,12 @@ export interface MemberReview {
 	date: string
 	excerpt: string
 	cover: string | null
+	/**
+	 * DB album ids this post reviews (frontmatter). Lets the 라이브러리 reviewed
+	 *  drawer correlate a reviewed album → its review pages (FEAT-member-dashboard
+	 *  Step 2, D20). Empty for columns.
+	 */
+	albumIds: string[]
 }
 
 /** What the album-detail slide-over needs; emitted by any `onOpen` handler. */
