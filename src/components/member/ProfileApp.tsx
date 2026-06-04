@@ -300,7 +300,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
     <div key={tab} className="lf-rise">
       {tab === 'overview' && <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} chartStyle={chartStyle} onOpen={openDetail} goBucket={() => setTab('bucket')} reviews={reviews} />}
       {tab === 'reviews' && <ReviewsTab reviews={reviews} onOpen={openDetail} />}
-      {tab === 'bucket' && <BucketBoard onOpen={openDetail} />}
+      {tab === 'bucket' && <BucketBoard onOpen={openDetail} reviews={reviews} />}
       {tab === 'library' && <LibraryTab onOpen={openDetail} reviews={reviews} />}
       {tab === 'stats' && <StatsTab chartStyle={chartStyle} setChartStyle={setChartStyle} />}
       {tab === 'integration' && <SpotifyIntegrationTab />}

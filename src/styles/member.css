@@ -204,59 +204,80 @@
 .lf-iconbtn:hover { color: var(--color-text); border-color: var(--color-border); }
 .lf-iconbtn.danger:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
-/* ── bucket album cover-tile (FEAT-bucket-board-redesign) ── */
+/* ── bucket album cover-tile (크레이트 갤러리) ──────────────
+   Fills its grid cell (covers laid out in a wrap grid) or the fixed-width
+   wrapper in the 최근 들은 앨범 strip. Hover lifts the cover. */
 .bb-tile {
 	position: relative;
-	flex: 0 0 136px;
-	width: 136px;
+	width: 100%;
 	background: none;
 	border: none;
 	padding: 0;
 	text-align: left;
 	cursor: pointer;
 }
-.bb-tile-del {
-	position: absolute;
-	top: 6px;
-	right: 6px;
-	width: 24px;
-	height: 24px;
-	display: grid;
-	place-items: center;
-	font-size: 12px;
-	line-height: 1;
-	color: #fff;
-	background: rgba(10, 9, 8, 0.62);
-	border: none;
-	border-radius: 3px;
-	cursor: pointer;
-	opacity: 0;
-	transition: opacity 0.12s, background 0.12s;
+.bb-tile > div:first-child {
+	transition: transform 0.15s, box-shadow 0.15s;
+	border-radius: 4px;
 }
-.bb-tile:hover .bb-tile-del,
-.bb-tile:focus-within .bb-tile-del { opacity: 1; }
-.bb-tile-del:hover { background: var(--color-accent); }
+.bb-tile:hover > div:first-child {
+	transform: translateY(-3px);
+	box-shadow: 0 6px 18px rgba(26, 26, 26, 0.16);
+}
 
-.bb-trash {
-	flex: 1;
+/* Spotify recent strip — green accent spine to set it apart from buckets. */
+.crate-spotify {
+	border-left: 3px solid var(--color-spotify);
+	background: color-mix(in srgb, var(--color-spotify) 5%, var(--color-paper));
+}
+
+/* ── drag edge rails (mounted only while dragging) ─────────
+   Fixed overlays pinned to the LEFT / RIGHT screen edges, full height,
+   symmetric. Slide in on mount, collapse on a narrow viewport. */
+.crate-rail {
+	position: fixed;
+	top: 12px;
+	bottom: 12px;
+	width: clamp(160px, 22vw, 300px);
+	box-sizing: border-box;
+	z-index: var(--z-panel);
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 8px;
-	padding: 14px;
-	font-size: 11px;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	color: var(--color-faded);
-	border: 1px dashed var(--color-border);
-	border-radius: 4px;
-	transition: color 0.12s, border-color 0.12s, background 0.12s;
+	gap: 16px;
+	text-align: center;
+	padding: 24px 18px;
+	border: 2px dashed var(--color-border);
+	border-radius: 12px;
+	backdrop-filter: blur(2px);
+	box-shadow: 0 12px 40px rgba(26, 26, 26, 0.16);
+	transition: border-color 0.14s, background 0.14s;
 }
-.bb-trash-hot {
-	color: var(--color-accent);
-	border-color: var(--color-accent);
-	border-style: solid;
-	background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+.crate-rail-left { left: 12px; animation: crate-rail-in-l 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.crate-rail-right { right: 12px; animation: crate-rail-in-r 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.crate-rail-hint {
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	line-height: 1.6;
+	max-width: 180px;
+	color: var(--color-subtle);
+	word-break: keep-all;
+}
+@keyframes crate-rail-in-l {
+	from { opacity: 0; transform: translateX(-14px); }
+	to { opacity: 1; transform: none; }
+}
+@keyframes crate-rail-in-r {
+	from { opacity: 0; transform: translateX(14px); }
+	to { opacity: 1; transform: none; }
+}
+@media (max-width: 760px) {
+	.crate-rail { width: 38vw; gap: 10px; padding: 16px 10px; }
+	.crate-rail-hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.crate-rail-left, .crate-rail-right { animation: none; }
 }
 
 /* ── entrance + equalizer ───────────────────────────────── */
