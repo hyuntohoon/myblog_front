@@ -17,7 +17,7 @@ import { bucketCount, getActivity, getArtists, getGenres, getRecentTracks, OV_RO
 import { DistChart } from './charts'
 import { NowPlaying } from './NowPlaying'
 import { listRecentlyListened } from './spotify.api'
-import { BucketShortcut, Cover, SampleBadge, SectionTitle, Seg, Stars } from './ui'
+import { AlbumArt, BucketShortcut, Cover, SampleBadge, SectionTitle, Seg, Stars } from './ui'
 
 /** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
 function fmtWhen(iso: string): string {
@@ -197,7 +197,7 @@ const SAMPLE_WIDGETS = new Set(['recent-tracks', 'genre', 'artists', 'activity']
 function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
   return (
     <button type="button" onClick={() => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating })} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
-      <Cover label={r.album} size={44} radius={3} />
+      <div style={{ width: 44, flex: '0 0 auto' }}><AlbumArt url={r.cover} label={r.album} size={44} /></div>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div className="lf-meta">
 {r.type}
