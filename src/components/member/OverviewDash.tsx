@@ -56,7 +56,7 @@ function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKe
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
         {items.map(a => (
           <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
-            <Cover label={a.album} square radius={3} />
+            <AlbumArt url={a.cover} label={a.album} />
             <div className="lf-serif lf-italic" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
             <div className="lf-mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
           </button>
@@ -69,7 +69,7 @@ function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKe
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
         {items.map(a => (
           <button key={a.id} type="button" onClick={() => onOpen(a)} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
-            <Cover label={a.album} size={56} radius={3} />
+            <div style={{ width: 56, flex: '0 0 auto' }}><AlbumArt url={a.cover} label={a.album} size={56} /></div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="lf-meta" style={{ marginBottom: 3 }}>{a.when}</div>
               <div className="lf-serif lf-italic" style={{ fontSize: 16, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
@@ -85,7 +85,7 @@ function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKe
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {items.map((a, i) => (
         <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
-          <Cover label={a.album} size={38} radius={2} />
+          <div style={{ width: 38, flex: '0 0 auto' }}><AlbumArt url={a.cover} label={a.album} size={38} /></div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="lf-serif lf-italic" style={{ fontSize: 15, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
             <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
@@ -271,6 +271,7 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
         genre: '',
         rating: null,
         when: fmtWhen(it.last_played_at),
+        cover: it.album?.cover_url ?? null,
       }))))
       .catch(() => on && setItems([]))
     return () => {

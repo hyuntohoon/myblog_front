@@ -17,6 +17,8 @@ export interface SampleAlbum {
 	rating: number | null
 	when?: string
 	status?: LibraryStatus
+	/** Real album-art URL when sourced from a live API; null/absent → letter tile. */
+	cover?: string | null
 }
 
 export interface SampleTrack {
