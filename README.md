@@ -20,11 +20,13 @@
 - 음악 검색 — DB-first 검색 UI, 필요 시 Sync 버튼으로 Spotify 최신 후보 확인
 - 트랙 클릭 → 앨범 상세(DB) 이동
 
-**관리자 (글쓰기)**
+**관리자 (글쓰기 + 회원 대시보드)**
 
 - Cognito 인증 후 글 작성 화면 진입 (`/write`, `/drafts`)
 - 에디터에서 앨범·아티스트 검색 및 연결, 평점(0~5, 0.5 단위) 입력
 - 임시저장 / 발행 / 발행글 편집 · 아카이브 · 복원(restore) · 삭제
+- 평론 작성 전 단계 to-review 큐 (`/reviews/queue`) — 칸반 버킷, 드래그앤드롭 우선순위, 인라인 작성/발행 (FEAT-review-bucket-board). 회원 대시보드 Step 5 에서 `/profile→bucket` 으로 통합되며 본 페이지는 은퇴 예정.
+- 회원 대시보드 (`/profile`) — 5탭(개요·평론·평론 버킷·라이브러리·통계), 실 데이터 + 샘플 라벨링, 중첩 버킷 보드, 시각/밀도 설정 (FEAT-member-dashboard Step 1 shipped, Step 2+ 진행 중)
 
 ---
 
