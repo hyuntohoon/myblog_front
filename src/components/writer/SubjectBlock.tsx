@@ -324,6 +324,11 @@ onSubjectBestNewChange,
   }
 
   function onSearchKeyDown(e: KeyboardEvent) {
+    // Ignore Enter while an IME composition is active (e.g. confirming a
+    // Hangul candidate) — that Enter belongs to the composition, not the
+    // search, so it must not fire a phantom query mid-typing.
+    if (e.key === 'Enter' && e.nativeEvent.isComposing)
+      return
     if (e.key === 'Enter') {
       e.preventDefault()
       runActiveSearch()
