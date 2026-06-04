@@ -64,6 +64,15 @@ function countAlbums(b: BoardBucket): number {
     n += countAlbums(c)
   return n
 }
+function findAlbum(buckets: BoardBucket[], itemId: string): { album: BoardAlbum, bucketId: string } | null {
+  let f: { album: BoardAlbum, bucketId: string } | null = null
+  visit(buckets, (b) => {
+    const a = b.albums.find(x => x.itemId === itemId)
+    if (a)
+      f = { album: a, bucketId: b.id }
+  })
+  return f
+}
 
 interface Ops {
   tree: BoardBucket[]
@@ -73,9 +82,14 @@ interface Ops {
   rename: (id: string, name: string) => void
   deleteBucket: (id: string) => void
   requestAdd: (bucketId: string, bucketName: string) => void
+  requestDelete: (itemId: string, fromBucketId: string, title: string) => void
 }
 
-function AlbumChip({ album, bucketId, onOpen, draggingId, setDraggingId }: { album: BoardAlbum, bucketId: string, onOpen: (t: DetailTarget) => void, draggingId: string | null, setDraggingId: (id: string | null) => void }) {
+// Cover-forward album tile — mirrors ReviewedSection's grammar (LibraryTab.tsx):
+// a full-width square cover on top, then title + artist on a full-width block
+// (nowrap+ellipsis), which is structurally immune to the old chip's vertical-text
+// squeeze. A hover ✕ removes the album (via the board's confirm modal).
+function AlbumChip({ album, bucketId, onOpen, onDelete, draggingId, setDraggingId }: { album: BoardAlbum, bucketId: string, onOpen: (t: DetailTarget) => void, onDelete: () => void, draggingId: string | null, setDraggingId: (id: string | null) => void }) {
   return (
     <div
 	draggable
@@ -89,15 +103,30 @@ function AlbumChip({ album, bucketId, onOpen, draggingId, setDraggingId }: { alb
         setDraggingId(null)
       }}
 	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year })}
-	className={`lf-drag-handle${draggingId === album.itemId ? ' lf-is-dragging' : ''}`}
+	className={`lf-drag-handle bb-tile${draggingId === album.itemId ? ' lf-is-dragging' : ''}`}
 	title={`${album.title} — ${album.artist}`}
-	style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 8, width: 184, flex: '0 0 auto', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', borderRadius: 4 }}
     >
-      <AlbumArt url={album.cover} label={album.title} size={42} />
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="lf-serif" style={{ fontSize: 13.5, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
-        <div className="lf-sans" style={{ fontSize: 11, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{album.artist}</div>
-        <div style={{ marginTop: 3 }}>{album.alreadyReviewed ? <span className="lf-mono" style={{ fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-accent)' }}>평론함</span> : <span className="lf-meta" style={{ fontSize: 9 }}>미평론</span>}</div>
+      <div style={{ position: 'relative' }}>
+        <AlbumArt url={album.cover} label={album.title} />
+        {album.alreadyReviewed && (
+          <span className="lf-mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
+        )}
+        <button
+	type="button"
+	className="bb-tile-del"
+	title="이 앨범을 버킷에서 빼기"
+	aria-label={`${album.title} 버킷에서 빼기`}
+	onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+        >
+          ✕
+        </button>
+      </div>
+      <div style={{ marginTop: 8 }}>
+        <div className="lf-serif lf-italic" style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
+        <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{album.artist}</div>
       </div>
     </div>
   )
@@ -232,12 +261,12 @@ function BucketRow({ bucket, depth, ops, onOpen, dropTarget, setDropTarget, drag
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, padding: 12, overflowX: 'auto', minHeight: 78, alignItems: 'stretch' }}>
+        <div style={{ display: 'flex', gap: 14, padding: 14, overflowX: 'auto', minHeight: 200, alignItems: 'flex-start' }}>
           {bucket.albums.length === 0 && bucket.children.length === 0 && (
-            <div className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: '16px 18px', width: '100%', textAlign: 'center', lineHeight: 1.6 }}>비어 있음 · 앨범이나 버킷을 여기로 드래그</div>
+            <div className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: '52px 18px', width: '100%', textAlign: 'center', lineHeight: 1.6, alignSelf: 'stretch' }}>비어 있음 · 앨범이나 버킷을 여기로 드래그</div>
           )}
           {bucket.albums.map(a => (
-            <AlbumChip key={a.itemId} album={a} bucketId={bucket.id} onOpen={onOpen} draggingId={draggingId} setDraggingId={setDraggingId} />
+            <AlbumChip key={a.itemId} album={a} bucketId={bucket.id} onOpen={onOpen} onDelete={() => ops.requestDelete(a.itemId, bucket.id, a.title)} draggingId={draggingId} setDraggingId={setDraggingId} />
           ))}
         </div>
       </div>
@@ -256,8 +285,10 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [rootHot, setRootHot] = useState(false)
+  const [trashHot, setTrashHot] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ itemId: string, fromBucketId: string, title: string } | null>(null)
 
   // Load the real tree on mount.
   useEffect(() => {
@@ -370,6 +401,29 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
     requestAdd(bucketId, bucketName) {
       setAddingTo({ id: bucketId, name: bucketName })
     },
+    requestDelete(itemId, fromBucketId, title) {
+      setPendingDelete({ itemId, fromBucketId, title })
+    },
+  }
+
+  // Confirm + delete a single album: optimistic splice, then the existing DELETE
+  // route. The localStorage bucket-count mirror re-syncs via the [tree] effect.
+  function confirmDelete() {
+    if (pendingDelete == null || tree == null) {
+      setPendingDelete(null)
+      return
+    }
+    const { itemId, fromBucketId } = pendingDelete
+    const t = clone(tree)
+    const src = findBucket(t, fromBucketId)
+    if (src) {
+      const idx = src.albums.findIndex(a => a.itemId === itemId)
+      if (idx >= 0)
+        src.albums.splice(idx, 1)
+    }
+    setTree(t)
+    setPendingDelete(null)
+    api.deleteBucketItem(fromBucketId, itemId).catch(() => void refresh())
   }
 
   async function onAddAlbum(album: { id: string, title: string }): Promise<AddOutcome> {
@@ -430,27 +484,52 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
       ))}
 
       {tree != null && tree.length > 0 && (
-        <div
+        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <div
 	onDragOver={(e) => {
-            const it = dnd
-            if (it && it.kind === 'bucket') {
-              e.preventDefault()
-              setRootHot(true)
-            }
-          }}
+              const it = dnd
+              if (it && it.kind === 'bucket') {
+                e.preventDefault()
+                setRootHot(true)
+              }
+            }}
 	onDragLeave={() => setRootHot(false)}
 	onDrop={(e) => {
-            e.preventDefault()
-            const it = dnd
-            setRootHot(false)
-            if (it && it.kind === 'bucket' && it.bucketId)
-              ops.moveBucketInto(it.bucketId, null)
-            dnd = null
-          }}
+              e.preventDefault()
+              const it = dnd
+              setRootHot(false)
+              if (it && it.kind === 'bucket' && it.bucketId)
+                ops.moveBucketInto(it.bucketId, null)
+              dnd = null
+            }}
 	className={`lf-mono${rootHot ? ' lf-drop-on' : ''}`}
-	style={{ marginTop: 6, padding: '14px', textAlign: 'center', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4 }}
-        >
-          여기로 끌어 최상위 버킷으로 빼기
+	style={{ flex: 1, padding: '14px', textAlign: 'center', fontSize: 11, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4 }}
+          >
+            여기로 끌어 최상위 버킷으로 빼기
+          </div>
+          <div
+	onDragOver={(e) => {
+              const it = dnd
+              if (it && it.kind === 'album') {
+                e.preventDefault()
+                setTrashHot(true)
+              }
+            }}
+	onDragLeave={() => setTrashHot(false)}
+	onDrop={(e) => {
+              e.preventDefault()
+              const it = dnd
+              setTrashHot(false)
+              if (it && it.kind === 'album' && it.itemId && it.fromBucketId) {
+                const found = findAlbum(tree, it.itemId)
+                setPendingDelete({ itemId: it.itemId, fromBucketId: it.fromBucketId, title: found?.album.title ?? '' })
+              }
+              dnd = null
+            }}
+	className={`lf-mono${trashHot ? ' bb-trash-hot' : ''} bb-trash`}
+          >
+            🗑 앨범을 여기로 끌어 빼기
+          </div>
         </div>
       )}
 
@@ -460,6 +539,31 @@ export function BucketBoard({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
 	onAdd={onAddAlbum}
 	onClose={() => setAddingTo(null)}
         />
+      )}
+
+      {pendingDelete && (
+        <div className="qb-modal-scrim" onClick={() => setPendingDelete(null)} role="presentation">
+          <div className="qb-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="앨범 빼기 확인" style={{ maxWidth: 400 }}>
+            <header className="qb-modal-head">
+              <div>
+                <div className="qb-modal-kicker">앨범 빼기</div>
+                <h3 className="qb-modal-title">이 앨범을 버킷에서 뺄까요?</h3>
+              </div>
+              <button type="button" className="qb-modal-close" onClick={() => setPendingDelete(null)} aria-label="닫기">✕</button>
+            </header>
+            <div style={{ padding: 'var(--space-4) var(--space-5) var(--space-5)' }}>
+              <p className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.65, margin: 0 }}>
+                <span className="lf-serif lf-italic" style={{ color: 'var(--color-text)' }}>{pendingDelete.title || '이 앨범'}</span>
+                {' '}
+                을(를) 버킷에서 영구적으로 뺍니다. 평론 기록에는 영향을 주지 않습니다.
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
+                <button type="button" className="lf-btn" onClick={() => setPendingDelete(null)}>취소</button>
+                <button type="button" className="lf-btn lf-btn-solid" onClick={confirmDelete}>빼기</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

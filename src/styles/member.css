@@ -204,6 +204,61 @@
 .lf-iconbtn:hover { color: var(--color-text); border-color: var(--color-border); }
 .lf-iconbtn.danger:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
+/* ── bucket album cover-tile (FEAT-bucket-board-redesign) ── */
+.bb-tile {
+	position: relative;
+	flex: 0 0 136px;
+	width: 136px;
+	background: none;
+	border: none;
+	padding: 0;
+	text-align: left;
+	cursor: pointer;
+}
+.bb-tile-del {
+	position: absolute;
+	top: 6px;
+	right: 6px;
+	width: 24px;
+	height: 24px;
+	display: grid;
+	place-items: center;
+	font-size: 12px;
+	line-height: 1;
+	color: #fff;
+	background: rgba(10, 9, 8, 0.62);
+	border: none;
+	border-radius: 3px;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.12s, background 0.12s;
+}
+.bb-tile:hover .bb-tile-del,
+.bb-tile:focus-within .bb-tile-del { opacity: 1; }
+.bb-tile-del:hover { background: var(--color-accent); }
+
+.bb-trash {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	padding: 14px;
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+	border: 1px dashed var(--color-border);
+	border-radius: 4px;
+	transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.bb-trash-hot {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+	border-style: solid;
+	background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
 /* ── entrance + equalizer ───────────────────────────────── */
 @keyframes lf-rise {
 	from { opacity: 0; transform: translateY(8px); }
