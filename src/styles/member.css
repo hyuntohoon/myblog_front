@@ -246,3 +246,155 @@
 @media (prefers-reduced-motion: reduce) {
 	.lf-rise, .lf-scrim, .lf-slideover { animation: none; }
 }
+
+/* ── Add-album modal ─────────────────────────────────────────────────────────
+   Ported from the retired queue.css (FEAT-member-dashboard Step 5). AddAlbumModal
+   now lives in components/member/ and renders on /profile (bucket board + library
+   to-listen); profile.astro loads only member.css, so these qb-* rules must live
+   here. Tokens (--color-*, --space-*, --font-*, --z-panel) come from global.css. */
+.qb-modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-panel);
+  display: grid;
+  place-items: start center;
+  padding: clamp(var(--space-6), 10vh, 140px) var(--space-4) var(--space-6);
+  background: rgba(10, 9, 8, 0.5);
+  backdrop-filter: blur(2px);
+  animation: qb-fade 0.16s ease;
+}
+@keyframes qb-fade { from { opacity: 0; } to { opacity: 1; } }
+.qb-modal {
+  width: min(560px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 30px 80px -24px rgba(0, 0, 0, 0.6);
+  animation: qb-pop 0.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes qb-pop { from { opacity: 0; transform: translateY(8px) scale(0.99); } to { opacity: 1; transform: none; } }
+.qb-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+.qb-modal-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-faded);
+  margin: 0;
+}
+.qb-modal-title { font-family: var(--font-serif); font-size: 22px; font-weight: 500; margin: 4px 0 0; }
+.qb-modal-close {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  font-size: 13px;
+  color: var(--color-faded);
+  background: none; border: 1px solid var(--color-border-soft); border-radius: 4px;
+  cursor: pointer;
+}
+.qb-modal-close:hover { color: var(--color-text); border-color: var(--color-border); }
+.qb-modal-searchrow { display: flex; gap: var(--space-2); padding: var(--space-4) var(--space-5) 0; }
+.qb-modal-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0 var(--space-3);
+}
+.qb-modal-search-icon { color: var(--color-faded); font-size: 15px; }
+.qb-modal-search-input {
+  flex: 1;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--color-text);
+  background: none;
+  border: none;
+  padding: var(--space-3) 0;
+  outline: none;
+}
+.qb-modal-search-clear { color: var(--color-faded); background: none; border: none; cursor: pointer; font-size: 12px; }
+.qb-modal-search-btn, .qb-modal-spotify-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 var(--space-3);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.qb-modal-search-btn { color: #fff; background: var(--color-text); border: 1px solid var(--color-text); }
+.qb-modal-spotify-btn { color: var(--color-spotify); background: none; border: 1px solid color-mix(in srgb, var(--color-spotify) 50%, transparent); }
+.qb-modal-spotify-btn:disabled, .qb-modal-search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.qb-modal-status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-subtle);
+  margin: var(--space-3) var(--space-5) 0;
+}
+.qb-modal-results {
+  margin-top: var(--space-3);
+  padding: 0 var(--space-3) var(--space-4);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qb-modal-empty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-faded);
+  text-align: center;
+  padding: var(--space-8);
+}
+.qb-hit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, border-color 0.1s;
+}
+.qb-hit:hover { background: var(--color-paper); border-color: var(--color-border-soft); }
+.qb-hit:disabled { opacity: 0.6; cursor: default; }
+.qb-hit-cover {
+  flex: 0 0 44px; width: 44px; height: 44px;
+  position: relative; overflow: hidden;
+  border: 1px solid var(--color-border-soft); border-radius: 3px;
+  background: var(--color-paper);
+}
+.qb-hit-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.qb-hit-cover-ph { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-mono); font-size: 13px; color: var(--color-faded); }
+.qb-hit-text { flex: 1; min-width: 0; }
+.qb-hit-title { font-family: var(--font-serif); font-size: 15px; color: var(--color-text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qb-hit-sub { font-family: var(--font-sans); font-size: 12px; color: var(--color-subtle); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qb-hit-src {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--color-faded);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  padding: 2px 7px;
+  flex-shrink: 0;
+}
+.qb-hit-src.spotify { color: var(--color-spotify); border-color: color-mix(in srgb, var(--color-spotify) 45%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .qb-modal, .qb-modal-scrim { animation: none; }
+}

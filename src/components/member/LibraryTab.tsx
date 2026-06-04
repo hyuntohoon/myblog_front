@@ -9,8 +9,8 @@
 //      async re-sync (rule #9 — no synchronous Spotify call here).
 import type { DetailTarget, MemberReview } from '@lib/member'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import AddAlbumModal from '../queue/AddAlbumModal'
-import type { AddOutcome } from '../queue/AddAlbumModal'
+import AddAlbumModal from './AddAlbumModal'
+import type { AddOutcome } from './AddAlbumModal'
 import {
   addToListen,
   listReviewed,
