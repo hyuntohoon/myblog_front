@@ -228,7 +228,7 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
   useEffect(() => {
     let on = true
     listRecentlyListened()
-      .then(rows => on && setItems(rows.map(it => ({
+      .then(snap => on && setItems(snap.items.map(it => ({
         id: it.album_id,
         album: it.album?.title ?? '앨범',
         artist: (it.album?.artist_names ?? []).join(', ') || '—',

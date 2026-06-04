@@ -346,15 +346,39 @@ function ReviewedSection({ reviews }: { reviews: MemberReview[] }) {
 
 /* ── 최근 들은 앨범 (Step 3, D25/D26 — worker-fed Spotify cache) ─────────────── */
 
+const POLL_INTERVAL_MS = 1500
+const POLL_MAX_ATTEMPTS = 10 // ~15s cap before assuming the cache was already fresh
+const sleep = (ms: number) => new Promise<void>(r => window.setTimeout(r, ms))
+
+/**
+ * True once the cache's synced_at has moved past the click-time value (D31). A
+ *  server-relative comparison, so it's immune to client↔server clock skew.
+ */
+function syncAdvanced(before: string | null, now: string | null): boolean {
+  if (!now)
+    return false
+  if (!before)
+    return true
+  return new Date(now).getTime() > new Date(before).getTime()
+}
+
 function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
   const [items, setItems] = useState<RecentlyListenedItem[] | null>(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
   const [err, setErr] = useState(false)
-  // 'idle' | 'pending' (refresh enqueued, awaiting worker) — the re-sync is async.
+  // 'idle' | 'pending' (refresh enqueued, polling the worker-fed cache).
   const [refreshState, setRefreshState] = useState<'idle' | 'pending'>('idle')
+  // shown briefly when a refresh found the cache already fresh (server debounced).
+  const [freshNote, setFreshNote] = useState(false)
 
   function load(alive: () => boolean = () => true) {
     return listRecentlyListened()
-      .then(rows => alive() && setItems(rows))
+      .then((snap) => {
+        if (alive()) {
+          setItems(snap.items)
+          setLastSyncedAt(snap.lastSyncedAt)
+        }
+      })
       .catch(() => alive() && setErr(true))
   }
 
@@ -369,19 +393,38 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
   async function onRefresh() {
     if (refreshState === 'pending')
       return
+    const before = lastSyncedAt // server-relative anchor (skew-free)
+    setErr(false)
+    setFreshNote(false)
     setRefreshState('pending')
     try {
       await refreshRecent()
-      // The worker processes the SQS job asynchronously; re-fetch after a short
-      // delay so the freshly-synced window is reflected. Honest about latency.
-      window.setTimeout(() => {
-        load().finally(() => setRefreshState('idle'))
-      }, 4000)
     }
     catch {
       setErr(true)
       setRefreshState('idle')
+      return
     }
+    // Poll until the worker's synced_at advances past `before` (a real re-sync).
+    // If it never does within the cap, the cache was < ~60s old and the worker
+    // debounced the request (D31) — settle on current data with a neutral note,
+    // not an error: the data genuinely is as fresh as it gets.
+    for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
+      await sleep(POLL_INTERVAL_MS)
+      const snap = await listRecentlyListened().catch(() => null)
+      if (!snap)
+        continue // transient; keep polling within the cap
+      if (syncAdvanced(before, snap.lastSyncedAt)) {
+        setItems(snap.items)
+        setLastSyncedAt(snap.lastSyncedAt)
+        setRefreshState('idle')
+        return
+      }
+    }
+    await load()
+    setFreshNote(true)
+    window.setTimeout(() => setFreshNote(false), 3000)
+    setRefreshState('idle')
   }
 
   const count = items?.length ?? 0
@@ -406,6 +449,8 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
 
       {items == null && !err && <div className="lf-meta" style={{ padding: '8px 0' }}>불러오는 중…</div>}
       {err && <div className="lf-panel" style={{ padding: 24, textAlign: 'center' }}><span className="lf-meta">목록을 불러오지 못했습니다</span></div>}
+
+      {freshNote && <div className="lf-meta" style={{ padding: '4px 0' }}>이미 최신 상태입니다</div>}
 
       {items != null && items.length === 0 && !err && (
         <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>

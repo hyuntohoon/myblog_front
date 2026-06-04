@@ -13,6 +13,12 @@ export type NowPlaying = components['schemas']['Backend_NowPlayingResponse']
 type RecentlyListenedResponse = components['schemas']['Backend_RecentlyListenedResponse']
 type SpotifyConnectionResponse = components['schemas']['Backend_SpotifyConnectionResponse']
 
+/** Recently-listened albums + when the worker last synced the cache (D31 poll anchor). */
+export interface RecentlyListened {
+  items: RecentlyListenedItem[]
+  lastSyncedAt: string | null
+}
+
 async function asJson<T>(res: Response | null): Promise<T> {
   if (!res)
     throw new Error('network error (no response)')
@@ -21,11 +27,14 @@ async function asJson<T>(res: Response | null): Promise<T> {
   return res.json() as Promise<T>
 }
 
-/** GET /api/library/recently-listened — distinct recently-played albums, newest first. */
-export async function listRecentlyListened(): Promise<RecentlyListenedItem[]> {
+/**
+ * GET /api/library/recently-listened — distinct recently-played albums, newest first,
+ *  plus last_synced_at so the UI can poll for a refresh completing (D31).
+ */
+export async function listRecentlyListened(): Promise<RecentlyListened> {
   const res = await apiFetch(`${BASE}/api/library/recently-listened`, { method: 'GET' })
   const data = await asJson<RecentlyListenedResponse>(res)
-  return data.items ?? []
+  return { items: data.items ?? [], lastSyncedAt: data.last_synced_at ?? null }
 }
 
 /** GET /api/library/now-playing — currently-playing snapshot (cache; may be stale). */
