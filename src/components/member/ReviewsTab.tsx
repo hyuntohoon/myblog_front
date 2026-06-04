@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { REVIEW_TYPES } from '@lib/member'
 import { archivePost, readErrorDetail } from '../../scripts/write/api'
-import { Cover, SectionTitle, Seg, Stars } from './ui'
+import { AlbumArt, SectionTitle, Seg, Stars } from './ui'
 
 type TypeFilter = '전체' | MemberReviewType
 type SortKey = 'recent' | 'score'
@@ -27,7 +27,7 @@ function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: Deta
   const open = () => clickable && onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating, track: r.type === '트랙 리뷰' ? r.album : undefined })
   return (
     <article className="lf-panel" style={{ padding: 16, display: 'flex', gap: 16, background: 'var(--color-bg)' }}>
-      <div onClick={open} style={{ cursor: clickable ? 'pointer' : 'default', flex: '0 0 auto' }}><Cover label={r.album} size={92} radius={3} /></div>
+      <div onClick={open} style={{ cursor: clickable ? 'pointer' : 'default', flex: '0 0 auto', width: 92 }}><AlbumArt url={r.cover} label={r.album} size={92} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="lf-meta" style={{ marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ color: isColumn ? 'var(--color-accent)' : 'var(--color-faded)' }}>{r.type}</span>
