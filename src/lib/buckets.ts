@@ -35,6 +35,10 @@ export interface BoardAlbum {
 export interface BoardBucket {
   id: string
   name: string
+  /** Editorial accent color (oklch/hex) or null for the default ink. */
+  color: string | null
+  /** The single "평론 완료" column — drives the on-cover rating chips. */
+  isDone: boolean
   albums: BoardAlbum[]
   children: BoardBucket[]
 }
@@ -57,6 +61,8 @@ function mapBucket(b: ApiBucket): BoardBucket {
   return {
     id: b.id,
     name: b.name,
+    color: b.color ?? null,
+    isDone: b.is_done ?? false,
     albums: (b.items ?? []).map(mapItem),
     children: (b.children ?? []).map(mapBucket),
   }
@@ -98,6 +104,15 @@ export async function renameBucket(id: string, name: string): Promise<void> {
   const res = await apiFetch(`${BASE}/api/buckets/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ name }),
+  })
+  await asJson<ApiBucket>(res)
+}
+
+/** PATCH /api/buckets/{id} — set (or clear, with null) the bucket accent color. */
+export async function setBucketColor(id: string, color: string | null): Promise<void> {
+  const res = await apiFetch(`${BASE}/api/buckets/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ color }),
   })
   await asJson<ApiBucket>(res)
 }
