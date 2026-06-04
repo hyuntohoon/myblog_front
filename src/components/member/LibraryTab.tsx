@@ -1,13 +1,14 @@
-// Member dashboard — 라이브러리 tab (FEAT-member-dashboard Step 2, D18).
-// Three sources, two of them REAL (backend) and one still sample:
+// Member dashboard — 라이브러리 tab (FEAT-member-dashboard Step 2 D18 / Step 3 D25).
+// Three sources, all REAL (backend):
 //   1) 들을 것 (to-listen): real queue — add (album search modal), remove,
 //      drag-to-reorder. backend album_to_listen_items.
 //   2) 평론한 앨범 (reviewed): real derived view — one card per album, click opens
 //      a drawer listing that album's reviews (correlated to the member's posts).
-//   3) 최근 들은 앨범: SAMPLE (Spotify cache lands in Step 3), shown with a 샘플 badge.
+//   3) 최근 들은 앨범 (Step 3, D25/D26): the distinct album set of Spotify
+//      recently-played, from the worker-fed cache; "지금 새로고침" enqueues an
+//      async re-sync (rule #9 — no synchronous Spotify call here).
 import type { DetailTarget, MemberReview } from '@lib/member'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getRecentAlbums } from '@lib/member'
 import AddAlbumModal from '../queue/AddAlbumModal'
 import type { AddOutcome } from '../queue/AddAlbumModal'
 import {
@@ -19,7 +20,24 @@ import {
 
 } from './library.api'
 import type { ReviewedAlbum, ToListenItem } from './library.api'
-import { Cover, SampleBadge, SectionTitle, Stars } from './ui'
+import { listRecentlyListened, refreshRecent } from './spotify.api'
+import type { RecentlyListenedItem } from './spotify.api'
+import { Cover, SectionTitle, Stars } from './ui'
+
+/** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
+function fmtWhen(iso: string): string {
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime()))
+    return ''
+  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000)
+  if (days <= 0)
+    return '오늘'
+  if (days === 1)
+    return '어제'
+  if (days < 7)
+    return `${days}일 전`
+  return then.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+}
 
 /** Real album art when the API supplies it, else the editorial letter tile. */
 function AlbumArt({ url, label, size = 160 }: { url?: string | null, label: string, size?: number }) {
@@ -326,34 +344,102 @@ function ReviewedSection({ reviews }: { reviews: MemberReview[] }) {
   )
 }
 
-/* ── 최근 들은 앨범 (sample, Step 3) ──────────────────────────────────────── */
+/* ── 최근 들은 앨범 (Step 3, D25/D26 — worker-fed Spotify cache) ─────────────── */
 
-function RecentSampleSection({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
-  const recent = getRecentAlbums()
+function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }) {
+  const [items, setItems] = useState<RecentlyListenedItem[] | null>(null)
+  const [err, setErr] = useState(false)
+  // 'idle' | 'pending' (refresh enqueued, awaiting worker) — the re-sync is async.
+  const [refreshState, setRefreshState] = useState<'idle' | 'pending'>('idle')
+
+  function load(alive: () => boolean = () => true) {
+    return listRecentlyListened()
+      .then(rows => alive() && setItems(rows))
+      .catch(() => alive() && setErr(true))
+  }
+
+  useEffect(() => {
+    let on = true
+    load(() => on)
+    return () => {
+      on = false
+    }
+  }, [])
+
+  async function onRefresh() {
+    if (refreshState === 'pending')
+      return
+    setRefreshState('pending')
+    try {
+      await refreshRecent()
+      // The worker processes the SQS job asynchronously; re-fetch after a short
+      // delay so the freshly-synced window is reflected. Honest about latency.
+      window.setTimeout(() => {
+        load().finally(() => setRefreshState('idle'))
+      }, 4000)
+    }
+    catch {
+      setErr(true)
+      setRefreshState('idle')
+    }
+  }
+
+  const count = items?.length ?? 0
+
   return (
     <section>
       <SectionTitle
-	kicker={(
-<span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-{recent.length}
-장
-{' '}
-<SampleBadge />
-</span>
-)}
+	kicker={`${count}장`}
 	title="최근 들은 앨범"
+	right={(
+          <button
+	type="button"
+	className="lf-btn"
+	onClick={onRefresh}
+	disabled={refreshState === 'pending'}
+	aria-busy={refreshState === 'pending'}
+          >
+            {refreshState === 'pending' ? '동기화 중…' : '지금 새로고침'}
+          </button>
+        )}
       />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px,1fr))', gap: '28px 20px' }}>
-        {recent.map(a => (
-          <div key={a.id} style={{ display: 'flex', flexDirection: 'column', gap: 9, cursor: 'pointer' }} onClick={() => onOpen(a)}>
-            <AlbumArt url={null} label={a.album} />
-            <div>
-              <div className="lf-serif lf-italic" style={{ fontSize: 16, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
-              <div className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{a.artist}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+
+      {items == null && !err && <div className="lf-meta" style={{ padding: '8px 0' }}>불러오는 중…</div>}
+      {err && <div className="lf-panel" style={{ padding: 24, textAlign: 'center' }}><span className="lf-meta">목록을 불러오지 못했습니다</span></div>}
+
+      {items != null && items.length === 0 && !err && (
+        <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
+          <span className="lf-meta">최근 들은 앨범이 없습니다 · Spotify 연동 후 “지금 새로고침”을 눌러보세요</span>
+        </div>
+      )}
+
+      {items != null && items.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px,1fr))', gap: '28px 20px' }}>
+          {items.map((it) => {
+            const album = it.album
+            const title = album?.title ?? '앨범'
+            const artist = (album?.artist_names ?? []).join(', ') || '—'
+            return (
+              <div
+	key={it.album_id}
+	style={{ display: 'flex', flexDirection: 'column', gap: 9, cursor: 'pointer' }}
+	onClick={() => onOpen({ album: title, artist })}
+              >
+                <div style={{ position: 'relative' }}>
+                  <AlbumArt url={album?.cover_url} label={title} />
+                  <span className="lf-mono" style={{ position: 'absolute', bottom: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '3px 6px' }}>
+                    {fmtWhen(it.last_played_at)}
+                  </span>
+                </div>
+                <div>
+                  <div className="lf-serif lf-italic" style={{ fontSize: 16, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+                  <div className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 3 }}>{artist}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </section>
   )
 }
@@ -363,7 +449,7 @@ export function LibraryTab({ onOpen, reviews }: { onOpen: (t: DetailTarget) => v
     <div>
       <ToListenSection />
       <ReviewedSection reviews={reviews} />
-      <RecentSampleSection onOpen={onOpen} />
+      <RecentListenedSection onOpen={onOpen} />
     </div>
   )
 }

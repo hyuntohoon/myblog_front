@@ -13,10 +13,26 @@ import type { NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/member'
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { bucketCount, getActivity, getArtists, getGenres, getRecentAlbums, getRecentTracks, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
+import { bucketCount, getActivity, getArtists, getGenres, getRecentTracks, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
 import { DistChart } from './charts'
 import { NowPlaying } from './NowPlaying'
+import { listRecentlyListened } from './spotify.api'
 import { BucketShortcut, Cover, SampleBadge, SectionTitle, Seg, Stars } from './ui'
+
+/** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
+function fmtWhen(iso: string): string {
+  const then = new Date(iso)
+  if (Number.isNaN(then.getTime()))
+    return ''
+  const days = Math.floor((Date.now() - then.getTime()) / 86_400_000)
+  if (days <= 0)
+    return '오늘'
+  if (days === 1)
+    return '어제'
+  if (days < 7)
+    return `${days}일 전`
+  return then.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+}
 
 type ViewKey = 'list' | 'grid' | 'card'
 
@@ -175,7 +191,8 @@ const WIDGET_TITLES: Record<string, string> = {
 }
 const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
 /** widgets whose body is sample data → show a 샘플 badge in the header. */
-const SAMPLE_WIDGETS = new Set(['nowplaying', 'recent-albums', 'recent-tracks', 'genre', 'artists', 'activity'])
+// 'nowplaying' + 'recent-albums' are real as of Step 3; the rest remain sample.
+const SAMPLE_WIDGETS = new Set(['recent-tracks', 'genre', 'artists', 'activity'])
 
 function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
   return (
@@ -205,10 +222,37 @@ function Activity({ data }: { data: number[] }) {
   )
 }
 
+/** 최근 들은 앨범 widget — real (worker-fed cache, Step 3 D25), mapped to AlbumColl. */
+function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: DetailTarget) => void }) {
+  const [items, setItems] = useState<SampleAlbum[] | null>(null)
+  useEffect(() => {
+    let on = true
+    listRecentlyListened()
+      .then(rows => on && setItems(rows.map(it => ({
+        id: it.album_id,
+        album: it.album?.title ?? '앨범',
+        artist: (it.album?.artist_names ?? []).join(', ') || '—',
+        year: null,
+        genre: '',
+        rating: null,
+        when: fmtWhen(it.last_played_at),
+      }))))
+      .catch(() => on && setItems([]))
+    return () => {
+      on = false
+    }
+  }, [])
+  if (items == null)
+    return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
+  if (items.length === 0)
+    return <div className="lf-meta" style={{ padding: '6px 2px' }}>최근 들은 앨범이 없습니다</div>
+  return <AlbumColl items={items} view={view} onOpen={onOpen} />
+}
+
 function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
   switch (id) {
     case 'nowplaying': return <NowPlaying variant={ctx.npStyle} />
-    case 'recent-albums': return <AlbumColl items={getRecentAlbums()} view={ctx.views['recent-albums']} onOpen={ctx.onOpen} />
+    case 'recent-albums': return <RecentAlbumsWidget view={ctx.views['recent-albums']} onOpen={ctx.onOpen} />
     case 'recent-tracks': return <TrackColl items={getRecentTracks()} view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
     case 'bucket': return <BucketShortcut count={bucketCount()} onGo={ctx.goBucket} />
     case 'genre': return <DistChart style={ctx.chartStyle === 'donut' ? 'donut' : 'bar'} items={getGenres().slice(0, 6)} />

@@ -1,104 +1,166 @@
-// Member dashboard — Now Playing variants. SAMPLE data (hard rule #9 forbids a
-// synchronous Spotify call on a user-facing surface; a worker-fed cache is a
-// later RFC step). Ported from nowplaying.jsx.
+// Member dashboard — Now Playing (FEAT-member-dashboard Step 3, D5/D26).
+//
+// A READ-ONLY display of a worker-fed cache snapshot (GET /api/library/now-playing),
+// not a player: we hold only user-read scopes (no playback control, D11), and the
+// data can be up to ~1h stale (hourly cron + manual refresh). So: no play/pause,
+// no live-ticking seek — just the snapshot track + a static progress bar and an
+// honest "동기화 …" line. When nothing is playing, a calm idle state. The decorative
+// equalizer animates only while is_playing. Three variants (banner/full/list) share
+// the same snapshot; the list variant pairs it with recently-listened albums.
 import { useEffect, useState } from 'react'
-import { getNowPlaying, getRecentTracks } from '@lib/member'
-import { Cover, Equalizer, fmtTime, Progress, SampleBadge } from './ui'
+import { getNowPlayingData, listRecentlyListened } from './spotify.api'
+import type { NowPlaying as NowPlayingData, RecentlyListenedItem } from './spotify.api'
+import { Cover, Equalizer, fmtTime, Progress } from './ui'
 
 export type NpStyle = 'banner' | 'full' | 'list'
 
-function usePlayhead(duration: number, start: number) {
-  const [elapsed, setElapsed] = useState(start)
-  const [playing, setPlaying] = useState(true)
+/** Relative freshness label for the snapshot timestamp. */
+function fmtSince(iso?: string | null): string {
+  if (!iso)
+    return ''
+  const t = new Date(iso)
+  if (Number.isNaN(t.getTime()))
+    return ''
+  const mins = Math.floor((Date.now() - t.getTime()) / 60_000)
+  if (mins < 1)
+    return '방금'
+  if (mins < 60)
+    return `${mins}분 전`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)
+    return `${hrs}시간 전`
+  return t.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+}
+
+function pctOf(np: NowPlayingData): number {
+  if (!np.duration_ms)
+    return 0
+  return Math.min(100, Math.max(0, ((np.progress_ms ?? 0) / np.duration_ms) * 100))
+}
+
+function SyncNote({ iso }: { iso?: string | null }) {
+  const s = fmtSince(iso)
+  if (!s)
+    return null
+  return <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{`동기화 ${s}`}</span>
+}
+
+/** Shared fetch — one snapshot, loading/error tracked. */
+function useNowPlaying() {
+  const [np, setNp] = useState<NowPlayingData | null>(null)
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   useEffect(() => {
-    if (!playing)
-      return
-    const id = setInterval(() => setElapsed(e => (e >= duration ? 0 : e + 1)), 1000)
-    return () => clearInterval(id)
-  }, [playing, duration])
-  return { elapsed, setElapsed, playing, setPlaying, pct: (elapsed / duration) * 100 }
+    let on = true
+    getNowPlayingData()
+      .then(d => on && (setNp(d), setState('ready')))
+      .catch(() => on && setState('error'))
+    return () => {
+      on = false
+    }
+  }, [])
+  return { np, state }
 }
 
-function PlayBtn({ playing, onClick, size = 46 }: { playing: boolean, onClick: () => void, size?: number }) {
-  return (
-    <button
-	type="button"
-	onClick={onClick}
-	aria-label={playing ? '일시정지' : '재생'}
-	style={{ width: size, height: size, borderRadius: '50%', border: '1px solid var(--color-text)', background: 'var(--color-text)', color: 'var(--color-bg)', display: 'grid', placeItems: 'center', flex: '0 0 auto', transition: 'opacity .14s, transform .12s' }}
-    >
-      {playing ?
-(
-        <svg width={size * 0.36} height={size * 0.36} viewBox="0 0 24 24" fill="currentColor">
-<rect x="5" y="4" width="5" height="16" rx="1" />
-<rect x="14" y="4" width="5" height="16" rx="1" />
-        </svg>
-      ) :
-        <svg width={size * 0.4} height={size * 0.4} viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z" /></svg>}
-    </button>
-  )
+/**
+ * The snapshot when something is actually playing, else null (present-but-idle
+ *  snapshots still expose updated_at for the sync note).
+ */
+function liveSnapshot(np: NowPlayingData | null): NowPlayingData | null {
+  return np && np.is_playing === true && np.track ? np : null
 }
 
-function NowPlayingFull() {
-  const np = getNowPlaying()
-  const { elapsed, setElapsed, playing, setPlaying } = usePlayhead(np.duration, np.elapsed)
+/* ── idle / loading shells ─────────────────────────────────────────────────── */
+
+function IdleBox({ compact = false, iso }: { compact?: boolean, iso?: string | null }) {
   return (
-    <div className="lf-panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
-      <Cover label={np.album} size={88} radius={4} />
+    <div className="lf-panel" style={{ padding: compact ? 16 : 22, display: 'flex', alignItems: 'center', gap: 14 }}>
+      <Equalizer playing={false} h={14} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <Equalizer playing={playing} h={12} />
-          <span className="lf-kicker" style={{ color: 'var(--color-accent)' }}>NOW PLAYING</span>
-          <SampleBadge />
-        </div>
-        <div className="lf-serif lf-italic" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
-        <div className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, marginBottom: 14 }}>
-{np.artist}
-{' '}
-—
-{' '}
-{np.album}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 30 }}>{fmtTime(elapsed)}</span>
-          <input type="range" min={0} max={np.duration} value={elapsed} onChange={e => setElapsed(+e.target.value)} style={{ flex: 1, accentColor: 'var(--color-accent)' }} />
-          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 30, textAlign: 'right' }}>{fmtTime(np.duration)}</span>
-        </div>
+        <div className="lf-kicker" style={{ color: 'var(--color-faded)', marginBottom: 4 }}>NOW PLAYING</div>
+        <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>지금 재생 중인 곡이 없습니다</div>
       </div>
-      <PlayBtn playing={playing} onClick={() => setPlaying(p => !p)} size={50} />
+      <SyncNote iso={iso} />
     </div>
   )
 }
 
+/* ── full variant ──────────────────────────────────────────────────────────── */
+
+function NowPlayingFull() {
+  const { np, state } = useNowPlaying()
+  if (state === 'loading')
+    return <div className="lf-panel" style={{ padding: 18 }}><span className="lf-meta">불러오는 중…</span></div>
+  if (!np || !np.is_playing || !np.track)
+    return <IdleBox iso={np?.updated_at} />
+  return (
+    <div className="lf-panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
+      <Cover label={np.album ?? np.track ?? '?'} size={88} radius={4} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <Equalizer playing h={12} />
+          <span className="lf-kicker" style={{ color: 'var(--color-accent)' }}>NOW PLAYING</span>
+          <span style={{ marginLeft: 'auto' }}><SyncNote iso={np.updated_at} /></span>
+        </div>
+        <div className="lf-serif lf-italic" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
+        <div className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, marginBottom: 14 }}>
+          {[np.artist, np.album].filter(Boolean).join(' — ')}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 34 }}>{fmtTime((np.progress_ms ?? 0) / 1000)}</span>
+          <div style={{ flex: 1 }}><Progress pct={pctOf(np)} accent /></div>
+          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 34, textAlign: 'right' }}>{fmtTime((np.duration_ms ?? 0) / 1000)}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── list variant (now-playing + recently-listened albums) ───────────────────── */
+
 function NowPlayingList() {
-  const np = getNowPlaying()
-  const recent = getRecentTracks()
-  const { playing, setPlaying } = usePlayhead(np.duration, np.elapsed)
+  const { np, state } = useNowPlaying()
+  const [recent, setRecent] = useState<RecentlyListenedItem[] | null>(null)
+  useEffect(() => {
+    let on = true
+    listRecentlyListened().then(r => on && setRecent(r)).catch(() => on && setRecent([]))
+    return () => {
+      on = false
+    }
+  }, [])
+  const live = liveSnapshot(np)
   return (
     <div className="lf-panel" style={{ overflow: 'hidden' }}>
-      <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
-        <Cover label={np.album} size={50} radius={3} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="lf-kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
-● 재생 중
-<SampleBadge />
-          </div>
-          <div className="lf-serif lf-italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
-          <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>{np.artist}</div>
-        </div>
-        <Equalizer playing={playing} h={16} />
-        <PlayBtn playing={playing} onClick={() => setPlaying(p => !p)} size={38} />
-      </div>
+      {state === 'loading' ?
+        <div style={{ padding: 16 }}><span className="lf-meta">불러오는 중…</span></div> :
+        live ?
+          (
+              <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
+                <Cover label={live.album ?? live.track ?? '?'} size={50} radius={3} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="lf-kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    ● 재생 중
+                    <span style={{ marginLeft: 'auto' }}><SyncNote iso={live.updated_at} /></span>
+                  </div>
+                  <div className="lf-serif lf-italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
+                  <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>{live.artist}</div>
+                </div>
+                <Equalizer playing h={16} />
+              </div>
+            ) :
+          <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} /></div>}
+
       <div style={{ padding: '10px 8px 8px' }}>
-        <div className="lf-meta" style={{ padding: '0 8px 8px' }}>최근 재생</div>
-        {recent.map((r, i) => (
-          <div key={r.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
-            <Cover label={r.album} size={32} radius={2} />
+        <div className="lf-meta" style={{ padding: '0 8px 8px' }}>최근 들은 앨범</div>
+        {recent == null && <div className="lf-meta" style={{ padding: '4px 8px' }}>불러오는 중…</div>}
+        {recent != null && recent.length === 0 && <div className="lf-meta" style={{ padding: '4px 8px' }}>기록이 없습니다</div>}
+        {(recent ?? []).slice(0, 6).map((it, i) => (
+          <div key={it.album_id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
+            <Cover label={it.album?.title ?? '?'} size={32} radius={2} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.track}</div>
-              <div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)' }}>{r.artist}</div>
+              <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.album?.title}</div>
+              <div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it.album?.artist_names ?? []).join(', ')}</div>
             </div>
-            <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>{r.when}</span>
+            <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>{fmtSince(it.last_played_at)}</span>
           </div>
         ))}
       </div>
@@ -106,57 +168,63 @@ function NowPlayingList() {
   )
 }
 
+/* ── banner variant (overview default) ───────────────────────────────────────── */
+
 function NowPlayingBanner() {
-  const np = getNowPlaying()
-  const { elapsed, playing, setPlaying, pct } = usePlayhead(np.duration, np.elapsed)
+  const { np, state } = useNowPlaying()
+  const live = liveSnapshot(np)
+  if (state === 'loading') {
+    return (
+      <div className="lf-panel" style={{ padding: 24, borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: 0, borderRight: 0, borderRadius: 0 }}>
+        <span className="lf-meta">불러오는 중…</span>
+      </div>
+    )
+  }
   return (
     <div className="lf-panel" style={{ padding: 0, overflow: 'hidden', borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'var(--color-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, padding: 24 }}>
-        <Cover label={np.album} size={116} radius={4} />
+        <Cover label={(live ? live.album ?? live.track : '—') ?? '—'} size={116} radius={4} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="lf-kicker" style={{ marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ color: 'var(--color-accent)' }}>NOW PLAYING</span>
-            <span style={{ color: 'var(--color-faded)' }}>
-·
-{np.device}
-            </span>
-            <SampleBadge />
+            <span style={{ color: live ? 'var(--color-accent)' : 'var(--color-faded)' }}>NOW PLAYING</span>
+            <span style={{ marginLeft: 'auto' }}><SyncNote iso={np?.updated_at} /></span>
           </div>
-          <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
-          <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
-{np.artist}
-{' '}
-—
-{' '}
-{np.album}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 30, marginBottom: 14 }}>
-            {Array.from({ length: 32 }).map((_, i) => (
-              <span
+
+          {live ?
+            (
+                <>
+                  <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
+                  <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
+                    {[live.artist, live.album].filter(Boolean).join(' — ')}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 30, marginBottom: 14 }}>
+                    {Array.from({ length: 32 }).map((_, i) => (
+                      <span
 	key={i}
 	style={{
-                  flex: 1,
-                  transformOrigin: 'bottom',
-                  height: '100%',
-                  background: i / 32 > 0.82 ? 'var(--color-accent)' : 'var(--color-text)',
-                  opacity: i / 32 > 0.82 ? 1 : 0.65 - (i / 32) * 0.25,
-                  animation: playing ? `lf-eq ${0.5 + (i % 5) * 0.16}s ease-in-out ${i * 0.035}s infinite` : 'none',
-                  transform: playing ? undefined : 'scaleY(0.15)',
-                }}
-              />
-            ))}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <PlayBtn playing={playing} onClick={() => setPlaying(p => !p)} size={42} />
-            <span className="lf-mono" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>
-{fmtTime(elapsed)}
-{' '}
-/
-{' '}
-{fmtTime(np.duration)}
-            </span>
-            <div style={{ flex: 1 }}><Progress pct={pct} accent /></div>
-          </div>
+                          flex: 1,
+                          transformOrigin: 'bottom',
+                          height: '100%',
+                          background: i / 32 > 0.82 ? 'var(--color-accent)' : 'var(--color-text)',
+                          opacity: i / 32 > 0.82 ? 1 : 0.65 - (i / 32) * 0.25,
+                          animation: `lf-eq ${0.5 + (i % 5) * 0.16}s ease-in-out ${i * 0.035}s infinite`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <span className="lf-mono" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>
+                      {`${fmtTime((live.progress_ms ?? 0) / 1000)} / ${fmtTime((live.duration_ms ?? 0) / 1000)}`}
+                    </span>
+                    <div style={{ flex: 1 }}><Progress pct={pctOf(live)} accent /></div>
+                  </div>
+                </>
+              ) :
+            (
+                <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
+                  지금 재생 중인 곡이 없습니다
+                </div>
+              )}
         </div>
       </div>
     </div>
