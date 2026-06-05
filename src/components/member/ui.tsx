@@ -24,6 +24,7 @@ export function AlbumArt({ url, label, size = 160 }: { url?: string | null, labe
 	src={url}
 	alt={label}
 	loading="lazy"
+	decoding="async"
 	style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 3, display: 'block', border: '1px solid var(--color-border)' }}
       />
     )

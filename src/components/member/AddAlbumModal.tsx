@@ -235,7 +235,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
               >
                 <span className="qb-hit-cover">
                   {hit.cover ?
-                    <img src={hit.cover} alt={hit.title} loading="lazy" /> :
+                    <img src={hit.cover} alt={hit.title} loading="lazy" decoding="async" /> :
                     <span className="qb-hit-cover-ph">{(hit.title || '?').slice(0, 2).toUpperCase()}</span>}
                 </span>
                 <span className="qb-hit-text">

@@ -16,6 +16,15 @@ export function makeCard(
 
 	const img = document.createElement('img')
 	img.className = 'thumb'
+	// FEAT-music-edge-cache Step 4: covers come from Spotify's CDN (i.scdn.co),
+	// already aggressively cached. Set loading/decoding BEFORE src so a dropdown
+	// of many thumbs defers off-screen fetches and decodes off the main thread.
+	// Intrinsic 1:1 dims are belt-and-suspenders — `.art` already reserves space
+	// via aspect-ratio:1/1, so there is no layout shift.
+	img.loading = 'lazy'
+	img.decoding = 'async'
+	img.width = 600
+	img.height = 600
 	img.src = it.img || 'https://placehold.co/600x600?text=No+Image'
 	img.alt = it.title
 	artWrap.appendChild(img)

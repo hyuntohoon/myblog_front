@@ -96,7 +96,7 @@ function Cover({ r, badge, ph }: { r: ReviewCard, badge: 'full' | 'mini' | null,
         <span className="rev-badge">{badge === 'mini' ? 'BNM' : 'Best New'}</span>
       )}
       {r.cover != null ?
-        <img src={r.cover} alt={r.album} className="rev-cover-img" loading="lazy" /> :
+        <img src={r.cover} alt={r.album} className="rev-cover-img" loading="lazy" decoding="async" /> :
         (
             <span className="rev-placeholder" style={{ fontSize: ph }}>
               {r.album.slice(0, 2).toUpperCase()}
