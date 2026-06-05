@@ -4,6 +4,7 @@ import type { components } from '../lib/api.gen'
 import { makeCard } from './components/makeCard.ts'
 import { PUBLIC_API_URL } from 'astro:env/client'
 import { getAuthHeader } from '../lib/auth.ts'
+import { cached, DETAIL_TTL_MS, SEARCH_TTL_MS } from '../lib/sessionCache.ts'
 
 type AlbumItem = components['schemas']['Music_AlbumItem']
 type ArtistItem = components['schemas']['Music_ArtistItem']
@@ -68,11 +69,20 @@ function setStatus(msg: string) {
 }
 
 // HTTP
-async function getJSON<T = any>(url: string): Promise<T> {
+async function fetchJSON<T = any>(url: string): Promise<T> {
 	const r = await fetch(url, { method: 'GET' })
 	if (!r.ok)
 throw new Error(`HTTP ${r.status}`)
 	return r.json()
+}
+
+// In-session cache (FEAT-music-edge-cache Step 3). `ttlMs <= 0` bypasses the
+// cache. A non-200 throws inside fetchJSON and is never cached, so the
+// by-spotify absorb-pending 404 retry path is unaffected.
+async function getJSON<T = any>(url: string, ttlMs = 0): Promise<T> {
+	if (ttlMs <= 0)
+		return fetchJSON<T>(url)
+	return cached<T>(url, ttlMs, () => fetchJSON<T>(url))
 }
 
 // render
@@ -136,7 +146,7 @@ async function loadMoreBucket(kind: BucketKey) {
 			`&limit=${PAGE_LIMIT}` +
 			`&offset=0` +
 			`&${kind}_offset=${_offsets[kind]}`
-		const data = await getJSON<UnifiedSearchResult>(url)
+		const data = await getJSON<UnifiedSearchResult>(url, SEARCH_TTL_MS)
 		let cards: CardItem[] = []
 		let returned = 0
 		if (kind === 'artist') {
@@ -280,6 +290,7 @@ return
 		// ✅ 1번 호출로 3섹션
 		const data = await getJSON<UnifiedSearchResult>(
 			`${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&limit=20&offset=0`,
+			SEARCH_TTL_MS,
 		)
 
 		const artists = mapDBArtistsUnified(data.artists ?? [])
@@ -344,12 +355,16 @@ type AlbumDetail = components['schemas']['Music_AlbumDetail']
 async function fetchAlbumDetailByDBId(dbAlbumId: string) {
   return getJSON<AlbumDetail>(
 		`${API_BASE}/api/music/albums/${encodeURIComponent(dbAlbumId)}`,
+		DETAIL_TTL_MS,
 	)
 }
 
 async function fetchAlbumDetailBySpotifyId_DBOnly(spotifyAlbumId: string) {
+  // Cached on success only; an absorb-pending 404 throws (uncached), so the
+  // user's "click again after sync" retry re-fetches and picks up the 200.
   return getJSON<AlbumDetail>(
 		`${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(spotifyAlbumId)}`,
+		DETAIL_TTL_MS,
 	)
 }
 
@@ -417,6 +432,7 @@ async function onSelect(it: CardItem): Promise<void> {
 			setStatus(`🎵 ${it.title}의 앨범을 불러오는 중…`)
 			const data = await getJSON<ArtistAlbumsResult>(
 				`${API_BASE}/api/music/artists/${encodeURIComponent(it.id)}/albums?limit=20&offset=0`,
+				DETAIL_TTL_MS,
 			)
 			const albums = mapDBAlbumsUnified((data.items ?? []) as AlbumItem[])
 			render([], albums, [])
