@@ -1182,6 +1182,23 @@ export interface components {
             /** Track Number */
             track_number?: number | null;
         };
+        /** ExplainEntry */
+        Music_ExplainEntry: {
+            /** Bucket */
+            bucket: string;
+            /** Id */
+            id: string;
+            /** Matched Field */
+            matched_field?: string | null;
+            /** Path */
+            path: string;
+            /** Popularity */
+            popularity?: number | null;
+            /** Rank */
+            rank: number;
+            /** Similarity */
+            similarity?: number | null;
+        };
         /** HTTPValidationError */
         Music_HTTPValidationError: {
             /** Detail */
@@ -1242,6 +1259,8 @@ export interface components {
             albums?: components["schemas"]["Music_AlbumItem"][];
             /** Artists */
             artists?: components["schemas"]["Music_ArtistItem"][];
+            /** Debug */
+            debug?: components["schemas"]["Music_ExplainEntry"][] | null;
             /** Tracks */
             tracks?: components["schemas"]["Music_TrackItem"][];
         };
@@ -2142,6 +2161,8 @@ export interface operations {
                 album_offset?: number | null;
                 /** @description Per-bucket offset for the tracks slice (overrides `offset`). */
                 track_offset?: number | null;
+                /** @description Dev triage: include per-row ranking debug under `debug` (default response shape is otherwise unchanged). */
+                explain?: boolean;
             };
             header?: never;
             path?: never;
