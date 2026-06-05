@@ -3,7 +3,7 @@ import type { CandidateSearchResponse, CardItem } from '../scripts/types/search.
 import type { components } from '../lib/api.gen'
 import { makeCard } from './components/makeCard.ts'
 import { PUBLIC_API_URL } from 'astro:env/client'
-import { getAuthHeader } from '../lib/auth.ts'
+import { getAuthHeader, isLoggedIn } from '../lib/auth.ts'
 import { cached, DETAIL_TTL_MS, SEARCH_TTL_MS } from '../lib/sessionCache.ts'
 
 type AlbumItem = components['schemas']['Music_AlbumItem']
@@ -455,7 +455,17 @@ async function onSelect(it: CardItem): Promise<void> {
 
 // events
 submitBtn.addEventListener('click', () => void runDBSearch())
-syncBtn.addEventListener('click', () => void runSync())
+
+// STAB-2 Step 4 / OQ-A: /api/music/search/candidates requires a Cognito JWT in
+// prod (it Spotify-syncs + enqueues SQS). Sync is a writer-only action — hide it
+// from logged-out visitors so they never hit a 401 on click. Logged-in users
+// keep it; runSync() already sends the Bearer via getAuthHeader().
+if (isLoggedIn()) {
+	syncBtn.addEventListener('click', () => void runSync())
+}
+else {
+	syncBtn.hidden = true
+}
 artistsLoadMore.addEventListener('click', () => void loadMoreBucket('artist'))
 albumsLoadMore.addEventListener('click', () => void loadMoreBucket('album'))
 tracksLoadMore.addEventListener('click', () => void loadMoreBucket('track'))
