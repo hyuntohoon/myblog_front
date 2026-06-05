@@ -1,4 +1,15 @@
 // src/scripts/albumDetail.fetch.client.ts
+import { cached, DETAIL_TTL_MS } from '../lib/sessionCache.ts'
+
+// FEAT-music-edge-cache Step 3: shared in-session GET (success-only cache).
+async function getCachedJSON<T = any>(url: string): Promise<T> {
+	return cached<T>(url, DETAIL_TTL_MS, async () => {
+		const r = await fetch(url)
+		if (!r.ok)
+			throw new Error(`HTTP ${r.status}`)
+		return r.json()
+	})
+}
 
 const section = document.getElementById('music-section') as HTMLElement | null
 if (!section) {
@@ -40,12 +51,7 @@ if (!section) {
 		const albumId = albumIds[0]
 		const albumUrl = `${base}/api/music/albums/${albumId}`
 
-		fetch(albumUrl)
-			.then((r) => {
-				if (!r.ok)
-throw new Error(`HTTP ${r.status}`)
-				return r.json()
-			})
+		getCachedJSON(albumUrl)
 			.then((data) => {
 				// 글 보기 화면에서는 항상 selectable: false
 				window.dispatchEvent(
@@ -66,13 +72,7 @@ throw new Error(`HTTP ${r.status}`)
 		const artistUrls = artistIds.map(id => `${base}/api/music/artists/${id}`)
 
 		Promise.all(
-			artistUrls.map(u =>
-				fetch(u).then((r) => {
-					if (!r.ok)
-throw new Error(`HTTP ${r.status}`)
-					return r.json()
-				}),
-			),
+			artistUrls.map(u => getCachedJSON(u)),
 		)
 			.then((artists) => {
 				console.log('🎤 Artists loaded:', artists)
