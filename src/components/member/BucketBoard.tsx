@@ -34,6 +34,10 @@ type DragKind = 'album' | 'bucket' | null
 const RECENT_ID = '__recent__'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
+// Last-seen 최근 들은 앨범 strip, cached so it paints instantly on the next mount
+// (tab switch / navigation) while the worker-fed list revalidates in the
+// background — kills the empty-then-pop flash. See the recent-strip effect.
+const RECENT_KEY = 'lf_crate_recent'
 
 // Curated editorial palette — muted oklch siblings of the brand red. `null` key
 // is the default ink (no stored color). Mirrors the design prototype.
@@ -45,6 +49,21 @@ const BUCKET_COLORS: { key: string, label: string, color: string | null }[] = [
   { key: 'blue', label: '블루', color: 'oklch(0.56 0.10 245)' },
   { key: 'violet', label: '바이올렛', color: 'oklch(0.55 0.11 300)' },
 ]
+
+// Read a cached array seed from localStorage (SWR first paint). Returns null on
+// miss / parse error / non-array so callers fall back to the loading state.
+function readSeed<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed))
+        return parsed as T
+    }
+  }
+  catch { /* ignore */ }
+  return null
+}
 
 // ── tree helpers ────────────────────────────────────────────────────────────
 const clone = (t: BoardBucket[]): BoardBucket[] => JSON.parse(JSON.stringify(t))
@@ -592,8 +611,12 @@ function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: T
 
 // ── board ────────────────────────────────────────────────────────────────---
 export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => void, reviews: MemberReview[] }) {
-  const [tree, setTree] = useState<BoardBucket[] | null>(null)
-  const [recent, setRecent] = useState<BoardAlbum[] | null>(null)
+  // Seed both from localStorage so the board paints immediately on mount and
+  // only the (background) revalidation is async — no "불러오는 중…" flash, no
+  // disappear-then-reappear when returning to the tab. Stale by design; the
+  // mount effects below overwrite with the canonical server data (SWR).
+  const [tree, setTree] = useState<BoardBucket[] | null>(() => readSeed<BoardBucket[]>(BUCKETS_KEY))
+  const [recent, setRecent] = useState<BoardAlbum[] | null>(() => readSeed<BoardAlbum[]>(RECENT_KEY))
   const [error, setError] = useState(false)
   const [addingTo, setAddingTo] = useState<{ id: string, name: string } | null>(null)
 
@@ -647,7 +670,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       .then((r) => {
         if (!alive)
           return
-        setRecent(r.items.map(it => ({
+        const mapped: BoardAlbum[] = r.items.map(it => ({
           itemId: `recent:${it.album_id}`,
           albumId: it.album_id,
           title: it.album?.title ?? '제목 미상',
@@ -655,9 +678,16 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
           cover: it.album?.cover_url ?? null,
           year: it.album?.release_date ? Number(String(it.album.release_date).slice(0, 4)) || null : null,
           alreadyReviewed: false,
-        })))
+        }))
+        setRecent(mapped)
+        try {
+          localStorage.setItem(RECENT_KEY, JSON.stringify(mapped))
+        }
+        catch { /* ignore */ }
       })
-      .catch(() => alive && setRecent([]))
+      // Keep the cached seed on a transient failure instead of blanking the
+      // strip; only fall back to empty when there was nothing cached.
+      .catch(() => alive && setRecent(prev => prev ?? []))
     return () => {
       alive = false
     }
@@ -692,20 +722,50 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
 
   const ops: Ops = {
     tree: tree ?? [],
-    // Copy a 최근 들은 앨범 tile into a real bucket: add the item server-side, then
-    // splice the canonical item (real itemId) into the tree. 409 = already there.
+    // Copy a 최근 들은 앨범 tile into a real bucket. Optimistic: splice a temp
+    // tile in on drop so it appears instantly, then reconcile with the server —
+    // swap temp → canonical item on success, drop temp on 409 (already there) /
+    // failure. Previously this awaited the round-trip before painting (~200–
+    // 500ms lag), which read as "버킷 반영이 느리다".
     copyAlbum(albumId, toBucketId) {
       if (tree == null)
         return
+      const tempId = `temp:${Date.now()}:${albumId}`
+      const src = recent?.find(a => a.albumId === albumId)
+      setTree((prev) => {
+        if (prev == null)
+          return prev
+        const t = clone(prev)
+        const dst = findBucket(t, toBucketId)
+        if (dst && !dst.albums.some(a => a.albumId === albumId)) {
+          dst.albums.push({
+            itemId: tempId,
+            albumId,
+            title: src?.title ?? '…',
+            artist: src?.artist ?? '',
+            cover: src?.cover ?? null,
+            year: src?.year ?? null,
+            alreadyReviewed: src?.alreadyReviewed ?? false,
+          })
+        }
+        return t
+      })
       api.addBucketItem(toBucketId, albumId)
         .then(({ item, conflict }) => {
-          if (conflict || !item)
-            return
           setTree((prev) => {
             if (prev == null)
               return prev
             const t = clone(prev)
-            findBucket(t, toBucketId)?.albums.push(item)
+            const dst = findBucket(t, toBucketId)
+            if (!dst)
+              return t
+            const i = dst.albums.findIndex(a => a.itemId === tempId)
+            if (i < 0)
+              return t
+            if (conflict || !item)
+              dst.albums.splice(i, 1) // already present elsewhere / no row → drop the temp
+            else
+              dst.albums[i] = item // promote temp → canonical (real itemId)
             return t
           })
         })
