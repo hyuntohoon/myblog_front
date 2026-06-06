@@ -233,31 +233,33 @@
 
 /* ── drag edge rails (mounted only while dragging) ─────────
    Fixed overlays pinned to the LEFT / RIGHT screen edges, full height,
-   symmetric. Slide in on mount, collapse on a narrow viewport.
-   Width tracks the gutter beside the centred --measure-wide content column
-   (50vw - half the column - a small gap) so the opaque panels stay in the
-   margins instead of covering the buckets; clamped to a readable floor and a
-   sane max. Below ~1140px the gutter vanishes and the floor takes over — the
-   max-width:760px rule narrows it further for phones. */
+   symmetric. Slide in on mount.
+   Width tracks the REAL gutter beside the centred --measure-wide content column
+   (50vw - half the column - a small gap). The earlier 132px floor forced the
+   rail wider than the gutter on laptop widths (≤~1380px), so it covered the
+   buckets — the visible "weird position" bug. Now the rail collapses to nothing
+   rather than overlap; below ~1140px (no gutter) it falls back to a slim,
+   translucent edge tab so a drop target still exists. */
 .crate-rail {
 	position: fixed;
 	top: 12px;
 	bottom: 12px;
-	width: clamp(132px, calc(50vw - var(--measure-wide) / 2 - 20px), 300px);
+	width: clamp(0px, calc(50vw - var(--measure-wide) / 2 - 24px), 280px);
 	box-sizing: border-box;
 	z-index: var(--z-panel);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 16px;
+	gap: 14px;
 	text-align: center;
-	padding: 24px 18px;
+	padding: 20px 12px;
 	border: 2px dashed var(--color-border);
 	border-radius: 12px;
-	backdrop-filter: blur(2px);
+	background: var(--color-paper);
 	box-shadow: 0 12px 40px rgba(26, 26, 26, 0.16);
 	transition: border-color 0.14s, background 0.14s;
+	overflow: hidden;
 }
 .crate-rail-left { left: 12px; animation: crate-rail-in-l 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 .crate-rail-right { right: 12px; animation: crate-rail-in-r 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
@@ -277,9 +279,20 @@
 	from { opacity: 0; transform: translateX(14px); }
 	to { opacity: 1; transform: none; }
 }
-@media (max-width: 760px) {
-	.crate-rail { width: 38vw; gap: 10px; padding: 16px 10px; }
+/* Tight gutter: the hint no longer fits beside the buckets — drop it first. */
+@media (max-width: 1240px) {
 	.crate-rail-hint { display: none; }
+}
+/* No gutter left: stop tracking it (would be ~0px) and pin a slim translucent
+   edge tab so a drop target survives without blanking the buckets behind it. */
+@media (max-width: 1140px) {
+	.crate-rail {
+		width: 64px;
+		gap: 8px;
+		padding: 14px 6px;
+		background: color-mix(in srgb, var(--color-paper) 90%, transparent);
+		backdrop-filter: blur(3px);
+	}
 }
 @media (prefers-reduced-motion: reduce) {
 	.crate-rail-left, .crate-rail-right { animation: none; }
