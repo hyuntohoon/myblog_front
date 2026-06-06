@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { allGenres, allYears, selectFeatured } from '@lib/reviews'
+import { allGenres, allTags, allYears, selectFeatured } from '@lib/reviews'
 import type { ReviewCard } from '@lib/reviews'
 
 /**
@@ -18,6 +18,7 @@ type ViewKey = 'grid' | 'list'
 
 interface Filters {
   genre: string
+  tag: string
   sort: SortKey
   q: string
   bnm: boolean
@@ -27,7 +28,7 @@ interface Filters {
 
 const PAGE = 9
 const STEP = 6
-const DEFAULTS: Filters = { genre: 'all', sort: 'date', q: '', bnm: false, year: 'all', view: 'grid' }
+const DEFAULTS: Filters = { genre: 'all', tag: 'all', sort: 'date', q: '', bnm: false, year: 'all', view: 'grid' }
 
 function parseFilters(): Filters {
   if (typeof window === 'undefined')
@@ -37,6 +38,7 @@ function parseFilters(): Filters {
   const view = p.get('view')
   return {
     genre: p.get('genre') ?? 'all',
+    tag: p.get('tag') ?? 'all',
     sort: sort === 'score' || sort === 'artist' ? sort : 'date',
     q: p.get('q') ?? '',
     bnm: p.get('bnm') === '1',
@@ -49,6 +51,8 @@ function buildQuery(f: Filters): string {
   const p = new URLSearchParams()
   if (f.genre !== 'all')
     p.set('genre', f.genre)
+  if (f.tag !== 'all')
+    p.set('tag', f.tag)
   if (f.sort !== 'date')
     p.set('sort', f.sort)
   if (f.q)
@@ -63,7 +67,7 @@ function buildQuery(f: Filters): string {
 }
 
 function isNarrowed(f: Filters): boolean {
-  return f.genre !== 'all' || f.q !== '' || f.bnm || f.year !== 'all'
+  return f.genre !== 'all' || f.tag !== 'all' || f.q !== '' || f.bnm || f.year !== 'all'
 }
 
 function fmtDate(iso: string): string {
@@ -142,13 +146,16 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
   }
 
   const genres = useMemo(() => allGenres(reviews), [reviews])
+  const tags = useMemo(() => allTags(reviews), [reviews])
   const years = useMemo(() => allYears(reviews), [reviews])
 
   const filtered = useMemo(() => {
-    const { genre, sort, q, bnm, year } = filters
+    const { genre, tag, sort, q, bnm, year } = filters
     let list = reviews
     if (genre !== 'all')
       list = list.filter(r => r.genres.includes(genre))
+    if (tag !== 'all')
+      list = list.filter(r => r.tags.includes(tag))
     if (bnm)
       list = list.filter(r => r.bestNew)
     if (year !== 'all')
@@ -295,6 +302,28 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
         ))}
       </nav>
 
+      {tags.length > 0 && (
+        <nav className="rev-chips rev-chips-tags" aria-label="리뷰 태그 필터">
+          <button
+	type="button"
+	className={`rev-chip${filters.tag === 'all' ? ' is-active' : ''}`}
+	onClick={() => commit({ ...filters, tag: 'all' })}
+          >
+            모든 태그
+          </button>
+          {tags.map(t => (
+            <button
+	key={t}
+	type="button"
+	className={`rev-chip rev-chip-tag${filters.tag === t ? ' is-active' : ''}`}
+	onClick={() => commit({ ...filters, tag: t })}
+            >
+              {t}
+            </button>
+          ))}
+        </nav>
+      )}
+
       {filtered.length === 0 ?
         (
             <div className="rev-empty">
@@ -303,7 +332,7 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
               <button
 	type="button"
 	className="rev-loadmore"
-	onClick={() => commit({ ...filters, genre: 'all', q: '', bnm: false, year: 'all' })}
+	onClick={() => commit({ ...filters, genre: 'all', tag: 'all', q: '', bnm: false, year: 'all' })}
               >
                 필터 초기화
               </button>
@@ -339,6 +368,11 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
                         {r.artist && <p className="rev-artist">{r.artist}</p>}
                         <h3 className="rev-card-album">{r.album}</h3>
                         {r.excerpt && <p className="rev-excerpt">{r.excerpt}</p>}
+                        {r.tags.length > 0 && (
+                          <ul className="rev-card-tags" aria-label="리뷰 태그">
+                            {r.tags.map(t => <li key={t} className="rev-card-tag">{t}</li>)}
+                          </ul>
+                        )}
                         <div className="rev-foot">
                           <Stars value={r.rating} size={16} />
                         </div>

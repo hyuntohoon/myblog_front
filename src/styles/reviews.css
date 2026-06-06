@@ -305,6 +305,36 @@
   color: var(--color-bg);
   border-color: var(--color-text);
 }
+/* STAB-5: review-tag rail sits just under the genre rail. */
+.rev-chips-tags {
+  margin-top: 8px;
+}
+.rev-chip-tag {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  border-style: dashed;
+}
+.rev-chip-tag.is-active {
+  border-style: solid;
+}
+/* STAB-5: per-card review-tag badges. */
+.rev-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.rev-card-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted, var(--color-text));
+  border: 1px dashed var(--color-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
 
 /* Selects / search / toggles */
 .rev-field {

@@ -384,6 +384,7 @@ export default function WriterApp() {
       album_cover_url: subject.cover_url,
       rating: score,
       recommended_track_ids: recommendedTrackIds,
+      tags,
     })
     if (!gitRes.ok) {
       flash('저장 완료, Git 발행 실패')
