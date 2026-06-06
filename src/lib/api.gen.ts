@@ -504,6 +504,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tags */
+        get: operations["list_tags_api_tags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -710,6 +727,8 @@ export interface components {
             status: string;
             /** Subject Best New */
             subject_best_new?: boolean | null;
+            /** Tags */
+            tags?: string[];
             /** Title */
             title: string;
         };
@@ -732,6 +751,8 @@ export interface components {
             slug: string;
             /** Status */
             status: string;
+            /** Tags */
+            tags?: string[];
             /** Title */
             title: string;
         };
@@ -822,6 +843,18 @@ export interface components {
              */
             needs_reauth: boolean;
         };
+        /** TagItem */
+        Backend_TagItem: {
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+        };
+        /** TagListResponse */
+        Backend_TagListResponse: {
+            /** Tags */
+            tags: components["schemas"]["Backend_TagItem"][];
+        };
         /** ToListenItemResponse */
         Backend_ToListenItemResponse: {
             /**
@@ -891,6 +924,8 @@ export interface components {
             status?: ("draft" | "published" | "archived") | null;
             /** Subject Best New */
             subject_best_new?: boolean | null;
+            /** Tags */
+            tags?: string[] | null;
             /** Title */
             title?: string | null;
         };
@@ -945,6 +980,8 @@ export interface components {
             status: "draft" | "published" | "archived";
             /** Subject Best New */
             subject_best_new?: boolean | null;
+            /** Tags */
+            tags?: string[];
             /** Title */
             title: string;
         };
@@ -2403,6 +2440,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_SectionListResponse"];
+                };
+            };
+        };
+    };
+    list_tags_api_tags_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_TagListResponse"];
                 };
             };
         };
