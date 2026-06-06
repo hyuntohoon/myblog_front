@@ -91,6 +91,7 @@ export async function publishToGit(params: {
 	album_cover_url: string | null
 	rating: number | null
 	recommended_track_ids: string[]
+	tags: string[] // STAB-5: review tags → MDX frontmatter (public /reviews)
 }) {
 	const {
 		title,
@@ -105,6 +106,7 @@ export async function publishToGit(params: {
 		album_cover_url,
 		rating,
 		recommended_track_ids,
+		tags,
 	} = params
 
 	const payload = {
@@ -120,6 +122,7 @@ export async function publishToGit(params: {
 		album_cover_url,
 		rating,
 		recommended_track_ids,
+		tags,
 	}
 
 	const res = await apiFetch(`${API_BASE_URL}/api/publish`, {

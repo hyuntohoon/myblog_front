@@ -12,6 +12,8 @@ export interface ReviewCard {
   /** Array-aware genres (forward-compat with FEAT-genre-taxonomy); falls back to [category]. */
   genres: string[]
   category: string
+  /** STAB-5 review tags (seeded vocabulary); drives the tag filter + card badges. */
+  tags: string[]
   /** ISO date string (JSON-safe). */
   date: string
   year: number
@@ -48,6 +50,21 @@ export function allGenres(reviews: ReviewCard[]): string[] {
       if (g && !seen.has(g)) {
         seen.add(g)
         out.push(g)
+      }
+    }
+  }
+  return out
+}
+
+/** Distinct review tags across all reviews, in first-seen order (for the tag rail). */
+export function allTags(reviews: ReviewCard[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const r of reviews) {
+    for (const t of r.tags) {
+      if (t && !seen.has(t)) {
+        seen.add(t)
+        out.push(t)
       }
     }
   }

@@ -653,6 +653,8 @@ export interface components {
             recommended_track_ids?: string[];
             /** Slug */
             slug?: string | null;
+            /** Tags */
+            tags?: string[];
             /** Title */
             title: string;
         };

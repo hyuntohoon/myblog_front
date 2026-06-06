@@ -54,6 +54,7 @@ const reviews: ReviewCard[] = (await getCollection('blog'))
       artist: mr?.artists?.join(', ') ?? '',
       genres: mr?.genres && mr.genres.length > 0 ? mr.genres : [d.category],
       category: d.category,
+      tags: d.tags ?? [],
       date: date.toISOString(),
       year: date.getFullYear(),
       rating,

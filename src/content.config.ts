@@ -84,6 +84,12 @@ const blog = defineCollection({
 				.union([z.enum(zodEnum(CATEGORIES)), z.string().min(1)])
 				.transform(v => String(v)),
 
+			// STAB-5: review tags (cross-cutting M:N, written by the publish
+			// service). Drives the /reviews tag filter + per-card tag badges.
+			// Free strings (no enum) so frontmatter stays parseable if the seeded
+			// vocabulary changes; the writer only emits seeded labels.
+			tags: z.array(z.string()).default([]),
+
 			// 초안 여부 (목록/검색 제외용)
 			draft: z.boolean().default(false),
 
