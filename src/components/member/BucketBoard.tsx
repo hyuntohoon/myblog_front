@@ -15,7 +15,7 @@
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as api from '@lib/buckets'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
@@ -342,25 +342,29 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
         transition: 'box-shadow 0.12s, border-color 0.12s',
       }}
     >
-      {/* header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <span
-	draggable
+      {/* header — the WHOLE row is the bucket drag handle now (was just the tiny
+          ⠿, which users couldn't find / grab). Disabled while renaming so the
+          text field stays selectable. Child buttons still click normally. */}
+      <div
+	draggable={!editing}
 	onDragStart={(e) => {
-            dnd = { kind: 'bucket', bucketId: bucket.id }
-            e.dataTransfer.effectAllowed = 'move'
-            setDraggingBucket(bucket.id)
-            setDragKind('bucket')
-          }}
+          dnd = { kind: 'bucket', bucketId: bucket.id }
+          e.dataTransfer.effectAllowed = 'move'
+          setDraggingBucket(bucket.id)
+          setDragKind('bucket')
+        }}
 	onDragEnd={() => {
-            dnd = null
-            setDraggingBucket(null)
-            setDropTarget(null)
-            setDragKind(null)
-          }}
-	className="lf-drag-handle lf-mono"
+          dnd = null
+          setDraggingBucket(null)
+          setDropTarget(null)
+          setDragKind(null)
+        }}
+	style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: editing ? 'default' : 'grab' }}
+	title="헤더를 끌어 다른 버킷의 하위로 이동 · 가장자리/하단의 영역에 놓으면 최상위로"
+      >
+        <span
+	className="lf-mono"
 	style={{ color: 'var(--color-faded)', fontSize: 16, lineHeight: 1, userSelect: 'none', flex: '0 0 auto' }}
-	title="드래그하여 다른 버킷의 하위로 이동 · 좌측 영역에 놓으면 최상위로"
         >
           ⠿
         </span>
@@ -482,7 +486,12 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
 }
 
 // ── edge rails (mounted only while dragging) ─────────────────────────────────
-function UnnestRail({ onUnnest }: { onUnnest: (bucketId: string) => void }) {
+// `style` carries the JS-measured gutter geometry (left/right offset + width) so
+// the rail sits PROPORTIONALLY in the real margin beside the dashboard, whatever
+// the layout (sidebar / stacked / dashboard) and viewport — the old fixed-vw
+// width guessed the gutter and covered the buckets on narrow screens. When no
+// real gutter exists the board switches to <BottomDock> instead of these.
+function UnnestRail({ onUnnest, style }: { onUnnest: (bucketId: string) => void, style?: React.CSSProperties }) {
   const [hot, setHot] = useState(false)
   const accepts = (): boolean => !!dnd && dnd.kind === 'bucket'
   return (
@@ -508,7 +517,7 @@ function UnnestRail({ onUnnest }: { onUnnest: (bucketId: string) => void }) {
           onUnnest(it.bucketId)
         dnd = null
       }}
-	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)' }}
+	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)', ...style }}
     >
       <div style={{ fontSize: 46, lineHeight: 1, color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>↰</div>
       <div className="lf-serif" style={{ fontSize: 18, fontWeight: 500, lineHeight: 1.3, wordBreak: 'keep-all', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>최상위 버킷으로 빼기</div>
@@ -517,7 +526,7 @@ function UnnestRail({ onUnnest }: { onUnnest: (bucketId: string) => void }) {
   )
 }
 
-function TrashRail({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: number, onTrashAlbum: (itemId: string, fromBucketId: string) => void, onTrashBucket: (bucketId: string) => void }) {
+function TrashRail({ trashCount, onTrashAlbum, onTrashBucket, style }: { trashCount: number, onTrashAlbum: (itemId: string, fromBucketId: string) => void, onTrashBucket: (bucketId: string) => void, style?: React.CSSProperties }) {
   const [hot, setHot] = useState(false)
   const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy) || dnd.kind === 'bucket')
   return (
@@ -545,7 +554,7 @@ function TrashRail({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
           onTrashBucket(it.bucketId)
         dnd = null
       }}
-	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)' }}
+	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)', ...style }}
     >
       <div style={{ fontSize: 46, lineHeight: 1 }}>🗑</div>
       <div className="lf-serif" style={{ fontSize: 18, fontWeight: 500, lineHeight: 1.3, wordBreak: 'keep-all', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>휴지통</div>
@@ -556,6 +565,98 @@ function TrashRail({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
     </div>
   )
 }
+
+// Bottom drop dock — the no-gutter fallback. When the dashboard fills the
+// viewport (narrow screens / sidebar+stacked layouts) there is no margin for the
+// edge rails without covering the buckets, so the same drop targets dock at the
+// bottom centre, clear of all content, near the natural downward drag motion.
+function BottomDock({ kind, trashCount, onUnnest, onTrashAlbum, onTrashBucket }: {
+  kind: DragKind
+  trashCount: number
+  onUnnest: (bucketId: string) => void
+  onTrashAlbum: (itemId: string, fromBucketId: string) => void
+  onTrashBucket: (bucketId: string) => void
+}) {
+  const [hotU, setHotU] = useState(false)
+  const [hotT, setHotT] = useState(false)
+  const acceptsU = (): boolean => !!dnd && dnd.kind === 'bucket'
+  const acceptsT = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy) || dnd.kind === 'bucket')
+  const zone = (hot: boolean): React.CSSProperties => ({
+    borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)',
+    background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'transparent',
+    color: hot ? 'var(--color-accent)' : 'var(--color-text)',
+  })
+  return (
+    <div className="crate-dock">
+      {kind === 'bucket' && (
+        <div
+	className="crate-dock-zone"
+	style={zone(hotU)}
+	onDragOver={(e) => {
+            if (acceptsU()) {
+              e.preventDefault()
+              setHotU(true)
+            }
+          }}
+	onDragLeave={(e) => {
+ if (!e.currentTarget.contains(e.relatedTarget as Node))
+setHotU(false)
+}}
+	onDrop={(e) => {
+            if (!acceptsU())
+              return
+            e.preventDefault()
+            const it = dnd
+            setHotU(false)
+            if (it && it.bucketId)
+              onUnnest(it.bucketId)
+            dnd = null
+          }}
+        >
+          <span style={{ fontSize: 24, lineHeight: 1 }}>↰</span>
+          <span className="lf-serif" style={{ fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap' }}>최상위로 빼기</span>
+        </div>
+      )}
+      <div
+	className="crate-dock-zone"
+	style={zone(hotT)}
+	onDragOver={(e) => {
+          if (acceptsT()) {
+            e.preventDefault()
+            setHotT(true)
+          }
+        }}
+	onDragLeave={(e) => {
+ if (!e.currentTarget.contains(e.relatedTarget as Node))
+setHotT(false)
+}}
+	onDrop={(e) => {
+          if (!acceptsT())
+            return
+          e.preventDefault()
+          const it = dnd
+          setHotT(false)
+          if (it && it.kind === 'album' && it.itemId && it.fromBucketId)
+            onTrashAlbum(it.itemId, it.fromBucketId)
+          else if (it && it.kind === 'bucket' && it.bucketId)
+            onTrashBucket(it.bucketId)
+          dnd = null
+        }}
+      >
+        <span style={{ fontSize: 24, lineHeight: 1 }}>🗑</span>
+        <span className="lf-serif" style={{ fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap' }}>
+          휴지통
+          {trashCount ? ` · ${trashCount}` : ''}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// Drag rails geometry, measured from the live layout when a drag starts (see the
+// board's useLayoutEffect). `side` = real gutters exist → edge rails; `dock` =
+// no room → bottom dock.
+type RailGeom = { mode: 'side', leftW: number, rightW: number } | { mode: 'dock' }
 
 // ── trash drawer (recoverable albums) ────────────────────────────────────────
 interface TrashEntry { tid: string, album: BoardAlbum, fromBucketId: string, fromName: string }
@@ -624,6 +725,42 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind>(null)
+  const [railGeom, setRailGeom] = useState<RailGeom | null>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
+
+  // Measure the dashboard's real margins the moment a drag starts and decide
+  // where the drop targets go — edge rails sized to the actual gutters, or a
+  // bottom dock when there's no room. Proportional to the live layout, so the
+  // trash never invades the buckets (the prior fixed-vw guess did on narrow
+  // viewports / sidebar+stacked layouts). useLayoutEffect → set before paint.
+  useLayoutEffect(() => {
+    if (!dragKind) {
+      setRailGeom(null)
+      return
+    }
+    const root = boardRef.current?.closest('.member-root') as HTMLElement | null
+    const rect = root?.getBoundingClientRect()
+    const vw = window.innerWidth
+    const GAP = 12 // breathing room between rail and content
+    const MIN = 96 // a gutter narrower than this can't hold a usable rail → dock
+    const MAX = 280
+    if (!rect) {
+      setRailGeom({ mode: 'dock' })
+      return
+    }
+    const leftGutter = rect.left
+    const rightGutter = vw - rect.right
+    if (Math.min(leftGutter, rightGutter) >= MIN) {
+      setRailGeom({
+        mode: 'side',
+        leftW: Math.min(MAX, leftGutter - GAP * 2),
+        rightW: Math.min(MAX, rightGutter - GAP * 2),
+      })
+    }
+    else {
+      setRailGeom({ mode: 'dock' })
+    }
+  }, [dragKind])
   const [trash, setTrash] = useState<TrashEntry[]>(() => {
     try {
       const s = localStorage.getItem(TRASH_KEY)
@@ -949,7 +1086,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   }
 
   return (
-    <div>
+    <div ref={boardRef}>
       <SectionTitle
 	kicker={tree == null ? '불러오는 중…' : `${tree.length} 버킷 · 크레이트`}
 	title="평론 버킷"
@@ -964,11 +1101,11 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         )}
       />
       <p className="lf-serif lf-italic" style={{ marginTop: -10, marginBottom: 22, color: 'var(--color-subtle)', fontSize: 15, maxWidth: 720 }}>
-        버킷의
+        버킷
         {' '}
         <span className="lf-mono" style={{ fontStyle: 'normal', fontSize: 12 }}>⠿</span>
         {' '}
-        를 끌면 좌우에
+        헤더를 끌면
         {' '}
         <b style={{ fontStyle: 'normal' }}>최상위로 빼기 · 휴지통</b>
         {' '}
@@ -1007,11 +1144,31 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         <BucketCard key={b.id} bucket={b} depth={0} ops={ops} onOpen={onOpen} ratings={ratings} dropTarget={dropTarget} setDropTarget={setDropTarget} draggingId={draggingId} setDraggingId={setDraggingId} draggingBucket={draggingBucket} setDraggingBucket={setDraggingBucket} setDragKind={setDragKind} />
       ))}
 
-      {/* edge rails — fixed in the page margins, mounted only during a drag */}
-      {dragKind === 'bucket' && <UnnestRail onUnnest={id => ops.moveBucketInto(id, null)} />}
-      {(dragKind === 'album' || dragKind === 'bucket') && (
-        <TrashRail
+      {/* drop targets — mounted only during a drag, placed by the measured
+          geometry: edge rails in the real gutters, or a bottom dock when none. */}
+      {railGeom?.mode === 'side' && (
+        <>
+          {dragKind === 'bucket' && (
+            <UnnestRail onUnnest={id => ops.moveBucketInto(id, null)} style={{ left: 12, right: 'auto', width: railGeom.leftW }} />
+          )}
+          {(dragKind === 'album' || dragKind === 'bucket') && (
+            <TrashRail
 	trashCount={trash.length}
+	onTrashAlbum={trashAlbum}
+	onTrashBucket={(id) => {
+                const b = tree ? findBucket(tree, id) : null
+                setPendingBucketDelete({ id, name: b?.name ?? '' })
+              }}
+	style={{ right: 12, left: 'auto', width: railGeom.rightW }}
+            />
+          )}
+        </>
+      )}
+      {railGeom?.mode === 'dock' && dragKind && (
+        <BottomDock
+	kind={dragKind}
+	trashCount={trash.length}
+	onUnnest={id => ops.moveBucketInto(id, null)}
 	onTrashAlbum={trashAlbum}
 	onTrashBucket={(id) => {
             const b = tree ? findBucket(tree, id) : null
