@@ -6,7 +6,7 @@ import BodyArea from './BodyArea'
 import SettingsPanel from './SettingsPanel'
 import PreviewView from './PreviewView'
 import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
-import { SECTIONS } from './types'
+import { SECTION_LABELS } from '../../lib/sections'
 import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 
 const DRAFT_KEY = 'lowfreq-draft'
@@ -93,7 +93,7 @@ export default function WriterApp() {
   const [headline, setHeadline] = useState(saved.headline ?? '')
   const [dek, setDek] = useState(saved.dek ?? '')
   const [body, setBody] = useState(saved.body ?? '')
-  const [section, setSection] = useState(saved.section ?? SECTIONS[0])
+  const [section, setSection] = useState(saved.section ?? SECTION_LABELS[0])
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
   const [recommendedTrackIds, setRecommendedTrackIds] = useState<string[]>(saved.recommendedTrackIds ?? [])
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC. Seeds

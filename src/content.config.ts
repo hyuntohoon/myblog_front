@@ -1,10 +1,15 @@
 // src/content/config.ts
 import { glob } from 'astro/loaders'
 import { defineCollection, z } from 'astro:content'
-import CATEGORIES from './categories.json'
+// STAB-5 Step 3: frontmatter `category` validates against the curated section
+// labels (single source — `src/lib/sections.ts`), replacing the old decorative
+// `categories.json` slug list. The `z.string()` fallback below keeps legacy
+// frontmatter parseable, so this is a non-breaking swap.
+import { SECTION_LABELS } from './lib/sections'
 
 // zod enum에 배열을 안전하게 넣기
 const zodEnum = <T>(arr: T[]): [T, ...T[]] => arr as [T, ...T[]]
+const CATEGORIES = [...SECTION_LABELS]
 
 /** ---------- 선택적: 음악 리뷰/평점 블록 ---------- */
 const Rating = z.object({

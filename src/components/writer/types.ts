@@ -61,7 +61,8 @@ export interface AlbumDetail {
 export type SaveStatus = 'saved' | 'dirty'
 export type WriterView = 'edit' | 'preview'
 
-export const SECTIONS = ['Reviews', 'Best New Music', 'Features', 'Tracks'] as const
+// SECTIONS moved to `src/lib/sections.ts` (STAB-5 Step 3) — the single
+// authoritative build-time seed of the public section taxonomy.
 
 export interface DraftPersist {
   subject: AlbumDetail | null
