@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import WriterChrome from './WriterChrome'
-import SubjectBlock from './SubjectBlock'
+import SubjectHero from './SubjectHero'
+import CommandPalette from './CommandPalette'
 import RecommendedTracksBlock from './RecommendedTracksBlock'
 import BodyArea from './BodyArea'
 import SettingsPanel from './SettingsPanel'
@@ -98,7 +99,7 @@ export default function WriterApp() {
   const [recommendedTrackIds, setRecommendedTrackIds] = useState<string[]>(saved.recommendedTrackIds ?? [])
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC. Seeds
   // from saved draft on mount; reseeds from fetched album.best_new on subject
-  // pick (handled inside SubjectBlock via the seed callback); reseeds from
+  // pick (see onSubjectSelect below, fed by the command palette); reseeds from
   // post.subject_best_new on edit-mode load below.
   const [subjectBestNew, setSubjectBestNew] = useState<boolean>(saved.subjectBestNew ?? false)
 
@@ -112,7 +113,7 @@ export default function WriterApp() {
     })
     // Step 6: seed the BEST NEW toggle from the newly-picked album's flag.
     // For artist subjects (kind='artist') there's no album-level flag — leave
-    // the toggle off; SubjectBlock hides the pill anyway.
+    // the toggle off; SubjectHero hides the badge anyway.
     if (next.kind !== 'artist')
       setSubjectBestNew(next.best_new ?? false)
     else
@@ -120,6 +121,7 @@ export default function WriterApp() {
   }, [])
 
   const [view, setView] = useState<WriterView>('edit')
+  const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [status, setStatus] = useState<SaveStatus>('saved')
   const [lastSaved, setLastSaved] = useState(saved.lastSaved ?? '—')
@@ -132,6 +134,18 @@ export default function WriterApp() {
     if (toastTimer.current)
       clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(''), 2600)
+  }, [])
+
+  // ⌘K / Ctrl+K opens the search palette from anywhere in the writer.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   // FEAT-review-bucket-board Step 5: prefill the album subject from ?album=<id>
@@ -380,35 +394,46 @@ export default function WriterApp() {
 	onViewChange={setView}
 	status={status}
 	lastSaved={lastSaved}
+	onOpenSearch={() => setPaletteOpen(true)}
 	onSave={onSaveDraft}
 	onPublish={() => setSettingsOpen(true)}
       />
 
       {view === 'edit' ?
         (
-          <main className="surface">
-            <SubjectBlock
+          <>
+            <SubjectHero
 	subject={subject}
 	score={score}
-	onSubjectSelect={onSubjectSelect}
 	onScoreChange={setScore}
 	subjectBestNew={subjectBestNew}
 	onSubjectBestNewChange={setSubjectBestNew}
+	onOpenSearch={() => setPaletteOpen(true)}
             />
             <RecommendedTracksBlock
 	subject={subject}
 	value={recommendedTrackIds}
 	onChange={setRecommendedTrackIds}
             />
-            <TitleArea headline={headline} setHeadline={setHeadline} dek={dek} setDek={setDek} dim={!subject} />
-            <BodyArea body={body} setBody={setBody} dim={!subject} />
-          </main>
+            <main className="wr-doc">
+              <TitleArea headline={headline} setHeadline={setHeadline} dek={dek} setDek={setDek} dim={!subject} />
+              <BodyArea body={body} setBody={setBody} dim={!subject} />
+            </main>
+          </>
         ) :
         (
           <main className="surface preview-surface">
             <PreviewView s={s} />
           </main>
         )}
+
+      {paletteOpen && (
+        <CommandPalette
+	currentSubjectId={subject?.id ?? null}
+	onPick={onSubjectSelect}
+	onClose={() => setPaletteOpen(false)}
+        />
+      )}
 
       <SettingsPanel
 	open={settingsOpen}

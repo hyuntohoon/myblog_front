@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import type { AlbumDetail } from './types'
 
 interface Props {
@@ -7,19 +7,22 @@ interface Props {
   onChange: (next: string[]) => void
 }
 
+const pad = (n: number) => String(n).padStart(2, '0')
+
+// Direction C — "비평가의 픽" as a vertical, collapsible chart list. Each row
+// is a ★/☆ toggle; picked tracks get highlighted in the published read page.
 export default function RecommendedTracksBlock({ subject, value, onChange }: Props) {
+  const [open, setOpen] = useState(true)
   const picked = new Set(value)
 
   const toggle = useCallback(
     (trackId: string) => {
       if (!subject)
         return
-      if (picked.has(trackId)) {
+      if (picked.has(trackId))
         onChange(value.filter(id => id !== trackId))
-      }
-      else {
+      else
         onChange([...value, trackId])
-      }
     },
     [subject, value, picked, onChange],
   )
@@ -31,40 +34,50 @@ export default function RecommendedTracksBlock({ subject, value, onChange }: Pro
 
   if (tracks.length === 0) {
     return (
-      <section className="recommended-tracks-block">
-        <h3 className="block-heading">비평가의 픽</h3>
-        <p className="muted">이 앨범의 트랙 정보가 아직 동기화되지 않았습니다.</p>
+      <section className="wr-picks">
+        <div className="wr-picks-head wr-picks-head--static">
+          <span className="lh">
+            <span className="wr-seclabel">비평가의 픽</span>
+          </span>
+        </div>
+        <p className="wr-picks-empty mono">이 앨범의 트랙 정보가 아직 동기화되지 않았습니다.</p>
       </section>
     )
   }
 
   return (
-    <section className="recommended-tracks-block">
-      <header className="block-heading-row">
-        <h3 className="block-heading">비평가의 픽</h3>
-        <span className="muted">
-          ★ 표시한 트랙은 글에서 강조 표시됩니다
+    <section className="wr-picks">
+      <button type="button" className="wr-picks-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="lh">
+          <span className="wr-picks-chev" data-open={open} aria-hidden>▸</span>
+          <span className="wr-seclabel">비평가의 픽</span>
+          <span className="wr-picks-count">
+            <b>{picked.size}</b>
+            곡 추천
+          </span>
         </span>
-      </header>
-      <ol className="rt-track-list">
-        {tracks.map((t) => {
-          const isSelected = picked.has(t.id)
-          return (
-            <li key={t.id} className={`rt-track-row${isSelected ? ' is-selected' : ''}`}>
-              <label className="rt-track-label">
-                <input
-	type="checkbox"
-	checked={isSelected}
-	onChange={() => toggle(t.id)}
-                />
-                <span className="rt-track-no">{t.track_no ?? '—'}</span>
-                <span className="rt-track-title">{t.title}</span>
-                {isSelected && <span className="rt-track-pick" aria-hidden>★</span>}
-              </label>
-            </li>
-          )
-        })}
-      </ol>
+        <span className="wr-picks-hint mono">{open ? '접기' : '펼치기'}</span>
+      </button>
+      {open && (
+        <div className="wr-plist">
+          {tracks.map((t, i) => {
+            const on = picked.has(t.id)
+            return (
+              <button
+	key={t.id}
+	type="button"
+	className={`wr-prow${on ? ' on' : ''}`}
+	aria-pressed={on}
+	onClick={() => toggle(t.id)}
+              >
+                <span className="wr-prow-star" aria-hidden>{on ? '★' : '☆'}</span>
+                <span className="wr-prow-no mono">{pad(t.track_no ?? i + 1)}</span>
+                <span className="wr-prow-title">{t.title}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </section>
   )
 }

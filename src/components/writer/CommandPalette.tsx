@@ -1,6 +1,5 @@
 import type { KeyboardEvent } from 'react'
-import { useMemo, useRef, useState } from 'react'
-import DragRatingInput from './DragRatingInput'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { components } from '../../lib/api.gen'
 import type {
   AlbumDetail,
@@ -25,22 +24,16 @@ type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult'
 const API_BASE = import.meta.env.PUBLIC_API_URL as string
 
 interface Props {
-  subject: AlbumDetail | null
-  score: number
-  onSubjectSelect: (album: AlbumDetail) => void
-  onScoreChange: (score: number) => void
-  // FEAT-writer-lowfreq-redesign Step 6: BEST NEW toggle in the filled card.
-  // Hidden when no subject is selected (the flag has no meaning without an
-  // album target).
-  subjectBestNew: boolean
-  onSubjectBestNewChange: (next: boolean) => void
+  currentSubjectId: string | null
+  onPick: (album: AlbumDetail) => void
+  onClose: () => void
 }
 
 const FILTERS = [
   { v: 'all', l: '전체' },
   { v: 'album', l: '앨범' },
-  { v: 'track', l: '트랙' },
   { v: 'artist', l: '아티스트' },
+  { v: 'track', l: '트랙' },
 ] as const
 
 type FilterType = typeof FILTERS[number]['v']
@@ -70,28 +63,25 @@ type SourceMode = 'db' | 'spotify'
 // quota and crowds the queue. 3 s cooldown matches BUG-19 era guard.
 const SPOTIFY_COOLDOWN_MS = 3000
 
-export default function SubjectBlock({
-  subject,
-score,
-onSubjectSelect,
-onScoreChange,
-  subjectBestNew,
-onSubjectBestNewChange,
-}: Props) {
+// ⌘K command palette. Owns all search state (DB unified search, Spotify
+// candidates + SQS absorb, per-bucket pagination, artist drill-in) — lifted
+// from the former inline SubjectBlock. Renders as an overlay; picking a result
+// calls onPick(detail) and the host closes the palette.
+export default function CommandPalette({ currentSubjectId, onPick, onClose }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultItem[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState<BucketKey | null>(null)
-  const [searching, setSearching] = useState(false)
   const [filter, setFilter] = useState<FilterType>('all')
   const [status, setStatus] = useState('')
   const [source, setSource] = useState<SourceMode>('db')
   const [spotifyCooldown, setSpotifyCooldown] = useState(false)
   const spotifyCooldownRef = useRef(false)
-  // FEAT-writer-lowfreq-redesign Step 4: artist drill-in state. When set, the
-  // search grid is hidden and ArtistDetail renders instead. `viewArtistSource`
-  // remembers which source the click came from so the panel can label itself
-  // and the artist-as-subject pick preserves provenance.
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Artist drill-in state. When set, the result list is hidden and ArtistDetail
+  // renders instead. `viewArtistSource` remembers which source the click came
+  // from so the panel labels itself and the artist-as-subject pick keeps
+  // provenance.
   const [viewArtistSource, setViewArtistSource] = useState<SourceMode>('db')
   const [viewArtistHero, setViewArtistHero] = useState<ArtistHero | null>(null)
   const [viewArtistTracks, setViewArtistTracks] = useState<TopTrackItem[]>([])
@@ -101,12 +91,32 @@ onSubjectBestNewChange,
   const [viewArtistOrigin, setViewArtistOrigin] = useState<ArtistSearchResult | null>(null)
   const viewArtistPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // BUG-19: per-bucket pagination — `offsets[kind]` is the next offset to ask
-  // for; `lastReturned[kind]` controls "더 보기" visibility (hide once a
-  // round returns zero rows for that bucket).
+  // for; `lastReturned[kind]` controls "더 보기" visibility (hide once a round
+  // returns zero rows for that bucket).
   const [offsets, setOffsets] = useState<BucketOffsets>(ZERO_OFFSETS)
   const [lastReturned, setLastReturned] = useState<BucketLastReturned>(ZERO_RETURNED)
 
-  const showSearch = !subject || searching
+  const inDrillIn = viewArtistHero !== null || viewArtistPending || viewArtistFailed
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  // esc closes the palette (unless drilled into an artist — there esc backs out).
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape')
+        return
+      if (inDrillIn)
+        closeArtistDrillIn()
+      else
+        onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [inDrillIn, onClose])
+
+  useEffect(() => () => cancelArtistPoll(), [])
 
   function mapAlbums(arr: UnifiedSearchResult['albums']): AlbumSearchResult[] {
     return (arr ?? []).map(a => ({
@@ -167,12 +177,11 @@ onSubjectBestNewChange,
       const albums = mapAlbums(data.albums)
       const artists = mapArtists(data.artists)
       const tracks = mapTracks(data.tracks)
-      // Sections are grouped at render time, so storage order doesn't matter.
       setResults([...artists, ...albums, ...tracks])
       setOffsets({ album: albums.length, artist: artists.length, track: tracks.length })
       setLastReturned({ album: albums.length, artist: artists.length, track: tracks.length })
       if (albums.length + artists.length + tracks.length === 0)
-        setStatus('DB에 결과가 없습니다. Spotify 싱크를 눌러보세요.')
+        setStatus('DB에 결과가 없습니다. Spotify로 검색해보세요.')
     }
     catch {
       setStatus('검색 실패')
@@ -220,7 +229,6 @@ onSubjectBestNewChange,
       const existingIds = new Set(results.filter(r => r.kind === kind).map(r => r.id))
       const fresh = appended.filter(r => !existingIds.has(r.id))
       if (fresh.length === 0 && returned > 0) {
-        // backend returned rows but all were duplicates — treat as "exhausted"
         setLastReturned(prev => ({ ...prev, [kind]: 0 }))
         return
       }
@@ -249,8 +257,8 @@ onSubjectBestNewChange,
     setLoading(true)
     setStatus('Spotify에서 검색하고 DB 동기화를 시작합니다…')
     setResults([])
-    // BUG-19: Spotify candidates don't support per-bucket offset paging,
-    // so hide "더 보기" while in Spotify view.
+    // Spotify candidates don't support per-bucket offset paging, so hide
+    // "더 보기" while in Spotify view.
     setOffsets(ZERO_OFFSETS)
     setLastReturned(ZERO_RETURNED)
     try {
@@ -308,14 +316,6 @@ onSubjectBestNewChange,
     [results, filter],
   )
 
-  function clearSearch() {
-    setQuery('')
-    setResults([])
-    setStatus('')
-    setOffsets(ZERO_OFFSETS)
-    setLastReturned(ZERO_RETURNED)
-  }
-
   function runActiveSearch() {
     if (source === 'spotify')
       void runSpotifySync()
@@ -324,9 +324,8 @@ onSubjectBestNewChange,
   }
 
   function onSearchKeyDown(e: KeyboardEvent) {
-    // Ignore Enter while an IME composition is active (e.g. confirming a
-    // Hangul candidate) — that Enter belongs to the composition, not the
-    // search, so it must not fire a phantom query mid-typing.
+    // Ignore Enter while an IME composition is active (e.g. confirming a Hangul
+    // candidate) — that Enter belongs to the composition, not the search.
     if (e.key === 'Enter' && e.nativeEvent.isComposing)
       return
     if (e.key === 'Enter') {
@@ -336,9 +335,7 @@ onSubjectBestNewChange,
   }
 
   // Toggle click: switch source and, if there's a query, immediately re-search
-  // through the new source. Empty query → color-only flip, no API call (DB
-  // search has no "browse all" endpoint and Spotify candidates with empty q
-  // would enqueue a junk absorb job).
+  // through the new source. Empty query → color-only flip, no API call.
   function selectSource(next: SourceMode) {
     if (next === source)
       return
@@ -370,11 +367,8 @@ onSubjectBestNewChange,
         tracks: (json.tracks ?? []).map(t => ({ id: t.id, title: t.title, track_no: t.track_no })),
         best_new: json.album.best_new ?? false,
       }
-      onSubjectSelect(detail)
-      setSearching(false)
-      setQuery('')
-      setResults([])
-      setStatus('')
+      onPick(detail)
+      onClose()
     }
     catch {
       setStatus(args.source === 'spotify' ?
@@ -383,10 +377,9 @@ onSubjectBestNewChange,
     }
   }
 
-  async function onPick(sr: SearchResultItem) {
+  async function onPickResult(sr: SearchResultItem) {
     if (sr.kind === 'album') {
-      // Route by available identifier: spotify_id → /by-spotify, else DB UUID → /{id}.
-      // /albums/{id} rejects non-UUID input with 500, so spotify_id must use by-spotify.
+      // Route by identifier: spotify_id → /by-spotify, else DB UUID → /{id}.
       const url = sr.spotify_id ?
         `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(sr.spotify_id)}` :
         `${API_BASE}/api/music/albums/${encodeURIComponent(sr.id)}`
@@ -395,7 +388,6 @@ onSubjectBestNewChange,
     }
     if (sr.kind === 'track') {
       // Track click → select the parent album for review.
-      // Spotify candidates carry album.spotify_id (no DB UUID yet); DB tracks carry album_id (UUID).
       if (sr.source === 'spotify' && sr.album_spotify_id) {
         await selectAlbumByLookup({
           lookupUrl: `${API_BASE}/api/music/albums/by-spotify/${encodeURIComponent(sr.album_spotify_id)}`,
@@ -413,10 +405,7 @@ onSubjectBestNewChange,
       setStatus('이 트랙의 앨범 정보가 없습니다.')
       return
     }
-    // Artist: open the drill-in panel. Replaces the previous query-refine
-    // behavior. For DB artists we look up by internal UUID; for Spotify-only
-    // tiles (no UUID yet) we go via spotify_id and poll on 404 until the
-    // worker absorbs the candidate.
+    // Artist → open the drill-in panel.
     void openArtistDrillIn(sr)
   }
 
@@ -431,12 +420,11 @@ onSubjectBestNewChange,
     setStatus('')
 
     if (sr.source !== 'spotify' && sr.id) {
-      // DB artist → direct lookup
       setViewArtistPending(true)
       const r = await fetchArtistHero(sr.id)
       if (r.ok) {
         await loadArtistDetail(r.hero)
-      }
+}
       else {
         setViewArtistPending(false)
         setViewArtistFailed(true)
@@ -451,11 +439,11 @@ onSubjectBestNewChange,
       return
     }
     setViewArtistPending(true)
-    await pollArtistBySpotify(sr.spotify_id, /* attempt */ 0)
+    await pollArtistBySpotify(sr.spotify_id, 0)
   }
 
   async function pollArtistBySpotify(spotifyId: string, attempt: number) {
-    const MAX_ATTEMPTS = 15  // 15 × 2 s = 30 s window
+    const MAX_ATTEMPTS = 15 // 15 × 2 s = 30 s window
     const r = await fetchArtistHeroBySpotify(spotifyId)
     if (r.ok) {
       await loadArtistDetail(r.hero)
@@ -504,26 +492,21 @@ onSubjectBestNewChange,
   }
 
   async function onPickAlbumFromDrillIn(album: AlbumListItem) {
-    // ArtistDetail's discography items are AlbumItem rows from the DB albums
-    // endpoint — every entry already has an internal id, no by-spotify hop.
     if (!album.id)
       return
     await selectAlbumByLookup({
       lookupUrl: `${API_BASE}/api/music/albums/${encodeURIComponent(album.id)}`,
       source: viewArtistSource,
     })
-    closeArtistDrillIn()
   }
 
   async function onPickTrackFromDrillIn(track: TopTrackItem) {
-    // TrackItem carries album_id (DB UUID, always set in top-tracks payload).
     if (!track.album_id)
       return
     await selectAlbumByLookup({
       lookupUrl: `${API_BASE}/api/music/albums/${encodeURIComponent(track.album_id)}`,
       source: viewArtistSource,
     })
-    closeArtistDrillIn()
   }
 
   function onPickArtistAsSubject(hero: ArtistHero) {
@@ -531,7 +514,7 @@ onSubjectBestNewChange,
     // payload (album_ids=[] + artist_ids=[id]). Cover falls back to photo_url.
     if (!hero.id)
       return
-    const detail: AlbumDetail = {
+    onPick({
       id: hero.id,
       title: hero.name,
       cover_url: hero.photo_url ?? null,
@@ -539,60 +522,17 @@ onSubjectBestNewChange,
       artists: [{ id: hero.id, name: hero.name }],
       tracks: [],
       kind: 'artist',
-    }
-    onSubjectSelect(detail)
-    setSearching(false)
-    setQuery('')
-    setResults([])
-    setStatus('')
-    closeArtistDrillIn()
+    })
+    onClose()
   }
 
   return (
-    <div className="hdr-block">
-      {subject && !searching && (
-        <div className="hdr-card">
-          <div className="hdr-cover">
-            {subject.cover_url ?
-              <img src={subject.cover_url} alt={subject.title} /> :
-              <span className="cover-fallback">{subject.title[0]}</span>}
-          </div>
-          <div className="hdr-info">
-            <div className="hdr-kicker">
-              앨범
-              {subject.artists[0]?.name ? ` · ${subject.artists[0].name}` : ''}
-              {subject.release_date ? ` · ${subject.release_date.slice(0, 4)}` : ''}
-            </div>
-            <div className="hdr-title">
-              {subject.artists[0]?.name && (
-                <>
-                  <span className="hdr-by">{subject.artists[0].name}</span>
-                  <span className="hdr-dash">—</span>
-                </>
-              )}
-              <em className="hdr-name">{subject.title}</em>
-            </div>
-          </div>
-          <div className="hdr-rating">
-            <DragRatingInput value={score} onChange={onScoreChange} max={5} size={26} />
-          </div>
-          <button type="button" className="hdr-change" onClick={() => setSearching(true)} title="다른 앨범 검색">↻</button>
-          {/* Step 6: BEST NEW pill — hidden for artist subjects (no album to flag) */}
-          {subject.kind !== 'artist' && (
-            <button
-	type="button"
-	className={`hdr-bnm${subjectBestNew ? ' on' : ''}`}
-	onClick={() => onSubjectBestNewChange(!subjectBestNew)}
-	title={subjectBestNew ? '베스트 신보 해제' : '베스트 신보로 표시'}
-            >
-              BEST NEW
-            </button>
-          )}
-        </div>
-      )}
-
-      {showSearch && (viewArtistHero || viewArtistPending || viewArtistFailed) && (
-        <ArtistDetail
+    <div className="wr-palette-scrim" onClick={onClose}>
+      <div className="wr-palette" onClick={e => e.stopPropagation()} role="dialog" aria-label="작품 검색">
+        {inDrillIn ?
+          (
+            <div className="wr-palette-drillin">
+              <ArtistDetail
 	hero={viewArtistHero}
 	topTracks={viewArtistTracks}
 	albums={viewArtistAlbums}
@@ -604,214 +544,172 @@ onSubjectBestNewChange,
 	onPickAlbum={album => void onPickAlbumFromDrillIn(album)}
 	onPickArtist={onPickArtistAsSubject}
 	onRetry={() => {
-            // Re-fire the original artist click — re-attempts the same DB or
-            // by-spotify lookup with a fresh poll budget.
-            if (viewArtistOrigin)
-              void openArtistDrillIn(viewArtistOrigin)
-          }}
-        />
-      )}
-
-      {showSearch && !viewArtistHero && !viewArtistPending && !viewArtistFailed && (
-        <div className="hdr-search-block">
-          <div className="hdr-source-row">
-            <button
-	type="button"
-	className={`hdr-source-btn${source === 'db' ? ' on' : ''}`}
-	onClick={() => selectSource('db')}
-	disabled={loading && source !== 'db'}
-            >
-              <span className="hdr-source-icon">▣</span>
-              <span className="hdr-source-label">
-                <strong>내부 DB</strong>
-                <span>Lowfreq 카탈로그</span>
-              </span>
-            </button>
-            <button
-	type="button"
-	className={`hdr-source-btn hdr-source-spotify${source === 'spotify' ? ' on' : ''}`}
-	onClick={() => selectSource('spotify')}
-	disabled={(loading && source !== 'spotify') || (source !== 'spotify' && spotifyCooldown)}
-	title={source !== 'spotify' && spotifyCooldown ? '잠시 후 다시 시도 (Spotify 쿨다운)' : undefined}
-            >
-              <span className="hdr-source-icon hdr-spotify-mark" aria-hidden="true">
-                <SpotifyMark size={16} />
-              </span>
-              <span className="hdr-source-label">
-                <strong>Spotify</strong>
-                <span>{source === 'spotify' && loading ? '검색 중…' : '전 세계 카탈로그'}</span>
-              </span>
-              {source === 'spotify' && loading && (
-                <span className="hdr-spinner" aria-hidden="true"></span>
-              )}
-            </button>
-          </div>
-          <div className="hdr-search-row">
-            <div className="hdr-search">
-              <span className="hdr-search-icon">⌕</span>
-              <input
-	className="hdr-search-input"
-	placeholder={source === 'spotify' ? 'Spotify에서 검색…' : (subject ? '다른 앨범 검색…' : '어떤 앨범을 리뷰할까요?')}
+                  if (viewArtistOrigin)
+                    void openArtistDrillIn(viewArtistOrigin)
+                }}
+              />
+            </div>
+          ) :
+          (
+            <>
+              <div className="wr-palette-head">
+                <span className="wr-palette-ico" aria-hidden>⌕</span>
+                <input
+	ref={inputRef}
+	className="wr-palette-input"
+	placeholder={source === 'spotify' ? 'Spotify에서 검색…' : '평론할 작품 검색…'}
 	value={query}
 	onChange={e => setQuery(e.target.value)}
 	onKeyDown={onSearchKeyDown}
 	autoComplete="off"
-              />
-              {query && (
-                <button
+	spellCheck={false}
+                />
+                <span className="wr-src">
+                  <button
 	type="button"
-	className="hdr-search-clear"
-	onClick={clearSearch}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            {subject && (
-              <button
+	className={source === 'db' ? 'on' : ''}
+	onClick={() => selectSource('db')}
+	disabled={loading && source !== 'db'}
+                  >
+                    DB
+                  </button>
+                  <button
 	type="button"
-	className="hdr-cancel"
-	onClick={() => {
-                  setSearching(false)
-                  setQuery('')
-                  setResults([])
-                  setStatus('')
-                }}
-              >
-                취소
-              </button>
-            )}
-          </div>
+	className={source === 'spotify' ? 'on spotify' : ''}
+	onClick={() => selectSource('spotify')}
+	disabled={(loading && source !== 'spotify') || (source !== 'spotify' && spotifyCooldown)}
+	title={source !== 'spotify' && spotifyCooldown ? '잠시 후 다시 시도 (Spotify 쿨다운)' : undefined}
+                  >
+                    <SpotifyMark size={11} color={source === 'spotify' ? '#fff' : '#1DB954'} />
+                    Spotify
+                  </button>
+                </span>
+              </div>
 
-          <div className="hdr-filter-row">
-            {FILTERS.map(f => (
-              <button
+              <div className="wr-palette-filters">
+                {FILTERS.map(f => (
+                  <button
 	key={f.v}
 	type="button"
-	className={`hdr-filter-btn${filter === f.v ? ' on' : ''}`}
+	className={`wr-fpill${filter === f.v ? ' on' : ''}`}
 	onClick={() => setFilter(f.v)}
-              >
-                {f.l}
-              </button>
-            ))}
-            <span className="hdr-filter-hint">즉시 적용</span>
-            {visibleResults.length > 0 && (
-              <span className="hdr-count">
-{visibleResults.length}
-개
-              </span>
-            )}
-          </div>
+                  >
+                    {f.l}
+                  </button>
+                ))}
+                <span className="wr-palette-count mono">
+                  {loading ? '검색 중…' : `${visibleResults.length}건`}
+                </span>
+              </div>
 
-          {status && <div className="hdr-status">{status}</div>}
-
-          {visibleResults.length > 0 && (
-            <div className="hdr-sections">
-              {SECTION_ORDER.map(({ kind, label }) => {
-                const items = visibleResults.filter(r => r.kind === kind)
-                if (items.length === 0)
-                  return null
-                return (
-                  <section key={kind} className="hdr-section">
-                    <header className="hdr-section-head">
-                      <span className={`hdr-section-label kind-${kind}`}>{label}</span>
-                      <span className="hdr-section-count">{items.length}</span>
-                    </header>
-                    <div className="hdr-grid">
-                      {items.map((r) => {
-                        const displayTitle = r.kind === 'artist' ? r.name : r.title
-                        let subtitle: string | null = null
-                        if (r.kind === 'album') {
-                          subtitle = r.artist_name
-                        }
-                        else if (r.kind === 'track') {
-                          const feat = r.feat_artist_names ?? []
-                          const artistPart = r.artist_name ?? ''
-                          const withFeat = feat.length ? `${artistPart} (feat. ${feat.join(', ')})` : artistPart
-                          subtitle = r.album_title ? `${withFeat} · ${r.album_title}` : (withFeat || r.artist_name)
-                        }
-                        else {
-                          subtitle = 'Artist'
-                        }
-                        const fourthLine = r.kind === 'album' && r.release_date ? r.release_date.slice(0, 4) : null
-                        const key = `${r.kind}:${r.id || r.spotify_id || displayTitle}`
-                        const isCurrent = r.kind === 'album' && subject?.id === r.id
-                        const isSpotify = r.source === 'spotify'
-                        return (
-                          <button
-	key={key}
+              <div className="wr-palette-body wr-scroll">
+                {status && <div className="wr-palette-status mono">{status}</div>}
+                {!loading && visibleResults.length === 0 && !status && (
+                  <div className="wr-palette-empty mono">
+                    {query.trim() ? '결과 없음' : `${source === 'spotify' ? 'Spotify' : 'DB'}에서 작품을 검색하세요`}
+                  </div>
+                )}
+                {SECTION_ORDER.map(({ kind, label }) => {
+                  const items = visibleResults.filter(r => r.kind === kind)
+                  if (items.length === 0)
+                    return null
+                  const showLoadMore = filter === kind && !loading && lastReturned[kind] > 0
+                  return (
+                    <section key={kind} className="wr-palette-section">
+                      <div className="wr-palette-seclabel">
+                        <span className="wr-seclabel">{label}</span>
+                        <span className="mono">{items.length}</span>
+                      </div>
+                      {items.map(r => (
+                        <PaletteRow
+	key={`${r.kind}:${r.id || r.spotify_id}`}
+	item={r}
+	isCurrent={r.kind === 'album' && currentSubjectId === r.id}
+	onPick={() => void onPickResult(r)}
+                        />
+                      ))}
+                      {showLoadMore && (
+                        <button
 	type="button"
-	className={`hdr-tile${isCurrent ? ' is-current' : ''}${isSpotify ? ' is-spotify' : ''}`}
-	onClick={() => void onPick(r)}
-                          >
-                            <div className="hdr-tile-cover">
-                              {r.cover_url ?
-                                <img src={r.cover_url} alt={displayTitle} /> :
-                                <span className="cover-fallback">{(displayTitle || '?')[0]}</span>}
-                              {isSpotify && (
-                                <span className="hdr-tile-badge" title="Spotify">
-                                  <SpotifyMark size={14} />
-                                </span>
-                              )}
-                            </div>
-                            <div className="hdr-tile-body">
-                              <div className="hdr-tile-name"><em>{displayTitle}</em></div>
-                              <div className="hdr-tile-by">{subtitle}</div>
-                              <div className="hdr-tile-meta">
-                                {fourthLine && <span>{fourthLine}</span>}
-                                {r.source && (
-                                  <span className={`hdr-tile-source${r.source === 'spotify' ? ' spotify' : ''}`}>
-                                    {r.source === 'spotify' ? 'SPOTIFY' : 'DB'}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </section>
-                )
-              })}
-            </div>
-          )}
-          {loading && (
-            <div className="hdr-results-empty">검색 중…</div>
-          )}
-          {!loading && results.length > 0 && visibleResults.length === 0 && (
-            <div className="hdr-results-empty">현재 필터에 해당하는 결과가 없습니다.</div>
-          )}
-          {(() => {
-            const k = filter as BucketKey
-            const showLoadMore = !loading && filter !== 'all' && results.length > 0 && lastReturned[k] > 0
-            if (!showLoadMore)
-              return null
-            return (
-            <div className="hdr-load-more-row">
-              <button
-	type="button"
-	className="hdr-load-more-btn"
+	className="wr-palette-more mono"
 	disabled={loadingMore !== null}
-	onClick={() => void loadMore(filter as BucketKey)}
-              >
-                {loadingMore === filter ? '불러오는 중…' : '더 보기'}
-              </button>
-            </div>
-            )
-          })()}
-        </div>
-      )}
+	onClick={() => void loadMore(kind)}
+                        >
+                          {loadingMore === kind ? '불러오는 중…' : '더 보기'}
+                        </button>
+                      )}
+                    </section>
+                  )
+                })}
+              </div>
+
+              <div className="wr-palette-foot mono">
+                <span>
+<b>↵</b>
+{' '}
+선택
+                </span>
+                <span>
+<b>esc</b>
+{' '}
+닫기
+                </span>
+                <span className="wr-palette-foot-src">{source === 'spotify' ? 'Spotify 카탈로그' : 'Lowfreq DB'}</span>
+              </div>
+            </>
+          )}
+      </div>
     </div>
   )
 }
 
-function SpotifyMark({ size }: { size: number }) {
+function PaletteRow({ item, isCurrent, onPick }: {
+  item: SearchResultItem
+  isCurrent: boolean
+  onPick: () => void
+}) {
+  const isArtist = item.kind === 'artist'
+  const displayTitle = isArtist ? item.name : item.title
+  let subtitle = ''
+  if (item.kind === 'album') {
+    subtitle = [item.artist_name, item.release_date?.slice(0, 4)].filter(Boolean).join(' · ')
+}
+  else if (item.kind === 'track') {
+    const feat = item.feat_artist_names ?? []
+    const artistPart = feat.length ? `${item.artist_name} (feat. ${feat.join(', ')})` : (item.artist_name ?? '')
+    subtitle = item.album_title ? `${artistPart} · ${item.album_title}` : artistPart
+  }
+  else {
+    subtitle = '아티스트'
+}
+  const kindLabel = item.kind === 'album' ? '앨범' : item.kind === 'track' ? '트랙' : '아티스트'
+  const isSpotify = item.source === 'spotify'
   return (
-    <svg viewBox="0 0 24 24" width={size} height={size}>
-      <circle cx="12" cy="12" r="12" fill="#1DB954" />
+    <button type="button" className={`wr-row${isCurrent ? ' is-current' : ''}`} onClick={onPick}>
+      <span className={`wr-row-cover${isArtist ? ' is-artist' : ''}`}>
+        {item.cover_url ?
+          <img src={item.cover_url} alt="" loading="lazy" /> :
+          <span className="wr-row-fallback">{(displayTitle || '?')[0]}</span>}
+      </span>
+      <span className="wr-row-text">
+        <span className="wr-row-name">{displayTitle}</span>
+        <span className="wr-row-sub">
+          <span className="wr-row-kind">{kindLabel}</span>
+          {subtitle}
+        </span>
+      </span>
+      {isSpotify && <SpotifyMark size={13} />}
+    </button>
+  )
+}
+
+function SpotifyMark({ size, color = '#1DB954' }: { size: number, color?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden style={{ flexShrink: 0 }}>
+      <circle cx="12" cy="12" r="12" fill={color} />
       <path
 	d="M6.5 9.2c3-.9 7.7-.8 10.6.9.4.3.5.8.3 1.2-.3.4-.8.5-1.2.3-2.5-1.5-6.7-1.6-9.3-.8-.5.2-1-.1-1.1-.6-.1-.4.2-.9.7-1zm.4 2.7c2.6-.8 6.4-.7 8.9.8.4.2.5.7.3 1-.2.4-.7.5-1 .3-2.1-1.3-5.5-1.4-7.6-.7-.4.1-.8-.1-.9-.4-.2-.4 0-.8.3-1zm.5 2.6c2.1-.6 4.7-.5 6.8.8.3.2.4.5.2.8-.2.3-.5.4-.8.2-1.8-1.1-4.1-1.2-5.9-.6-.3.1-.7-.1-.7-.4-.1-.3.1-.7.4-.8z"
-	fill="#fff"
+	fill={color === '#fff' ? '#1DB954' : '#fff'}
       />
     </svg>
   )

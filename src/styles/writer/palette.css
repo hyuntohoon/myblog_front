@@ -1,0 +1,209 @@
+/* ============================================================
+   Writer — ⌘K command palette overlay (Direction C).
+   Hosts the album/artist/track search (DB + Spotify), filter pills,
+   per-bucket pagination, and the artist drill-in panel.
+   ============================================================ */
+.wr-palette-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 90px 16px 16px;
+  background: color-mix(in srgb, var(--ink) 32%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: wrPaletteFade 0.14s ease;
+}
+@keyframes wrPaletteFade { from { opacity: 0; } to { opacity: 1; } }
+.wr-palette {
+  width: min(620px, 100%);
+  max-height: min(560px, calc(100vh - 120px));
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.wr-palette-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.wr-palette-ico { font-family: var(--serif); font-size: 20px; color: var(--ink-soft); }
+.wr-palette-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--serif);
+  font-size: 19px;
+  color: var(--ink);
+}
+.wr-palette-input::placeholder { color: var(--ink-faint); }
+
+/* source toggle (DB / Spotify) */
+.wr-src { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; padding: 2px; flex-shrink: 0; }
+.wr-src button {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.14s;
+}
+.wr-src button.on { background: var(--ink); color: var(--bg); }
+.wr-src button.on.spotify { background: var(--spotify); color: #fff; }
+.wr-src button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.wr-palette-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.wr-fpill {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--rule-soft);
+  background: transparent;
+  color: var(--ink-soft);
+  transition: all 0.14s;
+}
+.wr-fpill:hover { border-color: var(--ink); color: var(--ink); }
+.wr-fpill.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.wr-palette-count { margin-left: auto; font-size: 10px; color: var(--ink-faint); }
+
+.wr-palette-body { flex: 1; min-height: 0; }
+.wr-scroll { overflow-y: auto; }
+.wr-palette-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  padding: 12px 16px;
+  letter-spacing: 0.01em;
+}
+.wr-palette-empty {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: center;
+  padding: 40px;
+}
+
+.wr-palette-section { display: flex; flex-direction: column; }
+.wr-palette-seclabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 16px 5px;
+}
+.wr-palette-seclabel .mono { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+
+/* result row */
+.wr-row {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 9px 14px;
+  text-align: left;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule-soft);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.wr-row:hover, .wr-row.is-current { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.wr-row-cover {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  background: var(--paper);
+  display: grid;
+  place-items: center;
+}
+.wr-row-cover.is-artist { border-radius: 999px; }
+.wr-row-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wr-row-fallback { font-family: var(--serif); font-style: italic; color: var(--ink-soft); font-size: 16px; }
+.wr-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.wr-row-name {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wr-row-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wr-row-kind {
+  display: inline-block;
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--rule-soft);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.wr-palette-more {
+  align-self: flex-start;
+  margin: 6px 14px 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid var(--rule);
+  padding: 6px 14px;
+  transition: all 0.15s;
+}
+.wr-palette-more:hover:not(:disabled) { border-color: var(--ink); color: var(--ink); }
+.wr-palette-more:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.wr-palette-foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--rule-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+}
+.wr-palette-foot b { color: var(--ink-soft); }
+.wr-palette-foot-src { margin-left: auto; }
+
+.wr-palette-drillin { overflow-y: auto; min-height: 0; }
