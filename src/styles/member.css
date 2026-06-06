@@ -233,12 +233,17 @@
 
 /* ── drag edge rails (mounted only while dragging) ─────────
    Fixed overlays pinned to the LEFT / RIGHT screen edges, full height,
-   symmetric. Slide in on mount, collapse on a narrow viewport. */
+   symmetric. Slide in on mount, collapse on a narrow viewport.
+   Width tracks the gutter beside the centred --measure-wide content column
+   (50vw - half the column - a small gap) so the opaque panels stay in the
+   margins instead of covering the buckets; clamped to a readable floor and a
+   sane max. Below ~1140px the gutter vanishes and the floor takes over — the
+   max-width:760px rule narrows it further for phones. */
 .crate-rail {
 	position: fixed;
 	top: 12px;
 	bottom: 12px;
-	width: clamp(160px, 22vw, 300px);
+	width: clamp(132px, calc(50vw - var(--measure-wide) / 2 - 20px), 300px);
 	box-sizing: border-box;
 	z-index: var(--z-panel);
 	display: flex;
