@@ -8,6 +8,7 @@ import SettingsPanel from './SettingsPanel'
 import PreviewView from './PreviewView'
 import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { SECTION_LABELS } from '../../lib/sections'
+import { REVIEW_TAG_LABELS } from '../../lib/tags'
 import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 
 const DRAFT_KEY = 'lowfreq-draft'
@@ -23,8 +24,10 @@ function nowTime() {
 }
 
 function loadDraft(): Partial<DraftPersist> {
-  // Older drafts persisted dead keys (bestNew/tags/genre/author/authorRole).
+  // Older drafts persisted dead keys (bestNew/genre/author/authorRole).
   // Partial<DraftPersist> silently drops them on read — no migration needed.
+  // (`tags` is live again as of STAB-5 Step 4; the state init sanitizes any
+  // stale legacy `tags` value to the seeded vocabulary.)
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
     return raw ? JSON.parse(raw) as Partial<DraftPersist> : {}
@@ -95,6 +98,13 @@ export default function WriterApp() {
   const [dek, setDek] = useState(saved.dek ?? '')
   const [body, setBody] = useState(saved.body ?? '')
   const [section, setSection] = useState(saved.section ?? SECTION_LABELS[0])
+  // STAB-5 Step 4: selected review tags (labels). Multi-select, read-only vocab
+  // (REVIEW_TAG_LABELS); empty = no tags. Backend rejects any non-seeded name —
+  // so sanitize the restored draft to the known vocabulary (an older draft may
+  // carry a stale `tags` key from a previous writer; see loadDraft note).
+  const [tags, setTags] = useState<string[]>(
+    (saved.tags ?? []).filter(t => REVIEW_TAG_LABELS.includes(t)),
+  )
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
   const [recommendedTrackIds, setRecommendedTrackIds] = useState<string[]>(saved.recommendedTrackIds ?? [])
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC. Seeds
@@ -128,6 +138,12 @@ export default function WriterApp() {
   const [toast, setToast] = useState('')
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // STAB-5 Step 4: toggle a review tag. Functional updater so rapid successive
+  // toggles (before a re-render) compose instead of clobbering a stale closure.
+  const onToggleTag = useCallback((label: string) => {
+    setTags(prev => prev.includes(label) ? prev.filter(t => t !== label) : [...prev, label])
+  }, [])
 
   const flash = useCallback((msg: string) => {
     setToast(msg)
@@ -197,6 +213,8 @@ export default function WriterApp() {
       setScore(post.rating ?? 0)
       if (post.category)
         setSection(post.category)
+      // STAB-5 Step 4: seed the tag picker from the post's attached tags.
+      setTags(post.tags ?? [])
       const loadedIds = post.recommended_track_ids ?? []
       if (loadedIds.length > 0)
         setRecommendedTrackIds(loadedIds)
@@ -223,6 +241,7 @@ export default function WriterApp() {
         section,
         publishDate,
         recommendedTrackIds,
+        tags,
         subjectBestNew,
         lastSaved: ts,
       }
@@ -234,7 +253,7 @@ export default function WriterApp() {
       setStatus('saved')
     }, 600)
     return () => clearTimeout(id)
-  }, [subject, score, headline, dek, body, section, publishDate, recommendedTrackIds, subjectBestNew])
+  }, [subject, score, headline, dek, body, section, publishDate, recommendedTrackIds, tags, subjectBestNew])
 
   const onSaveDraft = async () => {
     if (!headline.trim()) {
@@ -256,6 +275,7 @@ export default function WriterApp() {
       posted_date: publishDate,
       status: 'draft' as const,
       category: section || null,
+      tags,
       album_ids: albumIds,
       artist_ids: artistIds,
       rating: score > 0 ? score : null,
@@ -292,6 +312,7 @@ export default function WriterApp() {
     setDek('')
     setBody('')
     setRecommendedTrackIds([])
+    setTags([])
     setSettingsOpen(false)
     flash('초안이 삭제되었습니다.')
   }
@@ -317,6 +338,7 @@ export default function WriterApp() {
         posted_date: publishDate,
         status: 'published',
         rating: score,
+        tags,
         recommended_track_ids: recommendedTrackIds,
         // Step 6: same single-album-subject rule as draft path.
         subject_best_new: !isArtistSubject ? subjectBestNew : null,
@@ -330,6 +352,7 @@ export default function WriterApp() {
         album_ids: albumIds,
         artist_ids: artistIds,
         rating: score,
+        tags,
         album_cover_url: subject.cover_url,
         recommended_track_ids: recommendedTrackIds,
         subject_best_new: !isArtistSubject ? subjectBestNew : null,
@@ -378,6 +401,7 @@ export default function WriterApp() {
     setDek('')
     setBody('')
     setRecommendedTrackIds([])
+    setTags([])
     flash('발행 완료! 사이트 반영까지 약 3–5분 — /blog 에서 확인하세요.')
     setSettingsOpen(false)
     setTimeout(() => {
@@ -439,10 +463,12 @@ export default function WriterApp() {
 	open={settingsOpen}
 	onClose={() => setSettingsOpen(false)}
 	section={section}
+	tags={tags}
 	publishDate={publishDate}
 	subject={subject}
 	body={body}
 	onSectionChange={setSection}
+	onToggleTag={onToggleTag}
 	onPublishDateChange={setPublishDate}
 	onDraftSave={onSaveDraft}
 	onPublish={onPublish}
