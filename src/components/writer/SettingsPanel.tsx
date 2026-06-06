@@ -1,4 +1,4 @@
-import { SECTIONS } from './types'
+import { SECTION_LABELS } from '../../lib/sections'
 import type { AlbumDetail } from './types'
 
 interface Props {
@@ -41,7 +41,7 @@ export default function SettingsPanel({
           <div className="set-block">
             <label className="set-l">섹션</label>
             <select className="set-select" value={section} onChange={e => onSectionChange(e.target.value)}>
-              {SECTIONS.map(x => <option key={x}>{x}</option>)}
+              {SECTION_LABELS.map(x => <option key={x}>{x}</option>)}
             </select>
           </div>
 

@@ -12,27 +12,6 @@ export type PostPayload = components['schemas']['Backend_WritePostRequest'] & {
 
 export type PostDetail = components['schemas']['Backend_PostDetailResponse']
 
-export async function fetchCategories(): Promise<string[]> {
-	const res = await fetch(`${API_BASE_URL}/api/categories`, {
-		cache: 'no-store',
-	})
-	if (!res.ok)
-throw new Error(`HTTP ${res.status}`)
-	const json = await res.json() as components['schemas']['Backend_CategoryListResponse']
-	return json.categories ?? []
-}
-
-export async function createCategory(name: string) {
-	const res = await fetch(`${API_BASE_URL}/api/categories`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name }),
-	})
-	if (!res.ok)
-throw new Error(`HTTP ${res.status}`)
-	return res.json()
-}
-
 // Use apiFetch so 401 → refresh_token → retry once → goLogin only on real failure.
 // `apiFetch` returns null when the refresh fails (user redirected to login),
 // or when a transport error occurs; callers should treat null as failure.
