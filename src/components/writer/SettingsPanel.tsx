@@ -1,14 +1,17 @@
 import { SECTION_LABELS } from '../../lib/sections'
+import { REVIEW_TAG_LABELS } from '../../lib/tags'
 import type { AlbumDetail } from './types'
 
 interface Props {
   open: boolean
   onClose: () => void
   section: string
+  tags: string[]
   publishDate: string
   subject: AlbumDetail | null
   body: string
   onSectionChange: (v: string) => void
+  onToggleTag: (label: string) => void
   onPublishDateChange: (v: string) => void
   onDraftSave: () => void
   onPublish: () => void
@@ -19,10 +22,12 @@ export default function SettingsPanel({
   open,
   onClose,
   section,
+  tags,
   publishDate,
   subject,
   body,
   onSectionChange,
+  onToggleTag,
   onPublishDateChange,
   onDraftSave,
   onPublish,
@@ -43,6 +48,26 @@ export default function SettingsPanel({
             <select className="set-select" value={section} onChange={e => onSectionChange(e.target.value)}>
               {SECTION_LABELS.map(x => <option key={x}>{x}</option>)}
             </select>
+          </div>
+
+          <div className="set-block">
+            <label className="set-l">리뷰 태그</label>
+            <div className="set-tags" role="group" aria-label="리뷰 태그">
+              {REVIEW_TAG_LABELS.map((label) => {
+                const on = tags.includes(label)
+                return (
+                  <button
+	key={label}
+	type="button"
+	className={`set-tag${on ? ' on' : ''}`}
+	aria-pressed={on}
+	onClick={() => onToggleTag(label)}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="set-block">
