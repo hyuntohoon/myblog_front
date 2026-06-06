@@ -1,0 +1,95 @@
+/* ============================================================
+   Writer — "비평가의 픽" vertical chart (Direction C).
+   Collapsible header (chevron + count) over a list of ★/☆ toggle rows.
+   ============================================================ */
+.wr-picks {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 26px 30px 6px;
+}
+.wr-picks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 0 0 11px;
+  margin-bottom: 4px;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.wr-picks-head--static { cursor: default; }
+.wr-picks-head .lh { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.wr-picks-chev {
+  font-size: 9px;
+  color: var(--ink-soft);
+  transition: transform 0.18s;
+  display: inline-block;
+}
+.wr-picks-chev[data-open="true"] { transform: rotate(90deg); }
+.wr-picks-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.wr-picks-count b { color: var(--accent); font-weight: 600; }
+.wr-picks-hint {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  transition: color 0.14s;
+}
+.wr-picks-head:hover .wr-picks-hint { color: var(--ink); }
+.wr-picks-empty {
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+  padding: 6px 2px;
+}
+
+.wr-plist { display: flex; flex-direction: column; }
+.wr-prow {
+  display: grid;
+  grid-template-columns: 18px 24px 1fr;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule-soft);
+  padding: 10px 4px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.wr-prow:last-child { border-bottom: none; }
+.wr-prow:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.wr-prow.on { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.wr-prow-star {
+  font-size: 14px;
+  color: var(--ink-faint);
+  transition: color 0.12s, transform 0.12s;
+  text-align: center;
+}
+.wr-prow:hover .wr-prow-star { color: var(--ink-soft); }
+.wr-prow.on .wr-prow-star { color: var(--accent); transform: scale(1.12); }
+.wr-prow-no {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.wr-prow-title {
+  font-family: var(--serif);
+  font-size: 15.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wr-prow.on .wr-prow-title { color: var(--accent); }

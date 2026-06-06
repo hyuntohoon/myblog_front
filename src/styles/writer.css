@@ -1,14 +1,17 @@
 /* ============================================================
    Lowfreq Writer — module index (FEAT-design-system-measure Step 4)
-   Split from the former 1497-line monolith into feature modules sliced
-   at section boundaries. Imported once by write-layout.astro. Load order
-   matters: base.css first (bridges site vars + reset). Reassembling the
-   modules in this order reproduces the pre-split file byte-for-byte
-   (minus the removed duplicate .hdr-bnm block).
+   Feature modules sliced at section boundaries. Imported once by
+   write-layout.astro. Load order matters: base.css first (bridges site
+   vars + reset). hero/picks/palette are the Direction C redesign modules;
+   subject.css now holds only the atoms that survived it (ArtistDetail,
+   drag-rating, partial stars, preview best-new banner).
    ============================================================ */
 @import './writer/base.css';
 @import './writer/chrome.css';
 @import './writer/subject.css';
+@import './writer/hero.css';
+@import './writer/picks.css';
+@import './writer/palette.css';
 @import './writer/editor.css';
 @import './writer/settings.css';
 @import './writer/preview.css';

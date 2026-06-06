@@ -5,22 +5,25 @@ interface Props {
   lastSaved: string
   view: WriterView
   onViewChange: (v: WriterView) => void
+  onOpenSearch: () => void
   onSave: () => void
   onPublish: () => void
 }
 
-export default function WriterChrome({ status, lastSaved, view, onViewChange, onSave, onPublish }: Props) {
+export default function WriterChrome({ status, lastSaved, view, onViewChange, onOpenSearch, onSave, onPublish }: Props) {
   return (
     <header className="chrome">
       <div className="chrome-l">
         <a className="chrome-back" href="/blog">← 매거진</a>
         <span className="chrome-sep">/</span>
-        <span className="chrome-crumb">새 리뷰</span>
-      </div>
-      <div className="chrome-c">
         <em className="chrome-logo">Lowfreq</em>
       </div>
       <div className="chrome-r">
+        <button type="button" className="chrome-search" onClick={onOpenSearch}>
+          <span className="chrome-search-ico" aria-hidden>⌕</span>
+          <span className="chrome-search-label">작품 검색</span>
+          <kbd className="chrome-kbd">⌘K</kbd>
+        </button>
         <span className="chrome-status">
           {status === 'saved' ? `저장됨 · ${lastSaved}` : '작성중…'}
         </span>

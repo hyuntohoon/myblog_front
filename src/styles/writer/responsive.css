@@ -2,22 +2,29 @@
 @media (max-width: 760px) {
   .chrome {
     padding: 10px 16px;
-    grid-template-columns: 1fr auto;
     gap: 8px;
   }
-  .chrome-c { display: none; }
   .chrome-status { display: none; }
+  .chrome-search-label { display: none; } /* shrink to ⌕ + ⌘K on narrow screens */
   .chrome-l { flex-wrap: wrap; gap: 6px; }
   .surface { padding: 32px 18px 100px; }
-  .hdr-card {
-    grid-template-columns: 56px 1fr;
-    grid-template-rows: auto auto auto;
-    gap: 10px;
+
+  /* hero stacks: cover above the meta column */
+  .wr-hero-inner {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 18px;
+    padding: 28px 20px 24px;
   }
-  .hdr-cover { width: 56px; height: 56px; }
-  .hdr-rating, .hdr-change, .hdr-bnm { grid-column: 1 / -1; }
-  .hdr-rating { flex-direction: row; align-items: center; justify-content: space-between; }
-  .hdr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wr-hero-cover { width: 130px; height: 130px; }
+  .wr-hero-cover-fallback { font-size: 48px; }
+  .wr-hero-title { font-size: clamp(26px, 7vw, 34px); }
+  .wr-hero-empty-wrap { padding: 22px 18px 0; }
+  .wr-hero-empty { padding: 36px 22px; }
+
+  .wr-doc { padding: 30px 20px 80px; }
+  .wr-picks { padding: 22px 20px 4px; }
+
   .prev-subject { grid-template-columns: 1fr; }
   .prev-cover { width: 160px; height: 160px; }
   .settings-panel { width: 100%; }
