@@ -88,6 +88,10 @@ function Toast({ msg }: { msg: string }) {
 export default function WriterApp() {
   const saved = loadDraft()
   const loaded = useRef(false)
+  // Has the user typed their own title? Auto-fill (from the picked subject)
+  // only runs while this is false, so it never clobbers a manual headline.
+  // A restored draft with a non-empty title counts as user-owned.
+  const titleDirty = useRef((saved.headline ?? '').trim() !== '')
 
   // Edit mode: populated when ?id= is in URL or after first DB save
   const [dbPostId, setDbPostId] = useState<string | null>(null)
@@ -128,6 +132,19 @@ export default function WriterApp() {
       setSubjectBestNew(next.best_new ?? false)
     else
       setSubjectBestNew(false)
+    // Auto-fill the headline from the subject name (album title or, for artist
+    // subjects, the artist name stored in `title`) — but only while the user
+    // hasn't typed their own. Doesn't mark the title dirty, so switching the
+    // subject keeps re-filling until the writer edits it.
+    if (!titleDirty.current && next.title)
+      setHeadline(next.title)
+  }, [])
+
+  // Wrap setHeadline so any manual edit marks the title user-owned. Clearing it
+  // back to empty re-arms auto-fill for the next subject pick.
+  const onHeadlineChange = useCallback((v: string) => {
+    titleDirty.current = v.trim() !== ''
+    setHeadline(v)
   }, [])
 
   const [view, setView] = useState<WriterView>('edit')
@@ -206,6 +223,9 @@ export default function WriterApp() {
       if (!post)
         return
       setDbPostId(post.id)
+      // Loading an existing post → its title is user-owned; don't let a later
+      // subject pick overwrite it.
+      titleDirty.current = (post.title ?? '').trim() !== ''
       setHeadline(post.title)
       setDek(post.description ?? '')
       setBody(post.body_mdx ?? '')
@@ -306,6 +326,7 @@ export default function WriterApp() {
 
   const onReset = () => {
     localStorage.removeItem(DRAFT_KEY)
+    titleDirty.current = false
     setSubject(null)
     setScore(0)
     setHeadline('')
@@ -396,6 +417,7 @@ export default function WriterApp() {
     // instead — it works immediately and the new post appears once the build
     // completes. Reset state so the form is empty if the user navigates back.
     localStorage.removeItem(DRAFT_KEY)
+    titleDirty.current = false
     setSubject(null)
     setScore(0)
     setHeadline('')
@@ -441,7 +463,7 @@ export default function WriterApp() {
 	onChange={setRecommendedTrackIds}
             />
             <main className="wr-doc">
-              <TitleArea headline={headline} setHeadline={setHeadline} dek={dek} setDek={setDek} dim={!subject} />
+              <TitleArea headline={headline} setHeadline={onHeadlineChange} dek={dek} setDek={setDek} dim={!subject} />
               <BodyArea body={body} setBody={setBody} dim={!subject} />
             </main>
           </>
