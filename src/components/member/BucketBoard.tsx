@@ -6,16 +6,21 @@
 //   · per-bucket accent color picker (PATCH color — already in the contract)
 //   · rating chips on covers inside the single "평론 완료" (is_done) bucket,
 //     read from the member's own reviews (no extra backend call)
-//   · slim edge tabs (outside the body) that appear ONLY while dragging — left
-//     "최상위로 빼기" (un-nest a bucket to top level), right "휴지통" (album →
-//     recoverable trash, bucket → confirm + delete)
+//   · drag a bucket BETWEEN cards (the gaps show a red insertion line) to
+//     reorder it / un-nest it to the top level; drop a bucket ON another card
+//     to nest it as a child. Drag an album onto a cover to reorder, or onto a
+//     card to move it between buckets.
+//   · a single 휴지통 dock card (center-bottom of the viewport) that appears
+//     ONLY while dragging — no backdrop blur, so the other buckets stay crisp
+//     as drop targets. Drop an album → recoverable trash; a bucket → confirm +
+//     delete (cascades server-side; bucket delete is not recoverable).
 //   · recoverable album trash (localStorage stash + restore via re-add)
 // Wires to the nested-bucket backend via src/lib/buckets.ts (parent_id +
 // recursive GET + PUT /{id}/move + PATCH color).
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { BUCKETS_KEY } from '@lib/member'
@@ -258,16 +263,21 @@ interface Ops {
   tree: BoardBucket[]
   copyAlbum: (albumId: string, toBucketId: string) => void
   insertAlbum: (itemId: string, fromBucketId: string, toBucketId: string, beforeItemId: string | null) => void
+  // Nest a bucket as the last child of `targetId` (drop ON a card body).
   moveBucketInto: (bucketId: string, targetId: string | null) => void
+  // Reposition a bucket among `parentId`'s children, before `beforeId` (null =
+  // append). parentId null = top level. Drives reorder + un-nest (gap drops).
+  moveBucketTo: (bucketId: string, parentId: string | null, beforeId: string | null) => void
   addBucket: (parentId: string | null) => void
   rename: (id: string, name: string) => void
   setColor: (id: string, color: string | null) => void
   requestAdd: (bucketId: string, bucketName: string) => void
 }
 
-interface CardProps {
-  bucket: BoardBucket
-  depth: number
+// Props shared by every BucketCard / BucketList in the tree (everything except
+// the per-node `bucket` + `depth`). Bundled so BucketList can forward them with a
+// single spread to the recursive cards.
+interface SharedProps {
   ops: Ops
   onOpen: (t: DetailTarget) => void
   ratings: Map<string, number>
@@ -278,9 +288,13 @@ interface CardProps {
   draggingBucket: string | null
   setDraggingBucket: (id: string | null) => void
   setDragKind: (k: DragKind) => void
+  dragKind: DragKind
 }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind }: CardProps) {
+type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
+
+function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
@@ -337,7 +351,6 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
         borderLeft: `3px solid ${accent}`,
         borderRadius: 8,
         padding: 14,
-        marginBottom: 14,
         boxShadow: hot ? '0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent)' : (depth ? 'none' : '0 1px 2px rgba(26,26,26,0.05)'),
         opacity: draggingBucket === bucket.id ? 0.45 : 1,
         transition: 'box-shadow 0.12s, border-color 0.12s',
@@ -361,7 +374,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
           setDragKind(null)
         }}
 	style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: editing ? 'default' : 'grab' }}
-	title="헤더를 끌어 다른 버킷의 하위로 이동 · 가장자리/하단의 영역에 놓으면 최상위로"
+	title="헤더를 끌어 버킷 사이에 놓으면 순서 변경 · 다른 버킷 위에 놓으면 하위로 · 화면 아래 휴지통에 놓으면 삭제"
       >
         <span
 	className="lf-mono"
@@ -474,65 +487,51 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
         </button>
       </div>
 
-      {/* nested buckets */}
+      {/* nested buckets — a reorderable list (gaps show the insertion line) */}
       {bucket.children.length > 0 && (
-        <div style={{ marginTop: 14 }}>
-          {bucket.children.map(c => (
-            <BucketCard key={c.id} bucket={c} depth={depth + 1} ops={ops} onOpen={onOpen} ratings={ratings} dropTarget={dropTarget} setDropTarget={setDropTarget} draggingId={draggingId} setDraggingId={setDraggingId} draggingBucket={draggingBucket} setDraggingBucket={setDraggingBucket} setDragKind={setDragKind} />
-          ))}
+        <div style={{ marginTop: 4 }}>
+          <BucketList items={bucket.children} parentId={bucket.id} depth={depth + 1} shared={shared} />
         </div>
       )}
     </div>
   )
 }
 
-// ── edge drop tabs (mounted only while dragging) ─────────────────────────────
-// Slim, full-height tabs pinned to the viewport edges. They sit OUTSIDE the body:
-// while a drag is active .member-root reserves a matching edge strip (CSS
-// [data-crate-drag] padding), so the content shrinks inward a touch and a tab
-// never overlaps the buckets — on ANY viewport / layout. Replaces the old
-// gutter-measured side-rails + bottom-dock (which fell back to a pill OVER the
-// content on sub-~1272px windows). 휴지통 = right; 최상위로 빼기 = left (bucket only).
-function UnnestRail({ onUnnest }: { onUnnest: (bucketId: string) => void }) {
-  const [hot, setHot] = useState(false)
-  const accepts = (): boolean => !!dnd && dnd.kind === 'bucket'
+// ── trash icon (simple stroke) ───────────────────────────────────────────────
+function CrTrashIcon({ s = 28 }: { s?: number }) {
   return (
-    <div
-	className="crate-rail crate-rail-left"
-	onDragOver={(e) => {
-        if (accepts()) {
-          e.preventDefault()
-          setHot(true)
-        }
-      }}
-	onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node))
-          setHot(false)
-      }}
-	onDrop={(e) => {
-        if (!accepts())
-          return
-        e.preventDefault()
-        const it = dnd
-        setHot(false)
-        if (it && it.bucketId)
-          onUnnest(it.bucketId)
-        dnd = null
-      }}
-	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)' }}
+    <svg
+	width={s}
+	height={s}
+	viewBox="0 0 24 24"
+	fill="none"
+	stroke="currentColor"
+	strokeWidth="1.7"
+	strokeLinecap="round"
+	strokeLinejoin="round"
+	aria-hidden="true"
     >
-      <div className="crate-rail-icon" style={{ color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>↰</div>
-      <div className="crate-rail-label lf-serif" style={{ color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>최상위로 빼기</div>
-    </div>
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <path d="M9 7V5.6A1.6 1.6 0 0 1 10.6 4h2.8A1.6 1.6 0 0 1 15 5.6V7" />
+      <path d="M6.3 7l.9 12.4A1.7 1.7 0 0 0 8.9 21h6.2a1.7 1.7 0 0 0 1.7-1.6L17.7 7" />
+      <line x1="10" y1="10.5" x2="10" y2="17.5" />
+      <line x1="14" y1="10.5" x2="14" y2="17.5" />
+    </svg>
   )
 }
 
-function TrashRail({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: number, onTrashAlbum: (itemId: string, fromBucketId: string) => void, onTrashBucket: (bucketId: string) => void }) {
+// ── trash dock (center-bottom card, mounted only while dragging) ─────────────--
+// A single solid card pinned to the bottom-center of the viewport (portaled to
+// <body>). No backdrop / blur — the buckets behind it stay crisp so you can keep
+// dropping onto them. Replaces the old full-height side rails (휴지통 + 최상위로
+// 빼기): un-nesting now happens by dragging a bucket into a top-level gap, so the
+// dock only needs to host deletion. Albums → recoverable trash; buckets → confirm.
+function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: number, onTrashAlbum: (itemId: string, fromBucketId: string) => void, onTrashBucket: (bucketId: string) => void }) {
   const [hot, setHot] = useState(false)
   const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy) || dnd.kind === 'bucket')
   return (
     <div
-	className="crate-rail crate-rail-right"
+	className="crate-trash-dock"
 	onDragOver={(e) => {
         if (accepts()) {
           e.preventDefault()
@@ -555,13 +554,111 @@ function TrashRail({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
           onTrashBucket(it.bucketId)
         dnd = null
       }}
-	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)' }}
     >
-      <div className="crate-rail-icon">🗑</div>
-      <div className="crate-rail-label lf-serif" style={{ color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>
-        휴지통
-        {trashCount ? ` ${trashCount}` : ''}
+      <div className="crate-trash-card" data-hot={hot ? 'true' : 'false'}>
+        <span className="crate-trash-ring"><CrTrashIcon s={28} /></span>
+        <div>
+          <div className="lf-serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.2, color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>휴지통</div>
+          <div className="lf-mono" style={{ fontSize: 11, letterSpacing: '0.03em', color: 'var(--color-subtle)', marginTop: 5, whiteSpace: 'nowrap' }}>앨범·버킷을 끌어 놓아 삭제</div>
+          {trashCount > 0 && (
+            <div className="lf-mono" style={{ marginTop: 7, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, letterSpacing: '0.06em', whiteSpace: 'nowrap', color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>
+              <span style={{ width: 5, height: 5, borderRadius: 5, background: 'currentColor' }} />
+              보관
+              {' '}
+              {trashCount}
+              개
+            </div>
+          )}
+        </div>
       </div>
+    </div>
+  )
+}
+
+// ── bucket reorder drop gap (shows the red insertion line) ───────────────────-
+// Sits between sibling bucket cards (and at the head/tail of each list). While a
+// bucket is being dragged it becomes a drop target: dropping here repositions the
+// bucket among `parentId`'s children before `beforeId` (null = append). A
+// top-level gap (parentId == null) un-nests a nested bucket — the replacement for
+// the removed "최상위로 빼기" rail. Cycle / self-adjacent drops are rejected.
+function BucketDropGap({ parentId, beforeId, ops, active }: { parentId: string | null, beforeId: string | null, ops: Ops, active: boolean }) {
+  const [hot, setHot] = useState(false)
+  const accepts = (): boolean => {
+    const it = dnd
+    if (!it || it.kind !== 'bucket' || !it.bucketId)
+      return false
+    if (it.bucketId === beforeId)
+      return false // gap directly above itself = no-op
+    if (parentId != null) {
+      const src = findBucket(ops.tree, it.bucketId)
+      if (parentId === it.bucketId || (src && subtreeHas(src, parentId)))
+        return false // would nest a bucket inside its own subtree
+    }
+    return true
+  }
+  return (
+    <div
+	onDragOver={(e) => {
+        if (active && accepts()) {
+          e.preventDefault()
+          e.stopPropagation()
+          setHot(true)
+        }
+      }}
+	onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node))
+          setHot(false)
+      }}
+	onDrop={(e) => {
+        if (!active || !accepts())
+          return
+        e.preventDefault()
+        e.stopPropagation()
+        const it = dnd
+        setHot(false)
+        if (it && it.bucketId)
+          ops.moveBucketTo(it.bucketId, parentId, beforeId)
+        dnd = null
+      }}
+	style={{ height: 14, position: 'relative' }}
+    >
+      {active && (
+        <div
+	style={{
+            position: 'absolute',
+            left: 2,
+            right: 2,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            height: hot ? 4 : 2,
+            borderRadius: 3,
+            background: hot ? 'var(--color-accent)' : 'transparent',
+            boxShadow: hot ? '0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent)' : 'none',
+            transition: 'height 0.1s, background 0.1s',
+          }}
+        >
+          {hot && <span style={{ position: 'absolute', left: -2, top: '50%', transform: 'translate(-100%, -50%)', width: 7, height: 7, borderRadius: 7, background: 'var(--color-accent)' }} />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── bucket list — drop gaps interleaved with cards ───────────────────────────-
+// Renders a sibling list with a BucketDropGap before each card and a trailing gap
+// (the append target). Recurses through BucketCard for nested children so reorder
+// works at every depth.
+function BucketList({ items, parentId, depth, shared }: { items: BoardBucket[], parentId: string | null, depth: number, shared: SharedProps }) {
+  const active = shared.dragKind === 'bucket'
+  return (
+    <div>
+      {items.map(b => (
+        <div key={b.id}>
+          <BucketDropGap parentId={parentId} beforeId={b.id} ops={shared.ops} active={active} />
+          <BucketCard bucket={b} depth={depth} {...shared} />
+        </div>
+      ))}
+      <BucketDropGap parentId={parentId} beforeId={null} ops={shared.ops} active={active} />
     </div>
   )
 }
@@ -633,25 +730,28 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind>(null)
-  const boardRef = useRef<HTMLDivElement>(null)
 
-  // While a drag is active, mark the dashboard root so it reserves an edge strip
-  // (CSS [data-crate-drag] padding) for the slim drop tabs — right for 휴지통
-  // always, left for 최상위로 빼기 when dragging a bucket. The tabs are fixed to
-  // the viewport edges; the reserved strip guarantees they sit OUTSIDE the body
-  // on EVERY viewport / layout, no gutter measurement (the old measured rails
-  // fell back to a pill over the content on sub-~1272px windows). useLayoutEffect
-  // → reserve before paint so the buckets don't jump under a just-mounted tab.
-  useLayoutEffect(() => {
-    const root = boardRef.current?.closest('.member-root') as HTMLElement | null
-    if (!root)
-      return
-    if (dragKind)
-      root.setAttribute('data-crate-drag', dragKind)
-    else
-      root.removeAttribute('data-crate-drag')
-    return () => root.removeAttribute('data-crate-drag')
-  }, [dragKind])
+  // Safety net: always clear the drag state when ANY drag ends — even one that
+  // ends without a drop (released outside a target / Escape). The per-op endDrag
+  // below covers the case where a card drop handler stopPropagation()'d the
+  // event AND the dragged item's original DOM node unmounted (cross-bucket move),
+  // so neither this document `drop` nor the item's own `dragend` fires; without
+  // both, a moved item would stay stuck at the 0.45 drag opacity.
+  useEffect(() => {
+    const reset = () => {
+      setDraggingId(null)
+      setDraggingBucket(null)
+      setDragKind(null)
+      setDropTarget(null)
+      dnd = null
+    }
+    document.addEventListener('drop', reset)
+    document.addEventListener('dragend', reset)
+    return () => {
+      document.removeEventListener('drop', reset)
+      document.removeEventListener('dragend', reset)
+    }
+  }, [])
   const [trash, setTrash] = useState<TrashEntry[]>(() => {
     try {
       const s = localStorage.getItem(TRASH_KEY)
@@ -748,6 +848,18 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     }
   }
 
+  // Clear all drag state the instant a drop completes its op. Needed in addition
+  // to the document-level reset above because card drop handlers stopPropagation
+  // (so the document `drop` never fires) and a moved item's original node unmounts
+  // before its own `dragend` — either of which would leave it stuck at 0.45.
+  function endDrag() {
+    setDraggingId(null)
+    setDraggingBucket(null)
+    setDragKind(null)
+    setDropTarget(null)
+    dnd = null
+  }
+
   const ops: Ops = {
     tree: tree ?? [],
     // Copy a 최근 들은 앨범 tile into a real bucket. Optimistic: splice a temp
@@ -756,6 +868,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     // failure. Previously this awaited the round-trip before painting (~200–
     // 500ms lag), which read as "버킷 반영이 느리다".
     copyAlbum(albumId, toBucketId) {
+      endDrag()
       if (tree == null)
         return
       const tempId = `temp:${Date.now()}:${albumId}`
@@ -802,6 +915,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     // Move/reorder an album, inserting before `beforeItemId` (null = append).
     // Persists via PUT /reorder with the affected bucket(s)' new item order.
     insertAlbum(itemId, fromBucketId, toBucketId, beforeItemId) {
+      endDrag()
       if (tree == null)
         return
       const t = clone(tree)
@@ -825,6 +939,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       api.reorderItems(payload).catch(() => void refresh())
     },
     moveBucketInto(bucketId, targetId) {
+      endDrag()
       if (tree == null)
         return
       const src = findBucket(tree, bucketId)
@@ -845,6 +960,35 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       }
       setTree(t)
       api.moveBucket(bucketId, targetId, position)
+        .then(canonical => setTree(canonical))
+        .catch(() => void refresh())
+    },
+    // Reposition a bucket among `parentId`'s children, before `beforeId` (null =
+    // append). Drives both reorder (drop in a sibling gap) and un-nest (drop in a
+    // top-level gap, parentId null). Optimistic splice → canonical tree from the
+    // server (whose `position` interpretation is authoritative).
+    moveBucketTo(bucketId, parentId, beforeId) {
+      endDrag()
+      if (tree == null || bucketId === beforeId)
+        return
+      const src = findBucket(tree, bucketId)
+      if (parentId != null && src && (parentId === bucketId || subtreeHas(src, parentId)))
+        return
+      const t = clone(tree)
+      const rm = removeBucketNode(t, bucketId)
+      if (!rm)
+        return
+      const list = parentId == null ? t : findBucket(t, parentId)?.children
+      if (!list)
+        return
+      const idx = beforeId ? list.findIndex(b => b.id === beforeId) : -1
+      const position = idx < 0 ? list.length : idx
+      if (idx < 0)
+        list.push(rm)
+      else
+        list.splice(idx, 0, rm)
+      setTree(t)
+      api.moveBucket(bucketId, parentId, position)
         .then(canonical => setTree(canonical))
         .catch(() => void refresh())
     },
@@ -887,9 +1031,10 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     },
   }
 
-  // Drop an album on the trash rail: optimistic splice + DELETE, then stash a
+  // Drop an album on the trash dock: optimistic splice + DELETE, then stash a
   // recoverable entry. Restore re-adds it via the normal item route.
   function trashAlbum(itemId: string, fromBucketId: string) {
+    endDrag()
     if (tree == null)
       return
     const found = findAlbum(tree, itemId)
@@ -976,8 +1121,12 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     )
   }
 
+  // Props shared by every card / list in the tree — bundled so BucketList can
+  // forward them with one spread.
+  const shared: SharedProps = { ops, onOpen, ratings, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
+
   return (
-    <div ref={boardRef}>
+    <div>
       <SectionTitle
 	kicker={tree == null ? '불러오는 중…' : `${tree.length} 버킷 · 크레이트`}
 	title="평론 버킷"
@@ -996,11 +1145,16 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         {' '}
         <span className="lf-mono" style={{ fontStyle: 'normal', fontSize: 12 }}>⠿</span>
         {' '}
-        헤더를 끌면
+        헤더를 끌어
         {' '}
-        <b style={{ fontStyle: 'normal' }}>최상위로 빼기 · 휴지통</b>
+        <b style={{ fontStyle: 'normal' }}>버킷 사이</b>
+        에 놓으면 순서가 바뀌고(놓을 위치에 선이 표시됩니다), 다른 버킷
         {' '}
-        영역이 나타납니다. 커버를 다른 커버 위에 놓아 순서를 바꾸거나 다른 버킷으로 옮기고, 헤더의 색 동그라미로 버킷 색을 정하세요.
+        <b style={{ fontStyle: 'normal' }}>위</b>
+        에 놓으면 그 하위로 들어갑니다. 커버는 다른 커버 위에 놓아 순서를 바꾸거나 옮기고, 드래그 중 화면 아래
+        {' '}
+        <b style={{ fontStyle: 'normal' }}>휴지통</b>
+        에 놓으면 삭제됩니다.
       </p>
 
       {recent != null && recent.length > 0 && (
@@ -1031,32 +1185,26 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         </div>
       )}
 
-      {tree != null && tree.map(b => (
-        <BucketCard key={b.id} bucket={b} depth={0} ops={ops} onOpen={onOpen} ratings={ratings} dropTarget={dropTarget} setDropTarget={setDropTarget} draggingId={draggingId} setDraggingId={setDraggingId} draggingBucket={draggingBucket} setDraggingBucket={setDraggingBucket} setDragKind={setDragKind} />
-      ))}
+      {tree != null && tree.length > 0 && (
+        <BucketList items={tree} parentId={null} depth={0} shared={shared} />
+      )}
 
-      {/* drop targets — slim edge tabs, mounted only during a drag. PORTALED to
-          <body>: .lf-rise (the tab-content wrapper) keeps a filled identity
-          transform after its entrance animation (matrix(1,0,0,1,0,0) ≠ none),
-          which makes it the containing block for position:fixed — so rendering
-          the tabs in-tree pinned them to lf-rise's box (≈x491) instead of the
-          viewport edge, overlapping the buckets. Portaling escapes that.
-          .member-root still reserves a matching edge strip (CSS [data-crate-drag])
-          so content never sits under a tab. 휴지통 right; 최상위로 빼기 left. */}
-      {dragKind && typeof document !== 'undefined' && createPortal(
-        <>
-          {dragKind === 'bucket' && (
-            <UnnestRail onUnnest={id => ops.moveBucketInto(id, null)} />
-          )}
-          <TrashRail
+      {/* trash dock — a single center-bottom card, mounted only while dragging an
+          album or bucket. PORTALED to <body>: .lf-rise (the tab-content wrapper)
+          keeps a filled identity transform after its entrance animation
+          (matrix(1,0,0,1,0,0) ≠ none), which makes it the containing block for
+          position:fixed — so rendering in-tree pinned the dock to lf-rise's box
+          instead of the viewport. Portaling escapes that. No backdrop/blur: the
+          buckets behind stay crisp so you can keep dropping onto them. */}
+      {(dragKind === 'album' || dragKind === 'bucket') && typeof document !== 'undefined' && createPortal(
+        <TrashDock
 	trashCount={trash.length}
 	onTrashAlbum={trashAlbum}
 	onTrashBucket={(id) => {
-              const b = tree ? findBucket(tree, id) : null
-              setPendingBucketDelete({ id, name: b?.name ?? '' })
-            }}
-          />
-        </>,
+            const b = tree ? findBucket(tree, id) : null
+            setPendingBucketDelete({ id, name: b?.name ?? '' })
+          }}
+        />,
         document.body,
       )}
 
