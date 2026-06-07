@@ -6,9 +6,9 @@
 //   · per-bucket accent color picker (PATCH color — already in the contract)
 //   · rating chips on covers inside the single "평론 완료" (is_done) bucket,
 //     read from the member's own reviews (no extra backend call)
-//   · edge rails that appear ONLY while dragging — left "최상위로 빼기" (un-nest
-//     a bucket to top level), right "휴지통" (album → recoverable trash, bucket
-//     → confirm + delete)
+//   · slim edge tabs (outside the body) that appear ONLY while dragging — left
+//     "최상위로 빼기" (un-nest a bucket to top level), right "휴지통" (album →
+//     recoverable trash, bucket → confirm + delete)
 //   · recoverable album trash (localStorage stash + restore via re-add)
 // Wires to the nested-bucket backend via src/lib/buckets.ts (parent_id +
 // recursive GET + PUT /{id}/move + PATCH color).
@@ -485,13 +485,14 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
   )
 }
 
-// ── edge rails (mounted only while dragging) ─────────────────────────────────
-// `style` carries the JS-measured gutter geometry (left/right offset + width) so
-// the rail sits PROPORTIONALLY in the real margin beside the dashboard, whatever
-// the layout (sidebar / stacked / dashboard) and viewport — the old fixed-vw
-// width guessed the gutter and covered the buckets on narrow screens. When no
-// real gutter exists the board switches to <BottomDock> instead of these.
-function UnnestRail({ onUnnest, style }: { onUnnest: (bucketId: string) => void, style?: React.CSSProperties }) {
+// ── edge drop tabs (mounted only while dragging) ─────────────────────────────
+// Slim, full-height tabs pinned to the viewport edges. They sit OUTSIDE the body:
+// while a drag is active .member-root reserves a matching edge strip (CSS
+// [data-crate-drag] padding), so the content shrinks inward a touch and a tab
+// never overlaps the buckets — on ANY viewport / layout. Replaces the old
+// gutter-measured side-rails + bottom-dock (which fell back to a pill OVER the
+// content on sub-~1272px windows). 휴지통 = right; 최상위로 빼기 = left (bucket only).
+function UnnestRail({ onUnnest }: { onUnnest: (bucketId: string) => void }) {
   const [hot, setHot] = useState(false)
   const accepts = (): boolean => !!dnd && dnd.kind === 'bucket'
   return (
@@ -517,16 +518,15 @@ function UnnestRail({ onUnnest, style }: { onUnnest: (bucketId: string) => void,
           onUnnest(it.bucketId)
         dnd = null
       }}
-	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)', ...style }}
+	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)' }}
     >
-      <div style={{ fontSize: 46, lineHeight: 1, color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>↰</div>
-      <div className="lf-serif" style={{ fontSize: 18, fontWeight: 500, lineHeight: 1.3, wordBreak: 'keep-all', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>최상위 버킷으로 빼기</div>
-      <div className="crate-rail-hint">중첩된 버킷을 여기에 놓으면 최상위로 나옵니다</div>
+      <div className="crate-rail-icon" style={{ color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>↰</div>
+      <div className="crate-rail-label lf-serif" style={{ color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>최상위로 빼기</div>
     </div>
   )
 }
 
-function TrashRail({ trashCount, onTrashAlbum, onTrashBucket, style }: { trashCount: number, onTrashAlbum: (itemId: string, fromBucketId: string) => void, onTrashBucket: (bucketId: string) => void, style?: React.CSSProperties }) {
+function TrashRail({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: number, onTrashAlbum: (itemId: string, fromBucketId: string) => void, onTrashBucket: (bucketId: string) => void }) {
   const [hot, setHot] = useState(false)
   const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy) || dnd.kind === 'bucket')
   return (
@@ -554,109 +554,16 @@ function TrashRail({ trashCount, onTrashAlbum, onTrashBucket, style }: { trashCo
           onTrashBucket(it.bucketId)
         dnd = null
       }}
-	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)', ...style }}
+	style={{ borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)', background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'var(--color-paper)' }}
     >
-      <div style={{ fontSize: 46, lineHeight: 1 }}>🗑</div>
-      <div className="lf-serif" style={{ fontSize: 18, fontWeight: 500, lineHeight: 1.3, wordBreak: 'keep-all', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>휴지통</div>
-      <div className="crate-rail-hint">
-        앨범은 복원할 수 있게 보관, 버킷은 삭제합니다
-        {trashCount ? ` · 보관 ${trashCount}개` : ''}
+      <div className="crate-rail-icon">🗑</div>
+      <div className="crate-rail-label lf-serif" style={{ color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>
+        휴지통
+        {trashCount ? ` ${trashCount}` : ''}
       </div>
     </div>
   )
 }
-
-// Bottom drop dock — the no-gutter fallback. When the dashboard fills the
-// viewport (narrow screens / sidebar+stacked layouts) there is no margin for the
-// edge rails without covering the buckets, so the same drop targets dock at the
-// bottom centre, clear of all content, near the natural downward drag motion.
-function BottomDock({ kind, trashCount, onUnnest, onTrashAlbum, onTrashBucket }: {
-  kind: DragKind
-  trashCount: number
-  onUnnest: (bucketId: string) => void
-  onTrashAlbum: (itemId: string, fromBucketId: string) => void
-  onTrashBucket: (bucketId: string) => void
-}) {
-  const [hotU, setHotU] = useState(false)
-  const [hotT, setHotT] = useState(false)
-  const acceptsU = (): boolean => !!dnd && dnd.kind === 'bucket'
-  const acceptsT = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy) || dnd.kind === 'bucket')
-  const zone = (hot: boolean): React.CSSProperties => ({
-    borderColor: hot ? 'var(--color-accent)' : 'var(--color-border)',
-    background: hot ? 'color-mix(in srgb, var(--color-accent) 12%, var(--color-paper))' : 'transparent',
-    color: hot ? 'var(--color-accent)' : 'var(--color-text)',
-  })
-  return (
-    <div className="crate-dock">
-      {kind === 'bucket' && (
-        <div
-	className="crate-dock-zone"
-	style={zone(hotU)}
-	onDragOver={(e) => {
-            if (acceptsU()) {
-              e.preventDefault()
-              setHotU(true)
-            }
-          }}
-	onDragLeave={(e) => {
- if (!e.currentTarget.contains(e.relatedTarget as Node))
-setHotU(false)
-}}
-	onDrop={(e) => {
-            if (!acceptsU())
-              return
-            e.preventDefault()
-            const it = dnd
-            setHotU(false)
-            if (it && it.bucketId)
-              onUnnest(it.bucketId)
-            dnd = null
-          }}
-        >
-          <span style={{ fontSize: 24, lineHeight: 1 }}>↰</span>
-          <span className="lf-serif" style={{ fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap' }}>최상위로 빼기</span>
-        </div>
-      )}
-      <div
-	className="crate-dock-zone"
-	style={zone(hotT)}
-	onDragOver={(e) => {
-          if (acceptsT()) {
-            e.preventDefault()
-            setHotT(true)
-          }
-        }}
-	onDragLeave={(e) => {
- if (!e.currentTarget.contains(e.relatedTarget as Node))
-setHotT(false)
-}}
-	onDrop={(e) => {
-          if (!acceptsT())
-            return
-          e.preventDefault()
-          const it = dnd
-          setHotT(false)
-          if (it && it.kind === 'album' && it.itemId && it.fromBucketId)
-            onTrashAlbum(it.itemId, it.fromBucketId)
-          else if (it && it.kind === 'bucket' && it.bucketId)
-            onTrashBucket(it.bucketId)
-          dnd = null
-        }}
-      >
-        <span style={{ fontSize: 24, lineHeight: 1 }}>🗑</span>
-        <span className="lf-serif" style={{ fontSize: 15, fontWeight: 500, whiteSpace: 'nowrap' }}>
-          휴지통
-          {trashCount ? ` · ${trashCount}` : ''}
-        </span>
-      </div>
-    </div>
-  )
-}
-
-// Drag rails geometry, measured from the live layout when a drag starts (see the
-// board's useLayoutEffect). `side` = real gutters exist → edge rails; `dock` =
-// no room → bottom dock.
-type RailGeom = { mode: 'side', leftW: number, rightW: number } | { mode: 'dock' }
 
 // ── trash drawer (recoverable albums) ────────────────────────────────────────
 interface TrashEntry { tid: string, album: BoardAlbum, fromBucketId: string, fromName: string }
@@ -725,41 +632,24 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind>(null)
-  const [railGeom, setRailGeom] = useState<RailGeom | null>(null)
   const boardRef = useRef<HTMLDivElement>(null)
 
-  // Measure the dashboard's real margins the moment a drag starts and decide
-  // where the drop targets go — edge rails sized to the actual gutters, or a
-  // bottom dock when there's no room. Proportional to the live layout, so the
-  // trash never invades the buckets (the prior fixed-vw guess did on narrow
-  // viewports / sidebar+stacked layouts). useLayoutEffect → set before paint.
+  // While a drag is active, mark the dashboard root so it reserves an edge strip
+  // (CSS [data-crate-drag] padding) for the slim drop tabs — right for 휴지통
+  // always, left for 최상위로 빼기 when dragging a bucket. The tabs are fixed to
+  // the viewport edges; the reserved strip guarantees they sit OUTSIDE the body
+  // on EVERY viewport / layout, no gutter measurement (the old measured rails
+  // fell back to a pill over the content on sub-~1272px windows). useLayoutEffect
+  // → reserve before paint so the buckets don't jump under a just-mounted tab.
   useLayoutEffect(() => {
-    if (!dragKind) {
-      setRailGeom(null)
-      return
-    }
     const root = boardRef.current?.closest('.member-root') as HTMLElement | null
-    const rect = root?.getBoundingClientRect()
-    const vw = window.innerWidth
-    const GAP = 12 // breathing room between rail and content
-    const MIN = 96 // a gutter narrower than this can't hold a usable rail → dock
-    const MAX = 280
-    if (!rect) {
-      setRailGeom({ mode: 'dock' })
+    if (!root)
       return
-    }
-    const leftGutter = rect.left
-    const rightGutter = vw - rect.right
-    if (Math.min(leftGutter, rightGutter) >= MIN) {
-      setRailGeom({
-        mode: 'side',
-        leftW: Math.min(MAX, leftGutter - GAP * 2),
-        rightW: Math.min(MAX, rightGutter - GAP * 2),
-      })
-    }
-    else {
-      setRailGeom({ mode: 'dock' })
-    }
+    if (dragKind)
+      root.setAttribute('data-crate-drag', dragKind)
+    else
+      root.removeAttribute('data-crate-drag')
+    return () => root.removeAttribute('data-crate-drag')
   }, [dragKind])
   const [trash, setTrash] = useState<TrashEntry[]>(() => {
     try {
@@ -1144,31 +1034,15 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         <BucketCard key={b.id} bucket={b} depth={0} ops={ops} onOpen={onOpen} ratings={ratings} dropTarget={dropTarget} setDropTarget={setDropTarget} draggingId={draggingId} setDraggingId={setDraggingId} draggingBucket={draggingBucket} setDraggingBucket={setDraggingBucket} setDragKind={setDragKind} />
       ))}
 
-      {/* drop targets — mounted only during a drag, placed by the measured
-          geometry: edge rails in the real gutters, or a bottom dock when none. */}
-      {railGeom?.mode === 'side' && (
-        <>
-          {dragKind === 'bucket' && (
-            <UnnestRail onUnnest={id => ops.moveBucketInto(id, null)} style={{ left: 12, right: 'auto', width: railGeom.leftW }} />
-          )}
-          {(dragKind === 'album' || dragKind === 'bucket') && (
-            <TrashRail
-	trashCount={trash.length}
-	onTrashAlbum={trashAlbum}
-	onTrashBucket={(id) => {
-                const b = tree ? findBucket(tree, id) : null
-                setPendingBucketDelete({ id, name: b?.name ?? '' })
-              }}
-	style={{ right: 12, left: 'auto', width: railGeom.rightW }}
-            />
-          )}
-        </>
+      {/* drop targets — slim edge tabs, mounted only during a drag. The board
+          root reserves a matching edge strip (CSS [data-crate-drag]) so they sit
+          OUTSIDE the buckets on every viewport. 휴지통 right; 최상위로 빼기 left. */}
+      {dragKind === 'bucket' && (
+        <UnnestRail onUnnest={id => ops.moveBucketInto(id, null)} />
       )}
-      {railGeom?.mode === 'dock' && dragKind && (
-        <BottomDock
-	kind={dragKind}
+      {dragKind && (
+        <TrashRail
 	trashCount={trash.length}
-	onUnnest={id => ops.moveBucketInto(id, null)}
 	onTrashAlbum={trashAlbum}
 	onTrashBucket={(id) => {
             const b = tree ? findBucket(tree, id) : null
