@@ -231,95 +231,72 @@
 	background: color-mix(in srgb, var(--color-spotify) 5%, var(--color-paper));
 }
 
-/* ── drag edge rails (mounted only while dragging) ─────────
-   Fixed overlays pinned to the LEFT / RIGHT screen edges, full height,
-   symmetric. Slide in on mount.
-   Width tracks the REAL gutter beside the centred --measure-wide content column
-   (50vw - half the column - a small gap). The earlier 132px floor forced the
-   rail wider than the gutter on laptop widths (≤~1380px), so it covered the
-   buckets — the visible "weird position" bug. Now the rail collapses to nothing
-   rather than overlap; below ~1140px (no gutter) it falls back to a slim,
-   translucent edge tab so a drop target still exists. */
+/* ── drag edge tabs (mounted only while dragging) ─────────
+   Slim, full-height drop tabs pinned to the LEFT / RIGHT viewport edges. They sit
+   OUTSIDE the body: while a drag is active .member-root reserves a matching strip
+   on the relevant edge (the [data-crate-drag] rules below), so the content shrinks
+   inward a touch and a tab never overlaps the buckets — on EVERY viewport/layout.
+   Replaces the old gutter-measured side-rails + bottom-dock, which docked a pill
+   OVER the content on sub-~1272px windows. Class names kept (.crate-rail*). */
 .crate-rail {
 	position: fixed;
-	top: 12px;
-	bottom: 12px;
-	width: clamp(0px, calc(50vw - var(--measure-wide) / 2 - 24px), 280px);
+	top: 8px;
+	bottom: 8px;
+	width: var(--crate-tab-w);
 	box-sizing: border-box;
 	z-index: var(--z-panel);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 14px;
-	text-align: center;
-	padding: 20px 12px;
+	gap: 12px;
+	padding: 16px 4px;
 	border: 2px dashed var(--color-border);
 	border-radius: 12px;
 	background: var(--color-paper);
 	box-shadow: 0 12px 40px rgba(26, 26, 26, 0.16);
-	transition: border-color 0.14s, background 0.14s;
+	transition: border-color 0.14s, background 0.14s, box-shadow 0.14s, color 0.14s;
 	overflow: hidden;
 }
-.crate-rail-left { left: 12px; animation: crate-rail-in-l 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
-.crate-rail-right { right: 12px; animation: crate-rail-in-r 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
-.crate-rail-hint {
-	font-family: var(--font-mono);
-	font-size: 11.5px;
-	line-height: 1.6;
-	max-width: 180px;
-	color: var(--color-subtle);
-	word-break: keep-all;
+.crate-rail-icon { font-size: 24px; line-height: 1; flex: 0 0 auto; }
+.crate-rail-label {
+	writing-mode: vertical-rl;
+	text-orientation: upright;
+	font-size: 15px;
+	font-weight: 500;
+	letter-spacing: 0.04em;
+	line-height: 1.15;
+	white-space: nowrap;
 }
+.crate-rail-left { left: 6px; animation: crate-rail-in-l 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.crate-rail-right { right: 6px; animation: crate-rail-in-r 0.18s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 @keyframes crate-rail-in-l {
-	from { opacity: 0; transform: translateX(-14px); }
+	from { opacity: 0; transform: translateX(-12px); }
 	to { opacity: 1; transform: none; }
 }
 @keyframes crate-rail-in-r {
-	from { opacity: 0; transform: translateX(14px); }
+	from { opacity: 0; transform: translateX(12px); }
 	to { opacity: 1; transform: none; }
-}
-/* Tight gutter: the hint no longer fits beside the buckets — drop it first. */
-@media (max-width: 1240px) {
-	.crate-rail-hint { display: none; }
-}
-/* Bottom drop dock — the no-gutter fallback (JS picks side rails vs dock from
-   the live layout). Centred at the bottom edge, clear of all content. */
-.crate-dock {
-	position: fixed;
-	left: 50%;
-	bottom: 22px;
-	transform: translateX(-50%);
-	z-index: var(--z-panel);
-	display: flex;
-	gap: 12px;
-	max-width: calc(100vw - 24px);
-	padding: 12px;
-	background: var(--color-paper);
-	border: 1px solid var(--color-border);
-	border-radius: 16px;
-	box-shadow: 0 14px 44px rgba(26, 26, 26, 0.24);
-	animation: crate-dock-in 0.16s cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.crate-dock-zone {
-	display: flex;
-	align-items: center;
-	gap: 9px;
-	padding: 14px 22px;
-	border: 2px dashed var(--color-border);
-	border-radius: 11px;
-	white-space: nowrap;
-	transition: border-color 0.12s, background 0.12s, color 0.12s;
-}
-@keyframes crate-dock-in {
-	from { opacity: 0; transform: translate(-50%, 16px); }
-	to { opacity: 1; transform: translate(-50%, 0); }
-}
-@media (prefers-reduced-motion: reduce) {
-	.crate-dock { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
 	.crate-rail-left, .crate-rail-right { animation: none; }
+}
+
+/* While dragging, reserve an edge strip so the fixed tabs sit OUTSIDE the content.
+   Right strip always (휴지통); left strip only for bucket drags (최상위로 빼기).
+   box-sizing: border-box (Tailwind Preflight) keeps the centred column from
+   widening — the padding shrinks the content inward, on every viewport. */
+.member-root[data-crate-drag='album'],
+.member-root[data-crate-drag='bucket'] {
+	padding-right: calc(var(--crate-tab-w) + 20px);
+	transition: padding 0.18s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.member-root[data-crate-drag='bucket'] {
+	padding-left: calc(var(--crate-tab-w) + 20px);
+}
+@media (prefers-reduced-motion: reduce) {
+	.member-root[data-crate-drag='album'],
+	.member-root[data-crate-drag='bucket'] { transition: none; }
 }
 
 /* ── entrance + equalizer ───────────────────────────────── */
@@ -342,6 +319,7 @@
 /* ── layout shell ───────────────────────────────────────── */
 .member-root {
 	--mr-pad: 22px; /* density: regular */
+	--crate-tab-w: 46px; /* slim drag-drop edge tab (휴지통 / 최상위로 빼기) */
 	font-family: var(--font-serif);
 	max-width: var(--measure-wide);
 	margin: 0 auto;
