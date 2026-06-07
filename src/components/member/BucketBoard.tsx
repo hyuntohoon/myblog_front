@@ -16,6 +16,7 @@ import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
@@ -1034,21 +1035,29 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         <BucketCard key={b.id} bucket={b} depth={0} ops={ops} onOpen={onOpen} ratings={ratings} dropTarget={dropTarget} setDropTarget={setDropTarget} draggingId={draggingId} setDraggingId={setDraggingId} draggingBucket={draggingBucket} setDraggingBucket={setDraggingBucket} setDragKind={setDragKind} />
       ))}
 
-      {/* drop targets — slim edge tabs, mounted only during a drag. The board
-          root reserves a matching edge strip (CSS [data-crate-drag]) so they sit
-          OUTSIDE the buckets on every viewport. 휴지통 right; 최상위로 빼기 left. */}
-      {dragKind === 'bucket' && (
-        <UnnestRail onUnnest={id => ops.moveBucketInto(id, null)} />
-      )}
-      {dragKind && (
-        <TrashRail
+      {/* drop targets — slim edge tabs, mounted only during a drag. PORTALED to
+          <body>: .lf-rise (the tab-content wrapper) keeps a filled identity
+          transform after its entrance animation (matrix(1,0,0,1,0,0) ≠ none),
+          which makes it the containing block for position:fixed — so rendering
+          the tabs in-tree pinned them to lf-rise's box (≈x491) instead of the
+          viewport edge, overlapping the buckets. Portaling escapes that.
+          .member-root still reserves a matching edge strip (CSS [data-crate-drag])
+          so content never sits under a tab. 휴지통 right; 최상위로 빼기 left. */}
+      {dragKind && typeof document !== 'undefined' && createPortal(
+        <>
+          {dragKind === 'bucket' && (
+            <UnnestRail onUnnest={id => ops.moveBucketInto(id, null)} />
+          )}
+          <TrashRail
 	trashCount={trash.length}
 	onTrashAlbum={trashAlbum}
 	onTrashBucket={(id) => {
-            const b = tree ? findBucket(tree, id) : null
-            setPendingBucketDelete({ id, name: b?.name ?? '' })
-          }}
-        />
+              const b = tree ? findBucket(tree, id) : null
+              setPendingBucketDelete({ id, name: b?.name ?? '' })
+            }}
+          />
+        </>,
+        document.body,
       )}
 
       {addingTo && (
