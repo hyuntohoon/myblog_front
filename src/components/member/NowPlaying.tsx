@@ -8,8 +8,8 @@
 // equalizer animates only while is_playing. Three variants (banner/full/list) share
 // the same snapshot; the list variant pairs it with recently-listened albums.
 import { useEffect, useState } from 'react'
-import { getNowPlayingData, listRecentlyListened } from './spotify.api'
-import type { NowPlaying as NowPlayingData, RecentlyListenedItem } from './spotify.api'
+import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
+import type { NowPlaying as NowPlayingData, RecentlyListenedItem, RecentTrackItem } from './spotify.api'
 import { Cover, Equalizer } from './ui'
 
 export type NpStyle = 'banner' | 'full' | 'list'
@@ -63,15 +63,42 @@ function liveSnapshot(np: NowPlayingData | null): NowPlayingData | null {
   return np && np.is_playing === true && np.track ? np : null
 }
 
+/**
+ * The latest played track (D-C) — shown as "최근 재생" when nothing is currently
+ *  playing, so the surface always says *something* about what was last heard.
+ *  Only fetched when `enabled` (i.e. the now-playing snapshot is idle), to avoid a
+ *  needless request while something is live.
+ */
+function useLatestPlayed(enabled: boolean): RecentTrackItem | null {
+  const [latest, setLatest] = useState<RecentTrackItem | null>(null)
+  useEffect(() => {
+    if (!enabled)
+      return
+    let on = true
+    listRecentTracks().then(r => on && setLatest(r.items[0] ?? null)).catch(() => { /* leave null */ })
+    return () => {
+      on = false
+    }
+  }, [enabled])
+  return latest
+}
+
 /* ── idle / loading shells ─────────────────────────────────────────────────── */
 
-function IdleBox({ compact = false, iso }: { compact?: boolean, iso?: string | null }) {
+function IdleBox({ compact = false, iso, latest }: { compact?: boolean, iso?: string | null, latest?: RecentTrackItem | null }) {
   return (
     <div className="lf-panel" style={{ padding: compact ? 16 : 22, display: 'flex', alignItems: 'center', gap: 14 }}>
       <Equalizer playing={false} h={14} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="lf-kicker" style={{ color: 'var(--color-faded)', marginBottom: 4 }}>NOW PLAYING</div>
-        <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>
+        <div className="lf-kicker" style={{ color: 'var(--color-faded)', marginBottom: 4 }}>{latest ? '최근 재생' : 'NOW PLAYING'}</div>
+        {latest ?
+          (
+              <>
+                <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.track_name}</div>
+                <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.artist_name}</div>
+              </>
+            ) :
+          <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>}
       </div>
       <SyncNote iso={iso} />
     </div>
@@ -82,10 +109,12 @@ function IdleBox({ compact = false, iso }: { compact?: boolean, iso?: string | n
 
 function NowPlayingFull() {
   const { np, state } = useNowPlaying()
+  const idle = state === 'ready' && !liveSnapshot(np)
+  const latest = useLatestPlayed(idle)
   if (state === 'loading')
     return <div className="lf-panel" style={{ padding: 18 }}><span className="lf-meta">불러오는 중…</span></div>
   if (!np || !np.is_playing || !np.track)
-    return <IdleBox iso={np?.updated_at} />
+    return <IdleBox iso={np?.updated_at} latest={latest} />
   return (
     <div className="lf-panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
       <Cover label={np.album ?? np.track ?? '?'} size={88} radius={4} />
@@ -117,6 +146,7 @@ function NowPlayingList() {
     }
   }, [])
   const live = liveSnapshot(np)
+  const latest = useLatestPlayed(state === 'ready' && !live)
   return (
     <div className="lf-panel" style={{ overflow: 'hidden' }}>
       {state === 'loading' ?
@@ -136,7 +166,7 @@ function NowPlayingList() {
                 <Equalizer playing h={16} />
               </div>
             ) :
-          <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} /></div>}
+          <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} latest={latest} /></div>}
 
       <div style={{ padding: '10px 8px 8px' }}>
         <div className="lf-meta" style={{ padding: '0 8px 8px' }}>최근 들은 앨범</div>
@@ -162,6 +192,7 @@ function NowPlayingList() {
 function NowPlayingBanner() {
   const { np, state } = useNowPlaying()
   const live = liveSnapshot(np)
+  const latest = useLatestPlayed(state === 'ready' && !live)
   if (state === 'loading') {
     return (
       <div className="lf-panel" style={{ padding: 24, borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: 0, borderRight: 0, borderRadius: 0 }}>
@@ -172,10 +203,10 @@ function NowPlayingBanner() {
   return (
     <div className="lf-panel" style={{ padding: 0, overflow: 'hidden', borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'var(--color-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, padding: 24 }}>
-        <Cover label={(live ? live.album ?? live.track : '—') ?? '—'} size={116} radius={4} />
+        <Cover label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={116} radius={4} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="lf-kicker" style={{ marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ color: live ? 'var(--color-accent)' : 'var(--color-faded)' }}>NOW PLAYING</span>
+            <span style={{ color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
             <span style={{ marginLeft: 'auto' }}><SyncNote iso={np?.updated_at} /></span>
           </div>
 
@@ -203,11 +234,20 @@ function NowPlayingBanner() {
                   </div>
                 </>
               ) :
-            (
-                <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
-                  재생 중 아님
-                </div>
-              )}
+            latest ?
+              (
+                  <>
+                    <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.track_name}</div>
+                    <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
+                      {[latest.artist_name, latest.album_name].filter(Boolean).join(' — ')}
+                    </div>
+                  </>
+                ) :
+              (
+                  <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
+                    재생 중 아님
+                  </div>
+                )}
         </div>
       </div>
     </div>

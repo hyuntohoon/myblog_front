@@ -71,14 +71,9 @@ export const RECENT_ALBUMS: SampleAlbum[] = [
 	{ id: uid('ra'), album: 'Hollow Bells', artist: 'Vault Engine', year: 2021, genre: 'Ambient', rating: 3.6, when: '3일 전' },
 ]
 
-export const RECENT_TRACKS: SampleTrack[] = [
-	{ id: uid('rt'), track: 'Deep Current', artist: 'Vault Engine', album: 'Subsonic Cathedral', len: '5:27', when: '12분 전' },
-	{ id: uid('rt'), track: 'Low Tide', artist: 'Sala', album: 'Low Tide Frequencies', len: '3:41', when: '48분 전' },
-	{ id: uid('rt'), track: 'Glasshouse', artist: 'Mira Voss', album: 'Glass Architecture', len: '6:02', when: '1시간 전' },
-	{ id: uid('rt'), track: 'Neon Pavement', artist: 'Hara Müller', album: 'Neon Pavement', len: '4:18', when: '2시간 전' },
-	{ id: uid('rt'), track: 'Brush & Wire', artist: 'The Quiet Tenants', album: 'Paper Moon Sessions', len: '5:09', when: '오늘' },
-	{ id: uid('rt'), track: 'Hollow Bells II', artist: 'Vault Engine', album: 'Hollow Bells', len: '7:33', when: '오늘' },
-]
+// RECENT_TRACKS sample removed — 최근 재생 트랙 is now real
+// (FEAT-member-dashboard-realdata). SampleTrack stays: TrackColl still maps the
+// real recent-tracks response onto it.
 
 export const LIBRARY: SampleAlbum[] = [
 	{ id: uid('lb'), album: 'Subsonic Cathedral', artist: 'Vault Engine', year: 2025, genre: 'Ambient', rating: 4.6, status: '평론함' },

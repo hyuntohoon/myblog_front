@@ -7,10 +7,11 @@
 // (frontmatter); the confirm dialog is portalled to <body> so it overlays the
 // full viewport regardless of the tab's transform/stacking context.
 import type { DetailTarget, MemberReview, MemberReviewType } from '@lib/member'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { REVIEW_TYPES } from '@lib/member'
-import { archivePost, readErrorDetail } from '../../scripts/write/api'
+import { archivePost, listDrafts, readErrorDetail } from '../../scripts/write/api'
+import type { PostListItem } from '../../scripts/write/api'
 import { AlbumArt, SectionTitle, Seg, Stars } from './ui'
 
 type TypeFilter = '전체' | MemberReviewType
@@ -63,6 +64,30 @@ function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: Deta
   )
 }
 
+/**
+ * Draft review card (FEAT-member-dashboard-realdata Goal 1). Drafts are DB-only
+ * (never committed as MDX), so they can't come from the build-time review list;
+ * we fetch them at runtime. Clicking continues the draft in the editor (?id=).
+ */
+function DraftCard({ d }: { d: PostListItem }) {
+  return (
+    <a href={`/write?id=${d.id}`} className="lf-panel" style={{ padding: 14, display: 'flex', gap: 14, alignItems: 'center', textDecoration: 'none', background: 'var(--color-bg)', borderStyle: 'dashed' }}>
+      <div style={{ flex: '0 0 auto', width: 56 }}><AlbumArt url={d.album_cover_url ?? null} label={d.title || '초안'} size={56} /></div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="lf-meta" style={{ marginBottom: 5, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span className="lf-mono" style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-accent)', border: '1px solid var(--color-accent)', borderRadius: 2, padding: '1px 5px' }}>초안</span>
+          {d.posted_date && <span>{fmtDate(d.posted_date)}</span>}
+        </div>
+        <div className="lf-serif lf-italic" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title || '제목 없음'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 5 }}>
+          {d.rating != null ? <Stars score={d.rating} size={13} /> : <span className="lf-meta" style={{ textTransform: 'none', letterSpacing: 0 }}>평점 미정</span>}
+          <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--color-subtle)', letterSpacing: '.06em', textTransform: 'uppercase' }}>이어쓰기 →</span>
+        </div>
+      </div>
+    </a>
+  )
+}
+
 export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpen: (t: DetailTarget) => void }) {
   const [list, setList] = useState(reviews)
   const [type, setType] = useState<TypeFilter>('전체')
@@ -70,6 +95,15 @@ export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpe
   const [pending, setPending] = useState<MemberReview | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Goal 1: the author's in-progress drafts (runtime, Cognito-gated). Hidden when none.
+  const [drafts, setDrafts] = useState<PostListItem[]>([])
+  useEffect(() => {
+    let on = true
+    listDrafts().then(d => on && setDrafts(d)).catch(() => { /* leave empty */ })
+    return () => {
+      on = false
+    }
+  }, [])
 
   let view = type === '전체' ? list.slice() : list.filter(r => r.type === type)
   view = view.sort((a, b) => (sort === 'score' ? (b.rating ?? -1) - (a.rating ?? -1) : new Date(b.date).getTime() - new Date(a.date).getTime()))
@@ -105,6 +139,14 @@ export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpe
 
   return (
     <div>
+      {drafts.length > 0 && (
+        <div style={{ marginBottom: 30 }}>
+          <SectionTitle kicker={`${drafts.length}개`} title="작성 중인 초안" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px,1fr))', gap: 12 }}>
+            {drafts.map(d => <DraftCard key={d.id} d={d} />)}
+          </div>
+        </div>
+      )}
       <SectionTitle
 	kicker={`${view.length}편`}
 	title="내가 쓴 평론"

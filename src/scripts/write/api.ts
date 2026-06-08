@@ -11,6 +11,19 @@ export type PostPayload = components['schemas']['Backend_WritePostRequest'] & {
 }
 
 export type PostDetail = components['schemas']['Backend_PostDetailResponse']
+export type PostListItem = components['schemas']['Backend_PostListItem']
+
+// FEAT-member-dashboard-realdata Goal 1: the author's draft reviews (DB-only —
+// drafts aren't committed as MDX, so the build-time review list can't see them).
+// Cognito-JWT gated via apiFetch; returns [] on failure (the /profile section
+// just stays empty rather than erroring the page).
+export async function listDrafts(): Promise<PostListItem[]> {
+	const res = await apiFetch(`${API_BASE_URL}/api/posts?status=draft`)
+	if (!res || !res.ok)
+		return []
+	const data = await res.json() as components['schemas']['Backend_PostListResponse']
+	return data.posts ?? []
+}
 
 // Use apiFetch so 401 → refresh_token → retry once → goLogin only on real failure.
 // `apiFetch` returns null when the refresh fails (user redirected to login),

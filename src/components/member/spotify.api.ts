@@ -10,12 +10,25 @@ const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
 export type RecentlyListenedItem = components['schemas']['Backend_RecentlyListenedItem']
 export type NowPlaying = components['schemas']['Backend_NowPlayingResponse']
+export type RecentTrackItem = components['schemas']['Backend_RecentTrackItem']
+export type ListenedAlbumItem = components['schemas']['Backend_ListenedAlbumItem']
 type RecentlyListenedResponse = components['schemas']['Backend_RecentlyListenedResponse']
+type RecentTracksResponse = components['schemas']['Backend_RecentTracksResponse']
+type ListenedAlbumsResponse = components['schemas']['Backend_ListenedAlbumsResponse']
 type SpotifyConnectionResponse = components['schemas']['Backend_SpotifyConnectionResponse']
 
 /** Recently-listened albums + when the worker last synced the cache (D31 poll anchor). */
 export interface RecentlyListened {
   items: RecentlyListenedItem[]
+  lastSyncedAt: string | null
+}
+
+/**
+ * Recently-played tracks (FEAT-member-dashboard-realdata D-B) — track-level cache;
+ *  item[0] is the "최근 재생" latest-played fallback for the now-playing surface.
+ */
+export interface RecentTracks {
+  items: RecentTrackItem[]
   lastSyncedAt: string | null
 }
 
@@ -51,6 +64,28 @@ export async function listRecentlyListened(): Promise<RecentlyListened> {
 export async function getNowPlayingData(): Promise<NowPlaying> {
   const res = await apiFetch(`${BASE}/api/library/now-playing`, { method: 'GET' })
   return asJson<NowPlaying>(res)
+}
+
+/**
+ * GET /api/library/recent-tracks (D-B) — recently-played at track granularity,
+ *  newest first. Worker-fed cache; never calls Spotify (rule #9). Row 0 is the
+ *  "최근 재생" latest-played fallback when nothing is currently playing.
+ */
+export async function listRecentTracks(): Promise<RecentTracks> {
+  const res = await apiFetch(`${BASE}/api/library/recent-tracks`, { method: 'GET' })
+  const data = await asJson<RecentTracksResponse>(res)
+  return { items: data.items ?? [], lastSyncedAt: data.last_synced_at ?? null }
+}
+
+/**
+ * GET /api/library/listened-albums (D-A) — the cumulative listened-album archive,
+ *  aggregated from the durable play-event log (per-album play_count + first/last
+ *  play), most-recently-played first. Distinct from the recently-listened CACHE.
+ */
+export async function listListenedAlbums(limit = 200): Promise<ListenedAlbumItem[]> {
+  const res = await apiFetch(`${BASE}/api/library/listened-albums?limit=${limit}`, { method: 'GET' })
+  const data = await asJson<ListenedAlbumsResponse>(res)
+  return data.items ?? []
 }
 
 /** GET /api/library/spotify-connection — connection status incl. token validity (D30). */

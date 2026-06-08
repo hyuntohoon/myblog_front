@@ -13,10 +13,10 @@ import type { NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/member'
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { bucketCount, getActivity, getArtists, getGenres, getRecentTracks, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
+import { bucketCount, getActivity, getArtists, getGenres, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
 import { DistChart } from './charts'
 import { NowPlaying } from './NowPlaying'
-import { listRecentlyListened } from './spotify.api'
+import { listListenedAlbums, listRecentlyListened, listRecentTracks } from './spotify.api'
 import { AlbumArt, BucketShortcut, Cover, SampleBadge, SectionTitle, Seg, Stars } from './ui'
 
 /** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
@@ -182,7 +182,8 @@ function ViewToggle({ value, onChange }: { value: ViewKey, onChange: (v: ViewKey
 const WIDGET_TITLES: Record<string, string> = {
   'nowplaying': '지금 듣는 음악',
   'recent-albums': '최근 들은 앨범',
-  'recent-tracks': '최근 들은 노래',
+  'recent-tracks': '최근 재생 트랙',
+  'listened-albums': '들은 앨범 (누적)',
   'bucket': '평론 버킷',
   'genre': '장르 분포',
   'artists': '톱 아티스트',
@@ -191,8 +192,9 @@ const WIDGET_TITLES: Record<string, string> = {
 }
 const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
 /** widgets whose body is sample data → show a 샘플 badge in the header. */
-// 'nowplaying' + 'recent-albums' are real as of Step 3; the rest remain sample.
-const SAMPLE_WIDGETS = new Set(['recent-tracks', 'genre', 'artists', 'activity'])
+// nowplaying + recent-albums + recent-tracks + listened-albums are now real
+// (FEAT-member-dashboard-realdata); genre/artists/activity remain sample.
+const SAMPLE_WIDGETS = new Set(['genre', 'artists', 'activity'])
 
 function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
   return (
@@ -302,11 +304,73 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
   )
 }
 
+/**
+ * 최근 재생 트랙 widget — real (worker-fed track cache, D-B), mapped to TrackColl.
+ *  Duration isn't stored (we only cache play timestamps), so `len` is left blank.
+ */
+function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: DetailTarget) => void }) {
+  const [items, setItems] = useState<SampleTrack[] | null>(null)
+  useEffect(() => {
+    let on = true
+    listRecentTracks()
+      .then(snap => on && setItems(snap.items.map(it => ({
+        id: `${it.spotify_track_id}|${it.played_at}`,
+        track: it.track_name,
+        artist: it.artist_name ?? '—',
+        album: it.album_name ?? it.album?.title ?? '—',
+        len: '',
+        when: fmtWhen(it.played_at),
+      }))))
+      .catch(() => on && setItems([]))
+    return () => {
+      on = false
+    }
+  }, [])
+  if (items == null)
+    return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
+  if (items.length === 0)
+    return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
+  return <TrackColl items={items} view={view} onOpen={onOpen} />
+}
+
+/**
+ * 들은 앨범 (누적) widget — real (D-A), the durable archive aggregated from the
+ *  play-event log. Distinct from 최근 들은 앨범 (a rolling cache); `when` shows the
+ *  cumulative play count so the two surfaces read differently.
+ */
+function ListenedAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: DetailTarget) => void }) {
+  const [items, setItems] = useState<SampleAlbum[] | null>(null)
+  useEffect(() => {
+    let on = true
+    listListenedAlbums(60)
+      .then(rows => on && setItems(rows.map(r => ({
+        id: r.album_id,
+        album: r.album?.title ?? '앨범',
+        artist: (r.album?.artist_names ?? []).join(', ') || '—',
+        year: null,
+        genre: '',
+        rating: null,
+        when: `${r.play_count}회`,
+        cover: r.album?.cover_url ?? null,
+      }))))
+      .catch(() => on && setItems([]))
+    return () => {
+      on = false
+    }
+  }, [])
+  if (items == null)
+    return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
+  if (items.length === 0)
+    return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
+  return <AlbumColl items={items} view={view} onOpen={onOpen} />
+}
+
 function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
   switch (id) {
     case 'nowplaying': return <NowPlaying variant={ctx.npStyle} />
     case 'recent-albums': return <RecentAlbumsWidget view={ctx.views['recent-albums']} onOpen={ctx.onOpen} />
-    case 'recent-tracks': return <TrackColl items={getRecentTracks()} view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
+    case 'recent-tracks': return <RecentTracksWidget view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
+    case 'listened-albums': return <ListenedAlbumsWidget view={ctx.views['listened-albums']} onOpen={ctx.onOpen} />
     case 'bucket': return <BucketShortcut count={bucketCount()} onGo={ctx.goBucket} />
     case 'genre': return <DistChart style={ctx.chartStyle === 'donut' ? 'donut' : 'bar'} items={getGenres().slice(0, 6)} />
     case 'artists': return <DistChart style="list" items={getArtists().slice(0, 5)} />
@@ -475,7 +539,7 @@ slot++
 
 /* ── one widget shell ────────────────────────────────────── */
 function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx: DashCtx, onRemove: (id: string) => void, handleProps: HandleProps, dragging: boolean }) {
-  const hasView = id === 'recent-albums' || id === 'recent-tracks'
+  const hasView = id === 'recent-albums' || id === 'recent-tracks' || id === 'listened-albums'
   return (
     <div
 	className="lf-panel"
@@ -497,7 +561,7 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
 }
 
 /* ── dashboard ───────────────────────────────────────────── */
-const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['bucket'], ['genre', 'artists']]
+const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['listened-albums'], ['bucket'], ['genre', 'artists']]
 
 export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket, reviews }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, chartStyle: ChartStyle, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[] }) {
   const [rows, setRows] = useState<string[][]>(() => {
@@ -516,7 +580,7 @@ export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket
         return s
     }
     catch { /* ignore */ }
-    return { 'recent-albums': 'grid', 'recent-tracks': 'grid' }
+    return { 'recent-albums': 'grid', 'recent-tracks': 'list', 'listened-albums': 'grid' }
   })
   useEffect(() => {
     try {
