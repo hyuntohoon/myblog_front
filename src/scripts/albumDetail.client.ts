@@ -62,7 +62,7 @@ function buildTracklistHtml(tracks: Track[]): string {
       return `
         <li class="lfq-tt-row${isPick ? ' is-pick' : ''}">
           <span class="lfq-tt-no">${num}</span>
-          <span class="lfq-tt-title">${title}${featNames(t.feat_artist_names)}${isPick ? ' <span class="lfq-tt-star" aria-label="비평가의 픽">★</span>' : ''}</span>
+          <span class="lfq-tt-title">${title}${featNames(t.feat_artist_names)}${isPick ? ' <span class="lfq-tt-star" aria-label="추천 트랙">★</span>' : ''}</span>
           <span class="lfq-tt-dur">${dur}</span>
         </li>
       `

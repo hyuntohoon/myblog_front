@@ -13,7 +13,7 @@ export async function GET(context: APIContext) {
 
 	return rss({
 		title: SITE.title,
-		description: '정성껏 들은 앨범들에 대한 기록 — RAMAMU 음악 리뷰',
+		description: 'RAMAMU',
 		// context.site is derived from `site` in astro.config (SITE.url).
 		site: context.site ?? SITE.url,
 		items: posts.map(e => ({

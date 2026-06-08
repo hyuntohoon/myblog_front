@@ -165,8 +165,6 @@ function RealBody({ album }: { album: DetailTarget }) {
                   <div className="lf-meta" style={{ marginBottom: 8 }}>발매 정보</div>
                   <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.7 }}>
                     {album.year ? `${album.year}년 발매` : '발매 연도 정보 없음'}
-                    <br />
-                    아직 동기화된 트랙 정보가 없습니다.
                   </div>
                 </div>
               )}

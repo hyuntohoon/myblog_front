@@ -71,7 +71,7 @@ function IdleBox({ compact = false, iso }: { compact?: boolean, iso?: string | n
       <Equalizer playing={false} h={14} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="lf-kicker" style={{ color: 'var(--color-faded)', marginBottom: 4 }}>NOW PLAYING</div>
-        <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>지금 재생 중인 곡이 없습니다</div>
+        <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>
       </div>
       <SyncNote iso={iso} />
     </div>
@@ -205,7 +205,7 @@ function NowPlayingBanner() {
               ) :
             (
                 <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
-                  지금 재생 중인 곡이 없습니다
+                  재생 중 아님
                 </div>
               )}
         </div>

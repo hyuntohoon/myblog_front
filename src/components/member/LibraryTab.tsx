@@ -126,7 +126,7 @@ function ToListenSection() {
 
       {items != null && items.length === 0 && (
         <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
-          <span className="lf-meta">아직 들을 앨범이 없습니다 · “앨범 추가”로 큐를 채워보세요</span>
+          <span className="lf-meta">앨범 없음</span>
         </div>
       )}
 
@@ -282,7 +282,7 @@ function ReviewedSection({ reviews }: { reviews: MemberReview[] }) {
 
       {albums != null && albums.length === 0 && (
         <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
-          <span className="lf-meta">아직 평론한 앨범이 없습니다</span>
+          <span className="lf-meta">앨범 없음</span>
         </div>
       )}
 
@@ -439,7 +439,7 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
 
       {items != null && items.length === 0 && !err && (
         <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
-          <span className="lf-meta">최근 들은 앨범이 없습니다 · Spotify 연동 후 “지금 새로고침”을 눌러보세요</span>
+          <span className="lf-meta">기록 없음</span>
         </div>
       )}
 

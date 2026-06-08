@@ -9,7 +9,7 @@ interface Props {
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-// Direction C — "비평가의 픽" as a vertical, collapsible chart list. Each row
+// Direction C — "추천 트랙" as a vertical, collapsible chart list. Each row
 // is a ★/☆ toggle; picked tracks get highlighted in the published read page.
 export default function RecommendedTracksBlock({ subject, value, onChange }: Props) {
   const [open, setOpen] = useState(true)
@@ -37,10 +37,10 @@ export default function RecommendedTracksBlock({ subject, value, onChange }: Pro
       <section className="wr-picks">
         <div className="wr-picks-head wr-picks-head--static">
           <span className="lh">
-            <span className="wr-seclabel">비평가의 픽</span>
+            <span className="wr-seclabel">추천 트랙</span>
           </span>
         </div>
-        <p className="wr-picks-empty mono">이 앨범의 트랙 정보가 아직 동기화되지 않았습니다.</p>
+        <p className="wr-picks-empty mono">트랙 정보 없음</p>
       </section>
     )
   }
@@ -50,7 +50,7 @@ export default function RecommendedTracksBlock({ subject, value, onChange }: Pro
       <button type="button" className="wr-picks-head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="lh">
           <span className="wr-picks-chev" data-open={open} aria-hidden>▸</span>
-          <span className="wr-seclabel">비평가의 픽</span>
+          <span className="wr-seclabel">추천 트랙</span>
           <span className="wr-picks-count">
             <b>{picked.size}</b>
             곡 추천

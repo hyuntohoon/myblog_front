@@ -115,15 +115,14 @@ export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpe
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {view.map(r => <ReviewCard key={r.slug} r={r} onOpen={onOpen} onDelete={setPending} />)}
-        {view.length === 0 && <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}><span className="lf-meta">해당 유형의 평론이 없습니다</span></div>}
+        {view.length === 0 && <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}><span className="lf-meta">평론 없음</span></div>}
       </div>
       {pending != null && typeof document !== 'undefined' && createPortal(
         <div className="lf-scrim" style={{ justifyContent: 'center', alignItems: 'center' }} onClick={closeDialog}>
           <div className="lf-panel" onClick={e => e.stopPropagation()} style={{ background: 'var(--color-bg)', padding: 24, maxWidth: 360, width: '90%', animation: 'lf-rise .2s both' }}>
             <div className="lf-kicker" style={{ color: 'var(--color-accent)', marginBottom: 8 }}>평론 삭제</div>
             <p className="lf-serif" style={{ fontSize: 16, margin: '0 0 6px', lineHeight: 1.5 }}>이 평론을 삭제할까요?</p>
-            <p className="lf-mono" style={{ fontSize: 12, margin: '0 0 12px', color: 'var(--color-faded)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pending.album}</p>
-            <p className="lf-meta" style={{ margin: '0 0 18px', textTransform: 'none', letterSpacing: 0 }}>사이트에서 내려가고 목록에서 사라집니다. 작성 화면에서 다시 복원할 수 있어요 (보관 처리).</p>
+            <p className="lf-mono" style={{ fontSize: 12, margin: '0 0 18px', color: 'var(--color-faded)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pending.album}</p>
             {err != null && <p className="lf-meta" style={{ margin: '0 0 14px', textTransform: 'none', letterSpacing: 0, color: 'var(--color-accent)' }}>{err}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" className="lf-btn" onClick={closeDialog} disabled={busy}>취소</button>

@@ -233,7 +233,7 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, dragging
         }}
 	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year })}
 	className={`lf-drag-handle bb-tile${dragging ? ' lf-is-dragging' : ''}`}
-	title={copySource ? `${album.title} — ${album.artist} · 드래그하면 버킷에 복사` : `${album.title} — ${album.artist}`}
+	title={`${album.title} — ${album.artist}`}
       >
         <div style={{ position: 'relative' }}>
           <AlbumArt url={album.cover} label={album.title} />
@@ -374,7 +374,6 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
           setDragKind(null)
         }}
 	style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: editing ? 'default' : 'grab' }}
-	title="헤더를 끌어 버킷 사이에 놓으면 순서 변경 · 다른 버킷 위에 놓으면 하위로 · 화면 아래 휴지통에 놓으면 삭제"
       >
         <span
 	className="lf-mono"
@@ -476,7 +475,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
           />
         ))}
         {bucket.albums.length === 0 && bucket.children.length === 0 && (
-          <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음 · 앨범을 끌어다 놓으세요</div>
+          <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음</div>
         )}
         <button
 	type="button"
@@ -559,7 +558,6 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
         <span className="crate-trash-ring"><CrTrashIcon s={28} /></span>
         <div>
           <div className="lf-serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.2, color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>휴지통</div>
-          <div className="lf-mono" style={{ fontSize: 11, letterSpacing: '0.03em', color: 'var(--color-subtle)', marginTop: 5, whiteSpace: 'nowrap' }}>앨범·버킷을 끌어 놓아 삭제</div>
           {trashCount > 0 && (
             <div className="lf-mono" style={{ marginTop: 7, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, letterSpacing: '0.06em', whiteSpace: 'nowrap', color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>
               <span style={{ width: 5, height: 5, borderRadius: 5, background: 'currentColor' }} />
@@ -1140,23 +1138,6 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
           </div>
         )}
       />
-      <p className="lf-serif lf-italic" style={{ marginTop: -10, marginBottom: 22, color: 'var(--color-subtle)', fontSize: 15, maxWidth: 720 }}>
-        버킷
-        {' '}
-        <span className="lf-mono" style={{ fontStyle: 'normal', fontSize: 12 }}>⠿</span>
-        {' '}
-        헤더를 끌어
-        {' '}
-        <b style={{ fontStyle: 'normal' }}>버킷 사이</b>
-        에 놓으면 순서가 바뀌고(놓을 위치에 선이 표시됩니다), 다른 버킷
-        {' '}
-        <b style={{ fontStyle: 'normal' }}>위</b>
-        에 놓으면 그 하위로 들어갑니다. 커버는 다른 커버 위에 놓아 순서를 바꾸거나 옮기고, 드래그 중 화면 아래
-        {' '}
-        <b style={{ fontStyle: 'normal' }}>휴지통</b>
-        에 놓으면 삭제됩니다.
-      </p>
-
       {recent != null && recent.length > 0 && (
         <div
 	className="lf-panel crate-spotify"
@@ -1165,7 +1146,6 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderBottom: '1px solid var(--color-border-soft)' }}>
             <span className="lf-serif" style={{ fontSize: 16, fontWeight: 500, whiteSpace: 'nowrap' }}>최근 들은 앨범</span>
             <span className="lf-meta" style={{ color: 'var(--color-spotify)' }}>SPOTIFY 연동</span>
-            <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>드래그하면 버킷에 복사 · 원본 유지</span>
           </div>
           <div style={{ display: 'flex', gap: 14, padding: 14, overflowX: 'auto', alignItems: 'flex-start' }}>
             {recent.map(a => (
@@ -1181,7 +1161,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
 
       {tree != null && tree.length === 0 && (
         <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
-          <span className="lf-meta">아직 버킷이 없습니다 · “＋ 버킷”으로 시작해보세요</span>
+          <span className="lf-meta">버킷 없음</span>
         </div>
       )}
 
