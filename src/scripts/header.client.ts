@@ -45,7 +45,14 @@ type ScrollMode = 'hide-down' | 'compact' | 'threshold'
 
 const SCROLL_KEY = 'atmb-header-scroll'
 const SCROLL_THRESHOLD = 80
-const REVEAL_DELTA = 20
+// How much deliberate upward scroll (px, accumulated) is needed before the header
+// comes back. Bumped from 20 so a tiny nudge / the momentum tail of a down-fling
+// doesn't pop the masthead in the instant you ease up. Applies to hide-down too.
+const REVEAL_DELTA = 72
+// In compact mode the masthead shrinks past SCROLL_THRESHOLD but only un-shrinks once
+// you're back near the top (< COMPACT_EXIT) — a hysteresis band so it doesn't grow
+// the moment you scroll up mid-page.
+const COMPACT_EXIT = 28
 
 function parseScrollMode(v: unknown): ScrollMode {
 	return v === 'compact' || v === 'threshold' ? v : 'hide-down'
@@ -76,7 +83,12 @@ function setupHeaderScroll() {
 
 		if (mode === 'compact') {
 			header.classList.remove('is-hidden')
-			header.classList.toggle('is-compact', y > SCROLL_THRESHOLD)
+			// Hysteresis: shrink past the threshold going down, but only expand again
+			// once scrolled back up near the top — not the instant you nudge up.
+			if (y > SCROLL_THRESHOLD)
+				header.classList.add('is-compact')
+			else if (y < COMPACT_EXIT)
+				header.classList.remove('is-compact')
 			lastY = y
 			return
 		}
@@ -88,24 +100,17 @@ function setupHeaderScroll() {
 			reveal()
 			upAccum = 0
 		}
-		else if (mode === 'hide-down') {
-			if (goingDown)
-				hide()
-			else
-				reveal()
+		else if (goingDown) {
+			hide()
+			upAccum = 0
 		}
 		else {
-			// threshold: hide once past the threshold; only a deliberate upward
-			// scroll (>= REVEAL_DELTA accumulated) brings it back.
-			if (goingDown) {
-				hide()
-				upAccum = 0
-			}
-			else {
-				upAccum += lastY - y
-				if (upAccum >= REVEAL_DELTA)
-					reveal()
-			}
+			// Scrolling up (hide-down AND threshold): require a deliberate upward
+			// scroll (>= REVEAL_DELTA accumulated) before revealing, so the header
+			// doesn't pop back in the moment you ease up mid-page.
+			upAccum += lastY - y
+			if (upAccum >= REVEAL_DELTA)
+				reveal()
 		}
 
 		lastY = y
