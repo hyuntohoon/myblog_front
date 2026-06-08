@@ -71,7 +71,6 @@ export interface DetailTarget {
 export interface MemberProfile {
 	name: string
 	handle: string
-	tagline: string
 	joined: string
 	location: string
 	stats: { reviews: number, albums: number, avgRating: number | null }
@@ -84,7 +83,6 @@ export interface MemberProfile {
 export const MEMBER_IDENTITY = {
 	name: '김저음',
 	handle: 'lowfreq',
-	tagline: '베이스가 방을 흔들지 않으면 듣지 않는다.',
 	joined: '2021.03',
 	location: '서울',
 } as const
