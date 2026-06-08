@@ -65,7 +65,7 @@ const profile = { ...MEMBER_IDENTITY, stats: computeStats(reviews) }
 ---
 
 <Layout>
-  <Seo slot="seo" title="회원 — RAMAMU" />
+  <Seo slot="seo" title="회원" />
 
   <SkipNavContent>
     <ProfileApp client:load reviews={reviews} profile={profile} />
