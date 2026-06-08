@@ -42,6 +42,28 @@ export interface SpotifyConnection {
   lastSuccessfulRefreshAt: string | null
 }
 
+// FEAT-spotify-library-sync — types derived from the merged contract (api.gen.ts).
+// The per-album row + sync result alias the generated Backend_* schemas directly;
+// SpotifyLibraryState is the normalized view the getter returns (server-optional
+// fields defaulted) — same wire-type/view split as RecentlyListened above.
+
+/** Per-album sync row (one spotify_library_albums row joined to its album). */
+export type SpotifyLibraryAlbumState = components['schemas']['Backend_SpotifyLibraryAlbumState']
+
+/** POST /api/buckets/spotify-library/sync — { status: 'queued' | 'debounced' }. */
+export type SpotifyLibrarySyncResult = components['schemas']['Backend_SpotifyLibrarySyncResponse']
+
+/** Normalized GET /api/buckets/spotify-library/state view (optionals defaulted). */
+export interface SpotifyLibraryState {
+  bucket_id: string | null
+  last_synced_at: string | null
+  /** the stored Spotify token is invalid → re-auth needed before writes work */
+  needs_reauth: boolean
+  /** backend mirror of SPOTIFY_LIBRARY_WRITES_ENABLED — false = review/plan-only */
+  writes_enabled: boolean
+  albums: SpotifyLibraryAlbumState[]
+}
+
 async function asJson<T>(res: Response | null): Promise<T> {
   if (!res)
     throw new Error('network error (no response)')
@@ -104,4 +126,32 @@ export async function refreshRecent(): Promise<void> {
   const res = await apiFetch(`${BASE}/api/library/refresh-recent`, { method: 'POST' })
   if (!res || !res.ok)
     throw new Error(res ? `HTTP ${res.status}` : 'network error (no response)')
+}
+
+/**
+ * POST /api/buckets/spotify-library/sync — enqueue an async Spotify-library
+ * reconcile (Cognito-JWT). Rule #9: this only ENQUEUES; the worker does the
+ * Spotify reads/writes out of band. Returns { status: 'queued' | 'debounced' }.
+ */
+export async function syncSpotifyLibrary(): Promise<SpotifyLibrarySyncResult> {
+  const res = await apiFetch(`${BASE}/api/buckets/spotify-library/sync`, { method: 'POST' })
+  return asJson<SpotifyLibrarySyncResult>(res)
+}
+
+/**
+ * GET /api/buckets/spotify-library/state — the special bucket's sync state:
+ * last_synced_at (poll anchor), needs_reauth / writes_enabled banners, and the
+ * per-album source/state map (keyed by album_id) for the cover badges. Rides the
+ * edge_guard GET proxy; worker-fed, never calls Spotify (rule #9).
+ */
+export async function getSpotifyLibraryState(): Promise<SpotifyLibraryState> {
+  const res = await apiFetch(`${BASE}/api/buckets/spotify-library/state`, { method: 'GET' })
+  const data = await asJson<components['schemas']['Backend_SpotifyLibraryStateResponse']>(res)
+  return {
+    bucket_id: data.bucket_id ?? null,
+    last_synced_at: data.last_synced_at ?? null,
+    needs_reauth: Boolean(data.needs_reauth),
+    writes_enabled: Boolean(data.writes_enabled),
+    albums: data.albums ?? [],
+  }
 }
