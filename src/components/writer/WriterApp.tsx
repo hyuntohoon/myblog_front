@@ -85,8 +85,12 @@ export default function WriterApp() {
   // A restored draft with a non-empty title counts as user-owned.
   const titleDirty = useRef((saved.headline ?? '').trim() !== '')
 
-  // Edit mode: populated when ?id= is in URL or after first DB save
-  const [dbPostId, setDbPostId] = useState<string | null>(null)
+  // Edit mode: populated when ?id= is in URL or after first DB save. Seeded
+  // from the restored draft so reopening /write (localStorage, no ?id=) keeps
+  // the existing row's id — without it the next save re-creates the row and the
+  // backend rejects the duplicate slug with 409 (BUG-9 again, on the reload
+  // path rather than the draft→publish path).
+  const [dbPostId, setDbPostId] = useState<string | null>(saved.dbPostId ?? null)
 
   const [subject, setSubject] = useState<AlbumDetail | null>(saved.subject ?? null)
   const [score, setScore] = useState(saved.score ?? 0)
@@ -167,6 +171,10 @@ export default function WriterApp() {
     recommendedTrackIds,
     tags,
     subjectBestNew,
+    // Persist the DB id so a save→reload→continue cycle updates the row instead
+    // of re-creating it. The 30s flush + tab-hide flush both read draftRef, so
+    // they carry the id once a save has set it.
+    dbPostId,
   }
 
   // STAB-5 Step 4: toggle a review tag. Functional updater so rapid successive
@@ -331,9 +339,19 @@ export default function WriterApp() {
       // meaning and the backend would no-op anyway.
       subject_best_new: subject && !isArtistSubject ? subjectBestNew : null,
     }
-    const res = dbPostId ?
+    const createBody = { ...payload, album_cover_url: subject?.cover_url ?? null }
+    let created = !dbPostId
+    let res = dbPostId ?
       await updatePost(dbPostId, payload) :
-      await savePost({ ...payload, album_cover_url: subject?.cover_url ?? null })
+      await savePost(createBody)
+    // Stale persisted id — the draft was hard-deleted elsewhere (e.g. /drafts)
+    // while its body lived on in localStorage. Drop the dead id and create a
+    // fresh row so the restored draft still saves instead of dead-ending on 404.
+    if (dbPostId && res.status === 404) {
+      setDbPostId(null)
+      created = true
+      res = await savePost(createBody)
+    }
     if (!res.ok) {
       if (res.status === 409) {
         flash(await readErrorDetail(res, '같은 제목의 글이 이미 있습니다. 제목을 바꿔주세요.'))
@@ -343,16 +361,24 @@ export default function WriterApp() {
       }
       return
     }
-    if (!dbPostId) {
+    // Capture the row id so the mirror below persists it. On the create path
+    // draftRef.current still holds the pre-save id (null) this tick — setDbPostId
+    // hasn't re-rendered yet — so write the fresh id explicitly. Without it a
+    // save→reload before the next render loses the DB linkage and re-creates the
+    // row (409, BUG-9).
+    let savedId = dbPostId
+    if (created) {
       const json = await res.json()
-      setDbPostId(json.id)
+      savedId = json?.id ?? null
+      if (savedId)
+        setDbPostId(savedId)
     }
     // Mirror the server save into localStorage and confirm it on the dot: solid
     // green + a one-shot sync pulse. dirtyRef clears so the 30s timer won't
     // redundantly re-write the same content.
     const ts = nowTime()
     try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draftRef.current, lastSaved: ts }))
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draftRef.current, dbPostId: savedId, lastSaved: ts }))
     }
     catch { /* quota */ }
     dirtyRef.current = false
@@ -365,6 +391,9 @@ export default function WriterApp() {
   const onReset = () => {
     localStorage.removeItem(DRAFT_KEY)
     titleDirty.current = false
+    // Drop the DB linkage too — a reset starts a brand-new post, so the next
+    // save must create a row, not overwrite the previously-saved draft.
+    setDbPostId(null)
     setSubject(null)
     setScore(0)
     setHeadline('')
@@ -389,7 +418,21 @@ export default function WriterApp() {
     // If a draft was saved first (dbPostId set), upgrade that row to
     // status="published" instead of creating a new one — otherwise the second
     // row collides on the unique slug and the backend returns 409 (BUG-9).
-    const res = dbPostId ?
+    const createBody = {
+      title: headline,
+      description: dek,
+      body_mdx: body,
+      posted_date: publishDate,
+      status: 'published' as const,
+      album_ids: albumIds,
+      artist_ids: artistIds,
+      rating: score,
+      tags,
+      album_cover_url: subject.cover_url,
+      recommended_track_ids: recommendedTrackIds,
+      subject_best_new: !isArtistSubject ? subjectBestNew : null,
+    }
+    let res = dbPostId ?
       await updatePost(dbPostId, {
         title: headline,
         description: dek,
@@ -402,20 +445,14 @@ export default function WriterApp() {
         // Step 6: same single-album-subject rule as draft path.
         subject_best_new: !isArtistSubject ? subjectBestNew : null,
       }) :
-      await savePost({
-        title: headline,
-        description: dek,
-        body_mdx: body,
-        posted_date: publishDate,
-        status: 'published',
-        album_ids: albumIds,
-        artist_ids: artistIds,
-        rating: score,
-        tags,
-        album_cover_url: subject.cover_url,
-        recommended_track_ids: recommendedTrackIds,
-        subject_best_new: !isArtistSubject ? subjectBestNew : null,
-      })
+      await savePost(createBody)
+    // Stale persisted id (draft hard-deleted elsewhere) → 404 on update. Fall
+    // back to creating the published row so publish doesn't dead-end. Same
+    // self-heal as the draft path.
+    if (dbPostId && res.status === 404) {
+      setDbPostId(null)
+      res = await savePost(createBody)
+    }
     if (!res.ok) {
       if (res.status === 409) {
         flash(await readErrorDetail(res, '같은 제목의 글이 이미 있습니다. 제목을 바꿔주세요.'))
@@ -456,6 +493,9 @@ export default function WriterApp() {
     // completes. Reset state so the form is empty if the user navigates back.
     localStorage.removeItem(DRAFT_KEY)
     titleDirty.current = false
+    // Clear the DB id so a follow-up post (without a reload) creates a fresh row
+    // instead of re-updating the one just published.
+    setDbPostId(null)
     setSubject(null)
     setScore(0)
     setHeadline('')

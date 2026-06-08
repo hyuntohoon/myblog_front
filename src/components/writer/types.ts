@@ -81,4 +81,9 @@ export interface DraftPersist {
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC flag.
   // Optional so older drafts in localStorage deserialize cleanly (undefined → off).
   subjectBestNew?: boolean
+  // The DB row id once a draft has been saved. Persisted so reopening /write
+  // (localStorage restore, no ?id=) keeps the create→update linkage — otherwise
+  // the next save re-creates the row and collides on the unique slug (409
+  // "같은 제목의 글이 이미 있습니다"). Optional: older drafts have none.
+  dbPostId?: string | null
 }
