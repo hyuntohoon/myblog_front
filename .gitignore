@@ -6,6 +6,9 @@ dist/
 
 # dependencies
 node_modules/
+# also ignore a node_modules symlink (the trailing-slash form above only
+# matches a real directory, so a symlink — e.g. in a git worktree — slips past)
+node_modules
 
 # logs
 npm-debug.log*
