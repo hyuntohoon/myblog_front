@@ -3,8 +3,8 @@
 /** Site metadata (필요 최소) */
 export const SITE: Record<string, string> = {
 	url: 'https://www.ratemymusic.blog',
-	title: 'RAMAMU',
-	titleDefault: 'Rate Your Music',
+	title: 'buckit',
+	titleDefault: 'buckit',
 	lang: 'ko-KR',
 	defaultOgImage: '', // no default OG asset yet — emit og:image only when a page supplies one (avoids 404 to /og-image.png)
 	defaultAuthor: 'hyuntohoon',
