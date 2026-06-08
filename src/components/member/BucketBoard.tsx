@@ -32,7 +32,12 @@ import { AlbumArt, SectionTitle } from './ui'
 // `copy` (with `albumId`) marks a drag originating from the pinned 최근 들은 앨범
 // strip: dropping it copies the album in (addBucketItem) instead of moving a
 // bucket item. Synthetic id; not a real review_bucket_items row.
-interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string }
+// `copy` (recent strip) and `fromLib` (the spotify_library bucket) both drop as a
+// COPY into a target bucket; `fromLib` additionally keeps `itemId`/`source` so it can
+// still be moved to the trash (only when source==='myblog_added' — a 기존/preexisting
+// album is never deletable). `albumId` is carried on every album drag so a drop INTO
+// the library bucket can copy by album id without a tree lookup.
+interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string, fromLib?: boolean, source?: string }
 // Module-level drag payload (native DnD can't carry live object refs reliably).
 let dnd: DndItem | null = null
 type DragKind = 'album' | 'bucket' | null
@@ -133,6 +138,19 @@ function findAlbum(buckets: BoardBucket[], itemId: string): { album: BoardAlbum,
   return f
 }
 
+// First album anywhere in the tree with this albumId — used to paint a copy's
+// optimistic tile with real cover/title (a cross-bucket / library copy isn't in the
+// recent strip), instead of a "…" placeholder until the server round-trip lands.
+function findAlbumByAlbumId(buckets: BoardBucket[], albumId: string): BoardAlbum | null {
+  let f: BoardAlbum | null = null
+  visit(buckets, (b) => {
+    const a = b.albums.find(x => x.albumId === albumId)
+    if (a && !f)
+      f = a
+  })
+  return f
+}
+
 // ── status meta ───────────────────────────────────────────────────────────--
 // The single is_done column is the canonical "평론 완료". Other tags are inferred
 // from the bucket name so the default seed buckets read sensibly; renamed
@@ -207,13 +225,19 @@ function SlibBadges({ row }: { row: SpotifyLibraryAlbumState }) {
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, libRow, draggingId, setDraggingId, setDragKind, onInsert }: {
+function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert }: {
   album: BoardAlbum
   bucketId: string
   rated: boolean
   score: number | null
   onOpen: (t: DetailTarget) => void
   copySource?: boolean
+  /**
+   * This chip lives in the spotify_library bucket: it drags as a COPY (drop into
+   * another bucket copies it, leaving the library row intact) yet keeps its itemId
+   * so a myblog_added album can still be trashed. Pre-existing albums can't.
+   */
+  fromLib?: boolean
   /**
    * Spotify-library sync row for this album (source/state badges) when inside
    * the special library bucket; absent for every other surface.
@@ -228,7 +252,9 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, libRow, 
   const dragging = draggingId === album.itemId
   const acceptCol = (): boolean => {
     const it = dnd
-    return !!it && it.kind === 'album' && !it.copy && !!it.itemId && it.itemId !== album.itemId
+    // Reorder-insert targets reject copy drags (recent strip) AND library drags —
+    // a fromLib item must bubble to the bucket's onDrop so it COPIES instead of moving.
+    return !!it && it.kind === 'album' && !it.copy && !it.fromLib && !!it.itemId && it.itemId !== album.itemId
   }
   return (
     <div
@@ -260,10 +286,13 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, libRow, 
       <div
 	draggable
 	onDragStart={(e) => {
-          dnd = copySource ?
-            { kind: 'album', copy: true, albumId: album.albumId, fromBucketId: bucketId } :
-            { kind: 'album', itemId: album.itemId, fromBucketId: bucketId }
-          e.dataTransfer.effectAllowed = copySource ? 'copy' : 'move'
+          if (copySource)
+            dnd = { kind: 'album', copy: true, albumId: album.albumId, fromBucketId: bucketId }
+          else if (fromLib)
+            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId, fromLib: true, source: libRow?.source }
+          else
+            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId }
+          e.dataTransfer.effectAllowed = copySource ? 'copy' : (fromLib ? 'copyMove' : 'move')
           setDraggingId(album.itemId)
           setDragKind('album')
         }}
@@ -376,7 +405,11 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
     setDropTarget(null)
     if (!it)
       return
-    if (it.kind === 'album' && it.copy && it.albumId)
+    // COPY when: dropping INTO the library bucket (req 1), or the dragged item is a
+    // copy source (recent strip) or a library item dropped elsewhere (req 5).
+    // Otherwise a normal move/reorder.
+    const copyIn = isLib || it.copy || it.fromLib
+    if (it.kind === 'album' && copyIn && it.albumId)
       ops.copyAlbum(it.albumId, bucket.id)
     else if (it.kind === 'album' && it.itemId && it.fromBucketId)
       ops.insertAlbum(it.itemId, it.fromBucketId, bucket.id, null)
@@ -384,6 +417,46 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
       ops.moveBucketInto(it.bucketId, bucket.id)
     dnd = null
   }
+
+  const renderChip = (a: BoardAlbum) => (
+    <AlbumChip
+	key={a.itemId}
+	album={a}
+	bucketId={bucket.id}
+	rated={bucket.isDone}
+	score={bucket.isDone ? (ratings.get(a.albumId) ?? null) : null}
+	libRow={isLib ? (libState.get(a.albumId) ?? null) : null}
+	fromLib={isLib}
+	onOpen={onOpen}
+	draggingId={draggingId}
+	setDraggingId={setDraggingId}
+	setDragKind={setDragKind}
+	onInsert={isLib ? undefined : (itemId, fromBucketId, beforeItemId) => ops.insertAlbum(itemId, fromBucketId, bucket.id, beforeItemId)}
+    />
+  )
+  const addBtn = (
+    <button
+	type="button"
+	onClick={() => ops.requestAdd(bucket.id, bucket.name)}
+	style={{ aspectRatio: '1 / 1', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-faded)', background: 'none', border: '1px dashed var(--color-border)', borderRadius: 4, cursor: 'pointer' }}
+    >
+      ＋ 추가
+    </button>
+  )
+  // Library bucket: split covers into "내가 넣은" (myblog_added → pushed to Spotify) and
+  // "기존" (preexisting in the Library, non-deletable) with a boundary between the two.
+  const libMine = isLib ? bucket.albums.filter(a => (libState.get(a.albumId)?.source ?? 'myblog_added') !== 'preexisting') : []
+  const libExisting = isLib ? bucket.albums.filter(a => libState.get(a.albumId)?.source === 'preexisting') : []
+  const slibLabel = (divider: boolean): React.CSSProperties => ({
+    gridColumn: '1 / -1',
+    fontSize: 10,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--color-subtle)',
+    marginTop: divider ? 6 : 0,
+    paddingTop: divider ? 14 : 0,
+    borderTop: divider ? '1px solid var(--color-border)' : 'none',
+  })
 
   return (
     <div
@@ -508,31 +581,27 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 
       {/* cover grid */}
       <div style={{ display: 'grid', gap: '14px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
-        {bucket.albums.map(a => (
-          <AlbumChip
-	key={a.itemId}
-	album={a}
-	bucketId={bucket.id}
-	rated={bucket.isDone}
-	score={bucket.isDone ? (ratings.get(a.albumId) ?? null) : null}
-	libRow={isLib ? (libState.get(a.albumId) ?? null) : null}
-	onOpen={onOpen}
-	draggingId={draggingId}
-	setDraggingId={setDraggingId}
-	setDragKind={setDragKind}
-	onInsert={(itemId, fromBucketId, beforeItemId) => ops.insertAlbum(itemId, fromBucketId, bucket.id, beforeItemId)}
-          />
-        ))}
-        {bucket.albums.length === 0 && bucket.children.length === 0 && (
-          <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음</div>
+        {isLib ?
+(
+          <>
+            <div className="lf-mono" style={slibLabel(false)}>내가 넣은 · Spotify에 추가</div>
+            {libMine.map(renderChip)}
+            {addBtn}
+            <div className="lf-mono" style={slibLabel(true)}>기존 · Spotify 라이브러리 (삭제 불가)</div>
+            {libExisting.length > 0 ?
+              libExisting.map(renderChip) :
+              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>없음</div>}
+          </>
+        ) :
+(
+          <>
+            {bucket.albums.map(renderChip)}
+            {bucket.albums.length === 0 && bucket.children.length === 0 && (
+              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음</div>
+            )}
+            {addBtn}
+          </>
         )}
-        <button
-	type="button"
-	onClick={() => ops.requestAdd(bucket.id, bucket.name)}
-	style={{ aspectRatio: '1 / 1', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-faded)', background: 'none', border: '1px dashed var(--color-border)', borderRadius: 4, cursor: 'pointer' }}
-        >
-          ＋ 추가
-        </button>
       </div>
 
       {/* nested buckets — a reorderable list (gaps show the insertion line) */}
@@ -576,7 +645,10 @@ function CrTrashIcon({ s = 28 }: { s?: number }) {
 // dock only needs to host deletion. Albums → recoverable trash; buckets → confirm.
 function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: number, onTrashAlbum: (itemId: string, fromBucketId: string) => void, onTrashBucket: (bucketId: string) => void }) {
   const [hot, setHot] = useState(false)
-  const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy) || dnd.kind === 'bucket')
+  // A 기존/preexisting Spotify-library album can't be trashed (req 4): removing it
+  // wouldn't delete it from Spotify and the next sync re-pulls it anyway. myblog_added
+  // library albums DO trash (→ next sync removes them from Spotify).
+  const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy && !(dnd.fromLib && dnd.source === 'preexisting')) || dnd.kind === 'bucket')
   return (
     <div
 	className="crate-trash-dock"
@@ -782,6 +854,39 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind>(null)
+
+  // Auto-scroll the page while a drag is in flight and the pointer nears the top or
+  // bottom edge of the viewport — otherwise you can't reach buckets off-screen mid-
+  // drag (HTML5 DnD suppresses normal wheel/scroll). Speed ramps with edge proximity.
+  useEffect(() => {
+    if (draggingId == null && draggingBucket == null)
+      return
+    const EDGE = 96 // px band at top/bottom that triggers scroll
+    const MAX = 24 // px per frame at the very edge
+    let vy = 0
+    let raf = 0
+    const onMove = (e: DragEvent) => {
+      const y = e.clientY
+      const h = window.innerHeight
+      if (y < EDGE)
+        vy = -Math.ceil(((EDGE - y) / EDGE) * MAX)
+      else if (y > h - EDGE)
+        vy = Math.ceil(((y - (h - EDGE)) / EDGE) * MAX)
+      else
+        vy = 0
+    }
+    const tick = () => {
+      if (vy !== 0)
+        window.scrollBy(0, vy)
+      raf = requestAnimationFrame(tick)
+    }
+    window.addEventListener('dragover', onMove)
+    raf = requestAnimationFrame(tick)
+    return () => {
+      window.removeEventListener('dragover', onMove)
+      cancelAnimationFrame(raf)
+    }
+  }, [draggingId, draggingBucket])
 
   // Safety net: always clear the drag state when ANY drag ends — even one that
   // ends without a drop (released outside a target / Escape). The per-op endDrag
@@ -990,7 +1095,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       if (tree == null)
         return
       const tempId = `temp:${Date.now()}:${albumId}`
-      const src = recent?.find(a => a.albumId === albumId)
+      const src = recent?.find(a => a.albumId === albumId) ?? findAlbumByAlbumId(tree, albumId)
       setTree((prev) => {
         if (prev == null)
           return prev
