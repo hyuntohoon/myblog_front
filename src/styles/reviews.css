@@ -639,3 +639,140 @@
     transition: none;
   }
 }
+
+/* ============================================================
+   Design C (editorial) — /reviews variant="editorial"
+   Oversized featured hero over a 3-column big-cover grid.
+   Mirrors review-list-options.jsx · CandidateC.
+   ============================================================ */
+
+/* ── Oversized featured hero ──────────────────────────────── */
+.rev-c-hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: center;
+  padding: 44px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.rev-c-hero-cover {
+  display: block;
+}
+.rev-c-hero .rev-cover {
+  aspect-ratio: 1 / 1;
+}
+.rev-c-hero .rev-cover-img,
+.rev-c-hero .rev-placeholder {
+  transition: transform 0.4s cubic-bezier(0.2, 0, 0.2, 1);
+}
+.rev-c-hero:hover .rev-cover-img,
+.rev-c-hero:hover .rev-placeholder {
+  transform: scale(1.03);
+}
+.rev-c-hero-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.rev-c-hero-badge {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-text-on-accent, #fff);
+  background: var(--color-accent);
+  padding: 6px 11px;
+}
+.rev-c-hero-body .rev-artist {
+  font-size: 13px;
+  letter-spacing: 0.14em;
+}
+.rev-c-hero-link {
+  text-decoration: none;
+  color: inherit;
+}
+.rev-c-hero-album {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: clamp(40px, 5.2vw, 66px);
+  line-height: 0.98;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+  margin: 0;
+  transition: color 0.2s;
+}
+.rev-c-hero-link:hover .rev-c-hero-album {
+  color: var(--color-accent);
+}
+.rev-c-hero-pull {
+  font-family: var(--font-serif);
+  font-size: clamp(16px, 1.6vw, 19px);
+  line-height: 1.5;
+  color: var(--color-subtle);
+  margin: 0;
+  max-width: 44ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rev-c-hero-foot {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+.rev-c-hero .rev-stars {
+  --rev-star-size: 30px;
+}
+.rev-c-hero-date {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-faded);
+}
+
+/* ── 3-column big-cover grid (overrides .rev-grid) ─────────── */
+.rev-c-grid {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 38px 34px;
+}
+.rev-c-grid .rev-card-album {
+  font-size: 21px;
+}
+.rev-c-grid .rev-foot {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+@media (max-width: 880px) {
+  .rev-c-hero {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 32px 0;
+  }
+  .rev-c-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 32px 24px;
+  }
+}
+@media (max-width: 560px) {
+  .rev-c-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rev-c-hero:hover .rev-cover-img,
+  .rev-c-hero:hover .rev-placeholder {
+    transform: none;
+  }
+  .rev-c-hero-album {
+    transition: none;
+  }
+}
