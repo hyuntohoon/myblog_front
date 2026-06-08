@@ -126,6 +126,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/listened-albums": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Listened Albums */
+        get: operations["list_listened_albums_api_library_listened_albums_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/now-playing": {
         parameters: {
             query?: never;
@@ -135,6 +152,23 @@ export interface paths {
         };
         /** Now Playing */
         get: operations["now_playing_api_library_now_playing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/recent-tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Recent Tracks */
+        get: operations["list_recent_tracks_api_library_recent_tracks_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -663,6 +697,34 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["Backend_ValidationError"][];
         };
+        /** ListenedAlbumItem */
+        Backend_ListenedAlbumItem: {
+            album: components["schemas"]["Backend_AlbumBrief"];
+            /** Album Id */
+            album_id: string;
+            /**
+             * First Played At
+             * Format: date-time
+             */
+            first_played_at: string;
+            /**
+             * Last Played At
+             * Format: date-time
+             */
+            last_played_at: string;
+            /** Play Count */
+            play_count: number;
+        };
+        /** ListenedAlbumsResponse */
+        Backend_ListenedAlbumsResponse: {
+            /** Items */
+            items?: components["schemas"]["Backend_ListenedAlbumItem"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
         /** MetricsBatchRequest */
         Backend_MetricsBatchRequest: {
             /** Slugs */
@@ -736,6 +798,8 @@ export interface components {
         };
         /** PostListItem */
         Backend_PostListItem: {
+            /** Album Cover Url */
+            album_cover_url?: string | null;
             /** Category */
             category?: string | null;
             /** Description */
@@ -769,6 +833,32 @@ export interface components {
             comments: number;
             /** Likes */
             likes: number;
+        };
+        /** RecentTrackItem */
+        Backend_RecentTrackItem: {
+            album?: components["schemas"]["Backend_AlbumBrief"] | null;
+            /** Album Id */
+            album_id?: string | null;
+            /** Album Name */
+            album_name?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /**
+             * Played At
+             * Format: date-time
+             */
+            played_at: string;
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /** Track Name */
+            track_name: string;
+        };
+        /** RecentTracksResponse */
+        Backend_RecentTracksResponse: {
+            /** Items */
+            items?: components["schemas"]["Backend_RecentTrackItem"][];
+            /** Last Synced At */
+            last_synced_at?: string | null;
         };
         /** RecentlyListenedItem */
         Backend_RecentlyListenedItem: {
@@ -1637,6 +1727,38 @@ export interface operations {
             };
         };
     };
+    list_listened_albums_api_library_listened_albums_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ListenedAlbumsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
     now_playing_api_library_now_playing_get: {
         parameters: {
             query?: never;
@@ -1653,6 +1775,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_NowPlayingResponse"];
+                };
+            };
+        };
+    };
+    list_recent_tracks_api_library_recent_tracks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_RecentTracksResponse"];
                 };
             };
         };

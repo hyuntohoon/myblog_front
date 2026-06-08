@@ -108,7 +108,8 @@ export function computeStats(reviews: MemberReview[]): MemberProfile['stats'] {
 export const SAMPLE_NOTICE = '샘플'
 export const getNowPlaying = (): sample.NowPlaying => sample.NOW_PLAYING
 export const getRecentAlbums = (): sample.SampleAlbum[] => sample.RECENT_ALBUMS
-export const getRecentTracks = (): sample.SampleTrack[] => sample.RECENT_TRACKS
+// getRecentTracks removed — 최근 재생 트랙 is now real (FEAT-member-dashboard-realdata,
+// GET /api/library/recent-tracks via spotify.api.ts).
 export const getLibrary = (): sample.SampleAlbum[] => sample.LIBRARY.map(a => ({ ...a }))
 export const getGenres = (): sample.DistItem[] => sample.GENRES
 export const getArtists = (): sample.DistItem[] => sample.ARTISTS
