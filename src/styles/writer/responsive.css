@@ -4,7 +4,6 @@
     padding: 10px 16px;
     gap: 8px;
   }
-  .chrome-status { display: none; }
   .chrome-search-label { display: none; } /* shrink to ⌕ + ⌘K on narrow screens */
   .chrome-l { flex-wrap: wrap; gap: 6px; }
   .surface { padding: 32px 18px 100px; }

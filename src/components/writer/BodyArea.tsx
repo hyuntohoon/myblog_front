@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
+import { useAutoGrow } from './autoGrow'
 
 interface Props {
   body: string
@@ -8,19 +9,9 @@ interface Props {
 
 interface BubblePos { top: number, left: number }
 
-function autoGrow(el: HTMLTextAreaElement) {
-  el.style.height = 'auto'
-  el.style.height = `${el.scrollHeight}px`
-}
-
 export default function BodyArea({ body, setBody, dim }: Props) {
-  const taRef = useRef<HTMLTextAreaElement>(null)
+  const taRef = useAutoGrow(body)
   const [bubble, setBubble] = useState<BubblePos | null>(null)
-
-  useEffect(() => {
-    if (taRef.current)
-      autoGrow(taRef.current)
-  }, [body])
 
   const wrapSelection = useCallback((before: string, after = before) => {
     const ta = taRef.current
@@ -34,7 +25,7 @@ export default function BodyArea({ body, setBody, dim }: Props) {
     const next = `${body.slice(0, start)}${before}${sel}${after}${body.slice(end)}`
     setBody(next)
     setTimeout(() => {
-      ta.focus()
+      ta.focus({ preventScroll: true })
       ta.setSelectionRange(start + before.length, end + before.length)
     }, 10)
   }, [body, setBody])
@@ -115,7 +106,6 @@ export default function BodyArea({ body, setBody, dim }: Props) {
 	value={body}
 	onChange={(e) => {
           setBody(e.target.value)
-          autoGrow(e.target)
         }}
 	onSelect={onSelect}
 	onMouseUp={onSelect}
