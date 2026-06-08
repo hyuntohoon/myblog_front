@@ -126,3 +126,14 @@
 }
 .bubble-toolbar button:hover { background: rgba(255, 255, 255, 0.12); }
 
+/* Native auto-sizing where supported (Chromium 123+): CSS grows the textareas
+   with no JS and no jank. The JS resizer (autoGrow.ts) early-returns when this
+   is supported so the two never fight; Safari/older keep the JS fallback. */
+@supports (field-sizing: content) {
+  .body-input,
+  .title-input,
+  .dek-input {
+    field-sizing: content;
+  }
+}
+

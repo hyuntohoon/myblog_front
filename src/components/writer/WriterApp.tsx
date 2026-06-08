@@ -10,6 +10,7 @@ import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
 import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
+import { useAutoGrow } from './autoGrow'
 
 const DRAFT_KEY = 'lowfreq-draft'
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
@@ -37,11 +38,6 @@ function loadDraft(): Partial<DraftPersist> {
   }
 }
 
-function autoGrow(el: HTMLTextAreaElement) {
-  el.style.height = 'auto'
-  el.style.height = `${el.scrollHeight}px`
-}
-
 function TitleArea({ headline, setHeadline, dek, setDek, dim }: {
   headline: string
   setHeadline: (v: string) => void
@@ -49,30 +45,26 @@ function TitleArea({ headline, setHeadline, dek, setDek, dim }: {
   setDek: (v: string) => void
   dim: boolean
 }) {
+  const titleRef = useAutoGrow(headline)
+  const dekRef = useAutoGrow(dek)
   return (
     <div className={`title-area${dim ? ' is-dim' : ''}`}>
       <textarea
+	ref={titleRef}
 	className="title-input"
 	rows={1}
 	placeholder="제목"
 	value={headline}
-	onChange={(e) => {
-          setHeadline(e.target.value)
-          autoGrow(e.target)
-        }}
-	onFocus={e => autoGrow(e.target)}
+	onChange={e => setHeadline(e.target.value)}
 	spellCheck={false}
       />
       <textarea
+	ref={dekRef}
 	className="dek-input"
 	rows={1}
 	placeholder="부제"
 	value={dek}
-	onChange={(e) => {
-          setDek(e.target.value)
-          autoGrow(e.target)
-        }}
-	onFocus={e => autoGrow(e.target)}
+	onChange={e => setDek(e.target.value)}
 	spellCheck={false}
       />
     </div>
@@ -150,11 +142,32 @@ export default function WriterApp() {
   const [view, setView] = useState<WriterView>('edit')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [status, setStatus] = useState<SaveStatus>('saved')
+  // Dot starts green only if a real draft was restored (lastSaved present);
+  // otherwise hollow "unsaved" — never claim a save that didn't happen.
+  const [status, setStatus] = useState<SaveStatus>(saved.lastSaved ? 'saved' : 'dirty')
   const [lastSaved, setLastSaved] = useState(saved.lastSaved ?? '—')
+  // Bumped on each manual 임시저장 so the chrome can replay its one-shot sync pulse.
+  const [pulseKey, setPulseKey] = useState(0)
   const [toast, setToast] = useState('')
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // dirtyRef: unsaved edits since the last localStorage write. draftRef: the
+  // latest content, refreshed every render, so the 30s autosave + tab-hide flush
+  // read it without re-arming their timers on every keystroke.
+  const dirtyRef = useRef(false)
+  const draftRef = useRef<Omit<DraftPersist, 'lastSaved'>>(null!)
+  draftRef.current = {
+    subject,
+    score,
+    headline,
+    dek,
+    body,
+    section,
+    publishDate,
+    recommendedTrackIds,
+    tags,
+    subjectBestNew,
+  }
 
   // STAB-5 Step 4: toggle a review tag. Functional updater so rapid successive
   // toggles (before a re-render) compose instead of clobbering a stale closure.
@@ -245,35 +258,48 @@ export default function WriterApp() {
     })
   }, [prefillAlbum])
 
-  // Autosave
+  // Persist the current draft to localStorage. Called by the 30s timer, on tab
+  // hide, and after a manual 임시저장. No-ops when nothing changed since the last
+  // write, so the dot only flips to green when there is real work saved.
+  const flushLocal = useCallback(() => {
+    if (!dirtyRef.current)
+      return
+    const ts = nowTime()
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draftRef.current, lastSaved: ts }))
+    }
+    catch { /* quota */ }
+    dirtyRef.current = false
+    setLastSaved(ts)
+    setStatus('saved')
+  }, [])
+
+  // Mark the draft dirty on any content change. The actual write runs on a calm
+  // 30s cadence (below), not per keystroke — so the dot shows the hollow
+  // "unsaved" state while typing and never churns a timestamp.
   useEffect(() => {
     if (!loaded.current)
       return
+    dirtyRef.current = true
     setStatus('dirty')
-    const id = setTimeout(() => {
-      const ts = nowTime()
-      const data: DraftPersist = {
-        subject,
-        score,
-        headline,
-        dek,
-        body,
-        section,
-        publishDate,
-        recommendedTrackIds,
-        tags,
-        subjectBestNew,
-        lastSaved: ts,
-      }
-      try {
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(data))
-      }
-      catch { /* quota */ }
-      setLastSaved(ts)
-      setStatus('saved')
-    }, 600)
-    return () => clearTimeout(id)
   }, [subject, score, headline, dek, body, section, publishDate, recommendedTrackIds, tags, subjectBestNew])
+
+  // Periodic autosave + safety flush when the tab is hidden/closed. Mounted once
+  // (flushLocal is stable) so the 30s interval never resets mid-typing.
+  useEffect(() => {
+    const iv = setInterval(flushLocal, 30000)
+    const onHide = () => {
+      if (document.visibilityState === 'hidden')
+        flushLocal()
+    }
+    document.addEventListener('visibilitychange', onHide)
+    window.addEventListener('pagehide', flushLocal)
+    return () => {
+      clearInterval(iv)
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', flushLocal)
+    }
+  }, [flushLocal])
 
   const onSaveDraft = async () => {
     if (!headline.trim()) {
@@ -321,6 +347,18 @@ export default function WriterApp() {
       const json = await res.json()
       setDbPostId(json.id)
     }
+    // Mirror the server save into localStorage and confirm it on the dot: solid
+    // green + a one-shot sync pulse. dirtyRef clears so the 30s timer won't
+    // redundantly re-write the same content.
+    const ts = nowTime()
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draftRef.current, lastSaved: ts }))
+    }
+    catch { /* quota */ }
+    dirtyRef.current = false
+    setLastSaved(ts)
+    setStatus('saved')
+    setPulseKey(k => k + 1)
     flash('임시저장 완료')
   }
 
@@ -441,6 +479,7 @@ export default function WriterApp() {
 	onViewChange={setView}
 	status={status}
 	lastSaved={lastSaved}
+	pulseKey={pulseKey}
 	onOpenSearch={() => setPaletteOpen(true)}
 	onSave={onSaveDraft}
 	onPublish={() => setSettingsOpen(true)}

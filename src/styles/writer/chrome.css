@@ -60,12 +60,51 @@
   letter-spacing: -0.02em;
   color: var(--ink);
 }
-.chrome-status {
-  color: var(--ink-faint);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
+/* Save state = a single quiet dot (replaces the old churning "저장됨 · HH:MM"
+   text). Hollow gray = unsaved edits; solid green = saved. The timestamp lives
+   in the dot's title tooltip. .save-pulse is a one-shot ring on manual 임시저장. */
+.chrome-save {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.save-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 1.5px solid var(--ink-faint);
+  transition: background 0.2s, border-color 0.2s;
+}
+.save-dot.is-saved {
+  background: var(--spotify);
+  border-color: var(--spotify);
+}
+.save-pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--spotify);
+  pointer-events: none;
+  animation: saveSync 0.85s ease-out 1;
+}
+@keyframes saveSync {
+  from { transform: scale(1); opacity: 0.8; }
+  to   { transform: scale(2.6); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .save-pulse { display: none; }
+}
+@media (forced-colors: active) {
+  .save-dot { border-color: CanvasText; }
+  .save-dot.is-saved { background: Highlight; border-color: Highlight; }
 }
 .view-toggle {
   display: inline-flex;
@@ -116,15 +155,14 @@
 .preview-surface { max-width: var(--measure); padding-top: 40px; }
 
 /* ────────── CHROME — narrow screens ──────────
-   The header packs search + status + view-toggle + save + publish into one
+   The header packs search + save-dot + view-toggle + save + publish into one
    row; below ~600px that overflows and the view-toggle used to get squeezed
    until its labels wrapped vertically into a tall pill. Tighten spacing and
-   drop the non-essential status text + search label (the ⌕ icon stays a live
-   button) so every control keeps its natural width on one line. */
+   drop the search label (the ⌕ icon stays a live button) so every control keeps
+   its natural width on one line. The save-dot is tiny, so it stays visible. */
 @media (max-width: 600px) {
   .chrome { padding: 10px 14px; gap: 10px; }
   .chrome-r { gap: 8px; }
-  .chrome-status { display: none; }
   .chrome-search-label,
   .chrome-kbd { display: none; }
   .chrome-search { padding: 6px 9px; }
