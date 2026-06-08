@@ -5,6 +5,8 @@
  * server-side and hands to the React island (`ReviewsIndex.tsx`). Keep it plain
  * (ISO date strings, no class instances) so Astro can serialize it as props.
  */
+import type { CollectionEntry } from 'astro:content'
+
 export interface ReviewCard {
   slug: string
   album: string
@@ -76,4 +78,67 @@ export function allYears(reviews: ReviewCard[]): number[] {
   const seen = new Set<number>()
   for (const r of reviews) seen.add(r.year)
   return [...seen].sort((a, b) => b - a)
+}
+
+/** Strip markdown to a short plain-text excerpt fallback. */
+function stripExcerpt(body: string | undefined): string {
+  if (!body)
+    return ''
+  return body
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[#>*_`~-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160)
+}
+
+/**
+ * Build the normalized, date-desc `ReviewCard[]` from a `blog` collection.
+ *
+ * Review selection (RFC): a post is a review when it has a top-level rating,
+ * musicReview metadata, or linked albums; drafts excluded. The JSON-safe array
+ * is what both the home (`/`) and `/reviews` pages hand to the React island.
+ */
+export function buildReviewCards(entries: CollectionEntry<'blog'>[]): ReviewCard[] {
+  return entries
+    .filter(
+      e =>
+        !e.data.draft &&
+        (e.data.rating != null || e.data.musicReview != null || e.data.albumIds.length > 0),
+    )
+    .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime())
+    .map((entry) => {
+      const d = entry.data
+      const mr = d.musicReview
+      // Canonical rating is top-level (publish service writes rating + ratingScale,
+      // 0–5 range); fall back to the legacy nested musicReview.rating. Normalize 0–5.
+      let value: number | null = null
+      let scale: 5 | 10 = 5
+      if (d.rating != null) {
+        value = d.rating
+        scale = d.ratingScale
+      }
+      else if (mr?.rating?.value != null) {
+        value = mr.rating.value
+        scale = mr.rating.scale
+      }
+      const rating = value == null ? null : scale === 10 ? value / 2 : value
+      const date = new Date(d.date)
+      return {
+        slug: d.slug ?? entry.id,
+        album: mr?.title ?? d.title,
+        artist: mr?.artists?.join(', ') ?? '',
+        genres: mr?.genres && mr.genres.length > 0 ? mr.genres : [d.category],
+        category: d.category,
+        tags: d.tags ?? [],
+        date: date.toISOString(),
+        year: date.getFullYear(),
+        rating,
+        bestNew: d.bestNew,
+        cover: d.albumCover ?? d.image ?? mr?.cover?.src ?? null,
+        excerpt: d.description || stripExcerpt(entry.body),
+      } satisfies ReviewCard
+    })
 }

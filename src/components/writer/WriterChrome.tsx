@@ -14,7 +14,7 @@ export default function WriterChrome({ status, lastSaved, view, onViewChange, on
   return (
     <header className="chrome">
       <div className="chrome-l">
-        <a className="chrome-back" href="/blog">← 매거진</a>
+        <a className="chrome-back" href="/reviews">← 매거진</a>
         <span className="chrome-sep">/</span>
         <em className="chrome-logo">Lowfreq</em>
       </div>

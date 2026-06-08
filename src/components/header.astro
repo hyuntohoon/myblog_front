@@ -22,7 +22,6 @@ const isActive = (url: string) => pathOnly(pathname) === pathOnly(url)
 
 const navLinks = [
   { title: 'Reviews', url: '/reviews' },
-  { title: 'Archive', url: '/blog' },
   // Best New Music is a filter on the reviews index, not a category route.
   // The old /blog/category/review slug never existed (writer slug is
   // "best new music"/"reviews"), so it 404'd. ReviewsIndex reads ?bnm=1.

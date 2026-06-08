@@ -110,7 +110,15 @@ function Cover({ r, badge, ph }: { r: ReviewCard, badge: 'full' | 'mini' | null,
   )
 }
 
-export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
+export default function ReviewsIndex({
+  reviews,
+  variant = 'default',
+}: {
+  reviews: ReviewCard[]
+  /** 'editorial' = design C: oversized featured hero over a 3-col big-cover grid. */
+  variant?: 'default' | 'editorial'
+}) {
+  const isEditorial = variant === 'editorial'
   const [filters, setFilters] = useState<Filters>(parseFilters)
   const [visible, setVisible] = useState(PAGE)
 
@@ -183,12 +191,37 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
   )
   const lead = featured[0]
   const sides = featured.slice(1, 3)
-  const shown = filtered.slice(0, visible)
+  // Editorial hero shows the lead on its own; drop it from the grid below so it
+  // isn't rendered twice. Default variant keeps the lead in the grid (the small
+  // featured row is a separate highlight that intentionally overlaps).
+  const heroLead = isEditorial && !narrowed ? lead : undefined
+  const gridSource = heroLead != null ? filtered.filter(r => r.slug !== heroLead.slug) : filtered
+  const shown = gridSource.slice(0, visible)
   const title = filters.genre !== 'all' ? filters.genre : narrowed ? '검색 결과' : '최신 리뷰'
 
   return (
     <>
-      {lead != null && (
+      {isEditorial && heroLead != null && (
+        <section className="rev-c-hero" aria-label="주요 리뷰">
+          <a href={`/blog/${heroLead.slug}`} className="rev-c-hero-cover" tabIndex={-1} aria-hidden="true">
+            <Cover r={heroLead} badge={null} ph={80} />
+          </a>
+          <div className="rev-c-hero-body">
+            {heroLead.bestNew && <span className="rev-c-hero-badge">Best New Album</span>}
+            {heroLead.artist && <p className="rev-artist">{heroLead.artist}</p>}
+            <a href={`/blog/${heroLead.slug}`} className="rev-c-hero-link">
+              <h2 className="rev-c-hero-album">{heroLead.album}</h2>
+            </a>
+            {heroLead.excerpt && <p className="rev-c-hero-pull">{heroLead.excerpt}</p>}
+            <div className="rev-c-hero-foot">
+              <Stars value={heroLead.rating} size={30} />
+              <span className="rev-c-hero-date">{fmtDate(heroLead.date)}</span>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {!isEditorial && lead != null && (
         <section className="rev-featured" aria-label="주요 리뷰">
           <a href={`/blog/${lead.slug}`} className="rev-lead">
             <Cover r={lead} badge="full" ph={64} />
@@ -358,7 +391,7 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
               </ul>
             ) :
           (
-              <ul className="rev-grid">
+              <ul className={isEditorial ? 'rev-grid rev-c-grid' : 'rev-grid'}>
                 {shown.map(r => (
                   <li key={r.slug}>
                     <a href={`/blog/${r.slug}`} className="rev-card">
@@ -367,8 +400,8 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
                         <p className="rev-meta">{`${r.genres[0]} · ${fmtDate(r.date)}`}</p>
                         {r.artist && <p className="rev-artist">{r.artist}</p>}
                         <h3 className="rev-card-album">{r.album}</h3>
-                        {r.excerpt && <p className="rev-excerpt">{r.excerpt}</p>}
-                        {r.tags.length > 0 && (
+                        {!isEditorial && r.excerpt && <p className="rev-excerpt">{r.excerpt}</p>}
+                        {!isEditorial && r.tags.length > 0 && (
                           <ul className="rev-card-tags" aria-label="리뷰 태그">
                             {r.tags.map(t => <li key={t} className="rev-card-tag">{t}</li>)}
                           </ul>
@@ -383,10 +416,10 @@ export default function ReviewsIndex({ reviews }: { reviews: ReviewCard[] }) {
               </ul>
             )}
 
-      {filtered.length > visible && (
+      {gridSource.length > visible && (
         <div className="rev-loadmore-wrap">
           <button type="button" className="rev-loadmore" onClick={() => setVisible(v => v + STEP)}>
-            {`더 보기 (${filtered.length - visible})`}
+            {`더 보기 (${gridSource.length - visible})`}
           </button>
         </div>
       )}

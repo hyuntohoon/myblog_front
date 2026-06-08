@@ -2,116 +2,43 @@
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
-import HeroReview from '@components/hero-review.astro'
-import BestNewMusic from '@components/best-new-music.astro'
-import ReviewGrid from '@components/review-grid.astro'
+import ReviewsIndex from '@components/reviews/ReviewsIndex'
 import { getCollection } from 'astro:content'
+import { buildReviewCards } from '@lib/reviews'
+import '@styles/reviews.css'
 
-function byDateDesc(a: { data: { date: string | Date } }, b: { data: { date: string | Date } }) {
-  return new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
-}
-
-const allPosts = (await getCollection('blog')).sort(byDateDesc)
-
-// Hero: most recent post that has a cover or musicReview
-const heroPost =
-  allPosts.find(p => p.data.albumCover || p.data.image || p.data.musicReview) ??
-  allPosts[0]
-
-// Best New Music: posts with high rating (>=8/10) that have a cover — cap at 4
-const bestNewMusic = allPosts
-  .filter((p) => {
-    const r = p.data.musicReview?.rating?.value
-    return r != null && r >= 8
-  })
-  .slice(0, 4)
-
-// Recent grid: exclude the hero post, show up to 9
-const recentPosts = allPosts
-  .filter(p => heroPost == null || p.id !== heroPost.id)
-  .slice(0, 9)
+// Home is the interactive review browser (moved from /reviews). The normalized,
+// JSON-safe array is handed to the React island.
+const reviews = buildReviewCards(await getCollection('blog'))
 ---
 
 <Layout>
-  <Seo slot="seo" title="RAMAMU — 음악 비평" />
+  <Seo slot="seo" title="RAMAMU — 음악 비평" description="정성껏 들은 앨범들에 대한 기록." />
 
   <SkipNavContent>
     <div class="container">
+      <!-- Masthead -->
+      <header class="rev-masthead">
+        <p class="rev-kicker">RAMAMU Music Reviews</p>
+        <h1 class="rev-title">리뷰</h1>
+        <p class="rev-sub">정성껏 들은 앨범들에 대한 기록.</p>
+      </header>
 
-      {heroPost ?
+      {reviews.length === 0 ?
 (
-        <HeroReview post={heroPost} />
+        <div class="rev-empty">
+          <p class="rev-empty-title">아직 리뷰가 없습니다</p>
+          <p class="rev-empty-sub">첫 리뷰를 작성해 보세요.</p>
+        </div>
       ) :
 (
-        <div class="empty-hero">
-          <p class="mono-label" style="color: var(--color-faded);">
-            아직 작성된 리뷰가 없습니다.
-          </p>
-        </div>
+        <ReviewsIndex client:load reviews={reviews} />
       )}
 
-      {bestNewMusic.length > 0 && (
-        <BestNewMusic posts={bestNewMusic} />
-      )}
-
-      {recentPosts.length > 0 && (
-        <ReviewGrid posts={recentPosts} title="Latest Reviews" />
-      )}
-
-      {allPosts.length === 0 && (
-        <div class="empty-state">
-          <p class="empty-title">아직 리뷰가 없습니다</p>
-          <p class="empty-sub">첫 리뷰를 작성해 보세요.</p>
-          <a href="/write" class="empty-cta">Write →</a>
-        </div>
-      )}
-
+      <!-- Footer -->
+      <footer class="rev-footer">
+        <span>RAMAMU — 음악 비평</span>
+      </footer>
     </div>
   </SkipNavContent>
 </Layout>
-
-<style>
-  .empty-hero {
-    padding: 80px 0;
-    border-bottom: 1px solid var(--color-border);
-    text-align: center;
-  }
-  .empty-state {
-    padding: 120px 0;
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-  }
-  .empty-title {
-    font-family: var(--font-serif);
-    font-size: 32px;
-    font-style: italic;
-    color: var(--color-text);
-    margin: 0;
-  }
-  .empty-sub {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-faded);
-    margin: 0;
-  }
-  .empty-cta {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--color-text);
-    border-bottom: 1px solid currentColor;
-    padding-bottom: 2px;
-    text-decoration: none;
-    margin-top: 8px;
-    transition: opacity 0.2s;
-  }
-  .empty-cta:hover {
-    opacity: 0.6;
-  }
-</style>
