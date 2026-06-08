@@ -17,19 +17,16 @@ dataAttributes['data-strip-trailing-slash'] = ''
 
 <site-search class="contents" {...dataAttributes}>
 	<button
-		class="flex items-center sm:border sm:border-border sm:rounded-sm gap-2 sm:py-1 sm:px-3 sm:bg-white sm:dark:bg-black hover:cursor-pointer hover:border-gray-400 dark:hover:border-gray-500"
+		class="hdr-search-trigger"
 		data-open-modal
 		disabled
-		aria-label="Search"
+		aria-label="검색"
 		aria-keyshortcuts="Control+K"
 	>
-		<Icon name="search" class="w-5 h-5 sm:w-4 sm:h-4" />
-		<span class="hidden sm:block text-faded" aria-hidden="true">Search</span>
-		<kbd
-			class="hidden sm:flex bg-gray-100 dark:bg-gray-800 px-2 rounded-sm gap-1 ml-0 sm:ml-8 md:ml-12"
-			style="display: none;"
-		>
-			<kbd class="text-sm">Ctrl</kbd><kbd class="text-sm">K</kbd>
+		<Icon name="search" class="hdr-search-icon" />
+		<span class="hdr-search-label" aria-hidden="true">검색</span>
+		<kbd class="hdr-search-kbd" style="display: none;">
+			<kbd>Ctrl</kbd><kbd>K</kbd>
 		</kbd>
 	</button>
 
@@ -53,6 +50,82 @@ dataAttributes['data-strip-trailing-slash'] = ''
 		</div>
 	</dialog>
 </site-search>
+
+<style>
+	/* Editorial expandable search trigger (FEAT-header-magazine-masthead). */
+	/* Icon by default; on hover/focus it expands to reveal "검색" + the ⌘K hint. */
+	/* Click (or ⌘K) opens the Pagefind dialog — the front-and-center search panel. */
+	.hdr-search-trigger {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 5px 7px;
+		border: 1px solid transparent;
+		border-radius: 3px;
+		background: transparent;
+		color: var(--color-subtle);
+		cursor: pointer;
+		transition: color 0.2s, border-color 0.2s, background 0.2s;
+	}
+	.hdr-search-trigger:hover,
+	.hdr-search-trigger:focus-visible {
+		color: var(--color-text);
+		border-color: var(--color-border-soft);
+		background: color-mix(in srgb, var(--color-paper) 55%, transparent);
+	}
+	.hdr-search-icon {
+		width: 16px;
+		height: 16px;
+		flex: 0 0 auto;
+	}
+	.hdr-search-label {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		max-width: 0;
+		opacity: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		transition: max-width 0.32s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.22s;
+	}
+	.hdr-search-kbd {
+		display: inline-flex;
+		gap: 2px;
+		align-items: center;
+		font-family: var(--font-mono);
+		font-size: 9.5px;
+		letter-spacing: 0.04em;
+		color: var(--color-faded);
+		border: 1px solid var(--color-border-soft);
+		border-radius: 3px;
+		padding: 1px 4px;
+		max-width: 0;
+		opacity: 0;
+		overflow: hidden;
+		transition: max-width 0.32s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.22s;
+	}
+	.hdr-search-kbd kbd {
+		font-family: inherit;
+		background: none;
+		border: none;
+		padding: 0;
+	}
+	.hdr-search-trigger:hover .hdr-search-label,
+	.hdr-search-trigger:focus-visible .hdr-search-label {
+		max-width: 52px;
+		opacity: 1;
+	}
+	.hdr-search-trigger:hover .hdr-search-kbd,
+	.hdr-search-trigger:focus-visible .hdr-search-kbd {
+		max-width: 46px;
+		opacity: 1;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.hdr-search-label,
+		.hdr-search-kbd { transition: none; }
+	}
+</style>
 
 <script is:inline>
 	;(() => {
