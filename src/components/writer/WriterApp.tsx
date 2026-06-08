@@ -9,7 +9,7 @@ import PreviewView from './PreviewView'
 import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
-import { fetchPostById, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
+import { fetchPostById, listDrafts, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 import { useAutoGrow } from './autoGrow'
 
 const DRAFT_KEY = 'lowfreq-draft'
@@ -309,6 +309,22 @@ export default function WriterApp() {
     }
   }, [flushLocal])
 
+  // Resolve which server row to write. Prefer the known id; otherwise re-link to
+  // an existing OWN draft with the same title. Drafts saved before dbPostId was
+  // persisted lose their id across a reload — without re-linking, the next
+  // save/publish POSTs a duplicate that 409s on the unique slug (the bug). The
+  // backend keeps one draft per slug/title, so a title match is unambiguous;
+  // adopting it lets us UPDATE in place. null → no match → a genuinely new post.
+  const resolveDbId = useCallback(async (): Promise<string | null> => {
+    if (dbPostId)
+      return dbPostId
+    const title = headline.trim()
+    if (!title)
+      return null
+    const mine = (await listDrafts()).find(d => d.title.trim() === title)
+    return mine?.id ?? null
+  }, [dbPostId, headline])
+
   const onSaveDraft = async () => {
     if (!headline.trim()) {
       flash('제목을 입력하세요.')
@@ -340,14 +356,15 @@ export default function WriterApp() {
       subject_best_new: subject && !isArtistSubject ? subjectBestNew : null,
     }
     const createBody = { ...payload, album_cover_url: subject?.cover_url ?? null }
-    let created = !dbPostId
-    let res = dbPostId ?
-      await updatePost(dbPostId, payload) :
+    const targetId = await resolveDbId()
+    let created = !targetId
+    let res = targetId ?
+      await updatePost(targetId, payload) :
       await savePost(createBody)
-    // Stale persisted id — the draft was hard-deleted elsewhere (e.g. /drafts)
-    // while its body lived on in localStorage. Drop the dead id and create a
-    // fresh row so the restored draft still saves instead of dead-ending on 404.
-    if (dbPostId && res.status === 404) {
+    // Stale id — the draft was hard-deleted elsewhere (e.g. /drafts) while its
+    // body lived on in localStorage. Drop the dead id and create a fresh row so
+    // the restored draft still saves instead of dead-ending on 404.
+    if (targetId && res.status === 404) {
       setDbPostId(null)
       created = true
       res = await savePost(createBody)
@@ -366,13 +383,15 @@ export default function WriterApp() {
     // hasn't re-rendered yet — so write the fresh id explicitly. Without it a
     // save→reload before the next render loses the DB linkage and re-creates the
     // row (409, BUG-9).
-    let savedId = dbPostId
+    let savedId = targetId
     if (created) {
       const json = await res.json()
       savedId = json?.id ?? null
-      if (savedId)
-        setDbPostId(savedId)
     }
+    // Sync state when we created a row OR adopted an orphan by title, so the rest
+    // of the session reuses the id instead of re-looking it up.
+    if (savedId && savedId !== dbPostId)
+      setDbPostId(savedId)
     // Mirror the server save into localStorage and confirm it on the dot: solid
     // green + a one-shot sync pulse. dirtyRef clears so the 30s timer won't
     // redundantly re-write the same content.
@@ -432,8 +451,9 @@ export default function WriterApp() {
       recommended_track_ids: recommendedTrackIds,
       subject_best_new: !isArtistSubject ? subjectBestNew : null,
     }
-    let res = dbPostId ?
-      await updatePost(dbPostId, {
+    const targetId = await resolveDbId()
+    let res = targetId ?
+      await updatePost(targetId, {
         title: headline,
         description: dek,
         body_mdx: body,
@@ -446,10 +466,10 @@ export default function WriterApp() {
         subject_best_new: !isArtistSubject ? subjectBestNew : null,
       }) :
       await savePost(createBody)
-    // Stale persisted id (draft hard-deleted elsewhere) → 404 on update. Fall
-    // back to creating the published row so publish doesn't dead-end. Same
-    // self-heal as the draft path.
-    if (dbPostId && res.status === 404) {
+    // Stale id (draft hard-deleted elsewhere) → 404 on update. Fall back to
+    // creating the published row so publish doesn't dead-end. Same self-heal as
+    // the draft path.
+    if (targetId && res.status === 404) {
       setDbPostId(null)
       res = await savePost(createBody)
     }
@@ -465,7 +485,7 @@ export default function WriterApp() {
 
     const json = await res.json()
     const slug: string = json.slug ?? json.id ?? ''
-    const postId: string = json.id ?? dbPostId ?? ''
+    const postId: string = json.id ?? targetId ?? ''
 
     const gitRes = await publishToGit({
       title: headline,
