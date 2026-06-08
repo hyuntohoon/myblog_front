@@ -13,7 +13,7 @@ export async function GET(context: APIContext) {
 
 	return rss({
 		title: SITE.title,
-		description: 'RAMAMU',
+		description: 'buckit',
 		// context.site is derived from `site` in astro.config (SITE.url).
 		site: context.site ?? SITE.url,
 		items: posts.map(e => ({
