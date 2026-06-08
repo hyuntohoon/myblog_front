@@ -39,6 +39,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/buckets/spotify-library/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spotify Library State */
+        get: operations["spotify_library_state_api_buckets_spotify_library_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/buckets/spotify-library/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spotify Library Sync */
+        post: operations["spotify_library_sync_api_buckets_spotify_library_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buckets/{bucket_id}": {
         parameters: {
             query?: never;
@@ -640,6 +674,11 @@ export interface components {
             is_done: boolean;
             /** Items */
             items?: components["schemas"]["Backend_BucketItemResponse"][];
+            /**
+             * Kind
+             * @default review
+             */
+            kind: string;
             /** Name */
             name: string;
             /** Position */
@@ -934,6 +973,47 @@ export interface components {
              * @default false
              */
             needs_reauth: boolean;
+        };
+        /** SpotifyLibraryAlbumState */
+        Backend_SpotifyLibraryAlbumState: {
+            /** Album Id */
+            album_id: string;
+            /** In Bucket */
+            in_bucket: boolean;
+            /** In Spotify */
+            in_spotify: boolean;
+            /** Last Error */
+            last_error?: string | null;
+            /** Source */
+            source: string;
+            /** Spotify Id */
+            spotify_id: string;
+            /** State */
+            state: string;
+        };
+        /** SpotifyLibraryStateResponse */
+        Backend_SpotifyLibraryStateResponse: {
+            /** Albums */
+            albums?: components["schemas"]["Backend_SpotifyLibraryAlbumState"][];
+            /** Bucket Id */
+            bucket_id?: string | null;
+            /** Last Synced At */
+            last_synced_at?: string | null;
+            /**
+             * Needs Reauth
+             * @default false
+             */
+            needs_reauth: boolean;
+            /**
+             * Writes Enabled
+             * @default false
+             */
+            writes_enabled: boolean;
+        };
+        /** SpotifyLibrarySyncResponse */
+        Backend_SpotifyLibrarySyncResponse: {
+            /** Status */
+            status: string;
         };
         /** TagItem */
         Backend_TagItem: {
@@ -1496,6 +1576,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spotify_library_state_api_buckets_spotify_library_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_SpotifyLibraryStateResponse"];
+                };
+            };
+        };
+    };
+    spotify_library_sync_api_buckets_spotify_library_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_SpotifyLibrarySyncResponse"];
                 };
             };
         };

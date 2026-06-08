@@ -25,7 +25,8 @@ import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
-import { listRecentlyListened } from './spotify.api'
+import { getSpotifyLibraryState, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
+import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
 import { AlbumArt, SectionTitle } from './ui'
 
 // `copy` (with `albumId`) marks a drag originating from the pinned 최근 들은 앨범
@@ -38,6 +39,9 @@ type DragKind = 'album' | 'bucket' | null
 
 // Synthetic id of the read-only 최근 들은 앨범 strip (never persisted server-side).
 const RECENT_ID = '__recent__'
+// `review_buckets.kind` value of the single special Spotify-library bucket — it
+// is filtered out of the normal crate tree and rendered as its own section.
+const SLIB_KIND = 'spotify_library'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
 // Last-seen 최근 들은 앨범 strip, cached so it paints instantly on the next mount
@@ -167,17 +171,54 @@ function CrStatus({ b }: { b: BoardBucket }) {
   )
 }
 
+// ── spotify-library badge meta ───────────────────────────────────────────────
+// Per-album source + sync-state, joined to a cover by album_id from the
+// /spotify-library/state map. source → who put it there; state → the last
+// reconcile outcome (dot color). Rendered only inside the special library bucket.
+function slibSourceLabel(source: string): string {
+  return source === 'myblog_added' ? '내가 추가' : '기존'
+}
+function slibStateColor(state: string): string {
+  if (state === 'synced')
+    return 'oklch(0.58 0.10 155)' // 녹 — Spotify matches intent
+  if (state === 'failed')
+    return 'var(--color-accent)' // 적 — a write errored
+  if (state === 'needs_attention')
+    return 'oklch(0.66 0.12 70)' // 주 — scope / reauth
+  return 'var(--color-faded)' // 회 — pending (not yet reconciled)
+}
+
+// Source pill (top-left) + state dot (top-right) overlaid on a library cover.
+function SlibBadges({ row }: { row: SpotifyLibraryAlbumState }) {
+  return (
+    <>
+      <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>
+        {slibSourceLabel(row.source)}
+      </span>
+      <span
+	title={`상태: ${row.state}${row.last_error ? ` · ${row.last_error}` : ''}`}
+	style={{ position: 'absolute', top: 6, right: 6, width: 10, height: 10, borderRadius: 10, background: slibStateColor(row.state), border: '1.5px solid var(--color-bg)' }}
+      />
+    </>
+  )
+}
+
 // ── album cover tile ──────────────────────────────────────────────────────--
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, draggingId, setDraggingId, setDragKind, onInsert }: {
+function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, libRow, draggingId, setDraggingId, setDragKind, onInsert }: {
   album: BoardAlbum
   bucketId: string
   rated: boolean
   score: number | null
   onOpen: (t: DetailTarget) => void
   copySource?: boolean
+  /**
+   * Spotify-library sync row for this album (source/state badges) when inside
+   * the special library bucket; absent for every other surface.
+   */
+  libRow?: SpotifyLibraryAlbumState | null
   draggingId: string | null
   setDraggingId: (id: string | null) => void
   setDragKind: (k: DragKind) => void
@@ -240,7 +281,8 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, dragging
           {copySource && (
             <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
           )}
-          {!copySource && !rated && album.alreadyReviewed && (
+          {libRow && <SlibBadges row={libRow} />}
+          {!copySource && !libRow && !rated && album.alreadyReviewed && (
             <span className="lf-mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
           )}
           {rated && score != null && (
@@ -281,6 +323,11 @@ interface SharedProps {
   ops: Ops
   onOpen: (t: DetailTarget) => void
   ratings: Map<string, number>
+  /**
+   * album_id → Spotify-library sync row; only populated for the special
+   * spotify_library bucket so its covers get source/state badges.
+   */
+  libState: Map<string, SpotifyLibraryAlbumState>
   dropTarget: string | null
   setDropTarget: (fn: string | null | ((t: string | null) => string | null)) => void
   draggingId: string | null
@@ -293,14 +340,15 @@ interface SharedProps {
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
   const m = crMeta(bucket)
   const accent = crColor(bucket, depth)
   const hot = dropTarget === bucket.id
+  const isLib = bucket.kind === SLIB_KIND
 
   const canAcceptBucket = (): boolean => {
     const it = dnd
@@ -467,6 +515,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, dropTarget, setDropTa
 	bucketId={bucket.id}
 	rated={bucket.isDone}
 	score={bucket.isDone ? (ratings.get(a.albumId) ?? null) : null}
+	libRow={isLib ? (libState.get(a.albumId) ?? null) : null}
 	onOpen={onOpen}
 	draggingId={draggingId}
 	setDraggingId={setDraggingId}
@@ -724,6 +773,11 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const [error, setError] = useState(false)
   const [addingTo, setAddingTo] = useState<{ id: string, name: string } | null>(null)
 
+  // FEAT-spotify-library-sync — the special bucket's sync state (banners + the
+  // per-album source/state map) and whether a manual sync is in flight.
+  const [libState, setLibState] = useState<SpotifyLibraryState | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
@@ -777,6 +831,26 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     return m
   }, [reviews])
 
+  // album_id → Spotify-library sync row, for the cover source/state badges.
+  const libAlbumMap = useMemo(() => {
+    const m = new Map<string, SpotifyLibraryAlbumState>()
+    for (const a of libState?.albums ?? [])
+      m.set(a.album_id, a)
+    return m
+  }, [libState])
+
+  // Split the special spotify_library bucket out of the normal crate tree: it
+  // renders as its own section below the recent strip, never inside the grid.
+  // (Top-level only — the backend guarantees one such bucket at the root.)
+  const libBucket = useMemo(
+    () => (tree ?? []).find(b => b.kind === SLIB_KIND) ?? null,
+    [tree],
+  )
+  const normalTree = useMemo(
+    () => (tree ?? []).filter(b => b.kind !== SLIB_KIND),
+    [tree],
+  )
+
   // Load the real tree on mount.
   useEffect(() => {
     let alive = true
@@ -819,6 +893,19 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     }
   }, [])
 
+  // Load the Spotify-library sync state (banners + per-album source/state map).
+  // Worker-fed; the GET never calls Spotify (rule #9). A transient failure just
+  // leaves the section unbadged — it never blocks the crate board.
+  useEffect(() => {
+    let alive = true
+    getSpotifyLibraryState()
+      .then(s => alive && setLibState(s))
+      .catch(() => { /* non-fatal — board renders without badges */ })
+    return () => {
+      alive = false
+    }
+  }, [])
+
   // Mirror the album count to localStorage so the overview's bucket shortcut
   // (lib/member.ts bucketCount(), read synchronously) matches the live board.
   useEffect(() => {
@@ -843,6 +930,39 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     }
     catch {
       setError(true)
+    }
+  }
+
+  // 동기화 — model on refreshRecent(): POST enqueues the worker reconcile (rule
+  // #9, no synchronous Spotify call), then POLL /spotify-library/state until
+  // last_synced_at advances past the pre-sync value (cap ~10 polls / ~20s), then
+  // refetch the board + state so the new badges/pulled albums paint. A
+  // 'debounced' response (a sync ran <30s ago) skips the poll. Best-effort: any
+  // failure just clears the spinner — the next mount/poll reconciles.
+  async function runLibrarySync() {
+    if (syncing)
+      return
+    setSyncing(true)
+    const before = libState?.last_synced_at ?? null
+    try {
+      const { status } = await syncSpotifyLibrary()
+      if (status === 'debounced') {
+        setLibState(await getSpotifyLibraryState())
+        return
+      }
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 2000))
+        const next = await getSpotifyLibraryState()
+        setLibState(next)
+        if (next.last_synced_at && next.last_synced_at !== before) {
+          await refresh()
+          break
+        }
+      }
+    }
+    catch { /* non-fatal — clear the spinner, leave existing state in place */ }
+    finally {
+      setSyncing(false)
     }
   }
 
@@ -1121,12 +1241,12 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
 
   return (
     <div>
       <SectionTitle
-	kicker={tree == null ? '불러오는 중…' : `${tree.length} 버킷 · 크레이트`}
+	kicker={tree == null ? '불러오는 중…' : `${normalTree.length} 버킷 · 크레이트`}
 	title="평론 버킷"
 	right={(
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1157,16 +1277,62 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         </div>
       )}
 
+      {/* ── Spotify 라이브러리 — the special kind='spotify_library' bucket, pulled
+          out of the normal crate tree and rendered here as its own section just
+          below the recent strip. Drag albums in/out to set the bucket INTENT
+          only (copyAlbum / trash via the shared ops) — NO synchronous Spotify
+          call; the 동기화 button enqueues the worker reconcile (rule #9). */}
+      {tree != null && (
+        <div className="lf-panel crate-spotify" style={{ padding: 0, marginBottom: 22 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderBottom: '1px solid var(--color-border-soft)' }}>
+            <span className="lf-serif" style={{ fontSize: 16, fontWeight: 500, whiteSpace: 'nowrap' }}>Spotify 라이브러리</span>
+            <span className="lf-meta" style={{ color: 'var(--color-spotify)' }}>SPOTIFY 동기화</span>
+            <button
+	type="button"
+	className="lf-btn"
+	disabled={syncing}
+	onClick={() => void runLibrarySync()}
+	style={{ marginLeft: 'auto' }}
+            >
+              {syncing ? '동기화 중…' : '동기화'}
+            </button>
+          </div>
+
+          {libState?.needs_reauth && (
+            <div className="lf-mono" style={{ padding: '9px 14px', fontSize: 11.5, letterSpacing: '0.03em', color: '#fff', background: 'var(--color-accent)' }}>
+              Spotify 재인증 필요
+            </div>
+          )}
+          {libState != null && libState.writes_enabled === false && (
+            <div className="lf-mono" style={{ padding: '9px 14px', fontSize: 11.5, letterSpacing: '0.03em', color: 'oklch(0.42 0.10 70)', background: 'oklch(0.95 0.04 80)', borderBottom: '1px solid var(--color-border-soft)' }}>
+              검토 모드: Spotify에 실제 반영 안 됨
+            </div>
+          )}
+
+          <div style={{ padding: 14 }}>
+            {libBucket && countAlbums(libBucket) > 0 ?
+              (
+                <BucketList items={[libBucket]} parentId={null} depth={0} shared={shared} />
+              ) :
+              (
+                <div className="lf-mono" style={{ fontSize: 11.5, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 6, padding: 24, textAlign: 'center', letterSpacing: '0.04em' }}>
+                  동기화를 누르면 Spotify 라이브러리의 앨범을 불러옵니다
+                </div>
+              )}
+          </div>
+        </div>
+      )}
+
       {tree == null && <div className="lf-meta" style={{ padding: '8px 0' }}>불러오는 중…</div>}
 
-      {tree != null && tree.length === 0 && (
+      {tree != null && normalTree.length === 0 && (
         <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
           <span className="lf-meta">버킷 없음</span>
         </div>
       )}
 
-      {tree != null && tree.length > 0 && (
-        <BucketList items={tree} parentId={null} depth={0} shared={shared} />
+      {tree != null && normalTree.length > 0 && (
+        <BucketList items={normalTree} parentId={null} depth={0} shared={shared} />
       )}
 
       {/* trash dock — a single center-bottom card, mounted only while dragging an

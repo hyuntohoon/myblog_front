@@ -39,6 +39,12 @@ export interface BoardBucket {
   color: string | null
   /** The single "평론 완료" column — drives the on-cover rating chips. */
   isDone: boolean
+  /**
+   * Bucket kind — 'review' (a normal crate) or 'spotify_library' (the single
+   * special Spotify-library mirror bucket, filtered out of the normal tree and
+   * rendered as its own section). Defaults to 'review' when the field is absent.
+   */
+  kind: string
   albums: BoardAlbum[]
   children: BoardBucket[]
 }
@@ -58,11 +64,15 @@ function mapItem(it: ApiItem): BoardAlbum {
 }
 
 function mapBucket(b: ApiBucket): BoardBucket {
+  // `kind` (FEAT-spotify-library-sync) distinguishes a normal crate from the
+  // single Spotify-library bucket; default to 'review' for safety.
+  const kind = b.kind ?? 'review'
   return {
     id: b.id,
     name: b.name,
     color: b.color ?? null,
     isDone: b.is_done ?? false,
+    kind,
     albums: (b.items ?? []).map(mapItem),
     children: (b.children ?? []).map(mapBucket),
   }
