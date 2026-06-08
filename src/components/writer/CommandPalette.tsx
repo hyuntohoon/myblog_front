@@ -181,7 +181,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       setOffsets({ album: albums.length, artist: artists.length, track: tracks.length })
       setLastReturned({ album: albums.length, artist: artists.length, track: tracks.length })
       if (albums.length + artists.length + tracks.length === 0)
-        setStatus('DB에 결과가 없습니다. Spotify로 검색해보세요.')
+        setStatus('DB에 결과 없음')
     }
     catch {
       setStatus('검색 실패')
@@ -255,7 +255,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       setSpotifyCooldown(false)
     }, SPOTIFY_COOLDOWN_MS)
     setLoading(true)
-    setStatus('Spotify에서 검색하고 DB 동기화를 시작합니다…')
+    setStatus('Spotify 싱크 중…')
     setResults([])
     // Spotify candidates don't support per-bucket offset paging, so hide
     // "더 보기" while in Spotify view.
@@ -301,7 +301,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       }))
       const merged: SearchResultItem[] = [...artists, ...albums, ...tracks]
       setResults(merged)
-      setStatus(merged.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
+      setStatus(merged.length === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과')
     }
     catch {
       setStatus('Spotify 싱크 실패')
@@ -372,8 +372,8 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     }
     catch {
       setStatus(args.source === 'spotify' ?
-        '앨범 동기화가 아직 완료되지 않았습니다. 잠시 후 다시 선택해주세요.' :
-        '앨범 정보 조회 실패. 잠시 후 다시 시도해주세요.')
+        '앨범을 다시 선택해주세요' :
+        '앨범 정보 조회 실패')
     }
   }
 
@@ -402,7 +402,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
         })
         return
       }
-      setStatus('이 트랙의 앨범 정보가 없습니다.')
+      setStatus('앨범 정보 없음')
       return
     }
     // Artist → open the drill-in panel.
@@ -606,7 +606,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                 {status && <div className="wr-palette-status mono">{status}</div>}
                 {!loading && visibleResults.length === 0 && !status && (
                   <div className="wr-palette-empty mono">
-                    {query.trim() ? '결과 없음' : `${source === 'spotify' ? 'Spotify' : 'DB'}에서 작품을 검색하세요`}
+                    {query.trim() ? '결과 없음' : '작품 검색'}
                   </div>
                 )}
                 {SECTION_ORDER.map(({ kind, label }) => {

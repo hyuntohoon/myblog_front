@@ -66,7 +66,7 @@ function TitleArea({ headline, setHeadline, dek, setDek, dim }: {
       <textarea
 	className="dek-input"
 	rows={1}
-	placeholder="부제 또는 한 줄 요약"
+	placeholder="부제"
 	value={dek}
 	onChange={(e) => {
           setDek(e.target.value)
@@ -340,7 +340,7 @@ export default function WriterApp() {
 
   const onPublish = async () => {
     if (!subject || body.trim().length === 0) {
-      flash('발행 조건이 충족되지 않았습니다. (작품과 본문이 필요합니다)')
+      flash('작품과 본문이 필요합니다')
       return
     }
     const isArtistSubject = subject.kind === 'artist'
@@ -425,7 +425,7 @@ export default function WriterApp() {
     setBody('')
     setRecommendedTrackIds([])
     setTags([])
-    flash('발행 완료! 사이트 반영까지 약 3–5분 — /blog 에서 확인하세요.')
+    flash('발행 완료! 3–5분 후 반영됩니다')
     setSettingsOpen(false)
     setTimeout(() => {
       window.location.href = '/blog/'
