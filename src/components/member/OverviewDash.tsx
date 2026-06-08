@@ -281,7 +281,7 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
   if (items == null)
     return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
   if (items.length === 0)
-    return <div className="lf-meta" style={{ padding: '6px 2px' }}>최근 들은 앨범이 없습니다</div>
+    return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   const shown = items.slice(0, RECENT_ALBUMS_LIMIT)
   const hidden = items.length - shown.length
   return (
@@ -562,13 +562,8 @@ export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket
           </div>
         )}
       />
-      <p className="lf-serif lf-italic" style={{ marginTop: -10, marginBottom: 22, color: 'var(--color-subtle)', fontSize: 14 }}>
-        <span className="lf-mono" style={{ fontStyle: 'normal', fontSize: 12 }}>⠿</span>
-{' '}
-핸들을 끌어 위치를 옮기세요. 같은 줄에 놓으면 너비를 나눠 갖고(빨강 세로줄), 줄 사이에 놓으면 새 줄이 됩니다(빨강 가로줄).
-      </p>
       {flat.length === 0 ?
-        <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}><span className="lf-meta">컴포넌트가 없습니다 · 우측 상단에서 추가하세요</span></div> :
+        <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}><span className="lf-meta">컴포넌트 없음</span></div> :
         <RowsBoard rows={rows} setRows={setRows} render={(id, handleProps, dragging) => <Widget id={id} ctx={ctx} onRemove={remove} handleProps={handleProps} dragging={dragging} />} />}
     </div>
   )

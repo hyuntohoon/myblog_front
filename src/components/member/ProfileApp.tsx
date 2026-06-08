@@ -92,18 +92,12 @@ function ProfileSidebar({ u }: { u: MemberProfile }) {
       <div className="lf-panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Avatar size={80} name={u.name} />
         <div>
-          <div className="lf-kicker" style={{ marginBottom: 6 }}>MEMBER · CRITIC</div>
           <h1 className="lf-serif" style={{ fontSize: 30, fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, margin: 0 }}>{u.name}</h1>
           <div className="lf-mono" style={{ fontSize: 12, color: 'var(--color-subtle)', marginTop: 5 }}>
 @
 {u.handle}
           </div>
         </div>
-        <p className="lf-serif lf-italic" style={{ margin: 0, fontSize: 15, color: 'var(--color-subtle)', lineHeight: 1.55 }}>
-“
-{u.tagline}
-”
-        </p>
         <div className="lf-meta" style={{ display: 'flex', gap: 14 }}>
 <span>{u.location}</span>
 <span>
@@ -125,13 +119,7 @@ function ProfileHero({ u }: { u: MemberProfile }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
         <Avatar size={88} name={u.name} />
         <div style={{ flex: 1, minWidth: 240 }}>
-          <div className="lf-kicker" style={{ marginBottom: 8 }}>MEMBER · CRITIC</div>
           <h1 className="lf-serif" style={{ fontSize: 'clamp(34px, 6vw, 52px)', fontWeight: 500, letterSpacing: '-.025em', lineHeight: 1, margin: 0 }}>{u.name}</h1>
-          <p className="lf-serif lf-italic" style={{ margin: '12px 0 0', fontSize: 16, color: 'var(--color-subtle)', lineHeight: 1.5 }}>
-            “
-            {u.tagline}
-            ”
-          </p>
         </div>
         <a href="/write" className="lf-btn lf-btn-solid" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>새 평론 쓰기</a>
       </div>

@@ -13,15 +13,13 @@ const reviews = buildReviewCards(await getCollection('blog'))
 ---
 
 <Layout>
-  <Seo slot="seo" title="리뷰 — RAMAMU" description="정성껏 들은 앨범들에 대한 기록." />
+  <Seo slot="seo" title="Reviews — RAMAMU" />
 
   <SkipNavContent>
     <div class="container">
       <!-- Masthead -->
       <header class="rev-masthead">
-        <p class="rev-kicker">RAMAMU Music Reviews</p>
         <h1 class="rev-title">Reviews</h1>
-        <p class="rev-sub">큰 커버로 읽는 전체 평론.</p>
       </header>
 
       {reviews.length === 0 ?
@@ -37,7 +35,7 @@ const reviews = buildReviewCards(await getCollection('blog'))
 
       <!-- Footer -->
       <footer class="rev-footer">
-        <span>RAMAMU — 음악 비평</span>
+        <span>RAMAMU</span>
       </footer>
     </div>
   </SkipNavContent>
