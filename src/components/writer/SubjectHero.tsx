@@ -35,7 +35,7 @@ export default function SubjectHero({
       <section className="wr-hero-empty-wrap">
         <button type="button" className="wr-hero-empty" onClick={onOpenSearch}>
           <span className="wr-hero-empty-ico serif">⌕</span>
-          <span className="wr-hero-empty-title serif">평론할 작품을 선택하세요</span>
+          <span className="wr-hero-empty-title serif">작품 선택</span>
           <span className="wr-hero-empty-sub mono">
             앨범 · 아티스트 · 트랙 검색
             <kbd>⌘K</kbd>

@@ -74,7 +74,7 @@ onRetry,
 
 			{loadFailed && !isPending && (
 				<>
-					<div className="art-pending">데이터를 가져올 수 없습니다.</div>
+					<div className="art-pending">데이터 로드 실패</div>
 					<button type="button" className="art-retry" onClick={onRetry}>다시 시도</button>
 				</>
 			)}
@@ -91,7 +91,7 @@ onRetry,
 							<div className="art-hero-type">아티스트</div>
 							<div className="art-hero-name">{hero.name}</div>
 							<div className="art-hero-meta">
-								{(hero.genres || []).join(' · ') || '장르 미분류'}
+								{(hero.genres || []).join(' · ') || '미분류'}
 								{hero.followers != null && (
 									<>
 {' · '}

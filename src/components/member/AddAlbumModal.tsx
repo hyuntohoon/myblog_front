@@ -80,7 +80,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
       }))
       setHits(albums)
       if (albums.length === 0)
-        setStatus('DB에 결과가 없습니다. Spotify 싱크를 눌러보세요.')
+        setStatus('DB에 결과 없음')
     }
     catch {
       setStatus('검색 실패')
@@ -101,7 +101,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
       setCooldown(false)
     }, SPOTIFY_COOLDOWN_MS)
     setLoading(true)
-    setStatus('Spotify에서 검색하고 DB 동기화를 시작합니다…')
+    setStatus('Spotify 싱크 중…')
     setHits([])
     try {
       const r = await apiFetch(`${MUSIC}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=album&limit=20`)
@@ -118,7 +118,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
         source: 'spotify' as const,
       }))
       setHits(albums)
-      setStatus(albums.length === 0 ? 'Spotify에서도 결과가 없습니다.' : 'Spotify 결과 (DB 동기화 백그라운드 진행 중)')
+      setStatus(albums.length === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과')
     }
     catch {
       setStatus('Spotify 싱크 실패')
@@ -166,7 +166,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
     try {
       const albumId = await resolveDbId(hit)
       if (!albumId) {
-        setStatus('앨범 동기화가 아직 완료되지 않았습니다. 잠시 후 다시 선택해주세요.')
+        setStatus('앨범을 다시 선택해주세요')
         return
       }
       const outcome = await onAdd({ id: albumId, title: hit.title })

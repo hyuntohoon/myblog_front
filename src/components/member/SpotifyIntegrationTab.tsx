@@ -98,7 +98,7 @@ export function SpotifyIntegrationTab() {
       <SectionTitle kicker="SPOTIFY" title="연동" />
 
       {status == null && !err && <div className="lf-meta" style={{ padding: '8px 0' }}>상태 확인 중…</div>}
-      {err && <div className="lf-panel" style={{ padding: 24, textAlign: 'center' }}><span className="lf-meta">연동 상태를 불러오지 못했습니다</span></div>}
+      {err && <div className="lf-panel" style={{ padding: 24, textAlign: 'center' }}><span className="lf-meta">상태 로드 실패</span></div>}
 
       {status != null && (
         <div className="lf-panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -117,7 +117,7 @@ export function SpotifyIntegrationTab() {
           </div>
 
           <div style={{ borderTop: '1px solid var(--color-border-soft)', paddingTop: 16 }}>
-            <div className="lf-kicker" style={{ marginBottom: 8 }}>이 연동이 제공하는 것</div>
+            <div className="lf-kicker" style={{ marginBottom: 8 }}>기능</div>
             <Powers />
           </div>
 

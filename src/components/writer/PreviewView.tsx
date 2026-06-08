@@ -101,7 +101,7 @@ export default function PreviewView({ s }: { s: State }) {
       )}
       <div className="prev-body">
         {paragraphs.length === 0 ?
-          <p className="prev-empty">본문이 비어 있습니다.</p> :
+          <p className="prev-empty">본문 없음</p> :
           paragraphs.map((p, idx) => {
               if (p.startsWith('> '))
                 return <blockquote key={idx} className="prev-quote">{renderInline(p.slice(2))}</blockquote>

@@ -111,7 +111,7 @@ export default function BodyArea({ body, setBody, dim }: Props) {
       <textarea
 	ref={taRef}
 	className="body-input"
-	placeholder="본문을 시작하세요…"
+	placeholder="본문…"
 	value={body}
 	onChange={(e) => {
           setBody(e.target.value)

@@ -4,7 +4,7 @@ import Seo from '@components/seo.astro'
 ---
 
 <Layout>
-  <Seo slot="seo" title="내 글 — RAMAMU" noIndex />
+  <Seo slot="seo" title="내 글" noIndex />
 
   <main class="container drafts-main">
 
@@ -24,12 +24,11 @@ import Seo from '@components/seo.astro'
     </div>
 
     <div id="drafts-error" class="drafts-empty hidden">
-      <p class="mono-label" style="color: var(--color-accent);">불러오지 못했습니다.</p>
-      <p class="mono-label" style="color: var(--color-faded); margin-top: 8px;">로그인 상태를 확인해주세요.</p>
+      <p class="mono-label" style="color: var(--color-accent);">로드 실패</p>
     </div>
 
     <div id="drafts-empty-msg" class="drafts-empty hidden">
-      <p class="drafts-empty-title" id="drafts-empty-title">임시저장된 글이 없습니다</p>
+      <p class="drafts-empty-title" id="drafts-empty-title">글 없음</p>
       <a href="/write" class="drafts-cta">새 글 작성 →</a>
     </div>
 
@@ -48,7 +47,7 @@ import Seo from '@components/seo.astro'
     <div id="confirm-backdrop" class="confirm-backdrop hidden">
       <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <h2 id="confirm-title" class="confirm-title">완전 삭제할까요?</h2>
-        <p class="confirm-body">이 작업은 되돌릴 수 없습니다. 보관함에서도 복구할 수 없습니다. 관련 버킷 항목도 함께 삭제됩니다.</p>
+        <p class="confirm-body">되돌릴 수 없습니다.</p>
         <div class="confirm-actions">
           <button type="button" class="confirm-cancel" id="confirm-cancel">취소</button>
           <button type="button" class="confirm-confirm" id="confirm-confirm">완전 삭제</button>
@@ -507,11 +506,7 @@ throw new Error(`HTTP ${res.status}`)
 
       if (posts.length === 0) {
         $count.textContent = '0개'
-        $emptyTitle.textContent = currentView === 'draft' ?
-        '임시저장된 글이 없습니다' :
-        currentView === 'published' ?
-        '발행된 글이 없습니다' :
-        '보관함이 비어 있습니다'
+        $emptyTitle.textContent = currentView === 'archived' ? '비어 있음' : '글 없음'
         show($empty)
         return
       }
