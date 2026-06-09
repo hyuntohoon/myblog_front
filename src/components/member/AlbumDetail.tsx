@@ -13,20 +13,13 @@
 //
 // The 별점 input is a self-contained pointer strip reusing the member `Stars`
 // visual (the writer's DragRatingInput lives behind write-only CSS tokens).
+import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
 import type { DetailTarget, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
 import { fetchPostById, listDrafts, savePost, updatePost } from '../../scripts/write/api'
+import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { useDismissable } from '@lib/useDismissable'
 import { AlbumArt, fmtTime, Stars } from './ui'
-
-const MUSIC = import.meta.env.PUBLIC_API_URL as string
-
-// Shape of GET /api/music/albums/{id} (myblog_music AlbumDetail) — DB-only read,
-// no synchronous Spotify call. Defined locally (not in the backend api.gen.ts).
-interface MusicTrack { id: string, title: string, track_no: number | null, duration_sec: number | null, feat_artist_names: string[] }
-interface MusicArtist { id: string, name: string, photo_url: string | null, genres: string[], popularity: number | null }
-interface MusicAlbumOut { id: string, title: string, release_date: string | null, cover_url: string | null, album_type: string | null, label: string | null }
-interface AlbumDetailResp { album: MusicAlbumOut, artists: MusicArtist[], tracks: MusicTrack[] }
 
 type Mode = 'info' | 'write' | 'edit'
 
@@ -64,8 +57,9 @@ export function AlbumDetail({ album, reviews, onClose }: { album: DetailTarget, 
 // Real album: fetch DB metadata (cover/tracklist/artists), then render the
 // mode-appropriate body. On fetch failure it degrades to a minimal card.
 function RealBody({ album, mode, published }: { album: DetailTarget, mode: Mode, published?: MemberReview }) {
-  const [data, setData] = useState<AlbumDetailResp | null>(null)
-  const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading')
+  const seed = album.albumId ? getCachedAlbumDetail(album.albumId) : null
+  const [data, setData] = useState<AlbumDetailResp | null>(seed)
+  const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
 
   useEffect(() => {
     if (!album.albumId) {
@@ -73,15 +67,18 @@ function RealBody({ album, mode, published }: { album: DetailTarget, mode: Mode,
       return
     }
     let alive = true
-    fetch(`${MUSIC}/api/music/albums/${album.albumId}`)
-      .then(r => (r.ok ? r.json() as Promise<AlbumDetailResp> : Promise.reject(new Error(`HTTP ${r.status}`))))
+    fetchAlbumDetail(album.albumId)
       .then((json) => {
         if (!alive)
           return
-        setData(json)
-        setState('ok')
+        if (json) {
+          setData(json)
+          setState('ok')
+        }
+        else {
+          setState('error')
+        }
       })
-      .catch(() => alive && setState('error'))
     return () => {
       alive = false
     }
@@ -108,23 +105,19 @@ function RealBody({ album, mode, published }: { album: DetailTarget, mode: Mode,
 	kicker={mode === 'write' ? '평론 작성' : '앨범'}
       />
 
-      {state === 'loading' && (
-        <div className="lf-meta" style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>불러오는 중…</div>
-      )}
-
-      {state === 'error' && (
-        <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-          <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{album.year ? `${album.year}년 발매` : '상세 정보를 불러오지 못했습니다'}</div>
-        </div>
-      )}
-
-      {state === 'ok' && data && (
-        mode === 'write' ?
-          <WriteBody album={album} tracks={data.tracks} artistIds={data.artists.map(ar => ar.id)} /> :
-          mode === 'edit' ?
-            <EditBody published={published} tracks={data.tracks} /> :
-            <InfoBody artists={data.artists} tracks={data.tracks} year={album.year} />
-      )}
+      {mode === 'write' ?
+        <WriteBody album={album} tracks={data?.tracks ?? []} artistIds={data?.artists.map(ar => ar.id) ?? []} tracksLoading={state === 'loading'} /> :
+        state === 'loading' ?
+          <div className="lf-meta" style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>불러오는 중…</div> :
+          (state === 'error' || !data) ?
+            (
+              <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
+                <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{album.year ? `${album.year}년 발매` : '상세 정보를 불러오지 못했습니다'}</div>
+              </div>
+            ) :
+            mode === 'edit' ?
+              <EditBody published={published} tracks={data.tracks} /> :
+              <InfoBody artists={data.artists} tracks={data.tracks} year={album.year} />}
     </>
   )
 }
@@ -224,7 +217,7 @@ function EditBody({ published, tracks }: { published?: MemberReview, tracks: Mus
 }
 
 // ── write mode body (draft authoring) ────────────────────────────────────────
-function WriteBody({ album, tracks, artistIds }: { album: DetailTarget, tracks: MusicTrack[], artistIds: string[] }) {
+function WriteBody({ album, tracks, artistIds, tracksLoading }: { album: DetailTarget, tracks: MusicTrack[], artistIds: string[], tracksLoading: boolean }) {
   const [body, setBody] = useState('')
   const [score, setScore] = useState(0)
   const [picks, setPicks] = useState<Set<string>>(() => new Set())
@@ -334,7 +327,11 @@ function WriteBody({ album, tracks, artistIds }: { album: DetailTarget, tracks: 
         </div>
       </div>
 
-      {/* best-track picker — collapsible */}
+      {/* best-track picker — collapsible; the tracklist fills in when the detail
+          fetch lands so a cache miss never blocks the body/별점 above */}
+      {tracksLoading && tracks.length === 0 && (
+        <div className="lf-meta" style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--color-border-soft)' }}>베스트 트랙 불러오는 중…</div>
+      )}
       {tracks.length > 0 && (
         <div style={{ marginTop: 14, borderTop: '1px solid var(--color-border-soft)' }}>
           <button
