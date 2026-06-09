@@ -28,6 +28,8 @@ export interface SampleTrack {
 	album: string
 	len: string
 	when: string
+	/** Real album-art URL when sourced from a live API; null/absent → letter tile. */
+	cover?: string | null
 }
 
 export type LibraryStatus = '듣는 중' | '들음' | '평론함' | '위시리스트'
