@@ -18,7 +18,7 @@ import { useDismissable } from '@lib/useDismissable'
 import { DistChart } from './charts'
 import { NowPlaying } from './NowPlaying'
 import { listListenedAlbums, listRecentlyListened, listRecentTracks } from './spotify.api'
-import { AlbumArt, BucketShortcut, Cover, SampleBadge, SectionTitle, Seg, Stars } from './ui'
+import { AlbumArt, BucketShortcut, SampleBadge, SectionTitle, Seg, Stars } from './ui'
 
 /** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
 function fmtWhen(iso: string): string {
@@ -106,7 +106,7 @@ function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKe
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
         {items.map(t => (
           <button key={t.id} type="button" onClick={() => open(t)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
-            <Cover label={t.album} square radius={3} />
+            <AlbumArt url={t.cover} label={t.album} />
             <div className="lf-serif" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
             <div className="lf-mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{t.artist}</div>
           </button>
@@ -119,7 +119,7 @@ function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKe
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
         {items.map(t => (
           <button key={t.id} type="button" onClick={() => open(t)} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
-            <Cover label={t.album} size={50} radius={3} />
+            <div style={{ width: 50, flex: '0 0 auto' }}><AlbumArt url={t.cover} label={t.album} size={50} /></div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="lf-serif" style={{ fontSize: 15, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
               <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -147,7 +147,7 @@ function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKe
       {items.map((t, i) => (
         <button key={t.id} type="button" onClick={() => open(t)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
           <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 20 }}>{String(i + 1).padStart(2, '0')}</span>
-          <Cover label={t.album} size={34} radius={2} />
+          <div style={{ width: 34, flex: '0 0 auto' }}><AlbumArt url={t.cover} label={t.album} size={34} /></div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="lf-serif" style={{ fontSize: 14.5, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
             <div className="lf-sans" style={{ fontSize: 11, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{t.artist}</div>
@@ -312,12 +312,47 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
   )
 }
 
+/** How many 최근 재생 트랙 the widget shows inline; the rest live behind 더 보기. */
+const RECENT_TRACKS_LIMIT = 8
+
+/** Modal listing every 최근 재생 트랙 (list). Reuses the slide-over shell + scrim. */
+function RecentTracksModal({ items, view, onOpen, onClose }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void, onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape')
+        onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const openAndClose = (t: DetailTarget) => {
+    onClose()
+    onOpen(t)
+  }
+  return createPortal(
+    <div className="lf-scrim" onClick={onClose} role="presentation">
+      <aside className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 재생 트랙 전체">
+        <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
+        <div className="lf-kicker" style={{ marginBottom: 4 }}>최근 재생 트랙</div>
+        <div className="lf-meta" style={{ marginBottom: 18 }}>
+          {items.length}
+          곡
+        </div>
+        <TrackColl items={items} view={view === 'grid' ? 'grid' : 'list'} onOpen={openAndClose} />
+      </aside>
+    </div>,
+    document.body,
+  )
+}
+
 /**
  * 최근 재생 트랙 widget — real (worker-fed track cache, D-B), mapped to TrackColl.
  *  Duration isn't stored (we only cache play timestamps), so `len` is left blank.
  */
 function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: DetailTarget) => void }) {
   const [items, setItems] = useState<SampleTrack[] | null>(null)
+  const [showAll, setShowAll] = useState(false)
   useEffect(() => {
     let on = true
     listRecentTracks()
@@ -328,6 +363,7 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
         album: it.album_name ?? it.album?.title ?? '—',
         len: '',
         when: fmtWhen(it.played_at),
+        cover: it.album?.cover_url ?? null,
       }))))
       .catch(() => on && setItems([]))
     return () => {
@@ -345,7 +381,24 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
 }
   if (items.length === 0)
     return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
-  return <TrackColl items={items} view={view} onOpen={onOpen} />
+  const shown = items.slice(0, RECENT_TRACKS_LIMIT)
+  const hidden = items.length - shown.length
+  return (
+    <>
+      <TrackColl items={shown} view={view} onOpen={onOpen} />
+      {hidden > 0 && (
+        <button
+	type="button"
+	onClick={() => setShowAll(true)}
+	className="lf-mono"
+	style={{ marginTop: 12, width: '100%', padding: '8px 0', background: 'none', border: '1px solid var(--color-border-soft)', borderRadius: 3, color: 'var(--color-subtle)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', cursor: 'pointer' }}
+        >
+          {`더 보기 (+${hidden})`}
+        </button>
+      )}
+      {showAll && <RecentTracksModal items={items} view={view} onOpen={onOpen} onClose={() => setShowAll(false)} />}
+    </>
+  )
 }
 
 /**
