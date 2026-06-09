@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
+import { useDismissable } from '../../lib/useDismissable'
 import type { AlbumDetail } from './types'
 
 interface Props {
@@ -16,6 +18,7 @@ interface Props {
   onDraftSave: () => void
   onPublish: () => void
   onReset: () => void
+  busy?: boolean
 }
 
 export default function SettingsPanel({
@@ -32,11 +35,14 @@ export default function SettingsPanel({
   onDraftSave,
   onPublish,
   onReset,
+  busy = false,
 }: Props) {
+  const panelRef = useRef<HTMLElement>(null)
+  useDismissable(open, onClose, panelRef)
   return (
     <>
       <div className={`settings-backdrop${open ? ' open' : ''}`} onClick={onClose} />
-      <aside className={`settings-panel${open ? ' open' : ''}`}>
+      <aside ref={panelRef} role="dialog" aria-modal="true" aria-label="발행 설정" className={`settings-panel${open ? ' open' : ''}`}>
         <header className="set-head">
           <div className="set-title">발행 설정</div>
           <button type="button" className="set-close" onClick={onClose} aria-label="Close">✕</button>
@@ -79,14 +85,14 @@ export default function SettingsPanel({
         <footer className="set-foot">
           <button type="button" className="set-link-danger" onClick={onReset}>초안 삭제</button>
           <div className="set-foot-spacer" />
-          <button type="button" className="set-btn-ghost" onClick={onDraftSave}>임시저장</button>
+          <button type="button" className="set-btn-ghost" onClick={onDraftSave} disabled={busy}>임시저장</button>
           <button
 	type="button"
 	className="set-btn-primary"
 	onClick={onPublish}
-	disabled={!subject || body.trim().length === 0}
+	disabled={!subject || body.trim().length === 0 || busy}
           >
-            발행 →
+            {busy ? '발행 중…' : '발행 →'}
           </button>
         </footer>
       </aside>

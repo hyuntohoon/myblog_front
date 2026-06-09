@@ -35,6 +35,13 @@ logoutBtn?.addEventListener('click', () => logout())
 
 window.addEventListener('popstate', syncAuthUI)
 
+// Cross-tab sync: a login/logout in another tab mutates the shared localStorage;
+// reflect it in this tab's header instead of showing a stale auth state.
+window.addEventListener('storage', (e) => {
+	if (e.key === 'access_token' || e.key === 'id_token' || e.key === null)
+		syncAuthUI()
+})
+
 // ── Magazine masthead collapse (FEAT-header-magazine-masthead) ──
 // The header is ALWAYS visible (no hide-on-scroll). Past ENTER it collapses the
 // centered masthead into the compact one-line bar; it only expands again once

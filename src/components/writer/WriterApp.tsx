@@ -106,6 +106,24 @@ export default function WriterApp() {
     (saved.tags ?? []).filter(t => REVIEW_TAG_LABELS.includes(t)),
   )
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
+  // In-flight guard (WR-1): drop a second concurrent write (double-click 발행, or
+  // save→publish in the same tick) so it can't create a duplicate row / 409 on the
+  // unique slug. `busy` also disables the buttons for feedback.
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  const runExclusive = useCallback(async (fn: () => Promise<void>) => {
+    if (busyRef.current)
+      return
+    busyRef.current = true
+    setBusy(true)
+    try {
+      await fn()
+    }
+    finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }, [])
   const [recommendedTrackIds, setRecommendedTrackIds] = useState<string[]>(saved.recommendedTrackIds ?? [])
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC. Seeds
   // from saved draft on mount; reseeds from fetched album.best_new on subject
@@ -425,8 +443,8 @@ export default function WriterApp() {
   }
 
   const onPublish = async () => {
-    if (!subject || body.trim().length === 0) {
-      flash('작품과 본문이 필요합니다')
+    if (!subject || !headline.trim() || body.trim().length === 0) {
+      flash('작품 · 제목 · 본문이 모두 필요합니다')
       return
     }
     const isArtistSubject = subject.kind === 'artist'
@@ -541,8 +559,9 @@ export default function WriterApp() {
 	lastSaved={lastSaved}
 	pulseKey={pulseKey}
 	onOpenSearch={() => setPaletteOpen(true)}
-	onSave={onSaveDraft}
+	onSave={() => runExclusive(onSaveDraft)}
 	onPublish={() => setSettingsOpen(true)}
+	busy={busy}
       />
 
       {view === 'edit' ?
@@ -592,9 +611,10 @@ export default function WriterApp() {
 	onSectionChange={setSection}
 	onToggleTag={onToggleTag}
 	onPublishDateChange={setPublishDate}
-	onDraftSave={onSaveDraft}
-	onPublish={onPublish}
+	onDraftSave={() => runExclusive(onSaveDraft)}
+	onPublish={() => runExclusive(onPublish)}
 	onReset={onReset}
+	busy={busy}
       />
 
       <Toast msg={toast} />
