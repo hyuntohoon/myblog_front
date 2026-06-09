@@ -289,7 +289,8 @@ import Seo from '@components/seo.astro'
 </style>
 
 <script>
-  import { getAccessToken, goLogin, isLoggedIn } from '../lib/auth'
+  import { goLogin, isLoggedIn } from '../lib/auth'
+  import { apiFetch } from '../lib/api'
 
   const API = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
@@ -322,7 +323,10 @@ window.clearTimeout(toastTimer)
 
   function confirmHardDelete(): Promise<boolean> {
     return new Promise((resolve) => {
+      const restoreTo = document.activeElement as HTMLElement | null
       show($confirmBackdrop)
+      // Move focus into the modal (default to 취소 for a destructive action).
+      $confirmCancel.focus()
       // Hoisted function declarations so cleanup can refer to the listener
       // identities — arrow consts would forward-reference and fail
       // ts/no-use-before-define.
@@ -336,16 +340,25 @@ window.clearTimeout(toastTimer)
         if (e.target === $confirmBackdrop)
           finish(false)
       }
+      function onKey(e: KeyboardEvent) {
+        if (e.key === 'Escape')
+          finish(false)
+      }
       function finish(result: boolean) {
         hide($confirmBackdrop)
         $confirmCancel.removeEventListener('click', onCancel)
         $confirmConfirm.removeEventListener('click', onConfirm)
         $confirmBackdrop.removeEventListener('click', onBackdrop)
+        document.removeEventListener('keydown', onKey, true)
+        // Restore focus to the row action that opened the modal.
+        if (restoreTo && typeof restoreTo.focus === 'function')
+          restoreTo.focus()
         resolve(result)
       }
       $confirmCancel.addEventListener('click', onCancel)
       $confirmConfirm.addEventListener('click', onConfirm)
       $confirmBackdrop.addEventListener('click', onBackdrop)
+      document.addEventListener('keydown', onKey, true)
     })
   }
 
@@ -355,11 +368,6 @@ window.clearTimeout(toastTimer)
       month: 'short',
       day: 'numeric',
     })
-  }
-
-  function authHeaders(): HeadersInit {
-    const token = getAccessToken()
-    return { Authorization: `Bearer ${token ?? ''}` }
   }
 
   function makeActionLink(text: string, href: string): HTMLAnchorElement {
@@ -426,10 +434,11 @@ window.clearTimeout(toastTimer)
       const archiveLabel = isPublished ? '발행 취소' : '보관'
       const archiveToast = isPublished ? '발행 취소됨 — 보관함에서 복구 가능' : '보관됨 — 복구 가능'
       actionsDiv.appendChild(makeActionBtn(archiveLabel, false, async () => {
-        const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}`, {
+        const r = await apiFetch(`${API}/api/posts/${encodeURIComponent(d.id)}`, {
           method: 'DELETE',
-          headers: authHeaders(),
         })
+        if (!r)
+          return
         if (r.ok) {
           rowVanish(tr)
           flash(archiveToast)
@@ -439,10 +448,11 @@ window.clearTimeout(toastTimer)
     }
     else {
       actionsDiv.appendChild(makeActionBtn('복구', false, async () => {
-        const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}/restore`, {
+        const r = await apiFetch(`${API}/api/posts/${encodeURIComponent(d.id)}/restore`, {
           method: 'PATCH',
-          headers: authHeaders(),
         })
+        if (!r)
+          return
         if (r.ok) {
           rowVanish(tr)
           flash('복구 완료')
@@ -454,10 +464,11 @@ window.clearTimeout(toastTimer)
     actionsDiv.appendChild(makeActionBtn('완전 삭제', true, async () => {
       if (!await confirmHardDelete())
 return
-      const r = await fetch(`${API}/api/posts/${encodeURIComponent(d.id)}?hard=true`, {
+      const r = await apiFetch(`${API}/api/posts/${encodeURIComponent(d.id)}?hard=true`, {
         method: 'DELETE',
-        headers: authHeaders(),
       })
+      if (!r)
+        return
       if (r.ok) {
         rowVanish(tr)
         flash('완전 삭제됨')
@@ -488,9 +499,11 @@ return
       currentView === 'published' ?
       `${API}/api/posts?status=published` :
       `${API}/api/posts?status=archived&include_archived=true`
-      const res = await fetch(url, { headers: authHeaders() })
+      const res = await apiFetch(url)
+      if (!res)
+        return
       if (!res.ok)
-throw new Error(`HTTP ${res.status}`)
+        throw new Error(`HTTP ${res.status}`)
 
       const { posts } = await res.json() as {
         posts: Array<{

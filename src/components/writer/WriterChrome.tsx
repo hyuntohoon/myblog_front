@@ -9,9 +9,10 @@ interface Props {
   onOpenSearch: () => void
   onSave: () => void
   onPublish: () => void
+  busy?: boolean
 }
 
-export default function WriterChrome({ status, lastSaved, pulseKey, view, onViewChange, onOpenSearch, onSave, onPublish }: Props) {
+export default function WriterChrome({ status, lastSaved, pulseKey, view, onViewChange, onOpenSearch, onSave, onPublish, busy = false }: Props) {
   const saved = status === 'saved'
   // Text alternative for the color dot — keeps it from being color-only and
   // carries the timestamp as a hover tooltip instead of always-on chrome text.
@@ -42,7 +43,7 @@ export default function WriterChrome({ status, lastSaved, pulseKey, view, onView
           <button className={view === 'edit' ? 'on' : ''} onClick={() => onViewChange('edit')}>작성</button>
           <button className={view === 'preview' ? 'on' : ''} onClick={() => onViewChange('preview')}>미리보기</button>
         </div>
-        <button className="chrome-btn" onClick={onSave}>임시저장</button>
+        <button type="button" className="chrome-btn" onClick={onSave} disabled={busy}>임시저장</button>
         <button className="chrome-btn primary" onClick={onPublish}>발행</button>
       </div>
     </header>
