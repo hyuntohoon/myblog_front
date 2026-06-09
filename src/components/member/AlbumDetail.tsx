@@ -7,8 +7,9 @@
 //     (deterministic from the title), shown with a "샘플" badge. Still used by every
 //     surface the backend can't supply yet. Ported from albumdetail.jsx.
 import type { DetailTarget } from '@lib/member'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { albumDetail } from '@lib/member'
+import { useDismissable } from '@lib/useDismissable'
 import { AlbumArt, Cover, fmtTime, SampleBadge, ScoreNum, Stars } from './ui'
 
 // Shape of GET /api/music/albums/{id} (myblog_music AlbumDetail). Public DB-only
@@ -21,18 +22,13 @@ interface MusicAlbumOut { id: string, title: string, release_date: string | null
 interface AlbumDetailResp { album: MusicAlbumOut, artists: MusicArtist[], tracks: MusicTrack[] }
 
 export function AlbumDetail({ album, onClose }: { album: DetailTarget, onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')
-        onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  // ESC + focus trap + focus restore (mounted-when-open → open=true).
+  const ref = useRef<HTMLElement>(null)
+  useDismissable(true, onClose, ref)
 
   return (
     <div className="lf-scrim" onClick={onClose} role="presentation">
-      <aside className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="앨범 상세">
+      <aside ref={ref} className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="앨범 상세">
         <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
         {album.real ? <RealBody album={album} /> : <SampleBody album={album} />}
       </aside>

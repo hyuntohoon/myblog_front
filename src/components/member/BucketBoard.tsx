@@ -20,9 +20,10 @@
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
+import { useDismissable } from '@lib/useDismissable'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
 import { getSpotifyLibraryState, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
@@ -920,6 +921,8 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   })
   const [trashOpen, setTrashOpen] = useState(false)
   const [pendingBucketDelete, setPendingBucketDelete] = useState<{ id: string, name: string } | null>(null)
+  const confirmModalRef = useRef<HTMLDivElement>(null)
+  useDismissable(!!pendingBucketDelete, () => setPendingBucketDelete(null), confirmModalRef)
 
   // album_id → the member's own star rating (0–5). Feeds the rated-bucket chips
   // without any extra fetch (reviews are already server-built into props).
@@ -1182,14 +1185,17 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         ;(dst ? dst.children : t).push(rm)
       }
       setTree(t)
+      // Don't reconcile with the server snapshot: the optimistic splice already
+      // reflects the move, and a whole-tree overwrite would clobber any concurrent
+      // optimistic edit (rename/color/add) made during the round-trip (BB-1). Each
+      // such edit persists via its own PUT; on error the .catch refreshes/rolls back.
       api.moveBucket(bucketId, targetId, position)
-        .then(canonical => setTree(canonical))
         .catch(() => void refresh())
     },
     // Reposition a bucket among `parentId`'s children, before `beforeId` (null =
     // append). Drives both reorder (drop in a sibling gap) and un-nest (drop in a
-    // top-level gap, parentId null). Optimistic splice → canonical tree from the
-    // server (whose `position` interpretation is authoritative).
+    // top-level gap, parentId null). Optimistic splice only — no server-snapshot
+    // reconcile (see BB-1 note in moveBucketInto).
     moveBucketTo(bucketId, parentId, beforeId) {
       endDrag()
       if (tree == null || bucketId === beforeId)
@@ -1212,7 +1218,6 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         list.splice(idx, 0, rm)
       setTree(t)
       api.moveBucket(bucketId, parentId, position)
-        .then(canonical => setTree(canonical))
         .catch(() => void refresh())
     },
     addBucket(parentId) {
@@ -1225,7 +1230,19 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
             setTree(prev => [...(prev ?? []), created])
             return undefined
           }
-          return api.moveBucket(created.id, parentId, position).then(canonical => setTree(canonical))
+          // Optimistically nest the new bucket under the parent on the LATEST tree,
+          // then persist the parent assignment — but don't overwrite the tree with the
+          // server snapshot (would clobber concurrent optimistic edits, BB-1).
+          setTree((prev) => {
+            if (prev == null)
+              return prev
+            const t = clone(prev)
+            const parent = findBucket(t, parentId)
+            if (parent)
+              parent.children.push(created)
+            return t
+          })
+          return api.moveBucket(created.id, parentId, position).then(() => undefined)
         })
         .catch(() => void refresh())
     },
@@ -1479,7 +1496,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
 
       {pendingBucketDelete && (
         <div className="qb-modal-scrim" onClick={() => setPendingBucketDelete(null)} role="presentation">
-          <div className="qb-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="버킷 삭제 확인" style={{ maxWidth: 400 }}>
+          <div ref={confirmModalRef} className="qb-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="버킷 삭제 확인" style={{ maxWidth: 400 }}>
             <header className="qb-modal-head">
               <div>
                 <div className="qb-modal-kicker">버킷 삭제</div>

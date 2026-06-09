@@ -11,9 +11,10 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { ChartStyle } from './charts'
 import type { NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/member'
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { bucketCount, getActivity, getArtists, getGenres, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
+import { useDismissable } from '@lib/useDismissable'
 import { DistChart } from './charts'
 import { NowPlaying } from './NowPlaying'
 import { listListenedAlbums, listRecentlyListened, listRecentTracks } from './spotify.api'
@@ -617,6 +618,24 @@ export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket
   }, [views])
 
   const [addOpen, setAddOpen] = useState(false)
+  const addMenuRef = useRef<HTMLDivElement | null>(null)
+  const addTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const closeAdd = useCallback(() => setAddOpen(false), [])
+  // ESC + focus-restore to the trigger (trapFocus off — it's a menu, not a modal).
+  useDismissable(addOpen, closeAdd, addMenuRef, { trapFocus: false, autoFocus: false })
+  // Outside-pointerdown close (useDismissable doesn't cover outside-click).
+  useEffect(() => {
+    if (!addOpen)
+      return
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node
+      if (addMenuRef.current?.contains(t) || addTriggerRef.current?.contains(t))
+        return
+      setAddOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [addOpen])
   const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, chartStyle, goBucket, reviews }
   const flat = rows.flat()
   const remove = (id: string) => setRows(prev => prev.map(r => r.filter(x => x !== id)).filter(r => r.length))
@@ -633,11 +652,11 @@ export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket
 	title="개요"
 	right={(
           <div style={{ position: 'relative' }}>
-            <button type="button" className="lf-btn" onClick={() => setAddOpen(o => !o)} disabled={!available.length}>＋ 컴포넌트 추가</button>
+            <button ref={addTriggerRef} type="button" className="lf-btn" onClick={() => setAddOpen(o => !o)} disabled={!available.length} aria-haspopup="menu" aria-expanded={addOpen}>＋ 컴포넌트 추가</button>
             {addOpen && available.length > 0 && (
-              <div className="lf-panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, padding: 6, minWidth: 180, background: 'var(--color-bg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.4)' }}>
+              <div ref={addMenuRef} role="menu" className="lf-panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, padding: 6, minWidth: 180, background: 'var(--color-bg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.4)' }}>
                 {available.map(w => (
-                  <button key={w} type="button" onClick={() => add(w)} className="lf-mono" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', background: 'none', border: 'none', color: 'var(--color-text)', cursor: 'pointer', borderRadius: 3 }}>
+                  <button key={w} type="button" role="menuitem" onClick={() => add(w)} className="lf-mono" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', background: 'none', border: 'none', color: 'var(--color-text)', cursor: 'pointer', borderRadius: 3 }}>
 ＋
 {WIDGET_TITLES[w]}
                   </button>
