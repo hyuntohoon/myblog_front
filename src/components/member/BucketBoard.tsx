@@ -23,6 +23,7 @@ import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
+import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { useDismissable } from '@lib/useDismissable'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
@@ -303,6 +304,10 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           setDragKind(null)
         }}
 	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year, writable: !copySource && !fromLib })}
+	// Warm the album-detail cache on intent (hover / tap-start) so the modal
+	// opens on an edge hit instead of a ~1s miss (see lib/albumDetail.ts).
+	onPointerEnter={() => prefetchAlbumDetail(album.albumId)}
+	onPointerDown={() => prefetchAlbumDetail(album.albumId)}
 	className={`lf-drag-handle bb-tile${dragging ? ' lf-is-dragging' : ''}`}
 	title={`${album.title} — ${album.artist}`}
       >
