@@ -1,14 +1,16 @@
-// FEAT-review-bucket-board Step 4 — "앨범 담기" modal. Album-only unified search
-// (reuses the music service search endpoints, same DB→Spotify-sync flow as the
-// writer's SubjectBlock) and hands the resolved DB album id back to the board.
-import type { KeyboardEvent } from 'react'
+// FEAT-review-bucket-board Step 4 — "앨범 담기" modal. Album-only search built on
+// the shared `useMusicSearch` core (same DB→Spotify-sync flow as the writer) and
+// hands the resolved DB album id back to the board.
+//
+// recallTypes=['album','artist']: we render albums only, but REQUEST artist too
+// so the DB endpoint's artist→album expansion fires — otherwise searching an
+// artist by name (e.g. "방탄소년단", "씨잼") returns their discography as zero
+// rows. See useMusicSearch for the why.
+import type { ChangeEvent, KeyboardEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { apiFetch } from '@lib/api'
-import type { components } from '@lib/api.gen'
+import type { AlbumHit } from '@lib/useMusicSearch'
+import { useMusicSearch } from '@lib/useMusicSearch'
 import { useDismissable } from '@lib/useDismissable'
-
-type UnifiedSearchResult = components['schemas']['Music_UnifiedSearchResult']
-type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult']
 
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
 
@@ -17,16 +19,6 @@ export type AddOutcome =
 	{ status: 'conflict' } |
 	{ status: 'error', message: string }
 
-interface AlbumHit {
-  id: string | null
-  title: string
-  artist: string | null
-  cover: string | null
-  year: string | null
-  spotifyId: string | null
-  source: 'db' | 'spotify'
-}
-
 interface Props {
   bucketName: string
   /** Resolve the picked album to a DB id and add it; board owns the API call. */
@@ -34,16 +26,12 @@ interface Props {
   onClose: () => void
 }
 
-const SPOTIFY_COOLDOWN_MS = 3000
-
 export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
-  const [query, setQuery] = useState('')
-  const [hits, setHits] = useState<AlbumHit[]>([])
-  const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState('')
+  const search = useMusicSearch({ recallTypes: ['album', 'artist'] })
   const [pendingId, setPendingId] = useState<string | null>(null)
-  const [cooldown, setCooldown] = useState(false)
-  const cooldownRef = useRef(false)
+  // Pick-outcome message ("담았습니다" / conflict / error). Distinct from the
+  // hook's search status so a successful add doesn't get clobbered by it.
+  const [notice, setNotice] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
 
@@ -55,90 +43,32 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
     inputRef.current?.focus()
   }, [])
 
-  async function runDbSearch() {
-    const q = query.trim()
-    if (!q)
-      return
-    setLoading(true)
-    setStatus('')
-    setHits([])
-    try {
-      const r = await fetch(
-        `${MUSIC}/api/music/search/unified?q=${encodeURIComponent(q)}&type=album&limit=20&offset=0`,
-      )
-      if (!r.ok)
-        throw new Error(`HTTP ${r.status}`)
-      const data = await r.json() as UnifiedSearchResult
-      const albums: AlbumHit[] = (data.albums ?? []).map(a => ({
-        id: a.id ?? null,
-        title: a.title ?? '',
-        artist: a.artist_name ?? null,
-        cover: a.cover_url ?? null,
-        year: a.release_date ? a.release_date.slice(0, 4) : null,
-        spotifyId: a.spotify_id ?? null,
-        source: 'db' as const,
-      }))
-      setHits(albums)
-      if (albums.length === 0)
-        setStatus('DB에 결과 없음')
-    }
-    catch {
-      setStatus('검색 실패')
-    }
-    finally {
-      setLoading(false)
-    }
+  function doSearch() {
+    setNotice('')
+    void search.runDbSearch()
   }
 
-  async function runSpotifySync() {
-    const q = query.trim()
-    if (!q || cooldownRef.current)
-      return
-    cooldownRef.current = true
-    setCooldown(true)
-    setTimeout(() => {
-      cooldownRef.current = false
-      setCooldown(false)
-    }, SPOTIFY_COOLDOWN_MS)
-    setLoading(true)
-    setStatus('Spotify 싱크 중…')
-    setHits([])
-    try {
-      const r = await apiFetch(`${MUSIC}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=album&limit=20`)
-      if (!r || !r.ok)
-        throw new Error(`HTTP ${r?.status}`)
-      const data = await r.json() as CandidateSearchResult
-      const albums: AlbumHit[] = (data.albums ?? []).map(a => ({
-        id: null,
-        title: a.title ?? '',
-        artist: a.artist_name ?? null,
-        cover: a.cover_url ?? null,
-        year: a.release_date ? a.release_date.slice(0, 4) : null,
-        spotifyId: a.spotify_id ?? null,
-        source: 'spotify' as const,
-      }))
-      setHits(albums)
-      setStatus(albums.length === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과')
-    }
-    catch {
-      setStatus('Spotify 싱크 실패')
-    }
-    finally {
-      setLoading(false)
-    }
+  function doSpotify() {
+    setNotice('')
+    void search.runSpotifySync()
+  }
+
+  function onQueryChange(e: ChangeEvent<HTMLInputElement>) {
+    search.setQuery(e.target.value)
+    if (notice)
+      setNotice('')
   }
 
   function onKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault()
-      void runDbSearch()
+      doSearch()
     }
   }
 
   function clearSearch() {
-    setQuery('')
-    setHits([])
-    setStatus('')
+    search.reset()
+    setNotice('')
   }
 
   /** Resolve a Spotify-only hit to a DB album id (single attempt; absorb may lag). */
@@ -162,25 +92,27 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
   async function pick(hit: AlbumHit) {
     const key = hit.id ?? hit.spotifyId ?? hit.title
     setPendingId(key)
-    setStatus('')
+    setNotice('')
     try {
       const albumId = await resolveDbId(hit)
       if (!albumId) {
-        setStatus('앨범을 다시 선택해주세요')
+        setNotice('앨범을 다시 선택해주세요')
         return
       }
       const outcome = await onAdd({ id: albumId, title: hit.title })
       if (outcome.status === 'added')
-        setStatus(outcome.alreadyReviewed ? `“${hit.title}” 담음 · 이미 리뷰한 앨범이에요` : `“${hit.title}” 담았습니다`)
+        setNotice(outcome.alreadyReviewed ? `“${hit.title}” 담음 · 이미 리뷰한 앨범이에요` : `“${hit.title}” 담았습니다`)
       else if (outcome.status === 'conflict')
-        setStatus(`“${hit.title}” 은 이미 이 버킷에 있어요`)
+        setNotice(`“${hit.title}” 은 이미 이 버킷에 있어요`)
       else
-        setStatus(outcome.message)
+        setNotice(outcome.message)
     }
     finally {
       setPendingId(null)
     }
   }
+
+  const statusText = notice || search.status
 
   return (
     <div className="qb-modal-scrim" onClick={onClose} role="presentation">
@@ -200,30 +132,30 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
 	ref={inputRef}
 	className="qb-modal-search-input"
 	placeholder="리뷰할 앨범을 검색…"
-	value={query}
-	onChange={e => setQuery(e.target.value)}
+	value={search.query}
+	onChange={onQueryChange}
 	onKeyDown={onKeyDown}
 	autoComplete="off"
             />
-            {query && <button type="button" className="qb-modal-search-clear" onClick={clearSearch}>✕</button>}
+            {search.query && <button type="button" className="qb-modal-search-clear" onClick={clearSearch}>✕</button>}
           </div>
-          <button type="button" className="qb-modal-search-btn" onClick={() => void runDbSearch()} disabled={loading}>검색</button>
+          <button type="button" className="qb-modal-search-btn" onClick={doSearch} disabled={search.loading}>검색</button>
           <button
 	type="button"
 	className="qb-modal-spotify-btn"
-	onClick={() => void runSpotifySync()}
-	disabled={loading || cooldown}
-	title={cooldown ? '잠시 후 다시 시도 (Spotify 쿨다운)' : 'Spotify에서 검색 + DB 동기화'}
+	onClick={doSpotify}
+	disabled={search.loading || search.spotifyCooldown}
+	title={search.spotifyCooldown ? '잠시 후 다시 시도 (Spotify 쿨다운)' : 'Spotify에서 검색 + DB 동기화'}
           >
             Spotify 싱크
           </button>
         </div>
 
-        {status && <p className="qb-modal-status">{status}</p>}
+        {statusText && <p className="qb-modal-status">{statusText}</p>}
 
         <div className="qb-modal-results">
-          {loading && <div className="qb-modal-empty">검색 중…</div>}
-          {!loading && hits.map((hit) => {
+          {search.loading && <div className="qb-modal-empty">검색 중…</div>}
+          {!search.loading && search.albums.map((hit) => {
             const key = hit.id ?? hit.spotifyId ?? hit.title
             return (
               <button
@@ -251,6 +183,16 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
               </button>
             )
           })}
+          {!search.loading && search.hasMore.album > 0 && (
+            <button
+	type="button"
+	className="qb-modal-more"
+	onClick={() => void search.loadMore('album')}
+	disabled={search.loadingMore !== null}
+            >
+              {search.loadingMore === 'album' ? '불러오는 중…' : '더 보기'}
+            </button>
+          )}
         </div>
       </div>
     </div>

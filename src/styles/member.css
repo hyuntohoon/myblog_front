@@ -481,6 +481,20 @@
   text-align: center;
   padding: var(--space-8);
 }
+.qb-modal-more {
+  margin-top: 4px;
+  padding: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-subtle);
+  background: none;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.qb-modal-more:hover { background: var(--color-paper); border-color: var(--color-text); }
+.qb-modal-more:disabled { opacity: 0.5; cursor: not-allowed; }
 .qb-hit {
   display: flex;
   align-items: center;
