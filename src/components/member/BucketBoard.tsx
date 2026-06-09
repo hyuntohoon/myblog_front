@@ -302,7 +302,7 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           setDraggingId(null)
           setDragKind(null)
         }}
-	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year })}
+	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year, writable: !copySource && !fromLib })}
 	className={`lf-drag-handle bb-tile${dragging ? ' lf-is-dragging' : ''}`}
 	title={`${album.title} — ${album.artist}`}
       >
