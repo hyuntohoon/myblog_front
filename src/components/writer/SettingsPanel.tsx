@@ -51,7 +51,7 @@ export default function SettingsPanel({
         <div className="set-body">
           <div className="set-block">
             <label className="set-l">섹션</label>
-            <select className="set-select" value={section} onChange={e => onSectionChange(e.target.value)}>
+            <select className="set-select" aria-label="섹션" value={section} onChange={e => onSectionChange(e.target.value)}>
               {SECTION_LABELS.map(x => <option key={x}>{x}</option>)}
             </select>
           </div>
@@ -78,7 +78,7 @@ export default function SettingsPanel({
 
           <div className="set-block">
             <label className="set-l">발행일</label>
-            <input type="date" className="set-input" value={publishDate} onChange={e => onPublishDateChange(e.target.value)} />
+            <input type="date" className="set-input" aria-label="발행일" value={publishDate} onChange={e => onPublishDateChange(e.target.value)} />
           </div>
         </div>
 
