@@ -20,7 +20,7 @@
 	--color-text:      #1a1a1a;
 	--color-highlight: #000000;
 	--color-subtle:    #5a5651;
-	--color-faded:     #918a80;
+	--color-faded:     #6e6960;  /* a11y: AA 4.5:1 on light bg (was #918a80, 3.08) */
 	--color-border:    rgba(26, 26, 26, 0.18);
 	--color-border-soft: rgba(26, 26, 26, 0.10);
 	--color-accent:    #c8332b;
@@ -82,7 +82,8 @@
 			--color-text:      #ebe7df;
 			--color-highlight: #f5f3ee;
 			--color-subtle:    #a09a91;
-			--color-faded:     #6e685f;
+			--color-faded:     #8f897e;  /* a11y: AA 4.5:1 on dark bg (was #6e685f, 3.37) */
+			--color-accent:    #df524a;  /* a11y: dark-mode accent, AA 4.5:1 (light keeps #c8332b) */
 			--color-border:    rgba(235, 231, 223, 0.18);
 			--color-border-soft: rgba(235, 231, 223, 0.10);
 

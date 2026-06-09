@@ -535,7 +535,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
                   setEditing(true)
                 }}
 	className="lf-serif"
-	style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', color: bucket.color || (m.urgent ? 'var(--color-accent)' : 'var(--color-text)'), background: 'none', border: 'none', padding: 0, cursor: 'text', whiteSpace: 'nowrap' }}
+	style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', color: bucket.color || (m.urgent ? 'var(--color-accent)' : 'var(--color-text)'), background: 'none', border: 'none', padding: 0, cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
 	title="클릭하여 이름 변경"
               >
                 {bucket.name}
