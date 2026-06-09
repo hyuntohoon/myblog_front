@@ -28,6 +28,35 @@
 	color: var(--color-faded);
 }
 
+/* ── loading skeleton ───────────────────────────────────── */
+/* Reserves a stable height while a widget's data loads (Spotify-fed widgets can
+   take a few seconds) so the dashboard doesn't show a bare "불러오는 중…" line or
+   shift layout when data arrives. */
+.lf-skel-stack {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 4px 0;
+}
+.lf-skeleton {
+	border-radius: var(--radius-sm);
+	background: linear-gradient(
+		90deg,
+		var(--color-paper) 25%,
+		var(--color-border-soft) 38%,
+		var(--color-paper) 60%
+	);
+	background-size: 320% 100%;
+	animation: lf-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes lf-shimmer {
+	from { background-position: 100% 0; }
+	to   { background-position: -120% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.lf-skeleton { animation: none; }
+}
+
 /* ── surfaces ───────────────────────────────────────────── */
 .lf-panel {
 	background: var(--color-paper);

@@ -149,6 +149,14 @@ const navLinks = [
   }
   .hdr-avatar:hover { border-color: var(--color-accent); color: var(--color-accent); }
 
+  /* Auth toggle (header.client.ts adds/removes `.hidden`). These selectors are
+     Astro-scoped → `.hdr-write/.hdr-auth/.hdr-avatar[data-astro-cid]` is (0,2,0),
+     which beats the global utility `.hidden{display:none}` (0,1,0). Without this
+     local override the toggle is a no-op and write/avatar/login/logout all show
+     regardless of auth state. `!important` keeps it robust against rule reorder.
+     (Same fix pattern as drafts.astro.) */
+  .hdr-utils .hidden { display: none !important; }
+
   /* ── expanded masthead ── */
   .hdr-masthead {
     max-height: 220px;
@@ -259,6 +267,14 @@ const navLinks = [
   /* ── responsive ── */
   @media (max-width: 640px) {
     .hdr-nav-center { gap: 20px; font-size: 10.5px; }
+    /* The top-right absolute utilities (top:15px, ~30px tall → bottom ~45px) would
+       otherwise collide with the centered masthead wordmark. Push the wordmark
+       below the utilities row so they don't overlap at narrow widths. */
+    .hdr-masthead { padding-top: 52px; }
+    /* Grow nav-link tap targets (was 3px → ~22px tall) without moving the baseline. */
+    .hdr-nav-link { padding-top: 9px; padding-bottom: 9px; }
+    /* Grow the Login/write/logout hit area (was ~17px tall) for touch. */
+    .hdr-write, .hdr-auth { padding-block: 6px; }
     /* In the compact bar, drop the left nav so the centered wordmark + utilities
        don't crowd; the expanded masthead nav still shows. */
     .hdr-nav-left { display: none; }

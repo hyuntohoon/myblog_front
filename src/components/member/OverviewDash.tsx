@@ -280,8 +280,15 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
       on = false
     }
   }, [])
-  if (items == null)
-    return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
+  if (items == null) {
+    return (
+<div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중">
+<div className="lf-skeleton" style={{ height: 44 }} />
+<div className="lf-skeleton" style={{ height: 44 }} />
+<div className="lf-skeleton" style={{ height: 44 }} />
+</div>
+)
+}
   if (items.length === 0)
     return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   const shown = items.slice(0, RECENT_ALBUMS_LIMIT)
@@ -326,8 +333,15 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
       on = false
     }
   }, [])
-  if (items == null)
-    return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
+  if (items == null) {
+    return (
+<div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중">
+<div className="lf-skeleton" style={{ height: 44 }} />
+<div className="lf-skeleton" style={{ height: 44 }} />
+<div className="lf-skeleton" style={{ height: 44 }} />
+</div>
+)
+}
   if (items.length === 0)
     return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   return <TrackColl items={items} view={view} onOpen={onOpen} />
@@ -358,8 +372,15 @@ function ListenedAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Det
       on = false
     }
   }, [])
-  if (items == null)
-    return <div className="lf-meta" style={{ padding: '6px 2px' }}>불러오는 중…</div>
+  if (items == null) {
+    return (
+<div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중">
+<div className="lf-skeleton" style={{ height: 44 }} />
+<div className="lf-skeleton" style={{ height: 44 }} />
+<div className="lf-skeleton" style={{ height: 44 }} />
+</div>
+)
+}
   if (items.length === 0)
     return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   return <AlbumColl items={items} view={view} onOpen={onOpen} />

@@ -5,7 +5,6 @@ import { getCollection } from 'astro:content'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import { defaultDateFormat, sortAsc } from '@utils'
 import Link from '@components/link.astro'
-import PostMetricsItem from '@components/post-metrics'
 import PartialStars from '@components/partial-stars.astro'
 
 export async function getStaticPaths() {
@@ -49,11 +48,10 @@ function ratingStars(post: (typeof posts)[number]['data']): number | null {
 
     <!-- 헤더 -->
     <div class="text-faded border-b border-border pb-2 mb-2
-                grid grid-cols-[1fr_auto_auto] gap-x-3 items-center"
+                grid grid-cols-[1fr_auto] gap-x-3 items-center"
     >
       <span class="text-sm">Title</span>
       <span class="text-sm">Date</span>
-      <span class="text-sm">Metrics</span>
     </div>
 
     <!-- 목록 -->
@@ -67,7 +65,7 @@ function ratingStars(post: (typeof posts)[number]['data']): number | null {
           posts.map(({ data: post }) => {
             const stars = ratingStars(post)
             return (
-            <div class="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-3">
+            <div class="grid grid-cols-[1fr_auto] gap-x-3 items-center py-3">
               <!-- Title (+ 평점 별) -->
               <div class="flex items-center gap-2 min-w-0">
                 <Link
@@ -89,11 +87,6 @@ function ratingStars(post: (typeof posts)[number]['data']): number | null {
               <!-- Date -->
               <span class="text-faded whitespace-nowrap">
                 {defaultDateFormat(post.date)}
-              </span>
-
-              <!-- Metrics -->
-              <span class="text-faded whitespace-nowrap">
-                <PostMetricsItem client:load slug={post.slug} />
               </span>
             </div>
             )
