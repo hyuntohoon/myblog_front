@@ -99,6 +99,9 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   // overwrite a newer query's results. Each search captures the id at start and
   // only commits state if it's still the latest when the response resolves.
   const searchSeqRef = useRef(0)
+  // CP-2: drill-in sequence guard — backing out of an artist drill-in while its
+  // hero fetch is in flight must not re-open the panel when the fetch resolves.
+  const drillSeqRef = useRef(0)
   // CP-3: keyboard navigation index over the visible (filtered) result rows.
   const [activeIndex, setActiveIndex] = useState(-1)
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -480,6 +483,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 
   async function openArtistDrillIn(sr: ArtistSearchResult) {
     cancelArtistPoll()
+    const seq = ++drillSeqRef.current
     setViewArtistOrigin(sr)
     setViewArtistSource(sr.source ?? 'db')
     setViewArtistHero(null)
@@ -491,9 +495,11 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     if (sr.source !== 'spotify' && sr.id) {
       setViewArtistPending(true)
       const r = await fetchArtistHero(sr.id)
+      if (seq !== drillSeqRef.current)
+        return
       if (r.ok) {
-        await loadArtistDetail(r.hero)
-}
+        await loadArtistDetail(r.hero, seq)
+      }
       else {
         setViewArtistPending(false)
         setViewArtistFailed(true)
@@ -508,14 +514,16 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       return
     }
     setViewArtistPending(true)
-    await pollArtistBySpotify(sr.spotify_id, 0)
+    await pollArtistBySpotify(sr.spotify_id, 0, seq)
   }
 
-  async function pollArtistBySpotify(spotifyId: string, attempt: number) {
+  async function pollArtistBySpotify(spotifyId: string, attempt: number, seq: number) {
     const MAX_ATTEMPTS = 15 // 15 × 2 s = 30 s window
     const r = await fetchArtistHeroBySpotify(spotifyId)
+    if (seq !== drillSeqRef.current)
+      return
     if (r.ok) {
-      await loadArtistDetail(r.hero)
+      await loadArtistDetail(r.hero, seq)
       return
     }
     if (attempt >= MAX_ATTEMPTS) {
@@ -524,11 +532,13 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       return
     }
     viewArtistPollRef.current = setTimeout(() => {
-      void pollArtistBySpotify(spotifyId, attempt + 1)
+      void pollArtistBySpotify(spotifyId, attempt + 1, seq)
     }, 2000)
   }
 
-  async function loadArtistDetail(hero: ArtistHero) {
+  async function loadArtistDetail(hero: ArtistHero, seq: number) {
+    if (seq !== drillSeqRef.current)
+      return
     cancelArtistPoll()
     setViewArtistHero(hero)
     setViewArtistPending(false)
@@ -538,6 +548,8 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
         fetchArtistTopTracks(hero.id, 10),
         fetchArtistAlbums(hero.id, 24),
       ])
+      if (seq !== drillSeqRef.current)
+        return
       setViewArtistTracks(tracks)
       setViewArtistAlbums(albums)
     }
@@ -551,6 +563,8 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   }
 
   function closeArtistDrillIn() {
+    // CP-2: invalidate any in-flight hero fetch so it can't re-open the panel.
+    drillSeqRef.current++
     cancelArtistPoll()
     setViewArtistOrigin(null)
     setViewArtistHero(null)
