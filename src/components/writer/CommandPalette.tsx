@@ -95,6 +95,13 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   // returns zero rows for that bucket).
   const [offsets, setOffsets] = useState<BucketOffsets>(ZERO_OFFSETS)
   const [lastReturned, setLastReturned] = useState<BucketLastReturned>(ZERO_RETURNED)
+  // CP-1: monotonic search sequence guard — a slow earlier response must not
+  // overwrite a newer query's results. Each search captures the id at start and
+  // only commits state if it's still the latest when the response resolves.
+  const searchSeqRef = useRef(0)
+  // CP-3: keyboard navigation index over the visible (filtered) result rows.
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const rowRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   const inDrillIn = viewArtistHero !== null || viewArtistPending || viewArtistFailed
 
@@ -162,6 +169,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     const q = query.trim()
     if (!q)
       return
+    const seq = ++searchSeqRef.current
     setLoading(true)
     setStatus('')
     setResults([])
@@ -174,6 +182,9 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const data = await r.json() as UnifiedSearchResult
+      // CP-1: a newer search has superseded this one — drop its results.
+      if (seq !== searchSeqRef.current)
+        return
       const albums = mapAlbums(data.albums)
       const artists = mapArtists(data.artists)
       const tracks = mapTracks(data.tracks)
@@ -184,10 +195,12 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
         setStatus('DB에 결과 없음')
     }
     catch {
-      setStatus('검색 실패')
+      if (seq === searchSeqRef.current)
+        setStatus('검색 실패')
     }
     finally {
-      setLoading(false)
+      if (seq === searchSeqRef.current)
+        setLoading(false)
     }
   }
 
@@ -198,6 +211,10 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     const q = query.trim()
     if (!q || loadingMore)
       return
+    // CP-4: pin the query (and search seq) this load-more was started against.
+    // If either changes before the response resolves, the underlying result
+    // list is for a different query — appending would corrupt it.
+    const seq = searchSeqRef.current
     setLoadingMore(kind)
     try {
       const params = new URLSearchParams({
@@ -211,6 +228,9 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const data = await r.json() as UnifiedSearchResult
+      // CP-4: the query changed under us — discard this page, don't append.
+      if (seq !== searchSeqRef.current || query.trim() !== q)
+        return
       let appended: SearchResultItem[] = []
       let returned = 0
       if (kind === 'album') {
@@ -225,19 +245,27 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
         appended = mapTracks(data.tracks)
         returned = appended.length
       }
-      // De-dupe by id when appending (unified expansion can re-surface the same row).
-      const existingIds = new Set(results.filter(r => r.kind === kind).map(r => r.id))
-      const fresh = appended.filter(r => !existingIds.has(r.id))
-      if (fresh.length === 0 && returned > 0) {
+      let didAppend = false
+      // De-dupe against the live list inside the functional updater so the
+      // append is never computed against a stale render closure.
+      setResults((prev) => {
+        const existingIds = new Set(prev.filter(r => r.kind === kind).map(r => r.id))
+        const fresh = appended.filter(r => !existingIds.has(r.id))
+        if (fresh.length === 0)
+          return prev
+        didAppend = true
+        return [...prev, ...fresh]
+      })
+      if (!didAppend && returned > 0) {
         setLastReturned(prev => ({ ...prev, [kind]: 0 }))
         return
       }
-      setResults(prev => [...prev, ...fresh])
       setOffsets(prev => ({ ...prev, [kind]: prev[kind] + returned }))
       setLastReturned(prev => ({ ...prev, [kind]: returned }))
     }
     catch {
-      setStatus('추가 로드 실패')
+      if (seq === searchSeqRef.current && query.trim() === q)
+        setStatus('추가 로드 실패')
     }
     finally {
       setLoadingMore(null)
@@ -254,6 +282,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       spotifyCooldownRef.current = false
       setSpotifyCooldown(false)
     }, SPOTIFY_COOLDOWN_MS)
+    const seq = ++searchSeqRef.current
     setLoading(true)
     setStatus('Spotify 싱크 중…')
     setResults([])
@@ -268,6 +297,9 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       if (!r || !r.ok)
         throw new Error(`HTTP ${r?.status}`)
       const data = await r.json() as CandidateSearchResult
+      // CP-1: a newer search has superseded this one — drop its results.
+      if (seq !== searchSeqRef.current)
+        return
       const albums: AlbumSearchResult[] = (data.albums ?? []).map(a => ({
         kind: 'album' as const,
         id: a.spotify_id ?? '',
@@ -304,10 +336,12 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       setStatus(merged.length === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과')
     }
     catch {
-      setStatus('Spotify 싱크 실패')
+      if (seq === searchSeqRef.current)
+        setStatus('Spotify 싱크 실패')
     }
     finally {
-      setLoading(false)
+      if (seq === searchSeqRef.current)
+        setLoading(false)
     }
   }
 
@@ -315,6 +349,20 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     () => filter === 'all' ? results : results.filter(r => r.kind === filter),
     [results, filter],
   )
+
+  // CP-3: reset the keyboard-active row whenever the visible result set changes
+  // (new search, filter toggle, load-more) so the highlight never points at a
+  // stale index.
+  useEffect(() => {
+    setActiveIndex(-1)
+  }, [visibleResults])
+
+  // CP-3: keep the active row scrolled into view as the user arrows through.
+  useEffect(() => {
+    if (activeIndex < 0)
+      return
+    rowRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
 
   function runActiveSearch() {
     if (source === 'spotify')
@@ -324,13 +372,34 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   }
 
   function onSearchKeyDown(e: KeyboardEvent) {
+    // CP-3: ↓/↑ move the active row (clamped to the visible range).
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (visibleResults.length === 0)
+        return
+      setActiveIndex(prev => prev >= visibleResults.length - 1 ? 0 : prev + 1)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (visibleResults.length === 0)
+        return
+      setActiveIndex(prev => prev <= 0 ? visibleResults.length - 1 : prev - 1)
+      return
+    }
     // Ignore Enter while an IME composition is active (e.g. confirming a Hangul
     // candidate) — that Enter belongs to the composition, not the search.
     if (e.key === 'Enter' && e.nativeEvent.isComposing)
       return
     if (e.key === 'Enter') {
       e.preventDefault()
-      runActiveSearch()
+      // CP-3: if a row is active, Enter picks it (artist rows drill in, same as
+      // a click). Otherwise fall back to (re-)running the search.
+      const active = activeIndex >= 0 ? visibleResults[activeIndex] : undefined
+      if (active)
+        void onPickResult(active)
+      else
+        runActiveSearch()
     }
   }
 
@@ -620,14 +689,19 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                         <span className="wr-seclabel">{label}</span>
                         <span className="mono">{items.length}</span>
                       </div>
-                      {items.map(r => (
-                        <PaletteRow
+                      {items.map((r) => {
+                        const flatIndex = visibleResults.indexOf(r)
+                        return (
+                          <PaletteRow
 	key={`${r.kind}:${r.id || r.spotify_id}`}
+	ref={(el) => { rowRefs.current[flatIndex] = el }}
 	item={r}
 	isCurrent={r.kind === 'album' && currentSubjectId === r.id}
+	isActive={flatIndex === activeIndex}
 	onPick={() => void onPickResult(r)}
-                        />
-                      ))}
+                          />
+                        )
+                      })}
                       {showLoadMore && (
                         <button
 	type="button"
@@ -663,10 +737,12 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   )
 }
 
-function PaletteRow({ item, isCurrent, onPick }: {
+function PaletteRow({ item, isCurrent, isActive, onPick, ref }: {
   item: SearchResultItem
   isCurrent: boolean
+  isActive: boolean
   onPick: () => void
+  ref?: (el: HTMLButtonElement | null) => void
 }) {
   const isArtist = item.kind === 'artist'
   const displayTitle = isArtist ? item.name : item.title
@@ -685,7 +761,16 @@ function PaletteRow({ item, isCurrent, onPick }: {
   const kindLabel = item.kind === 'album' ? '앨범' : item.kind === 'track' ? '트랙' : '아티스트'
   const isSpotify = item.source === 'spotify'
   return (
-    <button type="button" className={`wr-row${isCurrent ? ' is-current' : ''}`} onClick={onPick}>
+    <button
+	ref={ref}
+	type="button"
+	className={`wr-row${isCurrent ? ' is-current' : ''}${isActive ? ' is-active' : ''}`}
+	aria-selected={isActive}
+      // CP-3: keyboard-active highlight. Inline (not a CSS class) so the cue is
+      // self-contained in this component and matches the hover/current tint.
+	style={isActive ? { background: 'color-mix(in srgb, var(--accent) 12%, transparent)' } : undefined}
+	onClick={onPick}
+    >
       <span className={`wr-row-cover${isArtist ? ' is-artist' : ''}`}>
         {item.cover_url ?
           <img src={item.cover_url} alt="" loading="lazy" /> :

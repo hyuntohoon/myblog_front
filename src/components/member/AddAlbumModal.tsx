@@ -5,6 +5,7 @@ import type { KeyboardEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@lib/api'
 import type { components } from '@lib/api.gen'
+import { useDismissable } from '@lib/useDismissable'
 
 type UnifiedSearchResult = components['schemas']['Music_UnifiedSearchResult']
 type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult']
@@ -44,16 +45,15 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
   const [cooldown, setCooldown] = useState(false)
   const cooldownRef = useRef(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  // ESC + focus trap + focus restore. autoFocus off — focus the search input
+  // (below) rather than the hook's first focusable (the close button).
+  useDismissable(true, onClose, modalRef, { autoFocus: false })
 
   useEffect(() => {
     inputRef.current?.focus()
-    function onKey(e: globalThis.KeyboardEvent) {
-      if (e.key === 'Escape')
-        onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [])
 
   async function runDbSearch() {
     const q = query.trim()
@@ -184,7 +184,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
 
   return (
     <div className="qb-modal-scrim" onClick={onClose} role="presentation">
-      <div className="qb-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="앨범 담기">
+      <div ref={modalRef} className="qb-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="앨범 담기">
         <header className="qb-modal-head">
           <div>
             <p className="qb-modal-kicker">앨범 담기</p>

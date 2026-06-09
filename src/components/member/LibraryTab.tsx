@@ -355,23 +355,29 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
   const [refreshState, setRefreshState] = useState<'idle' | 'pending'>('idle')
   // shown briefly when a refresh found the cache already fresh (server debounced).
   const [freshNote, setFreshNote] = useState(false)
+  // LIB-2: mounted guard + freshNote timer handle — the onRefresh poll outlives
+  // a tab remount (ProfileApp key={tab}); gate every setState and clear the timer.
+  const alive = useRef(true)
+  const freshTimer = useRef<number | null>(null)
 
-  function load(alive: () => boolean = () => true) {
+  function load(isAlive: () => boolean = () => true) {
     return listRecentlyListened()
       .then((snap) => {
-        if (alive()) {
+        if (isAlive()) {
           setItems(snap.items)
           setLastSyncedAt(snap.lastSyncedAt)
         }
       })
-      .catch(() => alive() && setErr(true))
+      .catch(() => isAlive() && setErr(true))
   }
 
   useEffect(() => {
-    let on = true
-    load(() => on)
+    alive.current = true
+    load(() => alive.current)
     return () => {
-      on = false
+      alive.current = false
+      if (freshTimer.current != null)
+        window.clearTimeout(freshTimer.current)
     }
   }, [])
 
@@ -386,8 +392,10 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
       await refreshRecent()
     }
     catch {
-      setErr(true)
-      setRefreshState('idle')
+      if (alive.current) {
+        setErr(true)
+        setRefreshState('idle')
+      }
       return
     }
     // Poll until the worker's synced_at advances past `before` (a real re-sync).
@@ -396,7 +404,11 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
     // not an error: the data genuinely is as fresh as it gets.
     for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
       await sleep(POLL_INTERVAL_MS)
+      if (!alive.current)
+        return // tab remounted mid-poll — stop touching the unmounted tree
       const snap = await listRecentlyListened().catch(() => null)
+      if (!alive.current)
+        return
       if (!snap)
         continue // transient; keep polling within the cap
       if (syncAdvanced(before, snap.lastSyncedAt)) {
@@ -406,9 +418,14 @@ function RecentListenedSection({ onOpen }: { onOpen: (t: DetailTarget) => void }
         return
       }
     }
-    await load()
+    await load(() => alive.current)
+    if (!alive.current)
+      return
     setFreshNote(true)
-    window.setTimeout(() => setFreshNote(false), 3000)
+    freshTimer.current = window.setTimeout(() => {
+      if (alive.current)
+        setFreshNote(false)
+    }, 3000)
     setRefreshState('idle')
   }
 

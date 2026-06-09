@@ -58,6 +58,12 @@ const _rowEls: Record<BucketKey, HTMLDivElement> = {
 	track: tracksRow,
 }
 
+// SEARCH-DB race guard: rapid Enter / Sync fires concurrent searches whose
+// clearResults/render interleave, so a slower broad query can overwrite a newer
+// specific one. Each search start bumps + captures this counter; a resolved
+// fetch only touches the DOM if its captured id is still the latest.
+let _searchSeq = 0
+
 // state
 let _view: View = 'db'
 function setView(v: View) {
@@ -282,6 +288,7 @@ async function runDBSearch() {
 	if (!q)
 return
 
+	const seq = ++_searchSeq
 	setView('db')
 	setStatus('')
 	clearResults()
@@ -292,6 +299,10 @@ return
 			`${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&limit=20&offset=0`,
 			SEARCH_TTL_MS,
 		)
+
+		// A newer search started while this one was in flight — drop stale results.
+		if (seq !== _searchSeq)
+			return
 
 		const artists = mapDBArtistsUnified(data.artists ?? [])
 		const albums = mapDBAlbumsUnified(data.albums ?? [])
@@ -304,6 +315,8 @@ return
 		}
 	}
  catch (e) {
+		if (seq !== _searchSeq)
+			return
 		console.error(e)
 		setStatus('❌ DB 검색 실패')
 	}
@@ -318,6 +331,7 @@ return
 	syncBtn.disabled = true
 	setTimeout(() => (syncBtn.disabled = false), 3000)
 
+	const seq = ++_searchSeq
 	setView('spotify')
 	setStatus('🔄 Spotify 후보를 가져오고, 백그라운드로 DB 최신화를 시작합니다…')
 	clearResults()
@@ -333,6 +347,11 @@ return
 		if (!r.ok)
 throw new Error(`HTTP ${r.status}`)
 		const cand = await r.json() as CandidateSearchResponse
+
+		// A newer search started while this one was in flight — drop stale results.
+		if (seq !== _searchSeq)
+			return
+
 		render(
 			mapCandArtists(cand).slice(0, 10),
 			mapCandAlbums(cand).slice(0, 20),
@@ -341,6 +360,8 @@ throw new Error(`HTTP ${r.status}`)
 		setStatus('✅ Spotify 후보 표시 중 (상세는 DB 반영 후 가능)')
 	}
  catch (e) {
+		if (seq !== _searchSeq)
+			return
 		console.error(e)
 		setStatus('❌ Spotify 후보 검색 실패')
 		setView('db')
