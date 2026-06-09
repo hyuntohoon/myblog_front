@@ -32,16 +32,22 @@ interface RawArtist {
   id?: string | null
   name?: string | null
   cover_url?: string | null
+  // Spotify candidates carry the image as `photo_url` instead of `cover_url`.
+  photo_url?: string | null
   spotify_id?: string | null
 }
 interface RawTrack {
   id?: string | null
   title?: string | null
   artist_name?: string | null
+  feat_artist_names?: string[] | null
   album_id?: string | null
+  album_spotify_id?: string | null
   album_title?: string | null
   cover_url?: string | null
   spotify_id?: string | null
+  // Spotify candidate tracks nest the album fields under `album` instead of flat.
+  album?: { spotify_id?: string | null, title?: string | null, cover_url?: string | null } | null
 }
 
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
@@ -78,7 +84,9 @@ export interface TrackHit {
   id: string | null
   title: string
   artist: string | null
+  featArtists: string[]
   albumId: string | null
+  albumSpotifyId: string | null
   albumTitle: string | null
   cover: string | null
   spotifyId: string | null
@@ -110,7 +118,7 @@ function mapArtists(arr: RawArtist[] | null | undefined, source: HitSource): Art
     kind: 'artist' as const,
     id: source === 'spotify' ? null : (ar.id ?? null),
     name: ar.name ?? '',
-    cover: ar.cover_url ?? null,
+    cover: ar.cover_url ?? ar.photo_url ?? null,
     spotifyId: ar.spotify_id ?? null,
     source,
   }))
@@ -122,9 +130,12 @@ function mapTracks(arr: RawTrack[] | null | undefined, source: HitSource): Track
     id: source === 'spotify' ? null : (t.id ?? null),
     title: t.title ?? '',
     artist: t.artist_name ?? null,
+    featArtists: t.feat_artist_names ?? [],
     albumId: t.album_id ?? null,
-    albumTitle: t.album_title ?? null,
-    cover: t.cover_url ?? null,
+    // unified track carries album_spotify_id flat; candidate nests under album.
+    albumSpotifyId: t.album_spotify_id ?? t.album?.spotify_id ?? null,
+    albumTitle: t.album_title ?? t.album?.title ?? null,
+    cover: t.cover_url ?? t.album?.cover_url ?? null,
     spotifyId: t.spotify_id ?? null,
     source,
   }))
@@ -154,6 +165,8 @@ export interface UseMusicSearch {
   loadingMore: SearchKind | null
   status: string
   source: HitSource
+  /** Flip the source label without running a search (e.g. empty-query toggle). */
+  setSource: (s: HitSource) => void
   spotifyCooldown: boolean
   hasMore: Counts
   runDbSearch: () => Promise<void>
@@ -355,6 +368,7 @@ mapArtists(data.artists, 'db') :
     loadingMore,
     status,
     source,
+    setSource,
     spotifyCooldown,
     hasMore,
     runDbSearch,

@@ -1,6 +1,5 @@
 import type { KeyboardEvent } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { components } from '../../lib/api.gen'
 import type {
   AlbumDetail,
   AlbumSearchResult,
@@ -15,13 +14,23 @@ import {
   fetchArtistHeroBySpotify,
   fetchArtistTopTracks,
 } from '../../scripts/write/artistApi'
-import { apiFetch } from '../../lib/api'
+import type { AlbumHit, ArtistHit, TrackHit } from '../../lib/useMusicSearch'
+import { useMusicSearch } from '../../lib/useMusicSearch'
 import ArtistDetail from './ArtistDetail'
 
-type UnifiedSearchResult = components['schemas']['Music_UnifiedSearchResult']
-type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult']
-
 const API_BASE = import.meta.env.PUBLIC_API_URL as string
+
+// Bridge the shared hook's hit shapes back to the writer's SearchResultItem so
+// the existing render / pick / drill-in code stays untouched.
+function toAlbumSR(h: AlbumHit): AlbumSearchResult {
+  return { kind: 'album', id: h.id ?? h.spotifyId ?? '', title: h.title, cover_url: h.cover, release_date: h.year, artist_name: h.artist, spotify_id: h.spotifyId, source: h.source }
+}
+function toArtistSR(h: ArtistHit): ArtistSearchResult {
+  return { kind: 'artist', id: h.id ?? h.spotifyId ?? '', name: h.name, cover_url: h.cover, spotify_id: h.spotifyId, source: h.source }
+}
+function toTrackSR(h: TrackHit): TrackSearchResult {
+  return { kind: 'track', id: h.id ?? h.spotifyId ?? '', title: h.title, album_id: h.albumId, album_spotify_id: h.albumSpotifyId, album_title: h.albumTitle, cover_url: h.cover, artist_name: h.artist, feat_artist_names: h.featArtists, spotify_id: h.spotifyId, source: h.source }
+}
 
 interface Props {
   currentSubjectId: string | null
@@ -38,10 +47,6 @@ const FILTERS = [
 
 type FilterType = typeof FILTERS[number]['v']
 
-// Backend search always fetches all 3 types so filter toggles can be applied
-// instantly client-side without re-hitting the API.
-const BACKEND_TYPES = 'album,artist,track'
-
 type BucketKey = 'album' | 'artist' | 'track'
 
 // Sections render in this order (Spotify-style: artists first, then albums, then tracks).
@@ -50,33 +55,22 @@ const SECTION_ORDER: { kind: BucketKey, label: string }[] = [
   { kind: 'album', label: '앨범' },
   { kind: 'track', label: '트랙' },
 ]
-type BucketOffsets = Record<BucketKey, number>
-type BucketLastReturned = Record<BucketKey, number>
-
-const ZERO_OFFSETS: BucketOffsets = { album: 0, artist: 0, track: 0 }
-const ZERO_RETURNED: BucketLastReturned = { album: 0, artist: 0, track: 0 }
-const PAGE_LIMIT = 20
 
 type SourceMode = 'db' | 'spotify'
 
-// Spotify candidates endpoint enqueues SQS absorb jobs; rapid re-firing wastes
-// quota and crowds the queue. 3 s cooldown matches BUG-19 era guard.
-const SPOTIFY_COOLDOWN_MS = 3000
-
-// ⌘K command palette. Owns all search state (DB unified search, Spotify
-// candidates + SQS absorb, per-bucket pagination, artist drill-in) — lifted
-// from the former inline SubjectBlock. Renders as an overlay; picking a result
-// calls onPick(detail) and the host closes the palette.
+// ⌘K command palette. Search engine (DB unified + Spotify candidates + paging +
+// race/cooldown guards) lives in the shared `useMusicSearch` hook; this owns the
+// writer-only UI (filter, keyboard nav, artist drill-in). Renders as an overlay;
+// picking a result calls onPick(detail) and the host closes the palette.
 export default function CommandPalette({ currentSubjectId, onPick, onClose }: Props) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SearchResultItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [loadingMore, setLoadingMore] = useState<BucketKey | null>(null)
+  // Shared search engine — DB unified + Spotify candidates, per-bucket paging,
+  // CP-1/CP-4 race guards, Spotify cooldown. recallTypes = all 3 (the writer
+  // shows every bucket; this also drives artist→album expansion for free).
+  const search = useMusicSearch({ recallTypes: ['album', 'artist', 'track'], pageLimit: 20 })
   const [filter, setFilter] = useState<FilterType>('all')
-  const [status, setStatus] = useState('')
-  const [source, setSource] = useState<SourceMode>('db')
-  const [spotifyCooldown, setSpotifyCooldown] = useState(false)
-  const spotifyCooldownRef = useRef(false)
+  // Pick-path errors (album-lookup failures) — kept apart from the hook's search
+  // status so a lookup error isn't clobbered by a stale search message.
+  const [pickStatus, setPickStatus] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   // Artist drill-in state. When set, the result list is hidden and ArtistDetail
   // renders instead. `viewArtistSource` remembers which source the click came
@@ -90,21 +84,19 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   const [viewArtistFailed, setViewArtistFailed] = useState(false)
   const [viewArtistOrigin, setViewArtistOrigin] = useState<ArtistSearchResult | null>(null)
   const viewArtistPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // BUG-19: per-bucket pagination — `offsets[kind]` is the next offset to ask
-  // for; `lastReturned[kind]` controls "더 보기" visibility (hide once a round
-  // returns zero rows for that bucket).
-  const [offsets, setOffsets] = useState<BucketOffsets>(ZERO_OFFSETS)
-  const [lastReturned, setLastReturned] = useState<BucketLastReturned>(ZERO_RETURNED)
-  // CP-1: monotonic search sequence guard — a slow earlier response must not
-  // overwrite a newer query's results. Each search captures the id at start and
-  // only commits state if it's still the latest when the response resolves.
-  const searchSeqRef = useRef(0)
   // CP-2: drill-in sequence guard — backing out of an artist drill-in while its
   // hero fetch is in flight must not re-open the panel when the fetch resolves.
   const drillSeqRef = useRef(0)
   // CP-3: keyboard navigation index over the visible (filtered) result rows.
   const [activeIndex, setActiveIndex] = useState(-1)
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  // Bridge the hook's hit buckets → SearchResultItem (order: artists, albums,
+  // tracks — matches the former merged-search order).
+  const results = useMemo<SearchResultItem[]>(
+    () => [...search.artists.map(toArtistSR), ...search.albums.map(toAlbumSR), ...search.tracks.map(toTrackSR)],
+    [search.albums, search.artists, search.tracks],
+  )
 
   const inDrillIn = viewArtistHero !== null || viewArtistPending || viewArtistFailed
 
@@ -128,226 +120,6 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 
   useEffect(() => () => cancelArtistPoll(), [])
 
-  function mapAlbums(arr: UnifiedSearchResult['albums']): AlbumSearchResult[] {
-    return (arr ?? []).map(a => ({
-      kind: 'album' as const,
-      id: a.id ?? '',
-      title: a.title ?? '',
-      cover_url: a.cover_url ?? null,
-      release_date: a.release_date ?? null,
-      artist_name: a.artist_name ?? null,
-      spotify_id: a.spotify_id ?? null,
-      source: 'db' as const,
-    }))
-  }
-
-  function mapArtists(arr: UnifiedSearchResult['artists']): ArtistSearchResult[] {
-    return (arr ?? []).map(ar => ({
-      kind: 'artist' as const,
-      id: ar.id ?? '',
-      name: ar.name ?? '',
-      cover_url: ar.cover_url ?? null,
-      spotify_id: ar.spotify_id ?? null,
-      source: 'db' as const,
-    }))
-  }
-
-  function mapTracks(arr: UnifiedSearchResult['tracks']): TrackSearchResult[] {
-    return (arr ?? []).map(t => ({
-      kind: 'track' as const,
-      id: t.id ?? '',
-      title: t.title ?? '',
-      album_id: t.album_id ?? null,
-      album_spotify_id: t.album_spotify_id ?? null,
-      album_title: t.album_title ?? null,
-      cover_url: t.cover_url ?? null,
-      artist_name: t.artist_name ?? null,
-      feat_artist_names: t.feat_artist_names ?? [],
-      spotify_id: t.spotify_id ?? null,
-      source: 'db' as const,
-    }))
-  }
-
-  async function runDBSearch() {
-    const q = query.trim()
-    if (!q)
-      return
-    const seq = ++searchSeqRef.current
-    setLoading(true)
-    setStatus('')
-    setResults([])
-    setOffsets(ZERO_OFFSETS)
-    setLastReturned(ZERO_RETURNED)
-    try {
-      const r = await fetch(
-        `${API_BASE}/api/music/search/unified?q=${encodeURIComponent(q)}&type=${BACKEND_TYPES}&limit=${PAGE_LIMIT}&offset=0`,
-      )
-      if (!r.ok)
-        throw new Error(`HTTP ${r.status}`)
-      const data = await r.json() as UnifiedSearchResult
-      // CP-1: a newer search has superseded this one — drop its results.
-      if (seq !== searchSeqRef.current)
-        return
-      const albums = mapAlbums(data.albums)
-      const artists = mapArtists(data.artists)
-      const tracks = mapTracks(data.tracks)
-      setResults([...artists, ...albums, ...tracks])
-      setOffsets({ album: albums.length, artist: artists.length, track: tracks.length })
-      setLastReturned({ album: albums.length, artist: artists.length, track: tracks.length })
-      if (albums.length + artists.length + tracks.length === 0)
-        setStatus('DB에 결과 없음')
-    }
-    catch {
-      if (seq === searchSeqRef.current)
-        setStatus('검색 실패')
-    }
-    finally {
-      if (seq === searchSeqRef.current)
-        setLoading(false)
-    }
-  }
-
-  // BUG-19 Q3 (a): per-bucket "load more" using `<kind>_offset` overrides.
-  // Only fires when a single bucket is selected so the user sees deterministic
-  // append semantics for that kind (no interleaving surprise).
-  async function loadMore(kind: BucketKey) {
-    const q = query.trim()
-    if (!q || loadingMore)
-      return
-    // CP-4: pin the query (and search seq) this load-more was started against.
-    // If either changes before the response resolves, the underlying result
-    // list is for a different query — appending would corrupt it.
-    const seq = searchSeqRef.current
-    setLoadingMore(kind)
-    try {
-      const params = new URLSearchParams({
-        q,
-        type: BACKEND_TYPES,
-        limit: String(PAGE_LIMIT),
-        offset: '0',
-        [`${kind}_offset`]: String(offsets[kind]),
-      })
-      const r = await fetch(`${API_BASE}/api/music/search/unified?${params.toString()}`)
-      if (!r.ok)
-        throw new Error(`HTTP ${r.status}`)
-      const data = await r.json() as UnifiedSearchResult
-      // CP-4: the query changed under us — discard this page, don't append.
-      if (seq !== searchSeqRef.current || query.trim() !== q)
-        return
-      let appended: SearchResultItem[] = []
-      let returned = 0
-      if (kind === 'album') {
-        appended = mapAlbums(data.albums)
-        returned = appended.length
-      }
-      else if (kind === 'artist') {
-        appended = mapArtists(data.artists)
-        returned = appended.length
-      }
-      else {
-        appended = mapTracks(data.tracks)
-        returned = appended.length
-      }
-      let didAppend = false
-      // De-dupe against the live list inside the functional updater so the
-      // append is never computed against a stale render closure.
-      setResults((prev) => {
-        const existingIds = new Set(prev.filter(r => r.kind === kind).map(r => r.id))
-        const fresh = appended.filter(r => !existingIds.has(r.id))
-        if (fresh.length === 0)
-          return prev
-        didAppend = true
-        return [...prev, ...fresh]
-      })
-      if (!didAppend && returned > 0) {
-        setLastReturned(prev => ({ ...prev, [kind]: 0 }))
-        return
-      }
-      setOffsets(prev => ({ ...prev, [kind]: prev[kind] + returned }))
-      setLastReturned(prev => ({ ...prev, [kind]: returned }))
-    }
-    catch {
-      if (seq === searchSeqRef.current && query.trim() === q)
-        setStatus('추가 로드 실패')
-    }
-    finally {
-      setLoadingMore(null)
-    }
-  }
-
-  async function runSpotifySync() {
-    const q = query.trim()
-    if (!q || spotifyCooldownRef.current)
-      return
-    spotifyCooldownRef.current = true
-    setSpotifyCooldown(true)
-    setTimeout(() => {
-      spotifyCooldownRef.current = false
-      setSpotifyCooldown(false)
-    }, SPOTIFY_COOLDOWN_MS)
-    const seq = ++searchSeqRef.current
-    setLoading(true)
-    setStatus('Spotify 싱크 중…')
-    setResults([])
-    // Spotify candidates don't support per-bucket offset paging, so hide
-    // "더 보기" while in Spotify view.
-    setOffsets(ZERO_OFFSETS)
-    setLastReturned(ZERO_RETURNED)
-    try {
-      const r = await apiFetch(
-        `${API_BASE}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=${BACKEND_TYPES}&limit=20`,
-      )
-      if (!r || !r.ok)
-        throw new Error(`HTTP ${r?.status}`)
-      const data = await r.json() as CandidateSearchResult
-      // CP-1: a newer search has superseded this one — drop its results.
-      if (seq !== searchSeqRef.current)
-        return
-      const albums: AlbumSearchResult[] = (data.albums ?? []).map(a => ({
-        kind: 'album' as const,
-        id: a.spotify_id ?? '',
-        title: a.title ?? '',
-        cover_url: a.cover_url ?? null,
-        release_date: a.release_date ?? null,
-        artist_name: a.artist_name ?? null,
-        spotify_id: a.spotify_id ?? null,
-        source: 'spotify' as const,
-      }))
-      const artists: ArtistSearchResult[] = (data.artists ?? []).map(ar => ({
-        kind: 'artist' as const,
-        id: ar.spotify_id ?? '',
-        name: ar.name ?? '',
-        cover_url: ar.photo_url ?? null,
-        spotify_id: ar.spotify_id ?? null,
-        source: 'spotify' as const,
-      }))
-      const tracks: TrackSearchResult[] = (data.tracks ?? []).map(t => ({
-        kind: 'track' as const,
-        id: t.spotify_id ?? '',
-        title: t.title ?? '',
-        album_id: null,
-        album_spotify_id: t.album?.spotify_id ?? null,
-        album_title: t.album?.title ?? null,
-        cover_url: t.album?.cover_url ?? null,
-        artist_name: t.artist_name ?? null,
-        feat_artist_names: [],
-        spotify_id: t.spotify_id ?? null,
-        source: 'spotify' as const,
-      }))
-      const merged: SearchResultItem[] = [...artists, ...albums, ...tracks]
-      setResults(merged)
-      setStatus(merged.length === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과')
-    }
-    catch {
-      if (seq === searchSeqRef.current)
-        setStatus('Spotify 싱크 실패')
-    }
-    finally {
-      if (seq === searchSeqRef.current)
-        setLoading(false)
-    }
-  }
-
   const visibleResults = useMemo(
     () => filter === 'all' ? results : results.filter(r => r.kind === filter),
     [results, filter],
@@ -368,10 +140,11 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   }, [activeIndex])
 
   function runActiveSearch() {
-    if (source === 'spotify')
-      void runSpotifySync()
+    setPickStatus('')
+    if (search.source === 'spotify')
+      void search.runSpotifySync()
     else
-      void runDBSearch()
+      void search.runDbSearch()
   }
 
   function onSearchKeyDown(e: KeyboardEvent) {
@@ -409,15 +182,16 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   // Toggle click: switch source and, if there's a query, immediately re-search
   // through the new source. Empty query → color-only flip, no API call.
   function selectSource(next: SourceMode) {
-    if (next === source)
+    if (next === search.source)
       return
-    setSource(next)
-    if (!query.trim())
+    setPickStatus('')
+    search.setSource(next)
+    if (!search.query.trim())
       return
     if (next === 'spotify')
-      void runSpotifySync()
+      void search.runSpotifySync()
     else
-      void runDBSearch()
+      void search.runDbSearch()
   }
 
   async function selectAlbumByLookup(args: { lookupUrl: string, source?: 'db' | 'spotify' }) {
@@ -443,7 +217,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       onClose()
     }
     catch {
-      setStatus(args.source === 'spotify' ?
+      setPickStatus(args.source === 'spotify' ?
         '앨범을 다시 선택해주세요' :
         '앨범 정보 조회 실패')
     }
@@ -474,7 +248,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
         })
         return
       }
-      setStatus('앨범 정보 없음')
+      setPickStatus('앨범 정보 없음')
       return
     }
     // Artist → open the drill-in panel.
@@ -490,7 +264,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     setViewArtistTracks([])
     setViewArtistAlbums([])
     setViewArtistFailed(false)
-    setStatus('')
+    setPickStatus('')
 
     if (sr.source !== 'spotify' && sr.id) {
       setViewArtistPending(true)
@@ -640,9 +414,9 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                 <input
 	ref={inputRef}
 	className="wr-palette-input"
-	placeholder={source === 'spotify' ? 'Spotify에서 검색…' : '평론할 작품 검색…'}
-	value={query}
-	onChange={e => setQuery(e.target.value)}
+	placeholder={search.source === 'spotify' ? 'Spotify에서 검색…' : '평론할 작품 검색…'}
+	value={search.query}
+	onChange={e => search.setQuery(e.target.value)}
 	onKeyDown={onSearchKeyDown}
 	autoComplete="off"
 	spellCheck={false}
@@ -650,20 +424,20 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                 <span className="wr-src">
                   <button
 	type="button"
-	className={source === 'db' ? 'on' : ''}
+	className={search.source === 'db' ? 'on' : ''}
 	onClick={() => selectSource('db')}
-	disabled={loading && source !== 'db'}
+	disabled={search.loading && search.source !== 'db'}
                   >
                     DB
                   </button>
                   <button
 	type="button"
-	className={source === 'spotify' ? 'on spotify' : ''}
+	className={search.source === 'spotify' ? 'on spotify' : ''}
 	onClick={() => selectSource('spotify')}
-	disabled={(loading && source !== 'spotify') || (source !== 'spotify' && spotifyCooldown)}
-	title={source !== 'spotify' && spotifyCooldown ? '잠시 후 다시 시도 (Spotify 쿨다운)' : undefined}
+	disabled={(search.loading && search.source !== 'spotify') || (search.source !== 'spotify' && search.spotifyCooldown)}
+	title={search.source !== 'spotify' && search.spotifyCooldown ? '잠시 후 다시 시도 (Spotify 쿨다운)' : undefined}
                   >
-                    <SpotifyMark size={11} color={source === 'spotify' ? '#fff' : '#1DB954'} />
+                    <SpotifyMark size={11} color={search.source === 'spotify' ? '#fff' : '#1DB954'} />
                     Spotify
                   </button>
                 </span>
@@ -681,22 +455,22 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                   </button>
                 ))}
                 <span className="wr-palette-count mono">
-                  {loading ? '검색 중…' : `${visibleResults.length}건`}
+                  {search.loading ? '검색 중…' : `${visibleResults.length}건`}
                 </span>
               </div>
 
               <div className="wr-palette-body wr-scroll">
-                {status && <div className="wr-palette-status mono">{status}</div>}
-                {!loading && visibleResults.length === 0 && !status && (
+                {(pickStatus || search.status) && <div className="wr-palette-status mono">{pickStatus || search.status}</div>}
+                {!search.loading && visibleResults.length === 0 && !(pickStatus || search.status) && (
                   <div className="wr-palette-empty mono">
-                    {query.trim() ? '결과 없음' : '작품 검색'}
+                    {search.query.trim() ? '결과 없음' : '작품 검색'}
                   </div>
                 )}
                 {SECTION_ORDER.map(({ kind, label }) => {
                   const items = visibleResults.filter(r => r.kind === kind)
                   if (items.length === 0)
                     return null
-                  const showLoadMore = filter === kind && !loading && lastReturned[kind] > 0
+                  const showLoadMore = filter === kind && !search.loading && search.hasMore[kind] > 0
                   return (
                     <section key={kind} className="wr-palette-section">
                       <div className="wr-palette-seclabel">
@@ -720,10 +494,10 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                         <button
 	type="button"
 	className="wr-palette-more mono"
-	disabled={loadingMore !== null}
-	onClick={() => void loadMore(kind)}
+	disabled={search.loadingMore !== null}
+	onClick={() => void search.loadMore(kind)}
                         >
-                          {loadingMore === kind ? '불러오는 중…' : '더 보기'}
+                          {search.loadingMore === kind ? '불러오는 중…' : '더 보기'}
                         </button>
                       )}
                     </section>
@@ -742,7 +516,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 {' '}
 닫기
                 </span>
-                <span className="wr-palette-foot-src">{source === 'spotify' ? 'Spotify 카탈로그' : 'Lowfreq DB'}</span>
+                <span className="wr-palette-foot-src">{search.source === 'spotify' ? 'Spotify 카탈로그' : 'Lowfreq DB'}</span>
               </div>
             </>
           )}
