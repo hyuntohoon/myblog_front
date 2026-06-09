@@ -459,6 +459,7 @@ slot++
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', end)
     window.removeEventListener('pointercancel', end)
+    window.removeEventListener('blur', end)
     document.body.style.userSelect = ''
     document.body.style.cursor = ''
     if (!dd)
@@ -518,6 +519,14 @@ slot++
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', end)
     window.addEventListener('pointercancel', end)
+    // OV-4: capture the pointer so an interrupted gesture fires pointercancel, and
+    // end the drag if the window loses focus (alt-tab / OS dialog can swallow the
+    // pointerup, otherwise leaving the drag overlay stuck).
+    try {
+      el.setPointerCapture(e.pointerId)
+    }
+    catch {}
+    window.addEventListener('blur', end)
     force()
   }
 
