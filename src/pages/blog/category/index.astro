@@ -5,7 +5,6 @@ import { getCollection } from 'astro:content'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import { defaultDateFormat, sortAsc } from '@utils'
 import Link from '@components/link.astro'
-import PostMetricsItem from '@components/post-metrics'
 
 const posts = sortAsc(await getCollection('blog'))
 ---
@@ -26,18 +25,17 @@ const posts = sortAsc(await getCollection('blog'))
     <>
     <!-- 헤더(표 설명) -->
     <div class="text-faded border-b border-border pb-2 mb-2
-                grid grid-cols-[1fr_auto_auto] gap-x-3 items-center"
+                grid grid-cols-[1fr_auto] gap-x-3 items-center"
     >
       <span class="text-sm">Title</span>
       <span class="text-sm">Date</span>
-      <span class="text-sm">Metrics</span>
     </div>
 
     <!-- 목록 -->
     <div class="divide-y divide-border">
       {
         posts.map(({ data: post }) => (
-          <div class="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-3">
+          <div class="grid grid-cols-[1fr_auto] gap-x-3 items-center py-3">
             <!-- Title -->
             <Link
 	variant="highlight"
@@ -50,11 +48,6 @@ const posts = sortAsc(await getCollection('blog'))
 
             <!-- Date -->
             <span class="text-faded whitespace-nowrap">{defaultDateFormat(post.date)}</span>
-
-            <!-- Metrics -->
-            <span class="text-faded whitespace-nowrap">
-              <PostMetricsItem client:load slug={post.slug} />
-            </span>
           </div>
         ))
       }
