@@ -66,6 +66,13 @@ export interface DetailTarget {
 	albumId?: string
 	/** Real cover image URL (when `real`); null falls back to the letter tile. */
 	cover?: string | null
+	/**
+	 * Opened from a writable 평론 버킷 surface → the album-detail modal offers
+	 *  review authoring (write mode, or edit mode when the album already has a
+	 *  published review). Left unset on read-only surfaces (Spotify 라이브러리,
+	 *  최근 들은, sample tracks) → the modal stays info-only.
+	 */
+	writable?: boolean
 }
 
 export interface MemberProfile {

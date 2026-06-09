@@ -332,7 +332,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
         </>
       )}
 
-      {detail && <AlbumDetail album={detail} onClose={() => setDetail(null)} />}
+      {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} />}
     </div>
   )
 }
