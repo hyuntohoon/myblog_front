@@ -32,6 +32,7 @@
 		"@tailwindcss/vite": "^4.1.11",
 		"@toast-ui/editor": "^3.2.2",
 		"@unpic/astro": "^1.0.1",
+		"@xyflow/react": "^12.11.0",
 		"astro": "^5.15.9",
 		"astro-expressive-code": "^0.41.3",
 		"astro-pagefind": "^1.8.3",

@@ -1,0 +1,233 @@
+/* /genres — genre ontology sample page (read-only graph + detail panel) */
+
+.genre-masthead {
+	padding: 2.5rem 0 1.25rem;
+}
+
+.genre-masthead h1 {
+	font-size: 2rem;
+	font-weight: 700;
+	color: var(--color-highlight);
+	margin: 0;
+}
+
+.genre-masthead p {
+	margin: 0.5rem 0 0;
+	color: var(--color-subtle);
+	font-size: 0.95rem;
+}
+
+.genre-graph-wrap {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 300px;
+	gap: 1rem;
+	margin-bottom: 3rem;
+}
+
+@media (max-width: 860px) {
+	.genre-graph-wrap {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.genre-flow {
+	height: 72vh;
+	min-height: 480px;
+	border: 1px solid var(--color-border);
+	border-radius: 10px;
+	overflow: hidden;
+	background: var(--color-paper);
+}
+
+.genre-flow .react-flow {
+	background: var(--color-paper);
+}
+
+/* ── node card ── */
+
+.genre-node {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	min-width: 120px;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--color-border);
+	border-radius: 8px;
+	background: var(--color-bg);
+	cursor: pointer;
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.genre-node:hover {
+	border-color: var(--color-subtle);
+}
+
+.genre-node.is-selected {
+	border-color: var(--color-accent);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.genre-node-era {
+	font-size: 0.62rem;
+	letter-spacing: 0.06em;
+	color: var(--color-faded);
+}
+
+.genre-node-ko {
+	font-size: 0.92rem;
+	font-weight: 700;
+	color: var(--color-highlight);
+	line-height: 1.25;
+}
+
+.genre-node-en {
+	font-size: 0.7rem;
+	color: var(--color-subtle);
+}
+
+.genre-handle {
+	opacity: 0;
+	pointer-events: none;
+}
+
+/* ── detail panel ── */
+
+.genre-panel {
+	border: 1px solid var(--color-border);
+	border-radius: 10px;
+	background: var(--color-paper);
+	padding: 1.1rem 1.2rem;
+	max-height: 72vh;
+	overflow-y: auto;
+}
+
+.genre-panel-head {
+	margin-bottom: 0.75rem;
+}
+
+.genre-panel-era {
+	font-size: 0.7rem;
+	letter-spacing: 0.08em;
+	color: var(--color-faded);
+}
+
+.genre-panel-title {
+	margin: 0.1rem 0 0;
+	font-size: 1.35rem;
+	font-weight: 700;
+	color: var(--color-highlight);
+}
+
+.genre-panel-en {
+	font-size: 0.8rem;
+	color: var(--color-subtle);
+}
+
+.genre-panel-short {
+	margin: 0 0 1rem;
+	font-size: 0.9rem;
+	line-height: 1.6;
+	color: var(--color-text);
+}
+
+.genre-panel-sub {
+	margin: 1rem 0 0.4rem;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+.genre-panel-history {
+	margin: 0;
+	font-size: 0.85rem;
+	line-height: 1.65;
+	color: var(--color-subtle);
+}
+
+.genre-rel-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+}
+
+.genre-rel {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45rem;
+	border: none;
+	background: none;
+	padding: 0.15rem 0;
+	font-size: 0.85rem;
+	color: var(--color-text);
+	cursor: pointer;
+}
+
+.genre-rel:hover {
+	color: var(--color-accent);
+}
+
+.genre-rel-tag {
+	font-size: 0.64rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	padding: 0.1rem 0.4rem;
+	border-radius: 4px;
+	border: 1px solid var(--color-border);
+	color: var(--color-subtle);
+}
+
+.genre-rel-tag.rel-fusion_of {
+	color: var(--color-accent);
+	border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+.genre-panel-empty p {
+	margin: 0 0 1rem;
+	font-size: 0.88rem;
+	line-height: 1.6;
+	color: var(--color-subtle);
+}
+
+.genre-legend {
+	list-style: none;
+	margin: 0 0 1rem;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	font-size: 0.82rem;
+	color: var(--color-text);
+}
+
+.genre-legend li {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+}
+
+.genre-legend-line {
+	display: inline-block;
+	width: 28px;
+	height: 0;
+	border-top: 2px solid var(--color-subtle);
+}
+
+.genre-legend-line.legend-influence {
+	border-top-style: dashed;
+	border-top-color: var(--color-faded);
+}
+
+.genre-legend-line.legend-fusion {
+	border-top-width: 3px;
+	border-top-color: var(--color-accent);
+}
+
+.genre-panel-note {
+	font-size: 0.75rem !important;
+	color: var(--color-faded) !important;
+}
