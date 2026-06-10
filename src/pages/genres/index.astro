@@ -1,0 +1,26 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import GenreGraphSample from '@components/genres/GenreGraphSample'
+import '@styles/genres.css'
+
+// Genre ontology sample (spike): public read-only graph over hardcoded seed
+// data — no backend. Validates the React Flow direction before the real
+// genres/genre_relations API + writer editor get built.
+---
+
+<Layout>
+  <Seo slot="seo" forceTitle="Genre Map · buckit" />
+
+  <SkipNavContent>
+    <div class="container">
+      <header class="genre-masthead">
+        <h1>Genre Map</h1>
+        <p>장르 온톨로지 샘플 — 실선 하위장르 · 점선 영향 · 붉은 선 융합. 노드를 클릭해 보세요.</p>
+      </header>
+
+      <GenreGraphSample client:only="react" />
+    </div>
+  </SkipNavContent>
+</Layout>
