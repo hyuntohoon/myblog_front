@@ -217,7 +217,7 @@ export const GENRES: GenreSeed[] = [
     shortDesc: '808 베이스와 잘게 쪼갠 하이햇이 특징인 힙합의 지배적 현재형.',
     history: '2000년대 미국 남부에서 형성돼 2010년대 전 세계 힙합 프로덕션의 표준이 됐다. 한국 힙합과 케이팝 프로덕션에도 가장 큰 영향을 준 동시대 문법이다.',
     x: 230,
-    y: 650,
+    y: 640,
   },
   {
     slug: 'k-rnb',
@@ -227,9 +227,12 @@ export const GENRES: GenreSeed[] = [
     shortDesc: '한국 힙합 신과 함께 성장한 한국의 컨템퍼러리 R&B.',
     history: '2010년대 사운드클라우드 세대와 힙합 레이블의 토양 위에서 독자적 신으로 성장했다. 얼터너티브 R&B의 동시대 감각과 한국어 가사의 정서를 결합한 것이 특징이다.',
     x: 40,
-    y: 680,
+    y: 730,
   },
 ]
+
+/** era choices for the add/edit form, oldest first */
+export const ERA_OPTIONS = ['1930s', '1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s']
 
 export const RELATIONS: GenreRelationSeed[] = [
   // subgenre_of — parent → child, child is a form of the parent (RYM rule)
