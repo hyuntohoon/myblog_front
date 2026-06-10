@@ -33,7 +33,8 @@ async function run() {
 		await handleCallback()
 
 		log('✅ 로그인 완료. 이동합니다…')
-		location.replace('/write')
+		// 로그인 후에는 항상 홈으로 이동한다.
+		location.replace('/')
 	}
  catch (e: any) {
 		console.error(e)

@@ -28,8 +28,8 @@ syncAuthUI()
 
 // 이벤트 바인딩
 loginBtn?.addEventListener('click', () => {
-	// 로그인 후 현재 페이지로 복귀
-	goLogin(false, location.pathname + location.search + location.hash)
+	// 로그인 후에는 항상 홈으로 이동한다(콜백 처리에서 결정).
+	goLogin(false)
 })
 logoutBtn?.addEventListener('click', () => logout())
 
