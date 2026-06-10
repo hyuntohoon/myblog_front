@@ -2,7 +2,7 @@
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
-import GenreGraphSample from '@components/genres/GenreGraphSample'
+import GenreMapTabs from '@components/genres/GenreMapTabs'
 import '@styles/genres.css'
 
 // Genre ontology sample (spike): public read-only graph over hardcoded seed
@@ -17,10 +17,10 @@ import '@styles/genres.css'
     <div class="container">
       <header class="genre-masthead">
         <h1>Genre <em>Map</em></h1>
-        <p>장르 온톨로지 샘플 — 노드를 클릭해 계보를 탐색하고, 편집 모드에서 직접 추가·연결·삭제해 보세요.</p>
+        <p>장르 온톨로지 샘플 — 세 가지 디자인 변형을 탭으로 전환해 비교해 보세요.</p>
       </header>
 
-      <GenreGraphSample client:only="react" />
+      <GenreMapTabs client:only="react" />
     </div>
   </SkipNavContent>
 </Layout>
