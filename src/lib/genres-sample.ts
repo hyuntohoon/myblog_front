@@ -9,6 +9,17 @@
 
 export type RelationType = 'subgenre_of' | 'influenced_by' | 'fusion_of'
 
+export type FamilyKey = 'rnb' | 'hiphop' | 'pop' | 'electronic' | 'rock'
+
+/** super-family palette — hex (not CSS vars) because canvas renderers need raw colors */
+export const FAMILY_META: Record<FamilyKey, { label: string, color: string }> = {
+  rnb: { label: 'R&B / Soul', color: '#d99c4a' },
+  hiphop: { label: 'Hip Hop', color: '#9b7ede' },
+  pop: { label: 'Pop', color: '#e26d8f' },
+  electronic: { label: 'Electronic', color: '#56b3c6' },
+  rock: { label: 'Rock', color: '#88a96e' },
+}
+
 export interface GenreSeed {
   slug: string
   nameKo: string
@@ -18,6 +29,10 @@ export interface GenreSeed {
   history: string
   x: number
   y: number
+  /** super-family for cluster coloring; user-added genres may omit it */
+  family?: FamilyKey
+  /** Korean-scene genre — gets the accent treatment in the variant designs */
+  kr?: boolean
 }
 
 export interface GenreRelationSeed {
@@ -31,6 +46,8 @@ export interface GenreRelationSeed {
 export const GENRES: GenreSeed[] = [
   {
     slug: 'trot',
+    family: 'pop',
+    kr: true,
     nameKo: '트로트',
     nameEn: 'Trot',
     eraStart: '1930s',
@@ -41,6 +58,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'soul',
+    family: 'rnb',
     nameKo: '솔',
     nameEn: 'Soul',
     eraStart: '1950s',
@@ -51,6 +69,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'pop',
+    family: 'pop',
     nameKo: '팝',
     nameEn: 'Pop',
     eraStart: '1950s',
@@ -61,6 +80,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'rock',
+    family: 'rock',
     nameKo: '록',
     nameEn: 'Rock',
     eraStart: '1950s',
@@ -71,6 +91,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'funk',
+    family: 'rnb',
     nameKo: '펑크',
     nameEn: 'Funk',
     eraStart: '1960s',
@@ -81,6 +102,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'hip-hop',
+    family: 'hiphop',
     nameKo: '힙합',
     nameEn: 'Hip Hop',
     eraStart: '1970s',
@@ -91,6 +113,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'electronic',
+    family: 'electronic',
     nameKo: '일렉트로닉',
     nameEn: 'Electronic',
     eraStart: '1970s',
@@ -101,6 +124,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'city-pop',
+    family: 'pop',
     nameKo: '시티팝',
     nameEn: 'City Pop',
     eraStart: '1970s',
@@ -111,6 +135,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'synth-pop',
+    family: 'pop',
     nameKo: '신스팝',
     nameEn: 'Synth-pop',
     eraStart: '1970s',
@@ -121,6 +146,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'contemporary-rnb',
+    family: 'rnb',
     nameKo: '컨템퍼러리 R&B',
     nameEn: 'Contemporary R&B',
     eraStart: '1980s',
@@ -131,6 +157,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'boom-bap',
+    family: 'hiphop',
     nameKo: '붐뱁',
     nameEn: 'Boom Bap',
     eraStart: '1980s',
@@ -141,6 +168,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'house',
+    family: 'electronic',
     nameKo: '하우스',
     nameEn: 'House',
     eraStart: '1980s',
@@ -151,6 +179,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'indie-rock',
+    family: 'rock',
     nameKo: '인디 록',
     nameEn: 'Indie Rock',
     eraStart: '1980s',
@@ -161,6 +190,8 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'k-ballad',
+    family: 'pop',
+    kr: true,
     nameKo: 'K-발라드',
     nameEn: 'K-Ballad',
     eraStart: '1980s',
@@ -171,6 +202,8 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'k-pop',
+    family: 'pop',
+    kr: true,
     nameKo: '케이팝',
     nameEn: 'K-Pop',
     eraStart: '1990s',
@@ -181,6 +214,8 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'k-hip-hop',
+    family: 'hiphop',
+    kr: true,
     nameKo: '한국 힙합',
     nameEn: 'K-Hip Hop',
     eraStart: '1990s',
@@ -191,6 +226,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'neo-soul',
+    family: 'rnb',
     nameKo: '네오 솔',
     nameEn: 'Neo-Soul',
     eraStart: '1990s',
@@ -201,6 +237,8 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'k-indie',
+    family: 'rock',
+    kr: true,
     nameKo: '한국 인디',
     nameEn: 'K-Indie',
     eraStart: '1990s',
@@ -211,6 +249,7 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'trap',
+    family: 'hiphop',
     nameKo: '트랩',
     nameEn: 'Trap',
     eraStart: '2000s',
@@ -221,6 +260,8 @@ export const GENRES: GenreSeed[] = [
   },
   {
     slug: 'k-rnb',
+    family: 'rnb',
+    kr: true,
     nameKo: 'K-R&B',
     nameEn: 'K-R&B',
     eraStart: '2010s',
