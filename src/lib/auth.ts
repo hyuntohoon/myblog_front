@@ -33,7 +33,6 @@ const LS_ID = 'id_token'
 const LS_REFRESH = 'refresh_token'
 const SS_VERIFIER = 'pkce_verifier'
 const SS_STATE = 'oauth_state'
-const SS_RETURN_TO = 'return_to'
 
 // ─────────────────────────── Helpers ────────────────────────────
 
@@ -72,11 +71,10 @@ export function getAuthHeader(): Record<string, string> {
 
 // ─────────────────────── Login / Logout ─────────────────────────
 /**
- * 로그인 시작.
+ * 로그인 시작. 로그인 완료 후에는 항상 홈(`/`)으로 이동한다(콜백 처리에서 결정).
  * @param force true이면 매번 로그인 폼 강제(prompt=login)
- * @param returnTo 로그인 후 돌아갈 경로(지정 없으면 현재 경로)
  */
-export async function goLogin(force: boolean = false, returnTo?: string) {
+export async function goLogin(force: boolean = false) {
 	// ENV guard
 	if (COGNITO_DOMAIN.includes('/')) {
 		console.error(
@@ -90,10 +88,6 @@ export async function goLogin(force: boolean = false, returnTo?: string) {
 
 	const state = crypto.randomUUID()
 	sessionStorage.setItem(SS_STATE, state)
-
-	// 돌아갈 위치 저장 (기본값: 현재 위치)
-	const to = returnTo || location.pathname + location.search + location.hash
-	sessionStorage.setItem(SS_RETURN_TO, to)
 
 	const url = new URL(`https://${COGNITO_DOMAIN}/oauth2/authorize`)
 	const params: Record<string, string> = {
@@ -113,7 +107,8 @@ params.prompt = 'login'
 }
 
 /**
- * 콜백 처리: code → 토큰 교환 및 저장 후, return_to 로 이동(기본 /write)
+ * 콜백 처리: code → 토큰 교환 및 저장. 이동은 호출부(callback.client.ts)가
+ * 담당한다(로그인 후 항상 홈으로).
  */
 export async function handleCallback() {
 	const qs = new URLSearchParams(location.search)
@@ -160,10 +155,6 @@ localStorage.setItem(LS_REFRESH, json.refresh_token)
 	// cleanup
 	sessionStorage.removeItem(SS_VERIFIER)
 	sessionStorage.removeItem(SS_STATE)
-
-	const returnTo = sessionStorage.getItem(SS_RETURN_TO) || '/write'
-	sessionStorage.removeItem(SS_RETURN_TO)
-	location.replace(returnTo)
 }
 
 /**

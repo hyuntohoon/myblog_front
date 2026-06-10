@@ -75,7 +75,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 					return res
 			}
 			console.warn('Auth refresh failed — redirecting to login')
-			goLogin(true, window.location.pathname)
+			goLogin(true)
 			return null
 		}
 
