@@ -13,9 +13,9 @@ import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
 import { fetchPostById, listDrafts, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
+import { activeDraftId, loadDraftSlot, migrateLegacyDraft, removeDraftSlot, saveDraftSlot } from '../../scripts/write/draftStore'
 import { useAutoGrow } from './autoGrow'
 
-const DRAFT_KEY = 'lowfreq-draft'
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
 
 function todayISO() {
@@ -27,14 +27,20 @@ function nowTime() {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-function loadDraft(): Partial<DraftPersist> {
-  // Older drafts persisted dead keys (bestNew/genre/author/authorRole).
-  // Partial<DraftPersist> silently drops them on read — no migration needed.
-  // (`tags` is live again as of STAB-5 Step 4; the state init sanitizes any
-  // stale legacy `tags` value to the seeded vocabulary.)
+// Which per-album draft slot seeds the editor on mount: an explicit ?album=
+// target, else the last-active slot. ?id= (DB edit mode) starts blank here and
+// loads from the server below. SSR-safe — window/localStorage are guarded, and
+// older drafts (dead keys like bestNew/genre) are dropped by Partial<DraftPersist>.
+function initialDraft(): Partial<DraftPersist> {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY)
-    return raw ? JSON.parse(raw) as Partial<DraftPersist> : {}
+    migrateLegacyDraft()
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('id'))
+      return {}
+    const albumParam = params.get('album')
+    if (albumParam)
+      return loadDraftSlot(albumParam)
+    return loadDraftSlot(activeDraftId())
   }
   catch {
     return {}
@@ -81,7 +87,7 @@ function Toast({ msg }: { msg: string }) {
 }
 
 export default function WriterApp() {
-  const saved = loadDraft()
+  const saved = initialDraft()
   const loaded = useRef(false)
   // Has the user typed their own title? Auto-fill (from the picked subject)
   // only runs while this is false, so it never clobbers a manual headline.
@@ -96,6 +102,13 @@ export default function WriterApp() {
   const [dbPostId, setDbPostId] = useState<string | null>(saved.dbPostId ?? null)
 
   const [subject, setSubject] = useState<AlbumDetail | null>(saved.subject ?? null)
+  // Live mirrors read by the per-album draft swap (onSubjectSelect) without
+  // threading state through closures. draftRef is assigned its content below,
+  // once every state it composes is declared; declared here so the swap can
+  // reference it. subjectRef = the album whose slot is currently active.
+  const subjectRef = useRef<AlbumDetail | null>(saved.subject ?? null)
+  subjectRef.current = subject
+  const draftRef = useRef<Omit<DraftPersist, 'lastSaved'>>(null!)
   const [score, setScore] = useState(saved.score ?? 0)
   const [headline, setHeadline] = useState(saved.headline ?? '')
   const [dek, setDek] = useState(saved.dek ?? '')
@@ -104,7 +117,7 @@ export default function WriterApp() {
   // STAB-5 Step 4: selected review tags (labels). Multi-select, read-only vocab
   // (REVIEW_TAG_LABELS); empty = no tags. Backend rejects any non-seeded name —
   // so sanitize the restored draft to the known vocabulary (an older draft may
-  // carry a stale `tags` key from a previous writer; see loadDraft note).
+  // carry a stale `tags` key from a previous writer; see initialDraft note).
   const [tags, setTags] = useState<string[]>(
     (saved.tags ?? []).filter(t => REVIEW_TAG_LABELS.includes(t)),
   )
@@ -134,14 +147,33 @@ export default function WriterApp() {
   // post.subject_best_new on edit-mode load below.
   const [subjectBestNew, setSubjectBestNew] = useState<boolean>(saved.subjectBestNew ?? false)
 
-  // Album switch invalidates any previously-picked tracks (they belonged to the
-  // old album). Clear silently — the user is starting fresh under the new subject.
+  // Picking a subject. Switching to a DIFFERENT album flushes the current
+  // album's draft to its own slot, then loads the target album's slot (or a
+  // blank draft) — each album's WIP stays separate instead of the previous
+  // album's body/title following you onto the new one (per-album drafts).
   const onSubjectSelect = useCallback((next: AlbumDetail) => {
-    setSubject((prev) => {
-      if (prev && prev.id !== next.id)
-        setRecommendedTrackIds([])
-      return next
-    })
+    const prev = subjectRef.current
+    if (prev && prev.id !== next.id) {
+      // 1. stash what's on screen now under the album we're leaving
+      saveDraftSlot(prev.id, { ...draftRef.current, lastSaved: nowTime() })
+      // 2. load the album we're switching to (empty object ⇒ a fresh draft)
+      const slot = loadDraftSlot(next.id)
+      titleDirty.current = (slot.headline ?? '').trim() !== ''
+      setHeadline(slot.headline ?? (next.title ?? ''))
+      setDek(slot.dek ?? '')
+      setBody(slot.body ?? '')
+      setScore(slot.score ?? 0)
+      setSection(slot.section ?? SECTION_LABELS[0])
+      setTags((slot.tags ?? []).filter(t => REVIEW_TAG_LABELS.includes(t)))
+      setRecommendedTrackIds(slot.recommendedTrackIds ?? [])
+      setPublishDate(slot.publishDate ?? todayISO())
+      setDbPostId(slot.dbPostId ?? null)
+      setSubjectBestNew(slot.subjectBestNew ?? (next.kind !== 'artist' ? (next.best_new ?? false) : false))
+      setSubject(next)
+      return
+    }
+    // First pick (or re-pick of the same album): keep what's typed.
+    setSubject(next)
     // Step 6: seed the BEST NEW toggle from the newly-picked album's flag.
     // For artist subjects (kind='artist') there's no album-level flag — leave
     // the toggle off; SubjectHero hides the badge anyway.
@@ -185,7 +217,6 @@ export default function WriterApp() {
   // latest content, refreshed every render, so the 30s autosave + tab-hide flush
   // read it without re-arming their timers on every keystroke.
   const dirtyRef = useRef(false)
-  const draftRef = useRef<Omit<DraftPersist, 'lastSaved'>>(null!)
   draftRef.current = {
     subject,
     score,
@@ -299,10 +330,7 @@ export default function WriterApp() {
     if (!dirtyRef.current)
       return
     const ts = nowTime()
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draftRef.current, lastSaved: ts }))
-    }
-    catch { /* quota */ }
+    saveDraftSlot(subjectRef.current?.id ?? null, { ...draftRef.current, lastSaved: ts })
     dirtyRef.current = false
     setLastSaved(ts)
     setStatus('saved')
@@ -422,10 +450,7 @@ export default function WriterApp() {
     // green + a one-shot sync pulse. dirtyRef clears so the 30s timer won't
     // redundantly re-write the same content.
     const ts = nowTime()
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...draftRef.current, dbPostId: savedId, lastSaved: ts }))
-    }
-    catch { /* quota */ }
+    saveDraftSlot(subjectRef.current?.id ?? null, { ...draftRef.current, dbPostId: savedId, lastSaved: ts })
     dirtyRef.current = false
     setLastSaved(ts)
     setStatus('saved')
@@ -434,7 +459,7 @@ export default function WriterApp() {
   }
 
   const onReset = () => {
-    localStorage.removeItem(DRAFT_KEY)
+    removeDraftSlot(subjectRef.current?.id ?? null)
     titleDirty.current = false
     // Drop the DB linkage too — a reset starts a brand-new post, so the next
     // save must create a row, not overwrite the previously-saved draft.
@@ -537,7 +562,7 @@ export default function WriterApp() {
     // /blog/{slug} 404s during that window. Redirect to the /blog list page
     // instead — it works immediately and the new post appears once the build
     // completes. Reset state so the form is empty if the user navigates back.
-    localStorage.removeItem(DRAFT_KEY)
+    removeDraftSlot(subjectRef.current?.id ?? null)
     titleDirty.current = false
     // Clear the DB id so a follow-up post (without a reload) creates a fresh row
     // instead of re-updating the one just published.
