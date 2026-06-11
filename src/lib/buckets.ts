@@ -7,6 +7,7 @@
 // which skips edge_guard. Routes live on the backend service (PUBLIC_BACKEND_API_URL).
 import { apiFetch } from '@lib/api'
 import type { components } from '@lib/api.gen'
+import type { ResearchStatus } from '@lib/research'
 
 const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
@@ -34,6 +35,13 @@ export interface BoardAlbum {
    * when the parent bucket's research_mode is 'selected' (the cover checkbox).
    */
   researchSelected: boolean
+  /**
+   * FEAT-album-research-notes: latest research-note status for this album
+   * ('queued'|'running'|'done'|'failed') or null when never researched. Seeds the
+   * cover badge so a done album shows its dot on first paint — no per-cover GET.
+   * Optional: album sources without a bucket payload (recent strip, copies) omit it.
+   */
+  researchStatus?: ResearchStatus | null
 }
 
 /** A bucket node in the board tree (mapped from the API's nested BucketResponse). */
@@ -71,6 +79,7 @@ function mapItem(it: ApiItem): BoardAlbum {
     year: rel ? Number(String(rel).slice(0, 4)) || null : null,
     alreadyReviewed: it.already_reviewed ?? false,
     researchSelected: it.research_selected ?? false,
+    researchStatus: (it.research_status ?? null) as ResearchStatus | null,
   }
 }
 
