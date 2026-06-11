@@ -19,6 +19,11 @@ import type { ReactNode } from 'react'
 const URL_FRAG = '(?:[^()\\s]|\\([^()\\s]*\\))+'
 const INLINE = new RegExp(`(\\*\\*[^*]+\\*\\*)|(\`[^\`]+\`)|(\\[[^\\]]+\\]\\(${URL_FRAG}\\))|(\\*[^*]+\\*)|(_[^_]+_)`, 'g')
 const LINK = new RegExp(`^\\[([^\\]]+)\\]\\((${URL_FRAG})\\)$`)
+// Scheme allowlist — the note is AI-generated from web research, so a crafted
+// citation could carry a `javascript:`/`data:` URL that would XSS in the
+// (authed) writer's session. Only http(s)/mailto/relative destinations render
+// as a link; anything else degrades to its plain link text.
+const SAFE_URL = /^(?:https?:\/\/|mailto:|\/|#)/i
 
 function inline(text: string, keyBase: string): ReactNode[] {
 	const out: ReactNode[] = []
@@ -41,9 +46,10 @@ function inline(text: string, keyBase: string): ReactNode[] {
 		}
 		else if (match.startsWith('[')) {
 			const lm = LINK.exec(match)
-			out.push(lm ?
-				<a key={key} href={lm[2]} target="_blank" rel="noopener noreferrer" className="rsh-link">{lm[1]}</a> :
-				match)
+			if (lm && SAFE_URL.test(lm[2]))
+				out.push(<a key={key} href={lm[2]} target="_blank" rel="noopener noreferrer" className="rsh-link">{lm[1]}</a>)
+			else
+				out.push(lm ? lm[1] : match)
 		}
 		else {
 			out.push(<em key={key}>{match.slice(1, -1)}</em>)
