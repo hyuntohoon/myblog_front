@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useDismissable } from '../../lib/useDismissable'
+import ResearchNote from '../member/ResearchNote'
 import WriterChrome from './WriterChrome'
 import SubjectHero from './SubjectHero'
 import CommandPalette from './CommandPalette'
@@ -164,6 +167,11 @@ export default function WriterApp() {
   const [view, setView] = useState<WriterView>('edit')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // FEAT-album-research-notes — the margin research rail is in-flow on wide
+  // viewports; on narrow ones (CSS) it collapses to this toggleable drawer.
+  const [researchDrawer, setResearchDrawer] = useState(false)
+  const researchDrawerRef = useRef<HTMLElement>(null)
+  useDismissable(researchDrawer, () => setResearchDrawer(false), researchDrawerRef)
   // Dot starts green only if a real draft was restored (lastSaved present);
   // otherwise hollow "unsaved" — never claim a save that didn't happen.
   const [status, setStatus] = useState<SaveStatus>(saved.lastSaved ? 'saved' : 'dirty')
@@ -550,6 +558,12 @@ export default function WriterApp() {
 
   const s = { subject, score, headline, dek, body, publishDate, subjectBestNew }
 
+  // Research is per-album: only an album subject (kind 'album' or legacy
+  // undefined) has a note; artist subjects / no subject ⇒ no rail. The current
+  // writer carries a single subject, so there is one album to research at a
+  // time (the RFC's multi-album tab case can't arise in this editor).
+  const researchAlbumId = subject && subject.kind !== 'artist' ? subject.id : null
+
   return (
     <div className="page">
       <WriterChrome
@@ -580,10 +594,18 @@ export default function WriterApp() {
 	value={recommendedTrackIds}
 	onChange={setRecommendedTrackIds}
             />
-            <main className="wr-doc">
-              <TitleArea headline={headline} setHeadline={onHeadlineChange} dek={dek} setDek={setDek} dim={!subject} />
-              <BodyArea body={body} setBody={setBody} dim={!subject} />
-            </main>
+            <div className="wr-stage">
+              <main className="wr-doc">
+                <TitleArea headline={headline} setHeadline={onHeadlineChange} dek={dek} setDek={setDek} dim={!subject} />
+                <BodyArea body={body} setBody={setBody} dim={!subject} />
+              </main>
+              {researchAlbumId && (
+                <aside className="wr-research-rail" aria-label="조사 정보">
+                  <div className="wr-rail-kicker">조사 · RESEARCH</div>
+                  <ResearchNote albumId={researchAlbumId} variant="rail" />
+                </aside>
+              )}
+            </div>
           </>
         ) :
         (
@@ -616,6 +638,35 @@ export default function WriterApp() {
 	onReset={onReset}
 	busy={busy}
       />
+
+      {/* narrow-viewport fallback for the margin rail: a FAB (CSS-hidden on wide
+          screens, where the in-flow rail shows instead) opening a right drawer.
+          Portaled to <body> so the fixed FAB/drawer can't be trapped by an
+          ancestor transform (see the BucketBoard trash-dock lesson). */}
+      {researchAlbumId && view === 'edit' && typeof document !== 'undefined' && createPortal(
+        <>
+          <button
+	type="button"
+	className="wr-research-fab"
+	onClick={() => setResearchDrawer(true)}
+	aria-label="조사 정보 열기"
+          >
+            🔎 조사
+          </button>
+          {researchDrawer && (
+            <div className="wr-research-drawer-backdrop" onClick={() => setResearchDrawer(false)} role="presentation">
+              <aside ref={researchDrawerRef} className="wr-research-drawer" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="조사 정보">
+                <header className="wr-research-drawer-head">
+                  <div className="wr-rail-kicker">조사 · RESEARCH</div>
+                  <button type="button" className="wr-research-drawer-close" onClick={() => setResearchDrawer(false)} aria-label="닫기">✕</button>
+                </header>
+                <ResearchNote albumId={researchAlbumId} variant="panel" />
+              </aside>
+            </div>
+          )}
+        </>,
+        document.body,
+      )}
 
       <Toast msg={toast} />
     </div>

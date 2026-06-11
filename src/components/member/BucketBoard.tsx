@@ -24,7 +24,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
+import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearch } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
+import ResearchNote from './ResearchNote'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
 import { getSpotifyLibraryState, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
@@ -223,11 +225,37 @@ function SlibBadges({ row }: { row: SpotifyLibraryAlbumState }) {
   )
 }
 
+// ── per-cover research affordance ───────────────────────────────────────────
+// A small dot at the cover's bottom-left that opens the research slide-over.
+// When the bucket is research-active it auto-loads the note so the dot shows the
+// live status color (queued/running/done/failed); otherwise it stays a faint
+// neutral dot (no fetch) and the note loads on demand when opened.
+function CoverResearchBadge({ albumId, active, onOpen }: { albumId: string, active: boolean, onOpen: () => void }) {
+  const { note, status } = useResearch(albumId, { auto: active })
+  const has = !!note
+  const show = active || has
+  const color = show ? researchStatusColor(status) : 'var(--color-bg)'
+  const title = show && status ? `리서치: ${RESEARCH_STATUS_LABEL[status]}` : '조사 노트'
+  return (
+    <button
+	type="button"
+	className="rsh-cover-badge"
+	title={title}
+	aria-label="조사 노트 열기"
+	style={{ background: color, borderColor: show ? 'var(--color-bg)' : 'var(--color-border)' }}
+	onClick={(e) => {
+        e.stopPropagation()
+        onOpen()
+      }}
+    />
+  )
+}
+
 // ── album cover tile ──────────────────────────────────────────────────────--
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert }: {
+function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research }: {
   album: BoardAlbum
   bucketId: string
   rated: boolean
@@ -249,6 +277,12 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
   setDraggingId: (id: string | null) => void
   setDragKind: (k: DragKind) => void
   onInsert?: (itemId: string, fromBucketId: string, beforeItemId: string) => void
+  /**
+   * FEAT-album-research-notes: per-cover research dot + (in 'selected' mode) the
+   * auto-research checkbox. Only passed for normal-bucket covers (not the recent
+   * strip / Spotify-library bucket).
+   */
+  research?: { mode: string, selected: boolean, onOpen: () => void, onToggleSelected: (next: boolean) => void }
 }) {
   const [over, setOver] = useState(false)
   const dragging = draggingId === album.itemId
@@ -326,6 +360,20 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           {rated && score == null && (
             <span className="lf-mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
           )}
+          {research && (
+            <CoverResearchBadge albumId={album.albumId} active={research.mode !== 'off'} onOpen={research.onOpen} />
+          )}
+          {research && research.mode === 'selected' && (
+            <input
+	type="checkbox"
+	className="rsh-cover-check"
+	checked={research.selected}
+	title="자동 조사 대상"
+	aria-label="자동 조사 대상으로 선택"
+	onClick={e => e.stopPropagation()}
+	onChange={e => research.onToggleSelected(e.target.checked)}
+            />
+          )}
         </div>
         <div style={{ marginTop: 7 }}>
           <div className="lf-serif lf-italic" style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
@@ -349,6 +397,10 @@ interface Ops {
   rename: (id: string, name: string) => void
   setColor: (id: string, color: string | null) => void
   requestAdd: (bucketId: string, bucketName: string) => void
+  // FEAT-album-research-notes
+  setResearchMode: (bucketId: string, mode: 'off' | 'all' | 'selected') => void
+  setItemSelected: (bucketId: string, itemId: string, selected: boolean) => void
+  openResearch: (albumId: string, title: string) => void
 }
 
 // Props shared by every BucketCard / BucketList in the tree (everything except
@@ -380,6 +432,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
+  const [researching, setResearching] = useState(false)
   const m = crMeta(bucket)
   const accent = crColor(bucket, depth)
   const hot = dropTarget === bucket.id
@@ -438,6 +491,14 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	setDraggingId={setDraggingId}
 	setDragKind={setDragKind}
 	onInsert={isLib ? undefined : (itemId, fromBucketId, beforeItemId) => ops.insertAlbum(itemId, fromBucketId, bucket.id, beforeItemId)}
+	research={isLib ?
+		undefined :
+		{
+			mode: bucket.researchMode,
+			selected: a.researchSelected,
+			onOpen: () => ops.openResearch(a.albumId, a.title),
+			onToggleSelected: (next: boolean) => ops.setItemSelected(bucket.id, a.itemId, next),
+		}}
     />
   )
   const addBtn = (
@@ -555,6 +616,18 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
           <button type="button" className="lf-iconbtn" title="버킷 색상" onClick={() => setColoring(v => !v)} style={{ padding: 0 }}>
             <span style={{ width: 13, height: 13, borderRadius: 13, background: accent, border: '1px solid var(--color-border)', display: 'block' }} />
           </button>
+          {!isLib && (
+            <button
+	type="button"
+	className="lf-iconbtn"
+	title="자동 조사 설정"
+	aria-pressed={bucket.researchMode !== 'off'}
+	onClick={() => setResearching(v => !v)}
+	style={bucket.researchMode !== 'off' ? { color: 'var(--color-accent)' } : undefined}
+            >
+              🔎
+            </button>
+          )}
           <button type="button" className="lf-iconbtn" title="앨범 추가" onClick={() => ops.requestAdd(bucket.id, bucket.name)}>＋</button>
           <button type="button" className="lf-iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
         </div>
@@ -582,6 +655,31 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* auto-research scope (off / 전체 / 선택) */}
+      {researching && !isLib && (
+        <div className="rsh-mode-row">
+          <span className="lf-meta">자동 조사</span>
+          <div className="rsh-seg" role="group" aria-label="자동 조사 범위">
+            {(['off', 'all', 'selected'] as const).map(val => (
+              <button
+	key={val}
+	type="button"
+	className="rsh-seg-btn"
+	aria-pressed={bucket.researchMode === val}
+	onClick={() => ops.setResearchMode(bucket.id, val)}
+              >
+                {val === 'off' ? '끔' : (val === 'all' ? '전체' : '선택')}
+              </button>
+            ))}
+          </div>
+          <span className="rsh-mode-hint">
+            {bucket.researchMode === 'all' ?
+              '담는 앨범을 자동으로 조사합니다' :
+              (bucket.researchMode === 'selected' ? '체크한 앨범만 조사합니다' : '자동 조사가 꺼져 있습니다')}
+          </span>
         </div>
       )}
 
@@ -929,6 +1027,11 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const confirmModalRef = useRef<HTMLDivElement>(null)
   useDismissable(!!pendingBucketDelete, () => setPendingBucketDelete(null), confirmModalRef)
 
+  // FEAT-album-research-notes — the album whose research note slide-over is open.
+  const [researchTarget, setResearchTarget] = useState<{ albumId: string, title: string } | null>(null)
+  const researchPanelRef = useRef<HTMLElement>(null)
+  useDismissable(!!researchTarget, () => setResearchTarget(null), researchPanelRef)
+
   // album_id → the member's own star rating (0–5). Feeds the rated-bucket chips
   // without any extra fetch (reviews are already server-built into props).
   const ratings = useMemo(() => {
@@ -991,6 +1094,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
           cover: it.album?.cover_url ?? null,
           year: it.album?.release_date ? Number(String(it.album.release_date).slice(0, 4)) || null : null,
           alreadyReviewed: false,
+          researchSelected: false,
         }))
         setRecent(mapped)
         try {
@@ -1118,6 +1222,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
             cover: src?.cover ?? null,
             year: src?.year ?? null,
             alreadyReviewed: src?.alreadyReviewed ?? false,
+            researchSelected: false,
           })
         }
         return t
@@ -1273,6 +1378,35 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     },
     requestAdd(bucketId, bucketName) {
       setAddingTo({ id: bucketId, name: bucketName })
+    },
+    // FEAT-album-research-notes — set the bucket's auto-research scope.
+    // Optimistic; the backend auto-enqueues note-less (checked) items on the
+    // all/selected transition. The cover badges auto-load when mode != 'off' so
+    // they pick up the new 'queued' rows on their next poll.
+    setResearchMode(bucketId, mode) {
+      if (tree == null)
+        return
+      const t = clone(tree)
+      const b = findBucket(t, bucketId)
+      if (b)
+        b.researchMode = mode
+      setTree(t)
+      api.setBucketResearchMode(bucketId, mode).catch(() => void refresh())
+    },
+    // Toggle a per-item research opt-in (meaningful in 'selected' mode). Checking
+    // an item auto-enqueues it server-side through the dedupe gate.
+    setItemSelected(bucketId, itemId, selected) {
+      if (tree == null)
+        return
+      const t = clone(tree)
+      const a = findBucket(t, bucketId)?.albums.find(x => x.itemId === itemId)
+      if (a)
+        a.researchSelected = selected
+      setTree(t)
+      api.setItemResearchSelected(bucketId, itemId, selected).catch(() => void refresh())
+    },
+    openResearch(albumId, title) {
+      setResearchTarget({ albumId, title })
     },
   }
 
@@ -1521,6 +1655,17 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {researchTarget && (
+        <div className="lf-scrim" onClick={() => setResearchTarget(null)} role="presentation">
+          <aside ref={researchPanelRef} className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="리서치 노트">
+            <button type="button" className="lf-iconbtn" onClick={() => setResearchTarget(null)} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
+            <div className="lf-kicker" style={{ marginBottom: 6 }}>리서치 노트</div>
+            <h2 className="lf-serif" style={{ fontSize: 22, fontWeight: 500, lineHeight: 1.25, marginBottom: 18 }}>{researchTarget.title}</h2>
+            <ResearchNote albumId={researchTarget.albumId} variant="panel" />
+          </aside>
         </div>
       )}
     </div>

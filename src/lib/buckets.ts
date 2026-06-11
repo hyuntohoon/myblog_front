@@ -29,6 +29,11 @@ export interface BoardAlbum {
   year: number | null
   /** Advisory: this album already has a published review. */
   alreadyReviewed: boolean
+  /**
+   * FEAT-album-research-notes: per-item auto-research opt-in. Only meaningful
+   * when the parent bucket's research_mode is 'selected' (the cover checkbox).
+   */
+  researchSelected: boolean
 }
 
 /** A bucket node in the board tree (mapped from the API's nested BucketResponse). */
@@ -45,6 +50,11 @@ export interface BoardBucket {
    * rendered as its own section). Defaults to 'review' when the field is absent.
    */
   kind: string
+  /**
+   * FEAT-album-research-notes: per-bucket auto-research scope. 'off' (default) |
+   * 'all' (research every note-less item) | 'selected' (only checked items).
+   */
+  researchMode: string
   albums: BoardAlbum[]
   children: BoardBucket[]
 }
@@ -60,6 +70,7 @@ function mapItem(it: ApiItem): BoardAlbum {
     cover: a?.cover_url ?? null,
     year: rel ? Number(String(rel).slice(0, 4)) || null : null,
     alreadyReviewed: it.already_reviewed ?? false,
+    researchSelected: it.research_selected ?? false,
   }
 }
 
@@ -73,6 +84,7 @@ function mapBucket(b: ApiBucket): BoardBucket {
     color: b.color ?? null,
     isDone: b.is_done ?? false,
     kind,
+    researchMode: b.research_mode ?? 'off',
     albums: (b.items ?? []).map(mapItem),
     children: (b.children ?? []).map(mapBucket),
   }
@@ -125,6 +137,31 @@ export async function setBucketColor(id: string, color: string | null): Promise<
     body: JSON.stringify({ color }),
   })
   await asJson<ApiBucket>(res)
+}
+
+/**
+ * PATCH /api/buckets/{id} — set the auto-research scope. Switching to 'all' /
+ * 'selected' makes the backend auto-enqueue the bucket's note-less (checked)
+ * items through the dedupe gate; 'off' only stops future auto-triggers.
+ */
+export async function setBucketResearchMode(id: string, mode: 'off' | 'all' | 'selected'): Promise<void> {
+	const res = await apiFetch(`${BASE}/api/buckets/${id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ research_mode: mode }),
+	})
+	await asJson<ApiBucket>(res)
+}
+
+/**
+ * PATCH /api/buckets/{bucketId}/items/{itemId} — toggle per-item research opt-in.
+ * Checking an item while the bucket is in 'selected' mode auto-enqueues it.
+ */
+export async function setItemResearchSelected(bucketId: string, itemId: string, selected: boolean): Promise<void> {
+	const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items/${itemId}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ research_selected: selected }),
+	})
+	await asJson<ApiItem>(res)
 }
 
 /** DELETE /api/buckets/{id} — cascades to descendants + items (DB FK). */

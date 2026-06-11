@@ -1,0 +1,108 @@
+/* ============================================================
+   FEAT-album-research-notes Step 5 — /write margin research rail.
+   The note panel itself is styled by the shared src/styles/research.css
+   (.rsh-*); this module only owns the writer-surface LAYOUT: a flex pair
+   (writing column + sticky rail) that fills the right whitespace, collapsing
+   to a toggleable drawer on narrow viewports. No viewport gutter math — the
+   pair is simply centered, so the column never has to be measured (the fragile
+   /profile gutter approach is deliberately avoided).
+   ============================================================ */
+.wr-stage {
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+	gap: 28px;
+}
+/* In the flex pair the writing column keeps its measure but must NOT use its
+   auto side-margins (those would absorb the free space and shove the rail). */
+.wr-stage > .wr-doc { margin: 0; }
+
+.wr-research-rail {
+	flex: 0 0 320px;
+	width: 320px;
+	position: sticky;
+	top: 84px;
+	align-self: flex-start;
+	padding: 44px 0 90px;
+	max-height: calc(100vh - 96px);
+	overflow-y: auto;
+}
+.wr-rail-kicker {
+	font-family: var(--mono);
+	font-size: 10px;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--ink-faint);
+	padding-bottom: 10px;
+	margin-bottom: 8px;
+	border-bottom: 1px solid var(--rule-soft);
+}
+
+/* FAB — narrow only (wide screens show the in-flow rail instead) */
+.wr-research-fab { display: none; }
+
+@media (max-width: 1120px) {
+	.wr-stage { display: block; }
+	.wr-stage > .wr-doc { margin: 0 auto; }
+	.wr-research-rail { display: none; }
+	.wr-research-fab {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		position: fixed;
+		right: 18px;
+		bottom: 18px;
+		z-index: var(--z-bubble, 60);
+		font-family: var(--mono);
+		font-size: 12px;
+		letter-spacing: 0.04em;
+		padding: 10px 16px;
+		border-radius: 999px;
+		background: var(--ink);
+		color: var(--bg);
+		border: none;
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+		cursor: pointer;
+	}
+}
+
+/* drawer (opened by the FAB) */
+.wr-research-drawer-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.32);
+	z-index: var(--z-modal, 80);
+	display: flex;
+	justify-content: flex-end;
+}
+.wr-research-drawer {
+	position: relative;
+	width: min(420px, 92vw);
+	height: 100%;
+	overflow-y: auto;
+	background: var(--bg);
+	border-left: 1px solid var(--rule);
+	padding: 22px 22px 60px;
+	box-shadow: -12px 0 40px rgba(0, 0, 0, 0.12);
+	animation: wr-drawer-in 0.18s ease-out;
+}
+@keyframes wr-drawer-in {
+	from { transform: translateX(24px); opacity: 0; }
+	to { transform: translateX(0); opacity: 1; }
+}
+.wr-research-drawer-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 14px;
+}
+.wr-research-drawer-head .wr-rail-kicker { border: none; padding: 0; margin: 0; }
+.wr-research-drawer-close {
+	width: 30px;
+	height: 30px;
+	border: 1px solid var(--rule-soft);
+	border-radius: 6px;
+	background: none;
+	color: var(--ink-soft);
+	cursor: pointer;
+}
