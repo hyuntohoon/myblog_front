@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useDismissable } from '../../lib/useDismissable'
@@ -14,9 +15,30 @@ import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
 import { fetchPostById, listDrafts, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 import { activeDraftId, loadDraftSlot, migrateLegacyDraft, removeDraftSlot, saveDraftSlot } from '../../scripts/write/draftStore'
+import ResearchDoc from './ResearchDoc'
 import { useAutoGrow } from './autoGrow'
 
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
+// editor|doc split — owner-picked option D (Claude Design 2026-06-11): pane
+// ratio is draggable, clamped, and persisted across sessions.
+const SPLIT_KEY = 'lf_write_split'
+const SPLIT_MIN = 38
+const SPLIT_MAX = 70
+
+// True above the split breakpoint (matches the CSS 1120px FAB/drawer gate).
+// Starts false (also during SSR) and corrects in an effect — one early frame of
+// the stacked layout on wide screens beats a hydration mismatch.
+function useIsWide(): boolean {
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1121px)')
+    const sync = () => setWide(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+  return wide
+}
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -199,11 +221,52 @@ export default function WriterApp() {
   const [view, setView] = useState<WriterView>('edit')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // FEAT-album-research-notes — the margin research rail is in-flow on wide
-  // viewports; on narrow ones (CSS) it collapses to this toggleable drawer.
+  // FEAT-album-research-notes — wide viewports show the editor|doc split view
+  // (design option D); narrow ones (≤1120px CSS) fall back to this toggleable
+  // drawer instead.
   const [researchDrawer, setResearchDrawer] = useState(false)
   const researchDrawerRef = useRef<HTMLElement>(null)
   useDismissable(researchDrawer, () => setResearchDrawer(false), researchDrawerRef)
+
+  // Split-view pane ratio (left pane %, clamped, persisted) + divider drag.
+  const isWide = useIsWide()
+  const [splitPct, setSplitPct] = useState(() => {
+    try {
+      const v = Number.parseFloat(localStorage.getItem(SPLIT_KEY) ?? '')
+      return Number.isFinite(v) ? Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, v)) : 57
+    }
+    catch {
+      return 57
+    }
+  })
+  const [splitDrag, setSplitDrag] = useState(false)
+  const splitRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!splitDrag)
+      return
+    const move = (e: PointerEvent) => {
+      const el = splitRef.current
+      if (!el)
+        return
+      const r = el.getBoundingClientRect()
+      setSplitPct(Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, ((e.clientX - r.left) / r.width) * 100)))
+    }
+    const up = () => setSplitDrag(false)
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+  }, [splitDrag])
+  useEffect(() => {
+    if (splitDrag)
+      return
+    try {
+      localStorage.setItem(SPLIT_KEY, String(splitPct))
+    }
+    catch { /* quota */ }
+  }, [splitDrag, splitPct])
   // Dot starts green only if a real draft was restored (lastSaved present);
   // otherwise hollow "unsaved" — never claim a save that didn't happen.
   const [status, setStatus] = useState<SaveStatus>(saved.lastSaved ? 'saved' : 'dirty')
@@ -584,13 +647,45 @@ export default function WriterApp() {
   const s = { subject, score, headline, dek, body, publishDate, subjectBestNew }
 
   // Research is per-album: only an album subject (kind 'album' or legacy
-  // undefined) has a note; artist subjects / no subject ⇒ no rail. The current
-  // writer carries a single subject, so there is one album to research at a
-  // time (the RFC's multi-album tab case can't arise in this editor).
+  // undefined) has a note; artist subjects / no subject ⇒ no research pane.
+  // The writer carries a single subject, so there is one album to research at
+  // a time (the RFC's multi-album tab case can't arise in this editor).
   const researchAlbumId = subject && subject.kind !== 'artist' ? subject.id : null
+  const splitActive = !!researchAlbumId && isWide && view === 'edit'
+
+  // Quote a research-note block into the draft body as a blockquote (design's
+  // ❝ 인용 affordance). Functional update — body may have changed since render.
+  const onQuoteToBody = useCallback((text: string) => {
+    setBody(b => `${b ? `${b.replace(/\s+$/, '')}\n\n` : ''}> ${text}\n\n`)
+    flash('리서치 노트에서 본문으로 인용했습니다')
+  }, [flash])
+
+  const editorColumn = (
+    <main className="wr-doc">
+      <TitleArea headline={headline} setHeadline={onHeadlineChange} dek={dek} setDek={setDek} dim={!subject} />
+      <BodyArea body={body} setBody={setBody} dim={!subject} />
+    </main>
+  )
+  const heroBlock = (
+    <>
+      <SubjectHero
+	subject={subject}
+	score={score}
+	onScoreChange={setScore}
+	subjectBestNew={subjectBestNew}
+	onSubjectBestNewChange={setSubjectBestNew}
+	onOpenSearch={() => setPaletteOpen(true)}
+      />
+      <RecommendedTracksBlock
+	subject={subject}
+	value={recommendedTrackIds}
+	onChange={setRecommendedTrackIds}
+      />
+    </>
+  )
 
   return (
-    <div className="page">
+    <div className={`page${splitActive ? ' wr-is-split' : ''}`}>
       <WriterChrome
 	view={view}
 	onViewChange={setView}
@@ -604,35 +699,38 @@ export default function WriterApp() {
       />
 
       {view === 'edit' ?
-        (
-          <>
-            <SubjectHero
-	subject={subject}
-	score={score}
-	onScoreChange={setScore}
-	subjectBestNew={subjectBestNew}
-	onSubjectBestNewChange={setSubjectBestNew}
-	onOpenSearch={() => setPaletteOpen(true)}
-            />
-            <RecommendedTracksBlock
-	subject={subject}
-	value={recommendedTrackIds}
-	onChange={setRecommendedTrackIds}
-            />
-            <div className="wr-stage">
-              <main className="wr-doc">
-                <TitleArea headline={headline} setHeadline={onHeadlineChange} dek={dek} setDek={setDek} dim={!subject} />
-                <BodyArea body={body} setBody={setBody} dim={!subject} />
-              </main>
-              {researchAlbumId && (
-                <aside className="wr-research-rail" aria-label="조사 정보">
-                  <div className="wr-rail-kicker">조사 · RESEARCH</div>
-                  <ResearchNote albumId={researchAlbumId} variant="rail" />
-                </aside>
-              )}
+        (splitActive && researchAlbumId ?
+          (
+            // editor | research-doc split (design option D): both panes scroll
+            // independently; the divider drags the ratio (clamped + persisted).
+            <div className={`wr-split${splitDrag ? ' is-dragging' : ''}`} ref={splitRef} style={{ '--wr-split-l': `${splitPct}%` } as CSSProperties}>
+              <div className="wr-split-pane">
+                {heroBlock}
+                {editorColumn}
+              </div>
+              <div
+	className={`wr-split-divider${splitDrag ? ' on' : ''}`}
+	role="separator"
+	aria-orientation="vertical"
+	aria-label="패널 크기 조절"
+	onPointerDown={(e) => {
+                  e.preventDefault()
+                  setSplitDrag(true)
+                }}
+              />
+              <div className="wr-split-pane is-doc" aria-label="리서치 노트">
+                <ResearchDoc albumId={researchAlbumId} subject={subject} onQuote={onQuoteToBody} />
+              </div>
             </div>
-          </>
-        ) :
+          ) :
+          (
+            <>
+              {heroBlock}
+              <div className="wr-stage">
+                {editorColumn}
+              </div>
+            </>
+          )) :
         (
           <main className="surface preview-surface">
             <PreviewView s={s} />

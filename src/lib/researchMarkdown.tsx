@@ -85,8 +85,71 @@ function heading(level: number, children: ReactNode, key: number): ReactNode {
 	return <h5 key={key} className={cls}>{children}</h5>
 }
 
+// Strip inline markers (**, *, _, `, [text](url) → text) so a quoted block
+// lands in the editor as plain prose, not nested markdown.
+export function stripInline(text: string): string {
+	return text
+		.replace(/\*\*([^*]+)\*\*/g, '$1')
+		.replace(/\*([^*]+)\*/g, '$1')
+		.replace(/_([^_]+)_/g, '$1')
+		.replace(/`([^`]+)`/g, '$1')
+		.replace(new RegExp(`\\[([^\\]]+)\\]\\(${URL_FRAG}\\)`, 'g'), '$1')
+}
+
+export interface RenderOpts {
+	/**
+	 * When set, paragraph/blockquote blocks render a hover "❝ 인용" button that
+	 * calls back with the block's plain text (writer split view — quote a finding
+	 * straight into the draft body).
+	 */
+	onQuote?: (text: string) => void
+}
+
+/** One h2-delimited slice of a note (split view nav unit). */
+export interface NoteSection {
+	id: string
+	/** null = preamble content before the first `## ` heading (no nav entry). */
+	title: string | null
+	md: string
+}
+
+/** Split a note into `## `-delimited sections for the split-view doc nav. */
+export function splitSections(md: string): NoteSection[] {
+	const lines = md.replace(/\r\n/g, '\n').split('\n')
+	const out: NoteSection[] = []
+	let cur: NoteSection = { id: 'sec-0', title: null, md: '' }
+	const push = () => {
+		if (cur.title != null || cur.md.trim())
+			out.push(cur)
+	}
+	for (const ln of lines) {
+		const m = /^##\s+(\S.*)$/.exec(ln)
+		if (m) {
+			push()
+			cur = { id: `sec-${out.length}`, title: stripInline(m[1].trim()), md: `${ln}\n` }
+		}
+		else {
+			cur.md += `${ln}\n`
+		}
+	}
+	push()
+	return out
+}
+
 /** Render an album-research note (markdown string) to React nodes. */
-export function renderMarkdown(md: string): ReactNode {
+export function renderMarkdown(md: string, opts: RenderOpts = {}): ReactNode {
+	// Wrap a quotable block so the hover 인용 button can sit on it.
+	const quotable = (node: ReactNode, raw: string, key: number): ReactNode => {
+		if (!opts.onQuote)
+			return node
+		const onQuote = opts.onQuote
+		return (
+			<div key={`blk${key}`} className="rsh-blk">
+				{node}
+				<button type="button" className="rsh-qbtn" title="본문에 인용" onClick={() => onQuote(stripInline(raw))}>❝ 인용</button>
+			</div>
+		)
+	}
 	const lines = md.replace(/\r\n/g, '\n').split('\n')
 	const blocks: ReactNode[] = []
 	let i = 0
@@ -116,7 +179,8 @@ export function renderMarkdown(md: string): ReactNode {
 				buf.push(lines[i].replace(RE_QUOTE, ''))
 				i += 1
 			}
-			blocks.push(<blockquote key={key} className="rsh-quote">{inline(buf.join(' '), `q${key}`)}</blockquote>)
+			const raw = buf.join(' ')
+			blocks.push(quotable(<blockquote key={key} className="rsh-quote">{inline(raw, `q${key}`)}</blockquote>, raw, key))
 			key += 1
 			continue
 		}
@@ -153,7 +217,8 @@ export function renderMarkdown(md: string): ReactNode {
 			para.push(lines[i])
 			i += 1
 		}
-		blocks.push(<p key={key} className="rsh-p">{inline(para.join(' '), `p${key}`)}</p>)
+		const raw = para.join(' ')
+		blocks.push(quotable(<p key={key} className="rsh-p">{inline(raw, `p${key}`)}</p>, raw, key))
 		key += 1
 	}
 	return <>{blocks}</>

@@ -1,32 +1,280 @@
 /* ============================================================
-   FEAT-album-research-notes Step 5 — /write margin research rail.
-   The note panel itself is styled by the shared src/styles/research.css
-   (.rsh-*); this module only owns the writer-surface LAYOUT: a flex pair
-   (writing column + sticky rail) that fills the right whitespace, collapsing
-   to a toggleable drawer on narrow viewports. No viewport gutter math — the
-   pair is simply centered, so the column never has to be measured (the fragile
-   /profile gutter approach is deliberately avoided).
+   FEAT-album-research-notes — /write research surfaces.
+   Wide viewports: editor | research-doc SPLIT VIEW (Claude Design handoff
+   2026-06-11, owner-picked option D "분할 보기" with enlarged doc fonts) —
+   draggable divider, independently scrolling panes, paper-toned document.
+   Narrow viewports (≤1120px): the FAB + drawer fallback (shared .rsh panel).
+   The note panel internals are styled by the shared src/styles/research.css;
+   this module owns the writer-surface LAYOUT + the document-scale typography.
    ============================================================ */
-.wr-stage {
-	display: flex;
-	justify-content: center;
-	align-items: flex-start;
-	gap: 28px;
-}
-/* In the flex pair the writing column keeps its measure but must NOT use its
-   auto side-margins (those would absorb the free space and shove the rail). */
-.wr-stage > .wr-doc { margin: 0; }
 
-.wr-research-rail {
-	flex: 0 0 320px;
-	width: 320px;
-	position: sticky;
-	top: 84px;
-	align-self: flex-start;
-	padding: 44px 0 90px;
-	max-height: calc(100vh - 96px);
-	overflow-y: auto;
+/* ── split shell ── */
+/* In split mode the page itself stops scrolling: chrome on top, the split
+   fills the rest of the viewport, each pane scrolls on its own. */
+.page.wr-is-split {
+	height: 100dvh;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
+.wr-split {
+	flex: 1;
+	min-height: 0;
+	display: grid;
+	grid-template-columns: var(--wr-split-l, 57%) 7px minmax(0, 1fr);
+}
+.wr-split-pane {
+	overflow-y: auto;
+	min-width: 0;
+}
+.wr-split-pane.is-doc {
+	background: var(--paper);
+	border-left: 1px solid var(--rule-soft);
+}
+.wr-split.is-dragging {
+	cursor: col-resize;
+	user-select: none;
+}
+/* while dragging, panes must not steal pointerup / focus a textarea */
+.wr-split.is-dragging .wr-split-pane { pointer-events: none; }
+
+.wr-split-divider {
+	cursor: col-resize;
+	position: relative;
+	background: transparent;
+	border-left: 1px solid var(--rule);
+	transition: background 0.14s;
+	touch-action: none;
+}
+.wr-split-divider:hover,
+.wr-split-divider.on {
+	background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.wr-split-divider::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 3px;
+	height: 38px;
+	border-radius: 3px;
+	background: var(--rule);
+}
+
+/* ── research document (right pane) ── */
+.wr-rdoc {
+	width: min(620px, 100%);
+	margin: 0 auto;
+	padding: 30px 34px 80px;
+}
+.wr-rdoc [data-sec] { scroll-margin-top: 64px; }
+
+/* sticky section pill nav */
+.wr-rdoc-nav {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	display: flex;
+	gap: 5px;
+	overflow-x: auto;
+	padding: 12px 0 11px;
+	background: color-mix(in srgb, var(--paper) 88%, transparent);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+}
+.wr-rdoc-nav button {
+	flex-shrink: 0;
+	border: 1px solid var(--rule);
+	background: transparent;
+	cursor: pointer;
+	font-family: var(--mono);
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--ink-soft);
+	padding: 5px 12px;
+	border-radius: 999px;
+	transition: all 0.13s;
+	white-space: nowrap;
+}
+.wr-rdoc-nav button:hover { border-color: var(--ink); color: var(--ink); }
+.wr-rdoc-nav button.on {
+	background: var(--ink);
+	color: var(--bg);
+	border-color: var(--ink);
+}
+
+/* document head */
+.wr-rdoc-head {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-bottom: 20px;
+	padding-bottom: 16px;
+	border-bottom: 2px solid var(--ink);
+}
+.wr-rdoc-head-top {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+.wr-rdoc-title {
+	font-family: var(--serif);
+	font-size: 25px;
+	font-style: italic;
+	font-weight: 600;
+	letter-spacing: -0.015em;
+	line-height: 1.2;
+	margin: 0;
+	min-width: 0;
+}
+.wr-rdoc-actions {
+	display: flex;
+	gap: 6px;
+	flex-shrink: 0;
+	padding-top: 6px;
+}
+.wr-rdoc-act {
+	font-family: var(--mono);
+	font-size: 9.5px;
+	letter-spacing: 0.05em;
+	padding: 4px 10px;
+	border: 1px solid var(--rule);
+	background: transparent;
+	color: var(--ink-soft);
+	cursor: pointer;
+	transition: all 0.14s;
+	white-space: nowrap;
+}
+.wr-rdoc-act:hover { border-color: var(--ink); color: var(--ink); }
+.wr-rdoc-act.danger:hover { border-color: var(--accent); color: var(--accent); }
+.wr-rdoc-act:disabled { opacity: 0.4; cursor: default; }
+
+.wr-rdoc-status {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	min-width: 0;
+}
+.wr-rdoc-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 999px;
+	flex: 0 0 auto;
+	align-self: center;
+}
+.wr-rdoc-status-l {
+	font-family: var(--mono);
+	font-size: 11.5px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	white-space: nowrap;
+}
+.wr-rdoc-status-m {
+	font-family: var(--mono);
+	font-size: 10.5px;
+	letter-spacing: 0.02em;
+	color: var(--ink-faint);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* album facts (2-col) */
+.wr-rdoc-facts {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	column-gap: 18px;
+	margin: 2px 0 0;
+}
+.wr-rdoc-fact {
+	display: grid;
+	grid-template-columns: 64px 1fr;
+	gap: 10px;
+	align-items: baseline;
+	padding: 6px 0;
+	border-bottom: 1px solid var(--rule-soft);
+}
+.wr-rdoc-fact dt {
+	font-family: var(--mono);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+.wr-rdoc-fact dd {
+	margin: 0;
+	font-family: var(--serif);
+	font-size: 14px;
+	color: var(--ink);
+	line-height: 1.4;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ── document-scale note typography (design: 폰트 키운 D) ──
+   Overrides on the shared .rsh-prose sizes; applied via the .rsh-doc class
+   the split pane adds. */
+.rsh-prose.rsh-doc .rsh-p {
+	font-size: 16.5px;
+	line-height: 1.84;
+	margin: 0 0 14px;
+}
+.rsh-prose.rsh-doc .rsh-ul li,
+.rsh-prose.rsh-doc .rsh-ol li {
+	font-size: 15.5px;
+	line-height: 1.7;
+	margin: 0.3em 0;
+}
+.rsh-prose.rsh-doc .rsh-ul,
+.rsh-prose.rsh-doc .rsh-ol { margin: 0 0 16px; }
+.rsh-prose.rsh-doc .rsh-quote {
+	font-size: 15.5px;
+	line-height: 1.74;
+	padding-left: 16px;
+	border-left-color: var(--accent);
+}
+.rsh-prose.rsh-doc .rsh-h2 {
+	font-size: 12.5px;
+	margin: 38px 0 15px;
+	padding-bottom: 9px;
+	border-bottom: 1px solid var(--rule);
+}
+.rsh-prose.rsh-doc > .rsh-h2:first-child,
+.rsh-prose.rsh-doc > .rsh-blk:first-child .rsh-h2 { margin-top: 0; }
+.rsh-prose.rsh-doc .rsh-h3 { font-size: 16px; }
+
+/* ── hover quote button (❝ 인용) on quotable blocks ── */
+.rsh-blk { position: relative; }
+.rsh-qbtn {
+	position: absolute;
+	top: -3px;
+	right: 0;
+	z-index: 2;
+	font-family: var(--mono);
+	font-size: 8.5px;
+	letter-spacing: 0.05em;
+	padding: 2px 7px;
+	border: 1px solid var(--rule);
+	background: var(--bg);
+	color: var(--ink-soft);
+	cursor: pointer;
+	opacity: 0;
+	transform: translateY(-2px);
+	transition: opacity 0.14s, transform 0.14s, border-color 0.14s, color 0.14s;
+}
+.rsh-blk:hover .rsh-qbtn,
+.rsh-qbtn:focus-visible {
+	opacity: 1;
+	transform: none;
+}
+.rsh-qbtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* drawer header kicker (narrow fallback) */
 .wr-rail-kicker {
 	font-family: var(--mono);
 	font-size: 10px;
@@ -38,13 +286,10 @@
 	border-bottom: 1px solid var(--rule-soft);
 }
 
-/* FAB — narrow only (wide screens show the in-flow rail instead) */
+/* FAB — narrow only (wide screens show the split view instead) */
 .wr-research-fab { display: none; }
 
 @media (max-width: 1120px) {
-	.wr-stage { display: block; }
-	.wr-stage > .wr-doc { margin: 0 auto; }
-	.wr-research-rail { display: none; }
 	.wr-research-fab {
 		display: inline-flex;
 		align-items: center;
