@@ -25,6 +25,9 @@
 }
 .wr-split-pane {
 	overflow-y: auto;
+	/* vertical-only: with overflow-y set, a default overflow-x computes to auto
+	   and any 1px overrun paints a stray horizontal scrollbar at the pane foot */
+	overflow-x: hidden;
 	min-width: 0;
 }
 .wr-split-pane.is-doc {
@@ -70,14 +73,15 @@
 }
 .wr-rdoc [data-sec] { scroll-margin-top: 64px; }
 
-/* sticky section pill nav */
+/* sticky section pill nav — wraps to extra rows instead of scrolling
+   horizontally (owner request: no sideways scroll inside the note) */
 .wr-rdoc-nav {
 	position: sticky;
 	top: 0;
 	z-index: 5;
 	display: flex;
+	flex-wrap: wrap;
 	gap: 5px;
-	overflow-x: auto;
 	padding: 12px 0 11px;
 	background: color-mix(in srgb, var(--paper) 88%, transparent);
 	backdrop-filter: blur(10px);
@@ -325,6 +329,7 @@
 	width: min(420px, 92vw);
 	height: 100%;
 	overflow-y: auto;
+	overflow-x: hidden;
 	background: var(--bg);
 	border-left: 1px solid var(--rule);
 	padding: 22px 22px 60px;
