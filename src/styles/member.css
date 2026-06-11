@@ -354,13 +354,8 @@
 }
 .member-root[data-density='compact'] { --mr-pad: 14px; }
 .member-root[data-density='comfy'] { --mr-pad: 30px; }
-.member-root *::-webkit-scrollbar { width: 9px; height: 9px; }
-.member-root *::-webkit-scrollbar-thumb {
-	background: var(--color-border);
-	border-radius: 20px;
-	border: 2px solid transparent;
-	background-clip: content-box;
-}
+/* (member-scoped scrollbar styling removed — the site-wide editorial
+   scrollbar in global.css covers every scroll surface.) */
 
 @media (max-width: 880px) {
 	.lf-sidebar-grid { grid-template-columns: 1fr !important; }
