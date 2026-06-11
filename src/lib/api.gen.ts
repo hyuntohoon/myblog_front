@@ -555,6 +555,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/research/albums/{album_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Album Research */
+        get: operations["get_album_research_api_research_albums__album_id__get"];
+        put?: never;
+        /** Trigger Album Research */
+        post: operations["trigger_album_research_api_research_albums__album_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sections": {
         parameters: {
             query?: never;
@@ -639,6 +657,40 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** AlbumResearchResponse */
+        Backend_AlbumResearchResponse: {
+            /** Album Id */
+            album_id: string;
+            /** Error */
+            error?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Last Instruction */
+            last_instruction?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Prompt Version */
+            prompt_version: string;
+            /**
+             * Refine Count
+             * @default 0
+             */
+            refine_count: number;
+            /** Requested At */
+            requested_at?: string | null;
+            /** Result Md */
+            result_md?: string | null;
+            /** Search Count */
+            search_count?: number | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Status */
+            status: string;
+            /** Tokens In */
+            tokens_in?: number | null;
+            /** Tokens Out */
+            tokens_out?: number | null;
+        };
         /** BucketItemResponse */
         Backend_BucketItemResponse: {
             album: components["schemas"]["Backend_AlbumBrief"];
@@ -659,6 +711,11 @@ export interface components {
             post_id?: string | null;
             /** Rec Reason */
             rec_reason?: string | null;
+            /**
+             * Research Selected
+             * @default false
+             */
+            research_selected: boolean;
             /** Status */
             status: string;
         };
@@ -683,6 +740,11 @@ export interface components {
             name: string;
             /** Position */
             position: number;
+            /**
+             * Research Mode
+             * @default off
+             */
+            research_mode: string;
         };
         /** BucketsResponse */
         Backend_BucketsResponse: {
@@ -934,6 +996,13 @@ export interface components {
             /** Buckets */
             buckets?: components["schemas"]["Backend_ReorderBucket"][];
         };
+        /** ResearchTriggerRequest */
+        Backend_ResearchTriggerRequest: {
+            /** Instruction */
+            instruction?: string | null;
+            /** Mode */
+            mode?: ("restart" | "refine") | null;
+        };
         /** ReviewedAlbumResponse */
         Backend_ReviewedAlbumResponse: {
             album: components["schemas"]["Backend_AlbumBrief"];
@@ -1060,6 +1129,8 @@ export interface components {
             note?: string | null;
             /** Post Id */
             post_id?: string | null;
+            /** Research Selected */
+            research_selected?: boolean | null;
             /** Status */
             status?: ("candidate" | "drafting" | "published") | null;
         };
@@ -1073,6 +1144,8 @@ export interface components {
             name?: string | null;
             /** Position */
             position?: number | null;
+            /** Research Mode */
+            research_mode?: ("off" | "all" | "selected") | null;
         };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
@@ -2675,6 +2748,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_album_research_api_research_albums__album_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AlbumResearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_album_research_api_research_albums__album_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_ResearchTriggerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AlbumResearchResponse"];
                 };
             };
             /** @description Validation Error */
