@@ -716,6 +716,8 @@ export interface components {
              * @default false
              */
             research_selected: boolean;
+            /** Research Status */
+            research_status?: string | null;
             /** Status */
             status: string;
         };

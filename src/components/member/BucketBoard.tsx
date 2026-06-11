@@ -24,6 +24,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
+import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearch } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
 import ResearchNote from './ResearchNote'
@@ -230,12 +231,16 @@ function SlibBadges({ row }: { row: SpotifyLibraryAlbumState }) {
 // When the bucket is research-active it auto-loads the note so the dot shows the
 // live status color (queued/running/done/failed); otherwise it stays a faint
 // neutral dot (no fetch) and the note loads on demand when opened.
-function CoverResearchBadge({ albumId, active, onOpen }: { albumId: string, active: boolean, onOpen: () => void }) {
+function CoverResearchBadge({ albumId, active, seedStatus, onOpen }: { albumId: string, active: boolean, seedStatus?: ResearchStatus | null, onOpen: () => void }) {
   const { note, status } = useResearch(albumId, { auto: active })
-  const has = !!note
+  // Prefer the live store status (fresher — reflects a just-opened panel / poll),
+  // then fall back to the bucket-payload seed so a done album paints its dot on the
+  // first render even when the bucket isn't research-active (mode 'off' = no auto-GET).
+  const effStatus = status ?? seedStatus ?? null
+  const has = !!note || !!seedStatus
   const show = active || has
-  const color = show ? researchStatusColor(status) : 'var(--color-bg)'
-  const title = show && status ? `리서치: ${RESEARCH_STATUS_LABEL[status]}` : '조사 노트'
+  const color = show ? researchStatusColor(effStatus) : 'var(--color-bg)'
+  const title = show && effStatus ? `리서치: ${RESEARCH_STATUS_LABEL[effStatus]}` : '조사 노트'
   return (
     <button
 	type="button"
@@ -361,7 +366,7 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
             <span className="lf-mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
           )}
           {research && (
-            <CoverResearchBadge albumId={album.albumId} active={research.mode !== 'off'} onOpen={research.onOpen} />
+            <CoverResearchBadge albumId={album.albumId} active={research.mode !== 'off'} seedStatus={album.researchStatus} onOpen={research.onOpen} />
           )}
           {research && research.mode === 'selected' && (
             <input
