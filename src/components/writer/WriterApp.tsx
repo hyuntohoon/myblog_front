@@ -14,6 +14,7 @@ import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
 import { fetchPostById, listDrafts, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
+import { fetchArtistHero } from '../../scripts/write/artistApi'
 import { activeDraftId, loadDraftSlot, migrateLegacyDraft, removeDraftSlot, saveDraftSlot } from '../../scripts/write/draftStore'
 import ResearchDoc from './ResearchDoc'
 import { useAutoGrow } from './autoGrow'
@@ -42,6 +43,35 @@ function useIsWide(): boolean {
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
+}
+
+// Resolve a DB album id to the writer's AlbumDetail subject shape (music-API
+// catalog read, unauthenticated). null on any failure — callers leave the form
+// empty / keep the current subject.
+async function fetchAlbumDetail(albumId: string): Promise<AlbumDetail | null> {
+  try {
+    const r = await fetch(`${MUSIC}/api/music/albums/${encodeURIComponent(albumId)}`)
+    if (!r.ok)
+      return null
+    const json = await r.json() as {
+      album: { id: string, title: string, cover_url: string | null, release_date: string | null, best_new?: boolean }
+      artists?: Array<{ id: string, name: string }>
+      tracks?: Array<{ id: string, title: string, track_no: number | null }>
+    }
+    return {
+      id: json.album.id,
+      title: json.album.title,
+      cover_url: json.album.cover_url,
+      release_date: json.album.release_date,
+      artists: (json.artists ?? []).map(a => ({ id: a.id, name: a.name })),
+      tracks: (json.tracks ?? []).map(t => ({ id: t.id, title: t.title, track_no: t.track_no })),
+      kind: 'album',
+      best_new: json.album.best_new ?? false,
+    }
+  }
+  catch {
+    return null
+  }
 }
 
 function nowTime() {
@@ -326,28 +356,41 @@ export default function WriterApp() {
   // when arriving from the queue's "전체 편집기로 열기". Only the album is seeded;
   // the writer's own `lowfreq-draft` body/score are left untouched.
   const prefillAlbum = useCallback(async (albumId: string) => {
-    try {
-      const r = await fetch(`${MUSIC}/api/music/albums/${encodeURIComponent(albumId)}`)
-      if (!r.ok)
-        return
-      const json = await r.json() as {
-        album: { id: string, title: string, cover_url: string | null, release_date: string | null, best_new?: boolean }
-        artists?: Array<{ id: string, name: string }>
-        tracks?: Array<{ id: string, title: string, track_no: number | null }>
-      }
-      onSubjectSelect({
-        id: json.album.id,
-        title: json.album.title,
-        cover_url: json.album.cover_url,
-        release_date: json.album.release_date,
-        artists: (json.artists ?? []).map(a => ({ id: a.id, name: a.name })),
-        tracks: (json.tracks ?? []).map(t => ({ id: t.id, title: t.title, track_no: t.track_no })),
-        kind: 'album',
-        best_new: json.album.best_new ?? false,
-      })
-    }
-    catch { /* leave the form empty — user can search manually */ }
+    const detail = await fetchAlbumDetail(albumId)
+    if (detail)
+      onSubjectSelect(detail)
   }, [onSubjectSelect])
+
+  // Restore the subject for an existing DB post (?id= edit mode) from its
+  // album/artist linkage. Direct setSubject — NOT onSubjectSelect, whose
+  // pick semantics (per-album draft slot swap, headline auto-fill, BEST NEW
+  // reseed) must not fire for a load. Guarded so a subject the user picked
+  // while the fetch was in flight is never clobbered. Without this restore,
+  // opening a draft from the bucket board / /drafts showed no album at all
+  // (the per-album draft change stopped seeding ?id= mode from localStorage,
+  // and the post load only set title/body — the subject was dropped).
+  const restoreSubject = useCallback(async (albumIds: string[], artistIds: string[]) => {
+    if (albumIds.length > 0) {
+      const detail = await fetchAlbumDetail(albumIds[0])
+      if (detail && !subjectRef.current)
+        setSubject(detail)
+      return
+    }
+    if (artistIds.length > 0) {
+      const r = await fetchArtistHero(artistIds[0])
+      if (r.ok && r.hero.id && !subjectRef.current) {
+        setSubject({
+          id: r.hero.id,
+          title: r.hero.name,
+          cover_url: r.hero.photo_url ?? null,
+          release_date: null,
+          artists: [{ id: r.hero.id, name: r.hero.name }],
+          tracks: [],
+          kind: 'artist',
+        })
+      }
+    }
+  }, [])
 
   // Load draft from DB when ?id= is present; otherwise prefill from ?album=.
   useEffect(() => {
@@ -383,8 +426,12 @@ export default function WriterApp() {
       // returns. Null when the post has no single album subject.
       if (typeof post.subject_best_new === 'boolean')
         setSubjectBestNew(post.subject_best_new)
+      // Restore the album/artist subject from the post's M:N linkage — edit
+      // mode starts from a blank draft (per-album slots), so without this the
+      // subject hero would stay empty for an existing post.
+      void restoreSubject(post.album_ids ?? [], post.artist_ids ?? [])
     })
-  }, [prefillAlbum])
+  }, [prefillAlbum, restoreSubject])
 
   // Persist the current draft to localStorage. Called by the 30s timer, on tab
   // hide, and after a manual 임시저장. No-ops when nothing changed since the last
