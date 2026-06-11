@@ -233,23 +233,22 @@ select option {
 	--pagefind-ui-border: var(--color-border);
 }
 
-/* ─── Scrollbars — site-wide editorial thin ink ───
+/* ─── Scrollbars — site-wide editorial ink ───
    Standard properties first: scrollbar-color inherits from html down every
-   scroll surface (page, split panes, slide-overs, palettes); scrollbar-width
-   is not inherited, so the * rule applies it everywhere. Chromium 121+ and
-   Firefox use these and ignore the ::-webkit-* block, which remains as the
-   Safari fallback. Thumb = ink at low alpha over a transparent track, so it
-   tints correctly on both the cream page and paper-toned panels, and follows
-   the dark theme via the token. */
+   scroll surface (page, split panes, slide-overs, palettes). Width is the
+   default `auto` (~2× `thin`, owner request 2026-06-12) — the standard
+   property only offers auto|thin|none, and auto ≈ 15px in Chromium vs
+   thin ≈ 8px. Chromium 121+ and Firefox use these and ignore the
+   ::-webkit-* block, which remains as the Safari fallback. Thumb = ink at
+   low alpha over a transparent track, so it tints correctly on both the
+   cream page and paper-toned panels, and follows the dark theme via the
+   token. */
 html {
 	scrollbar-color: color-mix(in srgb, var(--color-text) 26%, transparent) transparent;
 }
-* {
-	scrollbar-width: thin;
-}
 ::-webkit-scrollbar {
-	width: 9px;
-	height: 9px;
+	width: 18px;
+	height: 18px;
 	background: transparent;
 }
 ::-webkit-scrollbar-track {
@@ -258,7 +257,7 @@ html {
 ::-webkit-scrollbar-thumb {
 	background: color-mix(in srgb, var(--color-text) 26%, transparent);
 	border-radius: 999px;
-	border: 2px solid transparent;
+	border: 4px solid transparent;
 	background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
