@@ -78,6 +78,14 @@ function fmtDate(iso: string): string {
   })
 }
 
+/**
+ * "Genre · Date" meta line; drops the genre segment when the review has no
+ * real genre (genres[] can be empty since Step 6 removed the category fake).
+ */
+function metaLine(r: ReviewCard): string {
+  return [r.genres[0], fmtDate(r.date)].filter(Boolean).join(' · ')
+}
+
 function Stars({ value, size }: { value: number | null, size: number }) {
   if (value == null)
     return <span className="rev-unrated">미평가</span>
@@ -226,7 +234,7 @@ export default function ReviewsIndex({
           <a href={`/blog/${lead.slug}`} className="rev-lead">
             <Cover r={lead} badge="full" ph={64} />
             <div className="rev-lead-body">
-              <p className="rev-meta">{`${lead.genres[0]} · ${fmtDate(lead.date)}`}</p>
+              <p className="rev-meta">{metaLine(lead)}</p>
               {lead.artist && <p className="rev-artist">{lead.artist}</p>}
               <h2 className="rev-lead-album">{lead.album}</h2>
               {lead.excerpt && <p className="rev-excerpt">{lead.excerpt}</p>}
@@ -242,7 +250,7 @@ export default function ReviewsIndex({
                 <a key={r.slug} href={`/blog/${r.slug}`} className="rev-side-card">
                   <Cover r={r} badge="mini" ph={24} />
                   <div className="rev-side-body">
-                    <p className="rev-meta">{`${r.genres[0]} · ${fmtDate(r.date)}`}</p>
+                    <p className="rev-meta">{metaLine(r)}</p>
                     <h3 className="rev-side-album">{r.album}</h3>
                     <Stars value={r.rating} size={14} />
                   </div>
@@ -397,7 +405,7 @@ export default function ReviewsIndex({
                     <a href={`/blog/${r.slug}`} className="rev-card">
                       <Cover r={r} badge="full" ph={34} />
                       <div className="rev-card-body">
-                        <p className="rev-meta">{`${r.genres[0]} · ${fmtDate(r.date)}`}</p>
+                        <p className="rev-meta">{metaLine(r)}</p>
                         {r.artist && <p className="rev-artist">{r.artist}</p>}
                         <h3 className="rev-card-album">{r.album}</h3>
                         {!isEditorial && r.excerpt && <p className="rev-excerpt">{r.excerpt}</p>}

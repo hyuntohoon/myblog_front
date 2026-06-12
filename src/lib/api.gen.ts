@@ -160,6 +160,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/genres": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Genre */
+        post: operations["create_genre_api_genres_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/genres/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Genre Tree */
+        get: operations["genre_tree_api_genres_tree_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/genres/{genre_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Genre */
+        put: operations["update_genre_api_genres__genre_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/listened-albums": {
         parameters: {
             query?: never;
@@ -760,6 +811,22 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** CreateGenreRequest */
+        Backend_CreateGenreRequest: {
+            /**
+             * Definition Md
+             * @default
+             */
+            definition_md: string;
+            /** Label */
+            label: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Position */
+            position?: number | null;
+            /** Slug */
+            slug: string;
+        };
         /** CreatePostReq */
         Backend_CreatePostReq: {
             /** Album Cover Url */
@@ -794,6 +861,34 @@ export interface components {
             tags?: string[];
             /** Title */
             title: string;
+        };
+        /** GenreNode */
+        Backend_GenreNode: {
+            /** Children */
+            children?: components["schemas"]["Backend_GenreNode"][];
+            /**
+             * Definition Md
+             * @default
+             */
+            definition_md: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Parent Id */
+            parent_id?: string | null;
+            /**
+             * Position
+             * @default 0
+             */
+            position: number;
+            /** Slug */
+            slug: string;
+        };
+        /** GenreTreeResponse */
+        Backend_GenreTreeResponse: {
+            /** Genres */
+            genres: components["schemas"]["Backend_GenreNode"][];
         };
         /** HTTPValidationError */
         Backend_HTTPValidationError: {
@@ -1148,6 +1243,15 @@ export interface components {
             position?: number | null;
             /** Research Mode */
             research_mode?: ("off" | "all" | "selected") | null;
+        };
+        /** UpdateGenreRequest */
+        Backend_UpdateGenreRequest: {
+            /** Definition Md */
+            definition_md?: string | null;
+            /** Label */
+            label?: string | null;
+            /** Position */
+            position?: number | null;
         };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
@@ -1918,6 +2022,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_genre_api_genres_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_CreateGenreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_GenreNode"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    genre_tree_api_genres_tree_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_GenreTreeResponse"];
+                };
+            };
+        };
+    };
+    update_genre_api_genres__genre_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                genre_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_UpdateGenreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_GenreNode"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };
