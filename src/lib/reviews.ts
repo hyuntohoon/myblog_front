@@ -11,7 +11,11 @@ export interface ReviewCard {
   slug: string
   album: string
   artist: string
-  /** Array-aware genres (forward-compat with FEAT-genre-taxonomy); falls back to [category]. */
+  /**
+   * Real tier-0 genres from album_genres frontmatter (FEAT-genre-system Step 6).
+   * May be empty — a rating-only post or an unlabeled album has no genres; the
+   * category is NOT used as a fake genre fallback anymore.
+   */
   genres: string[]
   category: string
   /** STAB-5 review tags (seeded vocabulary); drives the tag filter + card badges. */
@@ -130,7 +134,7 @@ export function buildReviewCards(entries: CollectionEntry<'blog'>[]): ReviewCard
         slug: d.slug ?? entry.id,
         album: mr?.title ?? d.title,
         artist: mr?.artists?.join(', ') ?? '',
-        genres: mr?.genres && mr.genres.length > 0 ? mr.genres : [d.category],
+        genres: mr?.genres ?? [],
         category: d.category,
         tags: d.tags ?? [],
         date: date.toISOString(),
