@@ -2,25 +2,32 @@
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
-import GenreMapTabs from '@components/genres/GenreMapTabs'
+import GenreMap from '@components/genres/GenreMap'
 import '@styles/genres.css'
 
-// Genre ontology sample (spike): public read-only graph over hardcoded seed
-// data — no backend. Validates the React Flow direction before the real
-// genres/genre_relations API + writer editor get built.
+// /genres — public Genre Map (FEAT-genre-system Step 7). A strict 2-tier
+// containment Outliner over the REAL tree from GET /api/genres/tree: the 12 fixed
+// top-level genres as a numbered canon with an album-share meter and click-to-open
+// editorial definitions. Logged-in owner gets inline rename / definition / reorder
+// (PUT /api/genres/{id}). Sub-genres + ego-view relationships are tier-1
+// (FEAT-genre-subgenres) and slot in here later with no page change.
 ---
 
 <Layout>
-  <Seo slot="seo" forceTitle="Genre Map · buckit" />
+  <Seo slot="seo" title="Genre Map" description="이 사이트의 평론을 가르는 12개 최상위 장르 — 각 장르의 정의와 수록 분포를 담은 지도." />
 
   <SkipNavContent>
     <div class="container">
-      <header class="genre-masthead">
-        <h1>Genre <em>Map</em></h1>
-        <p>장르 온톨로지 샘플 — 세 가지 디자인 변형을 탭으로 전환해 비교해 보세요.</p>
+      <header class="gm-strip-title">
+        <span class="gm-strip-kicker">GENRE MAP</span>
+        <h1 class="gm-strip-h1">장르 맵</h1>
+        <p class="gm-strip-sub">
+          이 사이트의 평론을 가르는 12개 최상위 장르. 부모→자식 포함 관계의 트리이며,
+          각 장르를 펼치면 정의와 수록 분포를 볼 수 있습니다.
+        </p>
       </header>
 
-      <GenreMapTabs client:only="react" />
+      <GenreMap client:load />
     </div>
   </SkipNavContent>
 </Layout>
