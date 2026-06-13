@@ -42,6 +42,17 @@ export interface BoardAlbum {
    * Optional: album sources without a bucket payload (recent strip, copies) omit it.
    */
   researchStatus?: ResearchStatus | null
+  /**
+   * FEAT-bucket-organize Step 1 — view-control fields surfaced from AlbumBrief so
+   * the BucketBoard view toolbar can sort (newest/oldest/popular) and group (by
+   * primary artist) entirely on the client. Optional: non-bucket sources (recent
+   * strip, optimistic copies) may omit them → treated as null/last when sorting.
+   */
+  popularity?: number | null
+  /** Full release date ('YYYY' or 'YYYY-MM-DD') for precise newest/oldest sort. */
+  releaseDate?: string | null
+  /** Ordered artist list; `[0]` is the primary artist used for grouping. */
+  artistNames?: string[]
 }
 
 /** A bucket node in the board tree (mapped from the API's nested BucketResponse). */
@@ -80,6 +91,9 @@ function mapItem(it: ApiItem): BoardAlbum {
     alreadyReviewed: it.already_reviewed ?? false,
     researchSelected: it.research_selected ?? false,
     researchStatus: (it.research_status ?? null) as ResearchStatus | null,
+    popularity: a?.popularity ?? null,
+    releaseDate: rel ?? null,
+    artistNames: a?.artist_names ?? [],
   }
 }
 

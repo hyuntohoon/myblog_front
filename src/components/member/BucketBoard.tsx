@@ -156,6 +156,110 @@ function findAlbumByAlbumId(buckets: BoardBucket[], albumId: string): BoardAlbum
   return f
 }
 
+// ── crate view controls (FEAT-bucket-organize Step 1) ───────────────────────-
+// A transient sort/group toggle over the normal crate (review buckets only — the
+// special Spotify-library bucket + recent strip are excluded, OQ3). It NEVER
+// rewrites the persisted DnD `position` (OQ1); the chosen mode is remembered in
+// localStorage so it survives reload/navigation. Group mode dissolves the bucket
+// cards into a cross-bucket per-artist view (OQ2) and is read-only — DnD is only
+// live in the default view (sort=manual, group=none).
+type SortMode = 'manual' | 'newest' | 'oldest' | 'popular'
+type GroupMode = 'none' | 'artist'
+interface CrateView { sort: SortMode, group: GroupMode }
+const VIEW_KEY = 'lf_crate_view'
+const SORT_OPTS: { v: SortMode, l: string }[] = [
+  { v: 'manual', l: '수동' },
+  { v: 'newest', l: '최신' },
+  { v: 'oldest', l: '오래된' },
+  { v: 'popular', l: '인기' },
+]
+const GROUP_OPTS: { v: GroupMode, l: string }[] = [
+  { v: 'none', l: '끔' },
+  { v: 'artist', l: '아티스트' },
+]
+
+function readView(): CrateView {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY)
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<CrateView>
+      const sort = SORT_OPTS.some(o => o.v === p?.sort) ? p.sort! : 'manual'
+      const group = GROUP_OPTS.some(o => o.v === p?.group) ? p.group! : 'none'
+      return { sort, group }
+    }
+  }
+  catch { /* ignore */ }
+  return { sort: 'manual', group: 'none' }
+}
+
+// Primary artist for grouping: the first artist_names entry, falling back to the
+// first comma-token of the joined display string, then a neutral dash.
+function primaryArtist(a: BoardAlbum): string {
+  const n = a.artistNames?.[0]?.trim()
+  if (n)
+    return n
+  const first = a.artist?.split(',')[0]?.trim()
+  return first || '—'
+}
+
+// Stable sort by the active mode (original order preserved on ties / for 'manual').
+// Missing release dates / popularity sink to the end regardless of direction.
+function sortAlbums(albums: BoardAlbum[], sort: SortMode): BoardAlbum[] {
+  if (sort === 'manual')
+    return albums
+  return albums
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => {
+      if (sort === 'popular') {
+        const px = x.a.popularity ?? null
+        const py = y.a.popularity ?? null
+        if (px == null || py == null)
+          return (px == null ? 1 : 0) - (py == null ? 1 : 0) || x.i - y.i
+        return py - px || x.i - y.i // higher popularity first
+      }
+      const dx = x.a.releaseDate || ''
+      const dy = y.a.releaseDate || ''
+      if (!dx || !dy)
+        return (dx ? 0 : 1) - (dy ? 0 : 1) || x.i - y.i
+      if (dx === dy)
+        return x.i - y.i
+      // ISO date strings sort lexically; 'newest' = descending.
+      return sort === 'newest' ? (dx < dy ? 1 : -1) : (dx < dy ? -1 : 1)
+    })
+    .map(w => w.a)
+}
+
+// All albums in a bucket subtree (the card flattens its nested children, matching
+// the count shown in the default board).
+function collectAlbums(b: BoardBucket): BoardAlbum[] {
+  const out = [...b.albums]
+  for (const c of b.children)
+    out.push(...collectAlbums(c))
+  return out
+}
+
+// Cross-bucket per-artist groups over the whole (review-only) tree. Dedupes by
+// album_id so an album copied into two buckets appears once; groups are ordered by
+// size (largest first), then artist name. Within a group the active sort applies.
+function artistGroups(tree: BoardBucket[], sort: SortMode): { artist: string, albums: BoardAlbum[] }[] {
+  const seen = new Set<string>()
+  const groups = new Map<string, BoardAlbum[]>()
+  for (const b of tree) {
+    for (const a of collectAlbums(b)) {
+      if (seen.has(a.albumId))
+        continue
+      seen.add(a.albumId)
+      const k = primaryArtist(a)
+      const arr = groups.get(k) ?? []
+      arr.push(a)
+      groups.set(k, arr)
+    }
+  }
+  return [...groups.entries()]
+    .map(([artist, albums]) => ({ artist, albums: sortAlbums(albums, sort) }))
+    .sort((x, y) => y.albums.length - x.albums.length || x.artist.localeCompare(y.artist, 'ko'))
+}
+
 // ── status meta ───────────────────────────────────────────────────────────--
 // The single is_done column is the canonical "평론 완료". Other tags are inferred
 // from the bucket name so the default seed buckets read sensibly; renamed
@@ -943,6 +1047,126 @@ function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: T
   )
 }
 
+// ── read-only view tiles (sort / group modes) ───────────────────────────────-
+// A non-draggable cover used by the sorted-bucket and artist-group views. Click
+// opens the detail slide-over (writable — it's a real album); rating chip shows
+// whenever the owner has rated the album, regardless of which bucket it sits in.
+function ViewCover({ album, score, onOpen }: { album: BoardAlbum, score: number | null, onOpen: (t: DetailTarget) => void }) {
+  return (
+    <button
+	type="button"
+	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year, writable: true })}
+	onPointerEnter={() => prefetchAlbumDetail(album.albumId)}
+	onPointerDown={() => prefetchAlbumDetail(album.albumId)}
+	title={`${album.title} — ${album.artist}`}
+	style={{ display: 'block', textAlign: 'left', padding: 0, border: 'none', background: 'none', cursor: 'pointer', width: '100%' }}
+    >
+      <div style={{ position: 'relative' }}>
+        <AlbumArt url={album.cover} label={album.title} />
+        {score != null && (
+          <span className="lf-mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-bg)', background: 'var(--color-text)', padding: '2px 6px', borderRadius: 3 }}>{score.toFixed(1)}</span>
+        )}
+      </div>
+      <div style={{ marginTop: 7 }}>
+        <div className="lf-serif lf-italic" style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
+        <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{album.artist}</div>
+      </div>
+    </button>
+  )
+}
+
+// A read-only card (one per artist group, or one per bucket in sorted view).
+function ViewCard({ title, count, accent, albums, ratings, onOpen }: { title: string, count: number, accent: string, albums: BoardAlbum[], ratings: Map<string, number>, onOpen: (t: DetailTarget) => void }) {
+  return (
+    <div style={{ background: 'var(--color-paper)', border: '1px solid var(--color-border)', borderLeft: `3px solid ${accent}`, borderRadius: 8, padding: 14, marginBottom: 14, boxShadow: '0 1px 2px rgba(26,26,26,0.05)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <span className="lf-serif" style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{title}</span>
+        <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--color-faded)', whiteSpace: 'nowrap' }}>
+          {count}
+          장
+        </span>
+      </div>
+      <div style={{ display: 'grid', gap: '14px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
+        {albums.map(a => (
+          <ViewCover key={a.itemId} album={a} score={ratings.get(a.albumId) ?? null} onOpen={onOpen} />
+        ))}
+        {albums.length === 0 && (
+          <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>비어 있음</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// The view container: artist-group cards (cross-bucket) or sorted per-bucket cards.
+function CrateViewBody({ tree, view, ratings, onOpen }: { tree: BoardBucket[], view: CrateView, ratings: Map<string, number>, onOpen: (t: DetailTarget) => void }) {
+  if (view.group === 'artist') {
+    const groups = artistGroups(tree, view.sort)
+    if (groups.length === 0)
+      return <div className="lf-meta" style={{ padding: '8px 0' }}>표시할 앨범이 없습니다</div>
+    return (
+      <div>
+        {groups.map(g => (
+          <ViewCard key={g.artist} title={g.artist} count={g.albums.length} accent="var(--color-text)" albums={g.albums} ratings={ratings} onOpen={onOpen} />
+        ))}
+      </div>
+    )
+  }
+  // group 'none' + a non-manual sort: each top bucket as a read-only sorted card.
+  return (
+    <div>
+      {tree.map(b => (
+        <ViewCard key={b.id} title={b.name} count={countAlbums(b)} accent={crColor(b, 0)} albums={sortAlbums(collectAlbums(b), view.sort)} ratings={ratings} onOpen={onOpen} />
+      ))}
+    </div>
+  )
+}
+
+// Sort/group toolbar — two segmented controls (reusing the .rsh-seg styling). In
+// any non-default mode it shows a "보기 모드" hint since DnD is suppressed.
+function CrateToolbar({ view, setView }: { view: CrateView, setView: (v: CrateView) => void }) {
+  const active = view.group !== 'none' || view.sort !== 'manual'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 14px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span className="lf-meta">정렬</span>
+        <div className="rsh-seg" role="group" aria-label="정렬">
+          {SORT_OPTS.map(o => (
+            <button
+	key={o.v}
+	type="button"
+	className="rsh-seg-btn"
+	aria-pressed={view.sort === o.v}
+	onClick={() => setView({ ...view, sort: o.v })}
+            >
+              {o.l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span className="lf-meta">그룹</span>
+        <div className="rsh-seg" role="group" aria-label="그룹">
+          {GROUP_OPTS.map(o => (
+            <button
+	key={o.v}
+	type="button"
+	className="rsh-seg-btn"
+	aria-pressed={view.group === o.v}
+	onClick={() => setView({ ...view, group: o.v })}
+            >
+              {o.l}
+            </button>
+          ))}
+        </div>
+      </div>
+      {active && (
+        <span className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '0.05em', color: 'var(--color-faded)' }}>보기 모드 · 드래그 편집 잠금</span>
+      )}
+    </div>
+  )
+}
+
 // ── board ────────────────────────────────────────────────────────────────---
 export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => void, reviews: MemberReview[] }) {
   // Seed both from localStorage so the board paints immediately on mount and
@@ -958,6 +1182,17 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   // per-album source/state map) and whether a manual sync is in flight.
   const [libState, setLibState] = useState<SpotifyLibraryState | null>(null)
   const [syncing, setSyncing] = useState(false)
+
+  // Transient sort/group view (FEAT-bucket-organize Step 1). Seeded from + mirrored
+  // to localStorage so the choice survives reload; never touches server `position`.
+  const [view, setView] = useState<CrateView>(() => readView())
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view))
+    }
+    catch { /* ignore */ }
+  }, [view])
+  const viewActive = view.group !== 'none' || view.sort !== 'manual'
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -1598,7 +1833,12 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       )}
 
       {tree != null && normalTree.length > 0 && (
-        <BucketList items={normalTree} parentId={null} depth={0} shared={shared} />
+        <>
+          <CrateToolbar view={view} setView={setView} />
+          {viewActive ?
+            <CrateViewBody tree={normalTree} view={view} ratings={ratings} onOpen={onOpen} /> :
+            <BucketList items={normalTree} parentId={null} depth={0} shared={shared} />}
+        </>
       )}
 
       {/* trash dock — a single center-bottom card, mounted only while dragging an
