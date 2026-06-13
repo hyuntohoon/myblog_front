@@ -864,6 +864,11 @@ export interface components {
         };
         /** GenreNode */
         Backend_GenreNode: {
+            /**
+             * Album Count
+             * @default 0
+             */
+            album_count: number;
             /** Children */
             children?: components["schemas"]["Backend_GenreNode"][];
             /**
