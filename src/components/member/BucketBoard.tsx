@@ -157,19 +157,22 @@ function findAlbumByAlbumId(buckets: BoardBucket[], albumId: string): BoardAlbum
   return f
 }
 
-// ── crate view controls (FEAT-bucket-organize Step 1 + 2) ───────────────────-
-// A transient sort/group/filter toggle over the normal crate (review buckets only
-// — the special Spotify-library bucket + recent strip are excluded, OQ3). It NEVER
-// rewrites the persisted DnD `position` (OQ1); the chosen mode is remembered in
-// localStorage so it survives reload/navigation. Group mode dissolves the bucket
-// cards into a cross-bucket per-artist (Step 1) or per-genre (Step 2) view (OQ2),
-// and the genre filter chips narrow the crate by tier-0 genre (OQ4 high-confidence
-// labels from the backend). Any active sort/group/filter is read-only — DnD is
-// live only in the default view (sort=manual, group=none, no filter).
+// ── per-bucket view controls (FEAT-bucket-organize) ─────────────────────────-
+// Each review bucket carries its OWN transient sort / group / genre-filter,
+// remembered per bucket in localStorage (keyed by bucket id) so it survives
+// reload/navigation. The controls live INSIDE each bucket card; bucket boundaries
+// are always kept (no cross-bucket flattening). Sort reorders the bucket's covers;
+// group splits them into per-artist / per-genre sections within the card; the
+// genre filter narrows that bucket to selected tier-0 genres (OQ4 high-confidence
+// labels). DnD stays live in every mode — dragging to reorder a bucket whose view
+// is non-default first BAKES the current display order into the persisted
+// `position` and resets that bucket to the manual/none view (so the drop lands
+// where it looks). The special Spotify-library bucket has no view controls.
 type SortMode = 'manual' | 'newest' | 'oldest' | 'popular'
 type GroupMode = 'none' | 'artist' | 'genre'
-interface CrateView { sort: SortMode, group: GroupMode, genreFilter: string[] }
-const VIEW_KEY = 'lf_crate_view'
+interface BucketView { sort: SortMode, group: GroupMode, genreFilter: string[] }
+const VIEW_KEY = 'lf_bucket_views'
+const DEFAULT_BUCKET_VIEW: BucketView = { sort: 'manual', group: 'none', genreFilter: [] }
 // Group label shown when an album carries no high-confidence genre (OQ4) — it
 // sorts last and is never a filter chip.
 const NO_GENRE = '장르 없음'
@@ -185,21 +188,35 @@ const GROUP_OPTS: { v: GroupMode, l: string }[] = [
   { v: 'genre', l: '장르' },
 ]
 
-function readView(): CrateView {
+function sanitizeView(p: Partial<BucketView> | undefined): BucketView {
+  const sort = SORT_OPTS.some(o => o.v === p?.sort) ? p!.sort! : 'manual'
+  const group = GROUP_OPTS.some(o => o.v === p?.group) ? p!.group! : 'none'
+  const genreFilter = Array.isArray(p?.genreFilter) ?
+    p!.genreFilter!.filter((g): g is string => typeof g === 'string') :
+    []
+  return { sort, group, genreFilter }
+}
+
+// The whole per-bucket view map (bucketId → BucketView), seeded from localStorage.
+function readBucketViews(): Record<string, BucketView> {
   try {
     const raw = localStorage.getItem(VIEW_KEY)
     if (raw) {
-      const p = JSON.parse(raw) as Partial<CrateView>
-      const sort = SORT_OPTS.some(o => o.v === p?.sort) ? p.sort! : 'manual'
-      const group = GROUP_OPTS.some(o => o.v === p?.group) ? p.group! : 'none'
-      const genreFilter = Array.isArray(p?.genreFilter) ?
-        p.genreFilter.filter((g): g is string => typeof g === 'string') :
-        []
-      return { sort, group, genreFilter }
+      const p = JSON.parse(raw)
+      if (p && typeof p === 'object' && !Array.isArray(p)) {
+        const out: Record<string, BucketView> = {}
+        for (const [k, v] of Object.entries(p))
+          out[k] = sanitizeView(v as Partial<BucketView>)
+        return out
+      }
     }
   }
   catch { /* ignore */ }
-  return { sort: 'manual', group: 'none', genreFilter: [] }
+  return {}
+}
+
+function isDefaultView(v: BucketView): boolean {
+  return v.sort === 'manual' && v.group === 'none' && v.genreFilter.length === 0
 }
 
 // Primary artist for grouping: the first artist_names entry, falling back to the
@@ -239,15 +256,6 @@ function sortAlbums(albums: BoardAlbum[], sort: SortMode): BoardAlbum[] {
     .map(w => w.a)
 }
 
-// All albums in a bucket subtree (the card flattens its nested children, matching
-// the count shown in the default board).
-function collectAlbums(b: BoardBucket): BoardAlbum[] {
-  const out = [...b.albums]
-  for (const c of b.children)
-    out.push(...collectAlbums(c))
-  return out
-}
-
 // Per-artist groups over a (already deduped + filtered) flat album list. Groups
 // are ordered by size (largest first), then artist name; within a group the active
 // sort applies.
@@ -280,8 +288,8 @@ function passesGenre(a: BoardAlbum, filter: string[]): boolean {
   return filter.some(f => gs.includes(f))
 }
 
-// Cross-bucket per-genre groups (single home = primary genre, OQ5). Same dedupe +
-// sort-within-group as artistGroups; the NO_GENRE bucket always sorts last.
+// Per-genre groups (single home = primary genre, OQ5). Same sort-within-group as
+// artistGroups; the NO_GENRE group always sorts last.
 function genreGroups(albums: BoardAlbum[], sort: SortMode): { genre: string, albums: BoardAlbum[] }[] {
   const groups = new Map<string, BoardAlbum[]>()
   for (const a of albums) {
@@ -300,38 +308,31 @@ function genreGroups(albums: BoardAlbum[], sort: SortMode): { genre: string, alb
     })
 }
 
-// Distinct genre labels present across the crate, with album counts, for the
-// filter chip row. Counts every high-confidence label an album carries (not just
-// the primary) so the chips mirror what a filter would surface. Frequency desc.
-function crateGenres(tree: BoardBucket[]): { label: string, count: number }[] {
-  const seen = new Set<string>()
+// Distinct genre labels in one bucket's albums, with counts, for its filter chip
+// row. Counts every high-confidence label an album carries (not just the primary)
+// so the chips mirror what a filter would surface. Frequency desc.
+function albumGenres(albums: BoardAlbum[]): { label: string, count: number }[] {
   const counts = new Map<string, number>()
-  for (const b of tree) {
-    for (const a of collectAlbums(b)) {
-      if (seen.has(a.albumId))
-        continue
-      seen.add(a.albumId)
-      for (const g of a.genres ?? [])
-        counts.set(g, (counts.get(g) ?? 0) + 1)
-    }
+  for (const a of albums) {
+    for (const g of a.genres ?? [])
+      counts.set(g, (counts.get(g) ?? 0) + 1)
   }
   return [...counts.entries()]
     .map(([label, count]) => ({ label, count }))
     .sort((x, y) => y.count - x.count || x.label.localeCompare(y.label, 'ko'))
 }
 
-// Dedupe a flat album list by album_id (an album copied into two buckets shows
-// once in the cross-bucket views).
-function dedupeAlbums(albums: BoardAlbum[]): BoardAlbum[] {
-  const seen = new Set<string>()
-  const out: BoardAlbum[] = []
-  for (const a of albums) {
-    if (seen.has(a.albumId))
-      continue
-    seen.add(a.albumId)
-    out.push(a)
-  }
-  return out
+// The order the bucket's covers appear under the active view — the FULL set
+// (filter-independent, so nothing is lost), as item ids. Used to bake a non-default
+// view into manual `position` on a drag-reorder (the drop then lands where it
+// looks, and the bucket flips back to the manual/none view).
+function displayOrder(albums: BoardAlbum[], view: BucketView): string[] {
+  if (view.group === 'none')
+    return sortAlbums(albums, view.sort).map(a => a.itemId)
+  const groups = view.group === 'genre' ?
+    genreGroups(albums, view.sort) :
+    artistGroups(albums, view.sort)
+  return groups.flatMap(g => g.albums.map(a => a.itemId))
 }
 
 // ── status meta ───────────────────────────────────────────────────────────--
@@ -570,7 +571,11 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
 interface Ops {
   tree: BoardBucket[]
   copyAlbum: (albumId: string, toBucketId: string) => void
-  insertAlbum: (itemId: string, fromBucketId: string, toBucketId: string, beforeItemId: string | null) => void
+  // `bakeOrder` (FEAT-bucket-organize per-bucket view): when set, the destination's
+  // stored order is first re-sorted to this item-id list (the bucket's current
+  // display order) before the move, so a reorder done from a sorted/grouped view
+  // lands where it looks. The caller then resets that bucket's view to manual.
+  insertAlbum: (itemId: string, fromBucketId: string, toBucketId: string, beforeItemId: string | null, bakeOrder?: string[]) => void
   // Nest a bucket as the last child of `targetId` (drop ON a card body).
   moveBucketInto: (bucketId: string, targetId: string | null) => void
   // Reposition a bucket among `parentId`'s children, before `beforeId` (null =
@@ -606,20 +611,52 @@ interface SharedProps {
   setDraggingBucket: (id: string | null) => void
   setDragKind: (k: DragKind) => void
   dragKind: DragKind
+  // Per-bucket sort/group/filter (FEAT-bucket-organize). Keyed by bucket id; a
+  // missing entry means DEFAULT_BUCKET_VIEW. Persisted to localStorage by the board.
+  bucketViews: Record<string, BucketView>
+  setBucketViews: Dispatch<SetStateAction<Record<string, BucketView>>>
 }
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
   const [researching, setResearching] = useState(false)
+  const [viewing, setViewing] = useState(false)
   const m = crMeta(bucket)
   const accent = crColor(bucket, depth)
   const hot = dropTarget === bucket.id
   const isLib = bucket.kind === SLIB_KIND
+
+  // This bucket's view + a functional setter (per-bucket; missing → default).
+  const view = bucketViews[bucket.id] ?? DEFAULT_BUCKET_VIEW
+  const viewActive = !isDefaultView(view)
+  const updateView = (fn: (v: BucketView) => BucketView) =>
+    setBucketViews(prev => ({ ...prev, [bucket.id]: fn(prev[bucket.id] ?? DEFAULT_BUCKET_VIEW) }))
+  const resetView = () => setBucketViews((prev) => {
+    if (!prev[bucket.id])
+      return prev
+    const next = { ...prev }
+    delete next[bucket.id]
+    return next
+  })
+  const bucketGenreList = albumGenres(bucket.albums)
+
+  // A within-bucket reorder (cover insert-before). When the view is non-default we
+  // bake the current display order into manual `position` and reset the view, so the
+  // drop lands where it looks (the user's "drag → becomes manual" rule).
+  const handleInsert = (itemId: string, fromBucketId: string, beforeItemId: string) => {
+    if (viewActive) {
+      ops.insertAlbum(itemId, fromBucketId, bucket.id, beforeItemId, displayOrder(bucket.albums, view))
+      resetView()
+    }
+    else {
+      ops.insertAlbum(itemId, fromBucketId, bucket.id, beforeItemId)
+    }
+  }
 
   const canAcceptBucket = (): boolean => {
     const it = dnd
@@ -673,7 +710,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	draggingId={draggingId}
 	setDraggingId={setDraggingId}
 	setDragKind={setDragKind}
-	onInsert={isLib ? undefined : (itemId, fromBucketId, beforeItemId) => ops.insertAlbum(itemId, fromBucketId, bucket.id, beforeItemId)}
+	onInsert={isLib ? undefined : handleInsert}
 	research={isLib ?
 		undefined :
 		{
@@ -707,6 +744,19 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
     paddingTop: divider ? 14 : 0,
     borderTop: divider ? '1px solid var(--color-border)' : 'none',
   })
+
+  // This bucket's albums under its view: genre-filter, then either a flat sorted
+  // list (group none) or per-artist / per-genre sections (each sorted within).
+  const filtered = isLib ? [] : bucket.albums.filter(a => passesGenre(a, view.genreFilter))
+  const flatAlbums = view.group === 'none' ? sortAlbums(filtered, view.sort) : []
+  const sections: { label: string, albums: BoardAlbum[] }[] =
+    view.group === 'genre' ?
+      genreGroups(filtered, view.sort).map(g => ({ label: g.genre, albums: g.albums })) :
+      view.group === 'artist' ?
+        artistGroups(filtered, view.sort).map(g => ({ label: g.artist, albums: g.albums })) :
+        []
+  const sectionLabelStyle: React.CSSProperties = { gridColumn: '1 / -1', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-subtle)', marginTop: 2 }
+  const filteredEmpty = !isLib && bucket.albums.length > 0 && filtered.length === 0
 
   return (
     <div
@@ -803,6 +853,18 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
             <button
 	type="button"
 	className="lf-iconbtn"
+	title="정렬 · 그룹 · 장르 필터"
+	aria-pressed={viewActive}
+	onClick={() => setViewing(v => !v)}
+	style={viewActive ? { color: 'var(--color-accent)' } : undefined}
+            >
+              ⇅
+            </button>
+          )}
+          {!isLib && (
+            <button
+	type="button"
+	className="lf-iconbtn"
 	title="자동 조사 설정"
 	aria-pressed={bucket.researchMode !== 'off'}
 	onClick={() => setResearching(v => !v)}
@@ -866,6 +928,51 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
         </div>
       )}
 
+      {/* per-bucket view controls — sort / group / genre filter (FEAT-bucket-organize) */}
+      {viewing && !isLib && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, padding: '10px 12px', background: 'color-mix(in srgb, var(--color-paper) 60%, var(--color-bg))', border: '1px solid var(--color-border-soft)', borderRadius: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="lf-meta">정렬</span>
+              <div className="rsh-seg" role="group" aria-label="정렬">
+                {SORT_OPTS.map(o => (
+                  <button key={o.v} type="button" className="rsh-seg-btn" aria-pressed={view.sort === o.v} onClick={() => updateView(v => ({ ...v, sort: o.v }))}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="lf-meta">그룹</span>
+              <div className="rsh-seg" role="group" aria-label="그룹">
+                {GROUP_OPTS.map(o => (
+                  <button key={o.v} type="button" className="rsh-seg-btn" aria-pressed={view.group === o.v} onClick={() => updateView(v => ({ ...v, group: o.v }))}>{o.l}</button>
+                ))}
+              </div>
+            </div>
+            {viewActive && (
+              <button type="button" className="lf-chip" onClick={resetView} style={{ color: 'var(--color-accent)', borderColor: 'var(--color-border-soft)' }}>초기화</button>
+            )}
+          </div>
+          {bucketGenreList.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <span className="lf-meta" style={{ marginRight: 2 }}>장르</span>
+              {bucketGenreList.map(g => (
+                <button
+	key={g.label}
+	type="button"
+	className="lf-chip"
+	aria-pressed={view.genreFilter.includes(g.label)}
+	onClick={() => updateView(v => ({ ...v, genreFilter: v.genreFilter.includes(g.label) ? v.genreFilter.filter(x => x !== g.label) : [...v.genreFilter, g.label] }))}
+	style={view.genreFilter.includes(g.label) ? { background: 'var(--color-text)', color: 'var(--color-bg)', borderColor: 'var(--color-text)' } : undefined}
+                >
+                  {g.label}
+                  <span style={{ marginLeft: 5, opacity: 0.6 }}>{g.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* cover grid */}
       <div style={{ display: 'grid', gap: '14px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
         {isLib ?
@@ -882,9 +989,20 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
         ) :
 (
           <>
-            {bucket.albums.map(renderChip)}
+            {view.group === 'none' ?
+              flatAlbums.map(renderChip) :
+              sections.flatMap(s => [
+                <div key={`sec-${s.label}`} className="lf-mono" style={sectionLabelStyle}>
+                  {s.label}
+                  <span style={{ marginLeft: 6, color: 'var(--color-faded)' }}>{s.albums.length}</span>
+                </div>,
+                ...s.albums.map(renderChip),
+              ])}
             {bucket.albums.length === 0 && bucket.children.length === 0 && (
               <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음</div>
+            )}
+            {filteredEmpty && (
+              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>이 장르 필터에 해당하는 앨범이 없습니다</div>
             )}
             {addBtn}
           </>
@@ -1121,186 +1239,6 @@ function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: T
   )
 }
 
-// ── read-only view tiles (sort / group modes) ───────────────────────────────-
-// A non-draggable cover used by the sorted-bucket and artist-group views. Click
-// opens the detail slide-over (writable — it's a real album); rating chip shows
-// whenever the owner has rated the album, regardless of which bucket it sits in.
-function ViewCover({ album, score, onOpen }: { album: BoardAlbum, score: number | null, onOpen: (t: DetailTarget) => void }) {
-  return (
-    <button
-	type="button"
-	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year, writable: true })}
-	onPointerEnter={() => prefetchAlbumDetail(album.albumId)}
-	onPointerDown={() => prefetchAlbumDetail(album.albumId)}
-	title={`${album.title} — ${album.artist}`}
-	style={{ display: 'block', textAlign: 'left', padding: 0, border: 'none', background: 'none', cursor: 'pointer', width: '100%' }}
-    >
-      <div style={{ position: 'relative' }}>
-        <AlbumArt url={album.cover} label={album.title} />
-        {score != null && (
-          <span className="lf-mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-bg)', background: 'var(--color-text)', padding: '2px 6px', borderRadius: 3 }}>{score.toFixed(1)}</span>
-        )}
-      </div>
-      <div style={{ marginTop: 7 }}>
-        <div className="lf-serif lf-italic" style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
-        <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{album.artist}</div>
-      </div>
-    </button>
-  )
-}
-
-// A read-only card (one per artist group, or one per bucket in sorted view).
-function ViewCard({ title, count, accent, albums, ratings, onOpen }: { title: string, count: number, accent: string, albums: BoardAlbum[], ratings: Map<string, number>, onOpen: (t: DetailTarget) => void }) {
-  return (
-    <div style={{ background: 'var(--color-paper)', border: '1px solid var(--color-border)', borderLeft: `3px solid ${accent}`, borderRadius: 8, padding: 14, marginBottom: 14, boxShadow: '0 1px 2px rgba(26,26,26,0.05)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <span className="lf-serif" style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{title}</span>
-        <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--color-faded)', whiteSpace: 'nowrap' }}>
-          {count}
-          장
-        </span>
-      </div>
-      <div style={{ display: 'grid', gap: '14px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
-        {albums.map(a => (
-          <ViewCover key={a.itemId} album={a} score={ratings.get(a.albumId) ?? null} onOpen={onOpen} />
-        ))}
-        {albums.length === 0 && (
-          <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>비어 있음</div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// The view container: artist-group cards (cross-bucket) or sorted per-bucket cards.
-function CrateViewBody({ tree, view, ratings, onOpen }: { tree: BoardBucket[], view: CrateView, ratings: Map<string, number>, onOpen: (t: DetailTarget) => void }) {
-  const filter = view.genreFilter
-  const empty = <div className="lf-meta" style={{ padding: '8px 0' }}>표시할 앨범이 없습니다</div>
-
-  // Cross-bucket group views (artist/genre): flatten → dedupe → genre-filter, then group.
-  if (view.group === 'artist' || view.group === 'genre') {
-    const all = dedupeAlbums(tree.flatMap(collectAlbums)).filter(a => passesGenre(a, filter))
-    if (view.group === 'genre') {
-      const groups = genreGroups(all, view.sort)
-      if (groups.length === 0)
-        return empty
-      return (
-        <div>
-          {groups.map(g => (
-            <ViewCard key={g.genre} title={g.genre} count={g.albums.length} accent={g.genre === NO_GENRE ? 'var(--color-border)' : 'var(--color-text)'} albums={g.albums} ratings={ratings} onOpen={onOpen} />
-          ))}
-        </div>
-      )
-    }
-    const groups = artistGroups(all, view.sort)
-    if (groups.length === 0)
-      return empty
-    return (
-      <div>
-        {groups.map(g => (
-          <ViewCard key={g.artist} title={g.artist} count={g.albums.length} accent="var(--color-text)" albums={g.albums} ratings={ratings} onOpen={onOpen} />
-        ))}
-      </div>
-    )
-  }
-
-  // group 'none': each top bucket as a read-only card, genre-filtered + sorted. A
-  // bucket emptied by the filter is dropped so the view isn't littered with shells.
-  const cards = tree
-    .map(b => ({ b, albums: sortAlbums(collectAlbums(b).filter(a => passesGenre(a, filter)), view.sort) }))
-    .filter(({ albums }) => albums.length > 0)
-  if (cards.length === 0)
-    return empty
-  return (
-    <div>
-      {cards.map(({ b, albums }) => (
-        <ViewCard key={b.id} title={b.name} count={albums.length} accent={crColor(b, 0)} albums={albums} ratings={ratings} onOpen={onOpen} />
-      ))}
-    </div>
-  )
-}
-
-// Sort/group/filter toolbar — segmented controls + a genre filter chip row
-// (reusing the .rsh-seg styling). In any non-default mode it shows a "보기 모드"
-// hint since DnD is suppressed. `genres` is the distinct in-crate label list.
-// All mutations use the functional setState form so rapid multi-select chip
-// toggles never clobber each other (see STAB-5 tag-picker lesson).
-function CrateToolbar({ view, setView, genres }: { view: CrateView, setView: Dispatch<SetStateAction<CrateView>>, genres: { label: string, count: number }[] }) {
-  const active = view.group !== 'none' || view.sort !== 'manual' || view.genreFilter.length > 0
-  const toggleGenre = (label: string) => setView(v => ({
-    ...v,
-    genreFilter: v.genreFilter.includes(label) ?
-      v.genreFilter.filter(g => g !== label) :
-      [...v.genreFilter, label],
-  }))
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="lf-meta">정렬</span>
-          <div className="rsh-seg" role="group" aria-label="정렬">
-            {SORT_OPTS.map(o => (
-              <button
-	key={o.v}
-	type="button"
-	className="rsh-seg-btn"
-	aria-pressed={view.sort === o.v}
-	onClick={() => setView(v => ({ ...v, sort: o.v }))}
-              >
-                {o.l}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="lf-meta">그룹</span>
-          <div className="rsh-seg" role="group" aria-label="그룹">
-            {GROUP_OPTS.map(o => (
-              <button
-	key={o.v}
-	type="button"
-	className="rsh-seg-btn"
-	aria-pressed={view.group === o.v}
-	onClick={() => setView(v => ({ ...v, group: o.v }))}
-              >
-                {o.l}
-              </button>
-            ))}
-          </div>
-        </div>
-        {active && (
-          <span className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '0.05em', color: 'var(--color-faded)' }}>보기 모드 · 드래그 편집 잠금</span>
-        )}
-      </div>
-      {genres.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <span className="lf-meta" style={{ marginRight: 2 }}>장르</span>
-          {genres.map(g => (
-            <button
-	key={g.label}
-	type="button"
-	className="lf-chip"
-	aria-pressed={view.genreFilter.includes(g.label)}
-	onClick={() => toggleGenre(g.label)}
-	style={view.genreFilter.includes(g.label) ?
-                { background: 'var(--color-text)', color: 'var(--color-bg)', borderColor: 'var(--color-text)' } :
-                undefined}
-            >
-              {g.label}
-              <span style={{ marginLeft: 5, opacity: 0.6 }}>{g.count}</span>
-            </button>
-          ))}
-          {view.genreFilter.length > 0 && (
-            <button type="button" className="lf-chip" onClick={() => setView(v => ({ ...v, genreFilter: [] }))} style={{ color: 'var(--color-accent)', borderColor: 'var(--color-border-soft)' }}>
-              지우기
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── board ────────────────────────────────────────────────────────────────---
 export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => void, reviews: MemberReview[] }) {
   // Seed both from localStorage so the board paints immediately on mount and
@@ -1317,16 +1255,16 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const [libState, setLibState] = useState<SpotifyLibraryState | null>(null)
   const [syncing, setSyncing] = useState(false)
 
-  // Transient sort/group view (FEAT-bucket-organize Step 1). Seeded from + mirrored
-  // to localStorage so the choice survives reload; never touches server `position`.
-  const [view, setView] = useState<CrateView>(() => readView())
+  // Per-bucket sort/group/filter (FEAT-bucket-organize). bucketId → BucketView,
+  // seeded from + mirrored to localStorage so each bucket's view survives reload;
+  // never touches server `position`. Each BucketCard reads/writes its own entry.
+  const [bucketViews, setBucketViews] = useState<Record<string, BucketView>>(() => readBucketViews())
   useEffect(() => {
     try {
-      localStorage.setItem(VIEW_KEY, JSON.stringify(view))
+      localStorage.setItem(VIEW_KEY, JSON.stringify(bucketViews))
     }
     catch { /* ignore */ }
-  }, [view])
-  const viewActive = view.group !== 'none' || view.sort !== 'manual' || view.genreFilter.length > 0
+  }, [bucketViews])
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -1440,8 +1378,6 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     () => (tree ?? []).filter(b => b.kind !== SLIB_KIND),
     [tree],
   )
-  // Distinct in-crate genre labels (review buckets only) for the filter chips.
-  const crateGenreList = useMemo(() => crateGenres(normalTree), [normalTree])
 
   // Load the real tree on mount.
   useEffect(() => {
@@ -1626,7 +1562,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     },
     // Move/reorder an album, inserting before `beforeItemId` (null = append).
     // Persists via PUT /reorder with the affected bucket(s)' new item order.
-    insertAlbum(itemId, fromBucketId, toBucketId, beforeItemId) {
+    insertAlbum(itemId, fromBucketId, toBucketId, beforeItemId, bakeOrder) {
       endDrag()
       if (tree == null)
         return
@@ -1635,6 +1571,14 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       const dst = findBucket(t, toBucketId)
       if (!src || !dst)
         return
+      // Bake the destination's stored order to its current display order first, so a
+      // reorder performed from a sorted/grouped view lands where it looks (the caller
+      // then resets that bucket's view to manual). The bake list is the full set, so
+      // no album is dropped; ids absent from it (shouldn't happen) sort to the front.
+      if (bakeOrder && bakeOrder.length > 0) {
+        const rank = new Map(bakeOrder.map((id, i) => [id, i]))
+        dst.albums.sort((a, b) => (rank.get(a.itemId) ?? -1) - (rank.get(b.itemId) ?? -1))
+      }
       const idx = src.albums.findIndex(a => a.itemId === itemId)
       if (idx < 0)
         return
@@ -1878,7 +1822,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews }
 
   return (
     <div>
@@ -1969,12 +1913,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       )}
 
       {tree != null && normalTree.length > 0 && (
-        <>
-          <CrateToolbar view={view} setView={setView} genres={crateGenreList} />
-          {viewActive ?
-            <CrateViewBody tree={normalTree} view={view} ratings={ratings} onOpen={onOpen} /> :
-            <BucketList items={normalTree} parentId={null} depth={0} shared={shared} />}
-        </>
+        <BucketList items={normalTree} parentId={null} depth={0} shared={shared} />
       )}
 
       {/* trash dock — a single center-bottom card, mounted only while dragging an
