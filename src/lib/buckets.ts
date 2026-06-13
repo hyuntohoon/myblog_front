@@ -53,6 +53,12 @@ export interface BoardAlbum {
   releaseDate?: string | null
   /** Ordered artist list; `[0]` is the primary artist used for grouping. */
   artistNames?: string[]
+  /**
+   * FEAT-bucket-organize Step 2: high-confidence tier-0 genre labels, primary
+   * first (`[0]` = the single "home" for group-by-genre). Empty when the album
+   * has no high-confidence genre rows. Drives the genre group + filter chips.
+   */
+  genres?: string[]
 }
 
 /** A bucket node in the board tree (mapped from the API's nested BucketResponse). */
@@ -94,6 +100,7 @@ function mapItem(it: ApiItem): BoardAlbum {
     popularity: a?.popularity ?? null,
     releaseDate: rel ?? null,
     artistNames: a?.artist_names ?? [],
+    genres: a?.genres ?? [],
   }
 }
 

@@ -699,6 +699,8 @@ export interface components {
             artist_names?: string[];
             /** Cover Url */
             cover_url?: string | null;
+            /** Genres */
+            genres?: string[];
             /** Id */
             id: string;
             /** Popularity */
