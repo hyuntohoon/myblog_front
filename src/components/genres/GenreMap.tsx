@@ -181,7 +181,7 @@ interface RowApi {
 	move: (parentId: string | null, id: string, delta: number) => void
 }
 
-function GenreBody({ node, api }: { node: GenreNode, api: RowApi }) {
+function GenreBody({ node, editable, api }: { node: GenreNode, editable: boolean, api: RowApi }) {
 	const [editingDef, setEditingDef] = useState(false)
 	function saveDef(v: string) {
 		api.saveDef(node.id, v)
@@ -191,7 +191,7 @@ function GenreBody({ node, api }: { node: GenreNode, api: RowApi }) {
 		e.stopPropagation()
 		setEditingDef(true)
 	}
-	if (api.owner && editingDef)
+	if (editable && editingDef)
 		return <DefEdit value={node.definitionMd} onSave={saveDef} onCancel={() => setEditingDef(false)} />
 
 	const hasDef = node.definitionMd.trim().length > 0
@@ -199,8 +199,8 @@ function GenreBody({ node, api }: { node: GenreNode, api: RowApi }) {
 		<>
 			{hasDef ?
 				<Markdown text={node.definitionMd} /> :
-				<p className="gm-a-noempty">{api.owner ? '정의가 아직 없습니다.' : '정의 준비 중입니다.'}</p>}
-			{api.owner ?
+				<p className="gm-a-noempty">{editable ? '정의가 아직 없습니다.' : '정의 준비 중입니다.'}</p>}
+			{editable ?
 				(
 						<button type="button" className="gm-edit-link" onClick={openEdit}>
 							<Pencil />
@@ -218,6 +218,10 @@ function GenreRow({ node, idx, depth, parentId, listLen, api }: { node: GenreNod
 	const pct = api.total ? (node.albumCount / api.total) * 100 : 0
 	const kids = node.children
 	const num = depth === 0 ? String(idx + 1).padStart(2, '0') : null
+	// The 12 tier-0 genres are a fixed canon — never owner-editable. Inline edit
+	// (rename / definition / reorder) is reserved for tier-1 sub-genres (depth > 0),
+	// which arrive with FEAT-genre-subgenres.
+	const editable = api.owner && depth > 0
 
 	function rowKey(e: React.KeyboardEvent) {
 		if ((e.key === 'Enter' || e.key === ' ') && !editingLabel) {
@@ -237,7 +241,7 @@ function GenreRow({ node, idx, depth, parentId, listLen, api }: { node: GenreNod
 	return (
 		<div className={`gm-a-item depth-${depth}${open ? ' open' : ''}`}>
 			<div
-				className={`gm-a-row${api.owner ? ' owner' : ''}`}
+				className={`gm-a-row${editable ? ' owner' : ''}`}
 				role="button"
 				tabIndex={0}
 				onClick={() => {
@@ -252,7 +256,7 @@ api.toggle(node.id)
 					<span className="gm-a-childmark" aria-hidden="true">└</span>}
 
 				<span className="gm-a-labelwrap">
-					{api.owner && editingLabel ?
+					{editable && editingLabel ?
 						<LabelEdit value={node.label} size={depth === 0 ? 1 : 2} onSave={saveLabel} onCancel={() => setEditingLabel(false)} /> :
 						<span className={`gm-a-label${depth ? ' child' : ''}`}>{node.label}</span>}
 					{kids.length ?
@@ -264,7 +268,7 @@ api.toggle(node.id)
 </span>
 ) :
 null}
-					{api.owner && !editingLabel ?
+					{editable && !editingLabel ?
 						(
 								<button type="button" className="gm-a-renamebtn" title="이름 변경" onClick={openRename}>
 									<Pencil />
@@ -279,7 +283,7 @@ null}
 					<span className="mono gm-a-share">{shareLabel(pct)}</span>
 				</span>
 
-				{api.owner ?
+				{editable ?
 					(
 							<ReorderButtons
 								canUp={idx > 0}
@@ -294,7 +298,7 @@ null}
 			{open ?
 				(
 						<div className="gm-a-expand">
-							<div className="gm-a-body"><GenreBody node={node} api={api} /></div>
+							<div className="gm-a-body"><GenreBody node={node} editable={editable} api={api} /></div>
 							{kids.length ?
 								(
 										<div className="gm-a-children">

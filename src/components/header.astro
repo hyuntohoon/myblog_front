@@ -19,6 +19,8 @@ const isActive = (url: string) => pathOnly(pathname) === pathOnly(url)
 
 const navLinks = [
   { title: 'Reviews', url: '/reviews' },
+  // The public genre map (FEAT-genre-system) — a real route, not a filter.
+  { title: 'Genres', url: '/genres' },
   // Best New Music is a filter on the reviews index (?bnm=1), not a route.
   { title: 'Best New Music', url: '/reviews?bnm=1' },
 ]
