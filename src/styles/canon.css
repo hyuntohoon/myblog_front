@@ -1,0 +1,85 @@
+/* /canon — 명반 전당 (FEAT-home-redesign, Work G).
+   Page-local layout for the canon grid + AOTY placeholder. The ported helper
+   classes (.serif .mono .meta .kicker .panel .cover .stars .btn) live in
+   global.css; only the canon-specific structure is here. `.rise` is also global.
+   The page measure reuses --home-measure (1180px). */
+
+/* Nested inside SkipNavContent's <main class="container"> (handles the side
+   gutter + 1320px cap); .canon-wrap narrows to the editorial measure and owns
+   the vertical rhythm only — no extra side padding to avoid a double gutter. */
+.canon-wrap {
+	max-width: var(--home-measure);
+	margin: 0 auto;
+	padding: clamp(34px, 5vw, 60px) 0 90px;
+}
+
+/* ── 명반 그리드 ─────────────────────────────────────── */
+.canon-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
+	gap: clamp(28px, 3.2vw, 44px) clamp(18px, 2.4vw, 30px);
+}
+
+.canon-card {
+	color: inherit;
+	text-decoration: none;
+}
+
+.canon-cover {
+	transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.28s;
+}
+
+.canon-card:hover .canon-cover {
+	transform: translateY(-4px);
+	box-shadow: 0 18px 34px -20px rgba(0, 0, 0, 0.5);
+}
+
+.canon-title {
+	transition: color 0.16s;
+}
+
+.canon-card:hover .canon-title {
+	color: var(--color-accent);
+}
+
+.canon-verdict {
+	font-size: 13.5px;
+	line-height: 1.55;
+	color: var(--color-faded);
+	margin: 11px 0 0;
+	text-wrap: pretty;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+/* ── 빈 상태 ─────────────────────────────────────────── */
+.canon-empty-mark {
+	font-size: 46px;
+	line-height: 1;
+	color: var(--color-faded);
+	opacity: 0.5;
+}
+
+/* ── 올해의 앨범 placeholder ─────────────────────────── */
+.canon-aoty {
+	display: flex;
+	align-items: stretch;
+	border: 1px dashed var(--color-border);
+	border-radius: var(--radius-md);
+	overflow: hidden;
+	background: repeating-linear-gradient(135deg, transparent 0 13px, color-mix(in srgb, var(--color-text) 3.5%, transparent) 13px 14px);
+}
+
+.canon-aoty-stripe {
+	width: 5px;
+	flex: 0 0 auto;
+	background: repeating-linear-gradient(var(--color-border) 0 7px, transparent 7px 14px);
+}
+
+@media (max-width: 720px) {
+	.canon-grid {
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+	}
+}

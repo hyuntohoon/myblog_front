@@ -1,0 +1,28 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import CanonPage from '@components/canon/CanonPage'
+import { getCollection } from 'astro:content'
+import { buildReviewCards } from '@lib/reviews'
+import '@styles/canon.css'
+
+// /canon — "명반 전당": albums the author rated ★4.0+ (0–5 scale) collect here
+// automatically. Computed at BUILD time from the blog collection; the React
+// island renders a cover grid (NO ranking numbers, NO numeric score — stars only)
+// plus an "올해의 앨범" placeholder (the year-end pick is a hand-written editorial
+// later, not auto-curation). Read links go to /blog/${slug} (current route).
+const canon = buildReviewCards(await getCollection('blog')).filter(
+  r => r.rating != null && r.rating >= 4.0,
+)
+---
+
+<Layout>
+  <Seo slot="seo" forceTitle="명반" description="저자가 ★4.0 이상을 준 앨범이 자동으로 모이는 명반 전당. 순위가 아닌, 마음에 남은 앨범들의 자리." />
+
+  <SkipNavContent>
+    <div class="canon-wrap">
+      <CanonPage client:load albums={canon} />
+    </div>
+  </SkipNavContent>
+</Layout>

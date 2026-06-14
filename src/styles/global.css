@@ -266,3 +266,196 @@ html {
 ::-webkit-scrollbar-corner {
 	background: transparent;
 }
+
+/* ════════════════════════════════════════════════════════════
+   Editorial home + shared module helpers (FEAT-home-redesign)
+   Ported from the Claude Design `ds.css` (itself lifted from these
+   tokens). Used by the home React islands (EditorialHome / BnmHero)
+   and future home modules. Plain utility classes so React islands
+   can use them (scoped .astro styles don't reach islands).
+   ════════════════════════════════════════════════════════════ */
+:root {
+	--home-measure: 1180px;
+}
+
+/* type helpers */
+.mono { font-family: var(--font-mono); }
+.serif { font-family: var(--font-serif); }
+.sans { font-family: var(--font-sans); }
+.italic { font-style: italic; }
+
+.kicker {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+.meta {
+	font-family: var(--font-mono);
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+/* surfaces */
+.panel {
+	background: var(--color-paper);
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-md);
+}
+
+/* cover — square editorial placeholder; <img> fills when present */
+.cover {
+	position: relative;
+	overflow: hidden;
+	background: var(--color-paper);
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-sm);
+	flex: 0 0 auto;
+}
+.cover img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.cover-ph {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	font-family: var(--font-serif);
+	font-style: italic;
+	font-weight: 600;
+	color: var(--color-faded);
+	letter-spacing: -0.03em;
+}
+
+/* chips */
+.chip {
+	flex-shrink: 0;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid var(--color-border);
+	border-radius: 0;
+	padding: 6px 11px;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.chip:hover { border-color: var(--color-text); }
+.chip[data-on='true'] {
+	background: var(--color-text);
+	color: var(--color-bg);
+	border-color: var(--color-text);
+}
+
+/* buttons */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	padding: 10px 16px;
+	transition: background 0.16s, color 0.16s, border-color 0.16s, opacity 0.16s;
+}
+.btn:hover { border-color: var(--color-text); }
+.btn-solid {
+	color: var(--color-bg);
+	background: var(--color-text);
+	border-color: var(--color-text);
+}
+.btn-solid:hover { opacity: 0.84; }
+.btn-accent {
+	color: #fff;
+	background: var(--color-accent);
+	border-color: var(--color-accent);
+}
+.btn-accent:hover { opacity: 0.88; }
+
+/* partial-fill stars — shares the look of partial-stars.astro; number never shown */
+.stars {
+	position: relative;
+	display: inline-block;
+	font-size: var(--star-size, 16px);
+	line-height: 1;
+	letter-spacing: 0.05em;
+	color: transparent;
+	user-select: none;
+}
+.stars-bg,
+.stars-fg {
+	display: inline-block;
+	font-family: inherit;
+}
+.stars-bg { color: var(--color-faded); }
+.stars-fg {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: var(--star-pct, 0%);
+	overflow: hidden;
+	white-space: nowrap;
+	color: var(--color-accent);
+}
+.unrated {
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+/* mini icon button */
+.iconbtn {
+	width: 26px;
+	height: 26px;
+	display: grid;
+	place-items: center;
+	font-size: 12px;
+	line-height: 1;
+	color: var(--color-faded);
+	background: none;
+	border: 1px solid transparent;
+	border-radius: 3px;
+	cursor: pointer;
+	transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.iconbtn:hover { color: var(--color-text); border-color: var(--color-border); }
+.iconbtn.danger:hover { color: var(--color-accent); border-color: var(--color-accent); }
+
+.drag-handle { cursor: grab; touch-action: none; }
+.drag-handle:active { cursor: grabbing; }
+
+.lf-drop-line {
+	height: 2px;
+	background: var(--color-accent);
+	border-radius: 2px;
+}
+
+/* entrance */
+@keyframes lf-rise {
+	from { opacity: 0; transform: translateY(8px); }
+	to { opacity: 1; transform: none; }
+}
+.rise { animation: lf-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+	.rise { animation: none; }
+}

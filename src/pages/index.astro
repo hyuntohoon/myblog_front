@@ -1,42 +1,62 @@
 ---
-import Layout from '@layouts/layout.astro'
-import Seo from '@components/seo.astro'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
-import ReviewsIndex from '@components/reviews/ReviewsIndex'
+import EditorialHome from '@components/home/EditorialHome'
+import Seo from '@components/seo.astro'
+import Layout from '@layouts/layout.astro'
+import { allGenres, buildReviewCards } from '@lib/reviews'
 import { getCollection } from 'astro:content'
-import { buildReviewCards } from '@lib/reviews'
-import '@styles/reviews.css'
 
-// Home is the interactive review browser (moved from /reviews). The normalized,
-// JSON-safe array is handed to the React island.
-const reviews = buildReviewCards(await getCollection('blog'))
+// Editorial home (FEAT-home-redesign). The legacy `/` review browser now lives
+// at `/reviews`; `/` is the two-lane editorial home. Build-time computes the
+// 30-day-rolling Best New Music picks + honest counts and hands a JSON-safe
+// payload to the React island.
+const entries = await getCollection('blog')
+const reviews = buildReviewCards(entries)
+
+const DAY = 86_400_000
+const now = Date.now()
+const daysAgo = (iso: string) => Math.floor((now - new Date(iso).getTime()) / DAY)
+const pad = (n: number) => String(n).padStart(2, '0')
+function fmtDate(iso: string) {
+  const d = new Date(iso)
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`
+}
+function agoLabel(iso: string) {
+  const d = daysAgo(iso)
+  return d <= 0 ? '오늘' : d === 1 ? '어제' : `${d}일 전`
+}
+
+// Best New Music = posts flagged `bestNew` AND published within 30 days, newest
+// first (reviews are pre-sorted date-desc). Empty → the hero module self-hides
+// and Latest rises (owner decision 2026-06-14; a daily rebuild keeps it fresh).
+const bnm = reviews
+  .filter(r => r.bestNew && daysAgo(r.date) >= 0 && daysAgo(r.date) <= 30)
+  .slice(0, 3)
+  .map(r => ({
+    slug: r.slug,
+    album: r.album,
+    artist: r.artist,
+    excerpt: r.excerpt,
+    rating: r.rating,
+    genre: r.genres[0] ?? '',
+    year: r.year,
+    cover: r.cover,
+    dateLabel: fmtDate(r.date),
+    agoLabel: agoLabel(r.date),
+  }))
+
+const stats = {
+  reviews: reviews.length,
+  albums: reviews.length,
+  genres: allGenres(reviews).length,
+  lastUpdated: reviews[0] ? fmtDate(reviews[0].date) : '—',
+}
+const draftCount = entries.filter(e => e.data.draft).length
 ---
 
 <Layout>
   <Seo slot="seo" forceTitle="buckit" />
-
   <SkipNavContent>
-    <div class="container">
-      <!-- Masthead -->
-      <header class="rev-masthead">
-        <h1 class="rev-title">Reviews</h1>
-      </header>
-
-      {reviews.length === 0 ?
-(
-        <div class="rev-empty">
-          <p class="rev-empty-title">아직 리뷰가 없습니다</p>
-          <p class="rev-empty-sub">첫 리뷰를 작성해 보세요.</p>
-        </div>
-      ) :
-(
-        <ReviewsIndex client:load reviews={reviews} />
-      )}
-
-      <!-- Footer -->
-      <footer class="rev-footer">
-        <span>bucki<span style="color: var(--color-accent)">t</span></span>
-      </footer>
-    </div>
+    <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} />
   </SkipNavContent>
 </Layout>
