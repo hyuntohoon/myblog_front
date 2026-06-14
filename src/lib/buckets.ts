@@ -14,6 +14,9 @@ const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 type ApiBucket = components['schemas']['Backend_BucketResponse']
 type ApiBucketsResponse = components['schemas']['Backend_BucketsResponse']
 type ApiItem = components['schemas']['Backend_BucketItemResponse']
+type ApiPublicBucketsResponse = components['schemas']['Backend_PublicBucketsResponse']
+type ApiPublicBucket = components['schemas']['Backend_PublicBucket']
+type ApiPublicItem = components['schemas']['Backend_PublicBucketItem']
 
 /**
  * Album card inside a bucket. Carries the bucket *item* id (the unit DnD/reorder
@@ -148,6 +151,65 @@ export async function listBuckets(): Promise<BoardBucket[]> {
   const res = await apiFetch(`${BASE}/api/buckets`, { method: 'GET' })
   const data = await asJson<ApiBucketsResponse>(res)
   return (data.buckets ?? []).map(mapBucket)
+}
+
+// ── FEAT-public-bucket-multiuser Scope A A4 — read-only public collection ──────
+// The /collection viewer reads GET /api/buckets/public (unauthenticated, served
+// flat with a whitelisted projection: album + position + already_reviewed, no
+// private item fields, spotify_library excluded). apiFetch is safe unauthed — with
+// no token it omits the Bearer header and returns the 200 as-is.
+
+/** A public album cover in a collection (slim, read-only projection). */
+export interface PublicAlbum {
+  albumId: string
+  title: string
+  artist: string
+  cover: string | null
+  year: number | null
+  /** Advisory: this album already has a published review. */
+  alreadyReviewed: boolean
+  genres: string[]
+}
+
+/** A public bucket = one named collection on the /collection viewer. */
+export interface PublicCollection {
+  id: string
+  name: string
+  color: string | null
+  albums: PublicAlbum[]
+}
+
+function mapPublicItem(it: ApiPublicItem): PublicAlbum {
+  const a = it.album
+  const rel = a.release_date
+  return {
+    albumId: it.album_id,
+    title: a.title,
+    artist: (a.artist_names ?? []).join(', ') || '—',
+    cover: a.cover_url ?? null,
+    year: rel ? Number(String(rel).slice(0, 4)) || null : null,
+    alreadyReviewed: it.already_reviewed,
+    genres: a.genres ?? [],
+  }
+}
+
+function mapPublicBucket(b: ApiPublicBucket): PublicCollection {
+  return {
+    id: b.id,
+    name: b.name,
+    color: b.color ?? null,
+    albums: (b.items ?? []).map(mapPublicItem),
+  }
+}
+
+/**
+ * GET /api/buckets/public — every public review bucket (flat, owner-curated),
+ * mapped to slim read-only collections. No auth required.
+ */
+export async function listPublicBuckets(): Promise<PublicCollection[]> {
+  const res = await apiFetch(`${BASE}/api/buckets/public`, { method: 'GET' })
+  const data = await asJson<ApiPublicBucketsResponse>(res)
+  return (data.buckets ?? []).map(mapPublicBucket)
 }
 
 /** POST /api/buckets — create a root bucket (sub-buckets are created then moved). */
