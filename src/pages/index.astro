@@ -57,6 +57,6 @@ const draftCount = entries.filter(e => e.data.draft).length
 <Layout>
   <Seo slot="seo" forceTitle="buckit" />
   <SkipNavContent>
-    <EditorialHome client:load bnm={bnm} stats={stats} draftCount={draftCount} />
+    <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} />
   </SkipNavContent>
 </Layout>

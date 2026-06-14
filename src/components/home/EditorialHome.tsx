@@ -14,11 +14,14 @@
  */
 import { isLoggedIn } from '@lib/auth'
 import { bucketCount } from '@lib/member'
+import type { ReviewCard } from '@lib/reviews'
 import type { ReactElement } from 'react'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import BnmHero from './BnmHero'
 import type { BnmPick } from './BnmHero'
+import BrowseGenres from './BrowseGenres'
+import LatestReviews from './LatestReviews'
 import { SectionTitle } from './ui'
 
 const WRITE_URL = '/write'
@@ -34,6 +37,7 @@ interface Stats {
 
 interface Props {
 	bnm: BnmPick[]
+	reviews: ReviewCard[]
 	stats: Stats
 	draftCount: number
 }
@@ -124,7 +128,7 @@ function EmptyState({ authed, bucket }: { authed: boolean, bucket: number }) {
 	)
 }
 
-export default function EditorialHome({ bnm, stats, draftCount }: Props) {
+export default function EditorialHome({ bnm, reviews, stats, draftCount }: Props) {
 	const empty = stats.reviews === 0
 	const hasHero = bnm.length > 0
 
@@ -132,8 +136,8 @@ export default function EditorialHome({ bnm, stats, draftCount }: Props) {
 	// the rolling window; otherwise it drops out and Latest rises to the top.
 	const modules: Record<string, { label: string, render: () => ReactElement }> = {
 		hero: { label: 'BNM 히어로', render: () => <BnmHero picks={bnm} /> },
-		latest: { label: '최신 평론', render: () => <PlaceholderModule kicker="최신 평론 · 모듈 ②" title="최신 평론" right={`모두 보기 · ${stats.reviews}편`} /> },
-		genres: { label: '장르로 탐색', render: () => <PlaceholderModule kicker="장르로 탐색 · 모듈 ③" title="장르 탐색" right="장르 맵 →" /> },
+		latest: { label: '최신 평론', render: () => <LatestReviews reviews={reviews} /> },
+		genres: { label: '장르로 탐색', render: () => <BrowseGenres /> },
 		numbers: { label: 'By the numbers', render: () => <PlaceholderModule kicker="BY THE NUMBERS · 모듈 ④" title="숫자로 보는 평론지" /> },
 	}
 	const baseOrder = (hasHero ? ['hero', 'latest', 'genres', 'numbers'] : ['latest', 'genres', 'numbers'])

@@ -1,17 +1,283 @@
 ---
-import Spacer from './spacer.astro'
+/**
+ * Editorial footer (FEAT-home-redesign, Work F).
+ *
+ * Magazine-style footer: wordmark + one-line zine description + publication
+ * stamp + a nav echo (마스트헤드 IA restated) + the existing Theme/Accent
+ * pickers + a copyright line. Light/dark via tokens; stacks on mobile.
+ *
+ * The design prototype shipped its own local-state theme/accent segmented
+ * control — that is mockup-only. The real pickers (ThemeSelect / AccentSelect)
+ * drive the actual document theme + persist to localStorage, so they are kept
+ * verbatim under the 보기 head.
+ *
+ * Nav echo points at the real IA: 명반 → /canon (the ≥4.0★ canon hall), matching the header.
+ */
+import { MEMBER_IDENTITY } from '@lib/member'
 import ThemeSelect from './theme-select.astro'
 import AccentSelect from './accent-select.astro'
+
+const ZINE = '혼자 쓰는 음악 평론지.'
+const TAGLINE = '한 장의 앨범을 끝까지 듣고 한 편을 쓴다.'
+
+const NAV_ECHO = [
+	{ label: 'Reviews', ko: '평론', href: '/reviews' },
+	{ label: 'Genres', ko: '장르', href: '/genres' },
+	{ label: 'Canon', ko: '명반', href: '/canon' },
+]
+
+const YEAR = new Date().getFullYear()
 ---
 
-<footer class="container">
-  <Spacer axis="vertical" size={4} />
-  <div class="flex flex-row justify-between items-center pt-6 border-t border-border">
-    <div class="flex items-center gap-4">
-      <ThemeSelect />
-      <AccentSelect />
-    </div>
-    <div></div>
-  </div>
-  <Spacer axis="vertical" size={8} />
+<footer class="container ef" aria-label="사이트 푸터">
+	<hr class="ef-rule" />
+
+	<div class="ef-main">
+		{/* ① 브랜드 — 워드마크 + 한 줄 소개 + 발행 메타 */}
+		<div class="ef-brand">
+			<a href="/" class="ef-wordmark serif" aria-label="buckit — 홈으로">bucki<span class="accent">t</span></a>
+			<p class="ef-intro serif">
+				{ZINE} <span class="italic">{TAGLINE}</span>
+			</p>
+			<div class="ef-stamp meta">
+				<span>창간 {MEMBER_IDENTITY.joined}</span>
+				<span class="ef-dot" aria-hidden="true"></span>
+				<span>글 {MEMBER_IDENTITY.name}</span>
+				<span class="ef-dot" aria-hidden="true"></span>
+				<span>@{MEMBER_IDENTITY.handle}</span>
+			</div>
+		</div>
+
+		{/* ② 나브 에코 — 섹션 IA 되짚기 */}
+		<nav class="ef-nav" aria-label="섹션">
+			<div class="kicker ef-navhead">섹션</div>
+			<ul class="ef-navlist">
+				{NAV_ECHO.map(n => (
+					<li>
+						<a href={n.href} class="ef-navlink">
+							<span class="ef-navlabel serif">{n.ko}</span>
+							<span class="ef-navko meta">{n.label}</span>
+						</a>
+					</li>
+				))}
+				<li>
+					<a href="/rss.xml" class="ef-navlink ef-rss">
+						<span class="ef-navlabel serif">
+							<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"></path>
+								<circle cx="5" cy="19" r="1.4" fill="currentColor" stroke="none"></circle>
+							</svg>
+							RSS
+						</span>
+						<span class="ef-navko meta">구독</span>
+					</a>
+				</li>
+			</ul>
+		</nav>
+
+		{/* ③ 보기 — 테마·액센트 피커 (기존 컴포넌트 유지) */}
+		<div class="ef-controls">
+			<div class="kicker ef-navhead">보기</div>
+			<div class="ef-ctl">
+				<span class="meta ef-ctl-lab">테마</span>
+				<ThemeSelect />
+			</div>
+			<div class="ef-ctl">
+				<span class="meta ef-ctl-lab">액센트</span>
+				<AccentSelect />
+			</div>
+		</div>
+	</div>
+
+	<hr class="ef-rule ef-rule-soft" />
+
+	{/* ④ 저작권 + 미세 링크 */}
+	<div class="ef-base">
+		<span class="meta">© {YEAR} {MEMBER_IDENTITY.name} · buckit</span>
+		<div class="ef-base-links">
+			<a href="/profile" class="meta ef-mini">소개</a>
+			<a href="/reviews" class="meta ef-mini">전체 색인</a>
+			<a href="/rss.xml" class="meta ef-mini">RSS</a>
+		</div>
+	</div>
 </footer>
+
+<style>
+	.ef {
+		padding-bottom: 8px;
+	}
+	.ef-rule {
+		height: 2px;
+		background: var(--color-text);
+		border: 0;
+		margin: 0;
+	}
+	.ef-rule-soft {
+		height: 1px;
+		background: var(--color-border);
+	}
+
+	.ef-main {
+		display: grid;
+		grid-template-columns: 1.55fr 1fr auto;
+		gap: clamp(28px, 5vw, 72px);
+		padding: clamp(34px, 4.5vw, 52px) 0 clamp(30px, 4vw, 44px);
+		align-items: start;
+	}
+
+	/* ① 브랜드 */
+	.ef-brand {
+		min-width: 0;
+	}
+	.ef-wordmark {
+		display: inline-block;
+		font-size: clamp(28px, 3.4vw, 40px);
+		font-weight: 600;
+		letter-spacing: -0.035em;
+		line-height: 1;
+		color: var(--color-highlight);
+		transition: color 0.15s;
+	}
+	.ef-wordmark:hover {
+		color: var(--color-accent);
+	}
+	.ef-wordmark .accent {
+		color: var(--color-accent);
+	}
+	.ef-intro {
+		margin: 16px 0 0;
+		font-size: clamp(15px, 1.5vw, 17px);
+		line-height: 1.55;
+		color: var(--color-subtle);
+		max-width: 38ch;
+		text-wrap: pretty;
+	}
+	.ef-intro .italic {
+		color: var(--color-text);
+	}
+	.ef-stamp {
+		margin-top: 20px;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+	.ef-stamp > span:not(.ef-dot) {
+		white-space: nowrap;
+	}
+	.ef-dot {
+		width: 3px;
+		height: 3px;
+		border-radius: 3px;
+		background: var(--color-faded);
+	}
+
+	/* ② 나브 에코 */
+	.ef-navhead {
+		color: var(--color-faded);
+		margin-bottom: 16px;
+	}
+	.ef-navlist {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.ef-navlink {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 8px 0;
+		border-bottom: 1px solid var(--color-border-soft);
+		transition: padding-left 0.16s, border-color 0.16s;
+	}
+	.ef-navlist li:last-child .ef-navlink {
+		border-bottom: 0;
+	}
+	.ef-navlink:hover {
+		padding-left: 7px;
+		border-color: var(--color-border);
+	}
+	.ef-navlabel {
+		font-size: 19px;
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		color: var(--color-text);
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		white-space: nowrap;
+		transition: color 0.15s;
+	}
+	.ef-navko {
+		text-align: right;
+		color: var(--color-faded);
+	}
+	.ef-navlink:hover .ef-navlabel {
+		color: var(--color-accent);
+	}
+	.ef-rss .ef-navlabel svg {
+		color: var(--color-accent);
+	}
+
+	/* ③ 컨트롤 — 기존 피커를 호스팅 */
+	.ef-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 18px;
+		min-width: 188px;
+	}
+	.ef-ctl {
+		display: flex;
+		flex-direction: column;
+		gap: 9px;
+		align-items: flex-start;
+	}
+	.ef-ctl-lab {
+		color: var(--color-subtle);
+	}
+
+	/* ④ 저작권 */
+	.ef-base {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 14px;
+		padding: 20px 0 clamp(24px, 4vw, 36px);
+	}
+	.ef-base-links {
+		display: flex;
+		gap: 22px;
+	}
+	.ef-mini {
+		color: var(--color-faded);
+		transition: color 0.15s;
+	}
+	.ef-mini:hover {
+		color: var(--color-text);
+	}
+
+	/* ── 모바일: 세로 정렬 ── */
+	@media (max-width: 820px) {
+		.ef-main {
+			grid-template-columns: 1fr;
+			gap: 34px;
+		}
+		.ef-controls {
+			min-width: 0;
+		}
+	}
+	@media (max-width: 480px) {
+		.ef-base {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+		.ef-navlabel {
+			font-size: 17px;
+		}
+	}
+</style>
