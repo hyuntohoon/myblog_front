@@ -22,6 +22,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/buckets/public": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Public Buckets */
+        get: operations["list_public_buckets_api_buckets_public_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buckets/reorder": {
         parameters: {
             query?: never;
@@ -784,6 +801,11 @@ export interface components {
             id: string;
             /** Is Done */
             is_done: boolean;
+            /**
+             * Is Public
+             * @default false
+             */
+            is_public: boolean;
             /** Items */
             items?: components["schemas"]["Backend_BucketItemResponse"][];
             /**
@@ -1039,6 +1061,52 @@ export interface components {
             /** Likes */
             likes: number;
         };
+        /** PublicAlbumBrief */
+        Backend_PublicAlbumBrief: {
+            /** Artist Names */
+            artist_names?: string[];
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Genres */
+            genres?: string[];
+            /** Id */
+            id: string;
+            /** Release Date */
+            release_date?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** PublicBucket */
+        Backend_PublicBucket: {
+            /** Color */
+            color?: string | null;
+            /** Id */
+            id: string;
+            /** Items */
+            items?: components["schemas"]["Backend_PublicBucketItem"][];
+            /** Name */
+            name: string;
+            /** Position */
+            position: number;
+        };
+        /** PublicBucketItem */
+        Backend_PublicBucketItem: {
+            album: components["schemas"]["Backend_PublicAlbumBrief"];
+            /** Album Id */
+            album_id: string;
+            /**
+             * Already Reviewed
+             * @default false
+             */
+            already_reviewed: boolean;
+            /** Position */
+            position: number;
+        };
+        /** PublicBucketsResponse */
+        Backend_PublicBucketsResponse: {
+            /** Buckets */
+            buckets?: components["schemas"]["Backend_PublicBucket"][];
+        };
         /** RecentTrackItem */
         Backend_RecentTrackItem: {
             album?: components["schemas"]["Backend_AlbumBrief"] | null;
@@ -1244,6 +1312,8 @@ export interface components {
             color?: string | null;
             /** Is Done */
             is_done?: boolean | null;
+            /** Is Public */
+            is_public?: boolean | null;
             /** Name */
             name?: string | null;
             /** Position */
@@ -1731,6 +1801,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_public_buckets_api_buckets_public_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PublicBucketsResponse"];
                 };
             };
         };
