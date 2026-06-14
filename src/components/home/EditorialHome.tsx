@@ -21,8 +21,8 @@ import { createPortal } from 'react-dom'
 import BnmHero from './BnmHero'
 import type { BnmPick } from './BnmHero'
 import BrowseGenres from './BrowseGenres'
+import ByTheNumbers from './ByTheNumbers'
 import LatestReviews from './LatestReviews'
-import { SectionTitle } from './ui'
 
 const WRITE_URL = '/write'
 const DRAFTS_URL = '/drafts'
@@ -71,18 +71,6 @@ function WriterStrip({ bucket, drafts, emphasis }: { bucket: number, drafts: num
 				</a>
 			</div>
 		</div>
-	)
-}
-
-/* ── placeholder module (Latest / Genres / Numbers — designs pending) ─ */
-function PlaceholderModule({ kicker, title, right }: { kicker: string, title: string, right?: string }) {
-	return (
-		<section>
-			<SectionTitle kicker={kicker} title={title} right={right ? <span className="btn" style={{ pointerEvents: 'none', opacity: 0.6 }}>{right}</span> : undefined} />
-			<div className="panel" style={{ padding: '34px 26px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 120, background: 'var(--color-paper)' }}>
-				<span className="serif italic" style={{ fontSize: 16, color: 'var(--color-faded)' }}>이 모듈은 곧 추가됩니다 · 디자인 작업 중</span>
-			</div>
-		</section>
 	)
 }
 
@@ -138,7 +126,7 @@ export default function EditorialHome({ bnm, reviews, stats, draftCount }: Props
 		hero: { label: 'BNM 히어로', render: () => <BnmHero picks={bnm} /> },
 		latest: { label: '최신 평론', render: () => <LatestReviews reviews={reviews} /> },
 		genres: { label: '장르로 탐색', render: () => <BrowseGenres /> },
-		numbers: { label: 'By the numbers', render: () => <PlaceholderModule kicker="BY THE NUMBERS · 모듈 ④" title="숫자로 보는 평론지" /> },
+		numbers: { label: 'By the numbers', render: () => <ByTheNumbers stats={stats} /> },
 	}
 	const baseOrder = (hasHero ? ['hero', 'latest', 'genres', 'numbers'] : ['latest', 'genres', 'numbers'])
 		.filter(id => id in modules)
