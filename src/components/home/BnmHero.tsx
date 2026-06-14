@@ -124,6 +124,9 @@ export default function BnmHero({ picks }: { picks: BnmPick[] }) {
     </span>
 			</div>
 			<FeatureHero a={feature} />
+			<style>
+				{`.bnm-feature{grid-template-columns:minmax(280px,380px) 1fr}@media (max-width:640px){.bnm-feature{grid-template-columns:1fr !important;gap:22px !important}.bnm-support-row{grid-template-columns:1fr !important;gap:18px !important}}`}
+			</style>
 			{support.length > 0 && (
 				<div className="bnm-support-row" style={{ display: 'grid', gridTemplateColumns: `repeat(${support.length}, 1fr)`, gap: 28, marginTop: 28 }}>
 					{support.map(a => <SupportCard key={a.slug} a={a} />)}

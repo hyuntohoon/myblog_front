@@ -153,6 +153,12 @@ export default function EditorialHome({ bnm, reviews, stats, draftCount }: Props
 
 	const cellRefs = useRef<Record<string, HTMLDivElement | null>>({})
 	const dragData = useRef<{ id: string, lastAt: number | null } | null>(null)
+	// `hidden` mirrored into a ref so the once-registered drag listeners + the
+	// keyboard reorder read the live value, never a stale closure (reviewer MED-3).
+	const hiddenRef = useRef<string[]>(hidden)
+	useEffect(() => {
+		hiddenRef.current = hidden
+	}, [hidden])
 
 	// Client-only state (avoids SSR/hydration mismatch).
 	useEffect(() => {
@@ -226,7 +232,7 @@ f.push(m)
 		document.body.style.cursor = ''
 		if (d && d.lastAt != null) {
 			setOrder((prev) => {
-				const vis = prev.filter(m => !hidden.includes(m))
+				const vis = prev.filter(m => !hiddenRef.current.includes(m))
 				const from = vis.indexOf(d.id)
 				let to = d.lastAt as number
 				if (to > from)
@@ -236,7 +242,7 @@ f.push(m)
 				const result: string[] = []
 				let vi = 0
 				prev.forEach((m) => {
-					result.push(hidden.includes(m) ? m : vis[vi++])
+					result.push(hiddenRef.current.includes(m) ? m : vis[vi++])
 				})
 				return result
 			})
@@ -259,6 +265,25 @@ f.push(m)
 
 	const hide = (mid: string) => setHidden(h => [...h, mid])
 	const restore = (mid: string) => setHidden(h => h.filter(x => x !== mid))
+	// Keyboard reorder (drag handle is pointer-only; reviewer MED-2). Arrow up/down
+	// moves a module one slot among the visible set.
+	const moveModule = (mid: string, dir: -1 | 1) => {
+		setOrder((prev) => {
+			const vis = prev.filter(m => !hiddenRef.current.includes(m))
+			const from = vis.indexOf(mid)
+			const to = from + dir
+			if (from < 0 || to < 0 || to >= vis.length)
+				return prev
+			vis.splice(from, 1)
+			vis.splice(to, 0, mid)
+			const result: string[] = []
+			let vi = 0
+			prev.forEach((m) => {
+				result.push(hiddenRef.current.includes(m) ? m : vis[vi++])
+			})
+			return result
+		})
+	}
 	const reset = () => {
 		setOrder(baseOrder)
 		setHidden([])
@@ -315,10 +340,23 @@ f.push(m)
 													{editing && (
 														<div style={{ position: 'absolute', top: 0, left: 0, right: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--color-paper)', border: '1px solid var(--color-border)', borderRadius: 4 }}>
 															<span
+																role="button"
+																tabIndex={0}
+																aria-label={`${modules[mid].label} 모듈 순서 변경 — 방향키 위/아래`}
 																onPointerDown={e => onDragStart(e, mid)}
+																onKeyDown={(e) => {
+																	if (e.key === 'ArrowUp') {
+																		e.preventDefault()
+																		moveModule(mid, -1)
+																	}
+																	else if (e.key === 'ArrowDown') {
+																		e.preventDefault()
+																		moveModule(mid, 1)
+																	}
+																}}
 																className="drag-handle mono"
 																style={{ fontSize: 15, color: 'var(--color-faded)', userSelect: 'none' }}
-																title="드래그하여 순서 변경"
+																title="드래그 또는 방향키로 순서 변경"
 															>
 																⠿
 															</span>
