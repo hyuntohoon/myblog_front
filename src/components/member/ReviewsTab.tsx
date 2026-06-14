@@ -56,7 +56,7 @@ function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: Deta
         <p className="lf-serif" style={{ margin: '8px 0 12px', fontSize: 14, color: 'var(--color-subtle)', lineHeight: 1.6, textWrap: 'pretty', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '3.2em' }}>{r.excerpt}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, borderTop: '1px solid var(--color-border)', paddingTop: 12 }}>
           {r.rating != null ? <Stars score={r.rating} size={16} /> : <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', letterSpacing: '.08em', textTransform: 'uppercase' }}>칼럼</span>}
-          <a href={`/blog/${r.slug}`} className="lf-chip" style={{ marginLeft: 'auto', textDecoration: 'none' }}>보기</a>
+          <a href={`/review/${r.slug}`} className="lf-chip" style={{ marginLeft: 'auto', textDecoration: 'none' }}>보기</a>
           <button type="button" className="lf-chip" onClick={() => onDelete(r)} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 35%, var(--color-border))' }}>삭제</button>
         </div>
       </div>

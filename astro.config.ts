@@ -43,7 +43,9 @@ export default defineConfig({
 		expressiveCode(),
 		mdx(),
 		sitemap({
-			filter: page => !/\/(?:drafts|write|admin|test)\//.test(page),
+			// Exclude the legacy /blog/* redirect stubs (noindex) from the sitemap;
+			// the real review pages live at /review/* (FEAT-blog-to-review-migration).
+			filter: page => !/\/(?:drafts|write|admin|test|blog)\//.test(page),
 		}),
 		pagefindIntegration(),
 		react(),

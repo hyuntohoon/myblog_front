@@ -54,7 +54,7 @@ function BNMBadge({ corner = false }: { corner?: boolean }) {
 function FeatureHero({ a }: { a: BnmPick }) {
 	return (
 		<a
-			href={`/blog/${a.slug}`}
+			href={`/review/${a.slug}`}
 			className="bnm-feature"
 			style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 380px) 1fr', gap: 38, alignItems: 'center', paddingBottom: 30, borderBottom: '2px solid var(--color-text)' }}
 		>
@@ -90,7 +90,7 @@ function FeatureHero({ a }: { a: BnmPick }) {
 
 function SupportCard({ a }: { a: BnmPick }) {
 	return (
-		<a href={`/blog/${a.slug}`} className="bnm-support" style={{ display: 'flex', gap: 16 }}>
+		<a href={`/review/${a.slug}`} className="bnm-support" style={{ display: 'flex', gap: 16 }}>
 			<Cover label={a.album} src={a.cover} size={104} radius={3} />
 			<div style={{ minWidth: 0, flex: 1 }}>
 				<div className="mono" style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-subtle)', marginBottom: 4 }}>{a.artist}</div>

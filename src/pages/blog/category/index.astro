@@ -1,58 +1,9 @@
 ---
-import Layout from '@layouts/layout.astro'
-import Seo from '@components/seo.astro'
-import { getCollection } from 'astro:content'
-import SkipNavContent from '@components/a11y/skip-nav-content.astro'
-import { defaultDateFormat, sortAsc } from '@utils'
-import Link from '@components/link.astro'
+// Legacy /blog/category/ → /reviews/ redirect stub (FEAT-blog-to-review-migration).
+// The category index is removed (redundant with the /reviews browser); redirect so
+// any old inbound link never 404s.
+import RedirectStub from '@components/redirect-stub.astro'
 
-const posts = sortAsc(await getCollection('blog'))
+export const prerender = true
 ---
-
-<Layout>
-  <Seo slot="seo" title="Categories" />
-  <SkipNavContent>
-    <h1 class="sr-only">Categories</h1>
-
-    {posts.length === 0 ?
-(
-      <div class="text-faded text-center py-16">
-        <p class="text-lg">아직 글이 없습니다</p>
-        <p class="text-sm mt-1">첫 글을 작성해 보세요.</p>
-      </div>
-    ) :
-(
-    <>
-    <!-- 헤더(표 설명) -->
-    <div class="text-faded border-b border-border pb-2 mb-2
-                grid grid-cols-[1fr_auto] gap-x-3 items-center"
-    >
-      <span class="text-sm">Title</span>
-      <span class="text-sm">Date</span>
-    </div>
-
-    <!-- 목록 -->
-    <div class="divide-y divide-border">
-      {
-        posts.map(({ data: post }) => (
-          <div class="grid grid-cols-[1fr_auto] gap-x-3 items-center py-3">
-            <!-- Title -->
-            <Link
-	variant="highlight"
-	class="font-medium text-base md:text-lg truncate"
-	href={`/blog/${post.slug}/`}
-	title={post.title}
-            >
-              {post.title}
-            </Link>
-
-            <!-- Date -->
-            <span class="text-faded whitespace-nowrap">{defaultDateFormat(post.date)}</span>
-          </div>
-        ))
-      }
-    </div>
-    </>
-)}
-  </SkipNavContent>
-</Layout>
+<RedirectStub to="/reviews/" />
