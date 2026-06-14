@@ -669,7 +669,7 @@ export default function WriterApp() {
     }
 
     // Astro rebuilds the static site on the new GitHub commit (~3–5 min), so
-    // /blog/{slug} 404s during that window. Redirect to the /blog list page
+    // /review/{slug} 404s during that window. Redirect to the /reviews list page
     // instead — it works immediately and the new post appears once the build
     // completes. Reset state so the form is empty if the user navigates back.
     removeDraftSlot(subjectRef.current?.id ?? null)
@@ -687,7 +687,7 @@ export default function WriterApp() {
     flash('발행 완료! 3–5분 후 반영됩니다')
     setSettingsOpen(false)
     setTimeout(() => {
-      window.location.href = '/blog/'
+      window.location.href = '/reviews/'
     }, 1800)
   }
 

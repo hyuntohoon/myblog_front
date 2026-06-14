@@ -11,7 +11,7 @@ import '@styles/canon.css'
 // automatically. Computed at BUILD time from the blog collection; the React
 // island renders a cover grid (NO ranking numbers, NO numeric score — stars only)
 // plus an "올해의 앨범" placeholder (the year-end pick is a hand-written editorial
-// later, not auto-curation). Read links go to /blog/${slug} (current route).
+// later, not auto-curation). Read links go to /review/${slug} (current route).
 const canon = buildReviewCards(await getCollection('blog')).filter(
   r => r.rating != null && r.rating >= 4.0,
 )

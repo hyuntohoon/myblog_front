@@ -9,7 +9,7 @@
 //             picks + optional rating, saved as a DRAFT (no publish here). Resumes
 //             an existing draft (matched by title === album title) on open.
 //   · edit  — a bucket album that already has a published review: read-only detail
-//             with an "이미 발행됨" banner → 평론 보기 (/blog/{slug}) + 수정 (/write?id).
+//             with an "이미 발행됨" banner → 평론 보기 (/review/{slug}) + 수정 (/write?id).
 //
 // The 별점 input is a self-contained pointer strip reusing the member `Stars`
 // visual (the writer's DragRatingInput lives behind write-only CSS tokens).
@@ -207,7 +207,7 @@ function EditBody({ published, tracks }: { published?: MemberReview, tracks: Mus
         <span className="lf-meta" style={{ color: 'var(--color-accent)' }}>이미 발행된 평론</span>
         {published?.rating != null && <Stars score={published.rating} size={14} />}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {published?.slug && <a href={`/blog/${published.slug}/`} className="lf-chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
+          {published?.slug && <a href={`/review/${published.slug}/`} className="lf-chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
           {published?.postId && <a href={`/write?id=${published.postId}`} className="lf-chip" style={{ textDecoration: 'none' }}>수정</a>}
         </div>
       </div>

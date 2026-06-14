@@ -225,7 +225,7 @@ function ReviewedDrawer({ album, reviews, onClose }: { album: ReviewedAlbum, rev
           {reviews.map(r => (
             <a
 	key={r.slug}
-	href={`/blog/${r.slug}`}
+	href={`/review/${r.slug}`}
 	className="lf-panel"
 	style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 13px', textDecoration: 'none', color: 'inherit' }}
             >

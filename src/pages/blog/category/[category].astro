@@ -1,98 +1,16 @@
 ---
-import Layout from '@layouts/layout.astro'
-import Seo from '@components/seo.astro'
+// Legacy /blog/category/[category] → /reviews/ redirect stub (FEAT-blog-to-review-migration).
+// Per-category pages are removed (folded into the /reviews browser). Keep the same
+// getStaticPaths enumeration so every old category URL keeps a 200 stub and never 404s.
+import RedirectStub from '@components/redirect-stub.astro'
 import { getCollection } from 'astro:content'
-import SkipNavContent from '@components/a11y/skip-nav-content.astro'
-import { defaultDateFormat, sortAsc } from '@utils'
-import Link from '@components/link.astro'
-import PartialStars from '@components/partial-stars.astro'
-
-export async function getStaticPaths() {
-  const entries = await getCollection('blog')
-  const cats = new Set(entries.filter(e => !e.data.draft).map(e => e.data.category))
-  return Array.from(cats).map(category => ({ params: { category } }))
-}
 
 export const prerender = true
 
-const all = await getCollection('blog')
-const current = Astro.params.category!
-const posts = sortAsc(all.filter(e => !e.data.draft && e.data.category === current))
-
-/**
- * Canonical rating is top-level (publish service writes rating + ratingScale,
- * 0–5); fall back to the legacy nested musicReview.rating. Normalize to 0–5 for
- * stars-only display (site-wide, RFC FEAT-view-redesign Step 4). null = unrated.
- */
-function ratingStars(post: (typeof posts)[number]['data']): number | null {
-  let value: number | null = null
-  let scale: 5 | 10 = 5
-  if (post.rating != null) {
-    value = post.rating
-    scale = post.ratingScale
-  }
-  else if (post.musicReview?.rating?.value != null) {
-    value = post.musicReview.rating.value
-    scale = post.musicReview.rating.scale
-  }
-  if (value == null)
-    return null
-  return scale === 10 ? value / 2 : value
+export async function getStaticPaths() {
+	const entries = await getCollection('blog')
+	const cats = new Set(entries.filter(e => !e.data.draft).map(e => e.data.category))
+	return Array.from(cats).map(category => ({ params: { category } }))
 }
 ---
-
-<Layout>
-  <Seo slot="seo" title={`Category: ${current}`} />
-  <SkipNavContent>
-    <h1 class="sr-only">Category: {current}</h1>
-
-    <!-- 헤더 -->
-    <div class="text-faded border-b border-border pb-2 mb-2
-                grid grid-cols-[1fr_auto] gap-x-3 items-center"
-    >
-      <span class="text-sm">Title</span>
-      <span class="text-sm">Date</span>
-    </div>
-
-    <!-- 목록 -->
-    <div class="divide-y divide-border">
-      {
-        posts.length === 0 ?
-(
-          <div class="py-6 text-faded">No posts in this category.</div>
-        ) :
-(
-          posts.map(({ data: post }) => {
-            const stars = ratingStars(post)
-            return (
-            <div class="grid grid-cols-[1fr_auto] gap-x-3 items-center py-3">
-              <!-- Title (+ 평점 별) -->
-              <div class="flex items-center gap-2 min-w-0">
-                <Link
-	variant="highlight"
-	class="font-medium text-base md:text-lg truncate"
-	href={`/blog/${post.slug}/`}
-	title={post.title}
-                >
-                  {post.title}
-                </Link>
-
-                {stars != null && (
-                  <span class="shrink-0">
-                    <PartialStars value={stars} size={14} ariaLabel={`${stars} / 5`} />
-                  </span>
-                )}
-              </div>
-
-              <!-- Date -->
-              <span class="text-faded whitespace-nowrap">
-                {defaultDateFormat(post.date)}
-              </span>
-            </div>
-            )
-          })
-        )
-      }
-    </div>
-  </SkipNavContent>
-</Layout>
+<RedirectStub to="/reviews/" />

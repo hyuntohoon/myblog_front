@@ -56,7 +56,7 @@ function shortDate(iso: string) {
 
 function FeedCard({ a }: { a: ReviewCard }) {
 	return (
-		<a href={`/blog/${a.slug}`} className="lr-card" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+		<a href={`/review/${a.slug}`} className="lr-card" style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
 			<div style={{ position: 'relative' }}>
 				{a.bestNew && <BestNewTag />}
 				<div className="lr-cover-wrap" style={{ overflow: 'hidden', borderRadius: 4 }}>

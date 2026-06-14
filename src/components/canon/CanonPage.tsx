@@ -16,7 +16,7 @@ const THRESHOLD = 4.0
 
 function CanonCard({ item }: { item: ReviewCard }) {
 	return (
-		<a href={`/blog/${item.slug}`} className="canon-card" style={{ display: 'block' }}>
+		<a href={`/review/${item.slug}`} className="canon-card" style={{ display: 'block' }}>
 			<div className="canon-cover">
 				<Cover label={item.album} src={item.cover} square radius={4} />
 			</div>

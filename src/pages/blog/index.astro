@@ -1,0 +1,8 @@
+---
+// Legacy /blog/ → /reviews/ redirect stub (FEAT-blog-to-review-migration).
+// The bare /blog/ list is folded into the /reviews browser.
+import RedirectStub from '@components/redirect-stub.astro'
+
+export const prerender = true
+---
+<RedirectStub to="/reviews/" />

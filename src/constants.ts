@@ -22,8 +22,8 @@ interface Header {
 /** Header nav — public links only. Write is injected by header.astro (auth-controlled) */
 export const HEADER: Header = {
 	internal: [
-		{ title: 'Reviews', url: '/blog' },
-		{ title: 'Best New Music', url: '/blog/category/review' },
+		{ title: 'Reviews', url: '/reviews' },
+		{ title: 'Best New Music', url: '/reviews?bnm=1' },
 	],
 	external: [],
 }
