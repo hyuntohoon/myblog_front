@@ -584,6 +584,8 @@ interface Ops {
   addBucket: (parentId: string | null) => void
   rename: (id: string, name: string) => void
   setColor: (id: string, color: string | null) => void
+  // FEAT-public-bucket-multiuser Scope A — opt the bucket in/out of public visibility.
+  setIsPublic: (id: string, isPublic: boolean) => void
   requestAdd: (bucketId: string, bucketName: string) => void
   // FEAT-album-research-notes
   setResearchMode: (bucketId: string, mode: 'off' | 'all' | 'selected') => void
@@ -625,6 +627,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
   const [researching, setResearching] = useState(false)
+  const [publicizing, setPublicizing] = useState(false)
   const [viewing, setViewing] = useState(false)
   const m = crMeta(bucket)
   const accent = crColor(bucket, depth)
@@ -873,6 +876,18 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
               🔎
             </button>
           )}
+          {!isLib && (
+            <button
+	type="button"
+	className="lf-iconbtn"
+	title={bucket.isPublic ? '공개됨 — 공개 설정' : '비공개 — 공개 설정'}
+	aria-pressed={bucket.isPublic}
+	onClick={() => setPublicizing(v => !v)}
+	style={bucket.isPublic ? { color: 'var(--color-accent)' } : undefined}
+            >
+              🌐
+            </button>
+          )}
           <button type="button" className="lf-iconbtn" title="앨범 추가" onClick={() => ops.requestAdd(bucket.id, bucket.name)}>＋</button>
           <button type="button" className="lf-iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
         </div>
@@ -924,6 +939,22 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
             {bucket.researchMode === 'all' ?
               '담는 앨범을 자동으로 조사합니다' :
               (bucket.researchMode === 'selected' ? '체크한 앨범만 조사합니다' : '자동 조사가 꺼져 있습니다')}
+          </span>
+        </div>
+      )}
+
+      {/* public visibility (비공개 / 공개) — FEAT-public-bucket-multiuser A3 */}
+      {publicizing && !isLib && (
+        <div className="rsh-mode-row">
+          <span className="lf-meta">공개</span>
+          <div className="rsh-seg" role="group" aria-label="버킷 공개 여부">
+            <button type="button" className="rsh-seg-btn" aria-pressed={!bucket.isPublic} onClick={() => ops.setIsPublic(bucket.id, false)}>비공개</button>
+            <button type="button" className="rsh-seg-btn" aria-pressed={bucket.isPublic} onClick={() => ops.setIsPublic(bucket.id, true)}>공개</button>
+          </div>
+          <span className="rsh-mode-hint">
+            {bucket.isPublic ?
+              '이 버킷이 공개됩니다 — 누구나 컬렉션에서 볼 수 있어요' :
+              '비공개 버킷입니다'}
           </span>
         </div>
       )}
@@ -1695,6 +1726,20 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         b.color = color
       setTree(t)
       api.setBucketColor(id, color).catch(() => void refresh())
+    },
+    // FEAT-public-bucket-multiuser Scope A — opt-in public visibility. Optimistic;
+    // on failure the .catch refreshes (rolls back). The backend refuses to publish
+    // the spotify_library bucket (400) → refresh would restore its real state, but
+    // the board hides the toggle for it so that path isn't reachable from the UI.
+    setIsPublic(id, isPublic) {
+      if (tree == null)
+        return
+      const t = clone(tree)
+      const b = findBucket(t, id)
+      if (b)
+        b.isPublic = isPublic
+      setTree(t)
+      api.setBucketIsPublic(id, isPublic).catch(() => void refresh())
     },
     requestAdd(bucketId, bucketName) {
       setAddingTo({ id: bucketId, name: bucketName })

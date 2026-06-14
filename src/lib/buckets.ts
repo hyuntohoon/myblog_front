@@ -76,6 +76,13 @@ export interface BoardBucket {
    */
   kind: string
   /**
+   * FEAT-public-bucket-multiuser Scope A: opt-in public visibility. When true a
+   * `kind==='review'` bucket is exposed by GET /api/buckets/public + the read-only
+   * /collection viewer. Defaults false (private); the spotify_library bucket is
+   * always excluded server-side.
+   */
+  isPublic: boolean
+  /**
    * FEAT-album-research-notes: per-bucket auto-research scope. 'off' (default) |
    * 'all' (research every note-less item) | 'selected' (only checked items).
    */
@@ -114,6 +121,7 @@ function mapBucket(b: ApiBucket): BoardBucket {
     color: b.color ?? null,
     isDone: b.is_done ?? false,
     kind,
+    isPublic: b.is_public ?? false,
     researchMode: b.research_mode ?? 'off',
     albums: (b.items ?? []).map(mapItem),
     children: (b.children ?? []).map(mapBucket),
@@ -165,6 +173,20 @@ export async function setBucketColor(id: string, color: string | null): Promise<
   const res = await apiFetch(`${BASE}/api/buckets/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ color }),
+  })
+  await asJson<ApiBucket>(res)
+}
+
+/**
+ * PATCH /api/buckets/{id} — opt the bucket in/out of public visibility
+ * (FEAT-public-bucket-multiuser Scope A). When true the bucket is exposed by
+ * GET /api/buckets/public. The backend refuses to publish the spotify_library
+ * bucket (400); the board hides the toggle for it, so that path isn't reachable.
+ */
+export async function setBucketIsPublic(id: string, isPublic: boolean): Promise<void> {
+  const res = await apiFetch(`${BASE}/api/buckets/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_public: isPublic }),
   })
   await asJson<ApiBucket>(res)
 }
