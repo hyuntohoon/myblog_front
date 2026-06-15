@@ -16,10 +16,12 @@ export function gsInitials(name: string): string {
 	const cc = first.charCodeAt(0)
 	if (cc >= 0xAC00 && cc <= 0xD7A3)
 		return first
-	const w = s.split(/\s+/).filter(Boolean)
+	// Initials from the first two "real" (letter/digit-leading) words, so a
+	// parenthetical suffix like "LIT (Deluxe)" yields "LI", not "L(".
+	const w = s.split(/\s+/).filter(x => /^[\p{L}\p{N}]/u.test(x))
 	if (w.length >= 2)
 		return (w[0].charAt(0) + w[1].charAt(0)).toUpperCase()
-	return s.slice(0, 2).toUpperCase()
+	return s.replace(/^[^\p{L}\p{N}]+/u, '').slice(0, 2).toUpperCase() || s.slice(0, 2).toUpperCase()
 }
 
 export function GCover({ name, src, size = 44, shape = 'square', radius = 3 }: {
