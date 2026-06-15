@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AlbumHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
 import { useDismissable } from '@lib/useDismissable'
+import { ResultRow, SourceTag } from '@components/search/atoms'
 
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
 
@@ -24,9 +25,15 @@ interface Props {
   /** Resolve the picked album to a DB id and add it; board owns the API call. */
   onAdd: (album: { id: string, title: string }) => Promise<AddOutcome>
   onClose: () => void
+  /**
+   * DB album ids already in this bucket/list → those hits render as 담김
+   *  (disabled). Only DB-id hits can be matched; Spotify-only hits resolve a DB
+   *  id on pick, so the server's conflict path still catches those.
+   */
+  existingAlbumIds?: ReadonlySet<string>
 }
 
-export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
+export default function AddAlbumModal({ bucketName, onAdd, onClose, existingAlbumIds }: Props) {
   const search = useMusicSearch({ recallTypes: ['album', 'artist'] })
   const [pendingId, setPendingId] = useState<string | null>(null)
   // Pick-outcome message ("담았습니다" / conflict / error). Distinct from the
@@ -157,30 +164,28 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose }: Props) {
           {search.loading && <div className="qb-modal-empty">검색 중…</div>}
           {!search.loading && search.albums.map((hit) => {
             const key = hit.id ?? hit.spotifyId ?? hit.title
+            const isSpotify = hit.source === 'spotify'
+            const present = !!(hit.id && existingAlbumIds?.has(hit.id))
+            const pendingThis = pendingId === key
+            const trailing = present ?
+              <span className="gs-row-tag is-on">담김 ✓</span> :
+              pendingThis ?
+                <span className="gs-row-tag">담는 중…</span> :
+                isSpotify ?
+                  <SourceTag /> :
+                  <span className="gs-row-tag">담기 +</span>
             return (
-              <button
+              <ResultRow
 	key={`${hit.source}:${key}`}
-	type="button"
-	className={`qb-hit${hit.source === 'spotify' ? ' is-spotify' : ''}`}
-	onClick={() => void pick(hit)}
-	disabled={pendingId !== null}
-              >
-                <span className="qb-hit-cover">
-                  {hit.cover ?
-                    <img src={hit.cover} alt={hit.title} loading="lazy" decoding="async" /> :
-                    <span className="qb-hit-cover-ph">{(hit.title || '?').slice(0, 2).toUpperCase()}</span>}
-                </span>
-                <span className="qb-hit-text">
-                  <span className="qb-hit-title"><em>{hit.title}</em></span>
-                  <span className="qb-hit-sub">
-                    {hit.artist ?? '—'}
-                    {hit.year ? ` · ${hit.year}` : ''}
-                  </span>
-                </span>
-                <span className={`qb-hit-src${hit.source === 'spotify' ? ' spotify' : ''}`}>
-                  {pendingId === key ? '담는 중…' : hit.source === 'spotify' ? 'SPOTIFY' : 'DB'}
-                </span>
-              </button>
+	name={hit.title}
+	src={hit.cover}
+	title={hit.title}
+	sub={[hit.artist ?? '—', hit.year].filter(Boolean).join(' · ')}
+	source={isSpotify ? 'spotify' : 'db'}
+	trailing={trailing}
+	extraClass={present ? 'is-present' : undefined}
+	action={{ type: 'button', onClick: () => void pick(hit), disabled: pendingId !== null || present }}
+              />
             )
           })}
           {!search.loading && search.hasMore.album > 0 && (

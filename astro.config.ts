@@ -19,7 +19,6 @@ import { defineConfig, envField, fontProviders } from 'astro/config'
 
 import { SITE } from './src/constants'
 import { remarkAsides } from './src/remark'
-import { pagefindIntegration } from './src/utils'
 
 export default defineConfig({
 	experimental: {
@@ -47,7 +46,6 @@ export default defineConfig({
 			// the real review pages live at /review/* (FEAT-blog-to-review-migration).
 			filter: page => !/\/(?:drafts|write|admin|test|blog)\//.test(page),
 		}),
-		pagefindIntegration(),
 		react(),
 	],
 

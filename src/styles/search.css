@@ -183,3 +183,193 @@ a.gs-albcard:hover .gs-albcard-title { color: var(--color-accent); }
 	.gs-agrid { grid-template-columns: 1fr; }
 	.gs-albgrid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
 }
+
+/* ════ header search field + instant dropdown ════════════════════ */
+.gs-search { position: relative; width: clamp(150px, 22vw, 300px); }
+.gs-field {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	height: 36px;
+	padding: 0 9px 0 12px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-bg);
+	color: var(--color-faded);
+	cursor: text;
+	transition: border-color .16s, box-shadow .16s;
+}
+.gs-field:hover { border-color: var(--color-subtle); }
+.gs-field.is-open {
+	border-color: var(--color-text);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+.gs-field-ic { flex: 0 0 auto; color: var(--color-faded); display: inline-flex; }
+.gs-input {
+	flex: 1;
+	min-width: 0;
+	border: none;
+	background: none;
+	outline: none;
+	font-family: var(--font-serif);
+	font-size: 14px;
+	color: var(--color-text);
+	letter-spacing: -.005em;
+}
+.gs-input::placeholder { color: var(--color-faded); font-style: italic; }
+.gs-kbd {
+	font-size: 10px;
+	letter-spacing: .04em;
+	color: var(--color-faded);
+	border: 1px solid var(--color-border);
+	border-radius: 3px;
+	padding: 2px 6px;
+	background: var(--color-paper);
+	white-space: nowrap;
+	flex: 0 0 auto;
+}
+.gs-kbd.sm { padding: 1px 4px; font-size: 9.5px; }
+.gs-clear {
+	flex: 0 0 auto;
+	width: 22px;
+	height: 22px;
+	border: none;
+	background: none;
+	color: var(--color-faded);
+	font-size: 12px;
+	border-radius: 3px;
+	display: grid;
+	place-items: center;
+	cursor: pointer;
+}
+.gs-clear:hover { color: var(--color-text); background: var(--color-paper); }
+
+.gs-drop {
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	width: min(440px, calc(100vw - 32px));
+	background: var(--color-bg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	box-shadow: 0 18px 48px -20px rgba(10, 9, 8, .45), 0 2px 8px rgba(10, 9, 8, .08);
+	overflow: hidden;
+	z-index: 70;
+	animation: gs-pop .16s cubic-bezier(.2, .7, .2, 1);
+}
+@keyframes gs-pop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .gs-drop { animation: none; } }
+.gs-drop-scroll { max-height: min(64vh, 480px); overflow-y: auto; overscroll-behavior: contain; }
+.gs-drop-body { padding: 6px 0 8px; }
+
+.gs-group { padding: 4px 0; }
+.gs-group + .gs-group { border-top: 1px solid var(--color-border-soft); margin-top: 2px; }
+.gs-group-head { display: flex; align-items: baseline; justify-content: space-between; padding: 9px 16px 5px; }
+.gs-group-label { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--color-faded); }
+.gs-group-count { font-size: 10px; color: var(--color-faded); }
+.gs-group-rows { display: flex; flex-direction: column; }
+
+.gs-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 16px;
+	cursor: pointer;
+	position: relative;
+	width: 100%;
+	text-align: left;
+	background: none;
+	border: none;
+	border-left: 2px solid transparent;
+	color: inherit;
+	text-decoration: none;
+	transition: background .1s;
+}
+.gs-row.is-active { background: var(--color-paper); border-left-color: var(--color-accent); }
+/* mouse hover on interactive rows (writer/bucket pick, header <a>) — static
+   (aria-disabled) and disabled button rows get no hover cue. */
+.gs-row:not([aria-disabled='true']):not(:disabled):hover { background: var(--color-paper); }
+.gs-row[aria-disabled='true'] { cursor: default; }
+.gs-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.gs-row-title {
+	font-size: 15.5px;
+	font-weight: 500;
+	letter-spacing: -.01em;
+	color: var(--color-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	line-height: 1.2;
+}
+.gs-row-sub {
+	font-size: 11px;
+	color: var(--color-faded);
+	letter-spacing: .01em;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.gs-row-go {
+	flex: 0 0 auto;
+	font-size: 10px;
+	letter-spacing: .08em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+	opacity: 0;
+	transition: opacity .12s, color .12s;
+}
+.gs-row.is-active .gs-row-go { opacity: 1; color: var(--color-accent); }
+/* is-spotify marks a not-yet-in-catalog candidate. On the public surface those
+   rows are static (aria-disabled → dimmed via the rule below). In the writer +
+   bucket they are INTERACTIVE picks (clicking syncs the candidate), so the row
+   itself must not look disabled — only the green-dot SourceTag flags provenance,
+   and the active cue tints green. */
+.gs-row[aria-disabled='true'].is-spotify .gs-cover,
+.gs-row[aria-disabled='true'].is-spotify .gs-row-title { opacity: .62; }
+.gs-row.is-spotify.is-active { background: color-mix(in srgb, var(--color-spotify) 7%, transparent); border-left-color: var(--color-spotify); }
+
+/* ── writer/bucket shared-row states (action=button surfaces) ── */
+.gs-row:disabled { cursor: default; }
+/* writer: the album currently chosen as the review subject */
+.gs-row.is-current { background: color-mix(in srgb, var(--color-accent) 9%, transparent); border-left-color: var(--color-accent); }
+/* bucket: already in this bucket — muted + non-actionable, but legible */
+.gs-row.is-present { opacity: .5; }
+.gs-row.is-present:disabled { cursor: default; }
+/* right-aligned trailing affordance for the action surfaces (담기 / 담김 / 현재) */
+.gs-row-tag {
+	flex: 0 0 auto;
+	font-size: 10px;
+	letter-spacing: .08em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+.gs-row.is-current .gs-row-tag { color: var(--color-accent); }
+.gs-row-tag.is-on { color: var(--color-accent); }
+
+.gs-drop-empty { display: flex; flex-direction: column; gap: 6px; padding: 30px 20px 34px; text-align: center; }
+.gs-empty-lead { font-size: 19px; color: var(--color-text); }
+.gs-empty-sub { font-size: 11px; color: var(--color-faded); letter-spacing: .02em; }
+
+.gs-drop-foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	width: 100%;
+	padding: 11px 16px;
+	border: none;
+	border-top: 1px solid var(--color-border);
+	background: var(--color-paper);
+	border-radius: 0 0 var(--radius-md) var(--radius-md);
+	text-align: left;
+	cursor: pointer;
+}
+.gs-foot-all { font-size: 11.5px; letter-spacing: .02em; color: var(--color-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-drop-foot:hover .gs-foot-all { color: var(--color-accent); }
+.gs-foot-hints { display: flex; gap: 12px; flex: 0 0 auto; }
+.gs-foot-hints > span { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; letter-spacing: .04em; color: var(--color-faded); white-space: nowrap; }
+
+@media (max-width: 760px) {
+	.gs-search { width: clamp(130px, 32vw, 240px); }
+	.gs-foot-hints { display: none; }
+}

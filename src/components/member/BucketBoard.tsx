@@ -1983,6 +1983,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       {addingTo && (
         <AddAlbumModal
 	bucketName={addingTo.name}
+	existingAlbumIds={new Set((tree && findBucket(tree, addingTo.id)?.albums.map(a => a.albumId)) ?? [])}
 	onAdd={onAddAlbum}
 	onClose={() => setAddingTo(null)}
         />

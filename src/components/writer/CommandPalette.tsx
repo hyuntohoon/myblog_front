@@ -16,7 +16,21 @@ import {
 } from '../../scripts/write/artistApi'
 import type { AlbumHit, ArtistHit, TrackHit } from '../../lib/useMusicSearch'
 import { useMusicSearch } from '../../lib/useMusicSearch'
+import { ResultRow, SourceTag } from '../search/atoms'
 import ArtistDetail from './ArtistDetail'
+
+// Subtitle for a result row, matching the global-search dropdown style (the
+// per-row kind badge is dropped — the section header already names the kind).
+function rowSub(r: SearchResultItem): string {
+  if (r.kind === 'album')
+    return [r.artist_name, r.release_date?.slice(0, 4)].filter(Boolean).join(' · ')
+  if (r.kind === 'track') {
+    const feat = r.feat_artist_names ?? []
+    const who = feat.length ? `${r.artist_name} (feat. ${feat.join(', ')})` : (r.artist_name ?? '')
+    return r.album_title ? `${who} · ${r.album_title}` : who
+  }
+  return '아티스트'
+}
 
 const API_BASE = import.meta.env.PUBLIC_API_URL as string
 
@@ -89,7 +103,10 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   const drillSeqRef = useRef(0)
   // CP-3: keyboard navigation index over the visible (filtered) result rows.
   const [activeIndex, setActiveIndex] = useState(-1)
-  const rowRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // Scroll container for the result rows — active row is found by data-gsidx
+  // (same mechanism as the global header dropdown) since the shared ResultRow
+  // is element-agnostic and doesn't forward a ref.
+  const bodyRef = useRef<HTMLDivElement>(null)
 
   // Bridge the hook's hit buckets → SearchResultItem (order: artists, albums,
   // tracks — matches the former merged-search order).
@@ -134,9 +151,9 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 
   // CP-3: keep the active row scrolled into view as the user arrows through.
   useEffect(() => {
-    if (activeIndex < 0)
+    if (activeIndex < 0 || !bodyRef.current)
       return
-    rowRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' })
+    bodyRef.current.querySelector(`[data-gsidx="${activeIndex}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex])
 
   function runActiveSearch() {
@@ -459,7 +476,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                 </span>
               </div>
 
-              <div className="wr-palette-body wr-scroll">
+              <div className="wr-palette-body wr-scroll" ref={bodyRef}>
                 {(pickStatus || search.status) && <div className="wr-palette-status mono">{pickStatus || search.status}</div>}
                 {!search.loading && visibleResults.length === 0 && !(pickStatus || search.status) && (
                   <div className="wr-palette-empty mono">
@@ -479,14 +496,30 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                       </div>
                       {items.map((r) => {
                         const flatIndex = visibleResults.indexOf(r)
+                        const isCurrent = r.kind === 'album' && currentSubjectId === r.id
+                        const isSpotify = r.source === 'spotify'
+                        const trailing = isCurrent ?
+                          <span className="gs-row-tag is-on">현재</span> :
+                          isSpotify ?
+                            <SourceTag /> :
+                            r.kind === 'artist' ?
+                              <span className="gs-row-tag gs-row-go">상세 →</span> :
+                              undefined
                         return (
-                          <PaletteRow
+                          <ResultRow
 	key={`${r.kind}:${r.id || r.spotify_id}`}
-	ref={(el) => { rowRefs.current[flatIndex] = el }}
-	item={r}
-	isCurrent={r.kind === 'album' && currentSubjectId === r.id}
-	isActive={flatIndex === activeIndex}
-	onPick={() => void onPickResult(r)}
+	name={r.kind === 'artist' ? r.name : r.title}
+	src={r.cover_url}
+	shape={r.kind === 'artist' ? 'circle' : 'square'}
+	title={r.kind === 'artist' ? r.name : r.title}
+	sub={rowSub(r)}
+	source={isSpotify ? 'spotify' : 'db'}
+	active={flatIndex === activeIndex}
+	onHover={() => setActiveIndex(flatIndex)}
+	idAttr={flatIndex}
+	trailing={trailing}
+	extraClass={isCurrent ? 'is-current' : undefined}
+	action={{ type: 'button', onClick: () => void onPickResult(r) }}
                           />
                         )
                       })}
@@ -522,57 +555,6 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
           )}
       </div>
     </div>
-  )
-}
-
-function PaletteRow({ item, isCurrent, isActive, onPick, ref }: {
-  item: SearchResultItem
-  isCurrent: boolean
-  isActive: boolean
-  onPick: () => void
-  ref?: (el: HTMLButtonElement | null) => void
-}) {
-  const isArtist = item.kind === 'artist'
-  const displayTitle = isArtist ? item.name : item.title
-  let subtitle = ''
-  if (item.kind === 'album') {
-    subtitle = [item.artist_name, item.release_date?.slice(0, 4)].filter(Boolean).join(' · ')
-}
-  else if (item.kind === 'track') {
-    const feat = item.feat_artist_names ?? []
-    const artistPart = feat.length ? `${item.artist_name} (feat. ${feat.join(', ')})` : (item.artist_name ?? '')
-    subtitle = item.album_title ? `${artistPart} · ${item.album_title}` : artistPart
-  }
-  else {
-    subtitle = '아티스트'
-}
-  const kindLabel = item.kind === 'album' ? '앨범' : item.kind === 'track' ? '트랙' : '아티스트'
-  const isSpotify = item.source === 'spotify'
-  return (
-    <button
-	ref={ref}
-	type="button"
-	className={`wr-row${isCurrent ? ' is-current' : ''}${isActive ? ' is-active' : ''}`}
-	aria-selected={isActive}
-      // CP-3: keyboard-active highlight. Inline (not a CSS class) so the cue is
-      // self-contained in this component and matches the hover/current tint.
-	style={isActive ? { background: 'color-mix(in srgb, var(--accent) 12%, transparent)' } : undefined}
-	onClick={onPick}
-    >
-      <span className={`wr-row-cover${isArtist ? ' is-artist' : ''}`}>
-        {item.cover_url ?
-          <img src={item.cover_url} alt="" loading="lazy" /> :
-          <span className="wr-row-fallback">{(displayTitle || '?')[0]}</span>}
-      </span>
-      <span className="wr-row-text">
-        <span className="wr-row-name">{displayTitle}</span>
-        <span className="wr-row-sub">
-          <span className="wr-row-kind">{kindLabel}</span>
-          {subtitle}
-        </span>
-      </span>
-      {isSpotify && <SpotifyMark size={13} />}
-    </button>
   )
 }
 

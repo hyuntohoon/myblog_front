@@ -169,6 +169,7 @@ function ToListenSection() {
       {adding && (
         <AddAlbumModal
 	bucketName="들을 것"
+	existingAlbumIds={new Set(items?.map(it => it.album_id) ?? [])}
 	onAdd={onAdd}
 	onClose={() => setAdding(false)}
         />
