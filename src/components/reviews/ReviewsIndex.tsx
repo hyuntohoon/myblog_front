@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { allGenres, allTags, allYears, selectFeatured } from '@lib/reviews'
+import { allTags, allYears, selectFeatured } from '@lib/reviews'
 import type { ReviewCard } from '@lib/reviews'
 
 /**
  * /reviews interactive island (RFC FEAT-reviews-redesign, Steps 2–3).
  *
  * Fed a JSON-safe, date-desc `reviews` array serialized by reviews/index.astro.
- * Owns genre / sort / search / BNM / year / view / load-more state. Every filter
+ * Owns tag / sort / search / BNM / year / view / load-more state. (The genre
+ * filter was dropped — genre is navigated via the /profile crate, not here.) Every filter
  * (everything except the load-more cursor) is mirrored to the URL querystring
  * (pushState + popstate) so deep-links and the back button restore the view.
  * The featured row hides as soon as any narrowing filter is active.
@@ -17,7 +18,6 @@ type SortKey = 'date' | 'score' | 'artist'
 type ViewKey = 'grid' | 'list'
 
 interface Filters {
-  genre: string
   tag: string
   sort: SortKey
   q: string
@@ -28,7 +28,7 @@ interface Filters {
 
 const PAGE = 9
 const STEP = 6
-const DEFAULTS: Filters = { genre: 'all', tag: 'all', sort: 'date', q: '', bnm: false, year: 'all', view: 'grid' }
+const DEFAULTS: Filters = { tag: 'all', sort: 'date', q: '', bnm: false, year: 'all', view: 'grid' }
 
 function parseFilters(): Filters {
   if (typeof window === 'undefined')
@@ -37,7 +37,6 @@ function parseFilters(): Filters {
   const sort = p.get('sort')
   const view = p.get('view')
   return {
-    genre: p.get('genre') ?? 'all',
     tag: p.get('tag') ?? 'all',
     sort: sort === 'score' || sort === 'artist' ? sort : 'date',
     q: p.get('q') ?? '',
@@ -49,8 +48,6 @@ function parseFilters(): Filters {
 
 function buildQuery(f: Filters): string {
   const p = new URLSearchParams()
-  if (f.genre !== 'all')
-    p.set('genre', f.genre)
   if (f.tag !== 'all')
     p.set('tag', f.tag)
   if (f.sort !== 'date')
@@ -67,7 +64,7 @@ function buildQuery(f: Filters): string {
 }
 
 function isNarrowed(f: Filters): boolean {
-  return f.genre !== 'all' || f.tag !== 'all' || f.q !== '' || f.bnm || f.year !== 'all'
+  return f.tag !== 'all' || f.q !== '' || f.bnm || f.year !== 'all'
 }
 
 function fmtDate(iso: string): string {
@@ -161,15 +158,12 @@ export default function ReviewsIndex({
     window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname)
   }
 
-  const genres = useMemo(() => allGenres(reviews), [reviews])
   const tags = useMemo(() => allTags(reviews), [reviews])
   const years = useMemo(() => allYears(reviews), [reviews])
 
   const filtered = useMemo(() => {
-    const { genre, tag, sort, q, bnm, year } = filters
+    const { tag, sort, q, bnm, year } = filters
     let list = reviews
-    if (genre !== 'all')
-      list = list.filter(r => r.genres.includes(genre))
     if (tag !== 'all')
       list = list.filter(r => r.tags.includes(tag))
     if (bnm)
@@ -205,7 +199,7 @@ export default function ReviewsIndex({
   const heroLead = isEditorial && !narrowed ? lead : undefined
   const gridSource = heroLead != null ? filtered.filter(r => r.slug !== heroLead.slug) : filtered
   const shown = gridSource.slice(0, visible)
-  const title = filters.genre !== 'all' ? filters.genre : narrowed ? '검색 결과' : '최신 리뷰'
+  const title = narrowed ? '검색 결과' : '최신 리뷰'
 
   return (
     <>
@@ -323,26 +317,6 @@ export default function ReviewsIndex({
         </div>
       </div>
 
-      <nav className="rev-chips" aria-label="장르 필터">
-        <button
-	type="button"
-	className={`rev-chip${filters.genre === 'all' ? ' is-active' : ''}`}
-	onClick={() => commit({ ...filters, genre: 'all' })}
-        >
-          전체
-        </button>
-        {genres.map(g => (
-          <button
-	key={g}
-	type="button"
-	className={`rev-chip${filters.genre === g ? ' is-active' : ''}`}
-	onClick={() => commit({ ...filters, genre: g })}
-          >
-            {g}
-          </button>
-        ))}
-      </nav>
-
       {tags.length > 0 && (
         <nav className="rev-chips rev-chips-tags" aria-label="리뷰 태그 필터">
           <button
@@ -373,7 +347,7 @@ export default function ReviewsIndex({
               <button
 	type="button"
 	className="rev-loadmore"
-	onClick={() => commit({ ...filters, genre: 'all', tag: 'all', q: '', bnm: false, year: 'all' })}
+	onClick={() => commit({ ...filters, tag: 'all', q: '', bnm: false, year: 'all' })}
               >
                 필터 초기화
               </button>
