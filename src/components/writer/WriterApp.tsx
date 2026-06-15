@@ -173,6 +173,13 @@ export default function WriterApp() {
   const [tags, setTags] = useState<string[]>(
     (saved.tags ?? []).filter(t => REVIEW_TAG_LABELS.includes(t)),
   )
+  // FEAT-genre-subgenres Step 2: selected sub-genre ids → post create/update
+  // payload `genre_ids` → `post_genres`. Opaque uuids (the picker resolves them
+  // to labels via the genre tree), so no vocab sanitize like tags — just drop
+  // any non-string junk from an older draft.
+  const [genreIds, setGenreIds] = useState<string[]>(
+    (saved.genreIds ?? []).filter(id => typeof id === 'string' && id.length > 0),
+  )
   const [publishDate, setPublishDate] = useState(saved.publishDate ?? todayISO())
   // In-flight guard (WR-1): drop a second concurrent write (double-click 발행, or
   // save→publish in the same tick) so it can't create a duplicate row / 409 on the
@@ -217,6 +224,7 @@ export default function WriterApp() {
       setScore(slot.score ?? 0)
       setSection(slot.section ?? SECTION_LABELS[0])
       setTags((slot.tags ?? []).filter(t => REVIEW_TAG_LABELS.includes(t)))
+      setGenreIds((slot.genreIds ?? []).filter(id => typeof id === 'string' && id.length > 0))
       setRecommendedTrackIds(slot.recommendedTrackIds ?? [])
       setPublishDate(slot.publishDate ?? todayISO())
       setDbPostId(slot.dbPostId ?? null)
@@ -320,6 +328,7 @@ export default function WriterApp() {
     publishDate,
     recommendedTrackIds,
     tags,
+    genreIds,
     subjectBestNew,
     // Persist the DB id so a save→reload→continue cycle updates the row instead
     // of re-creating it. The 30s flush + tab-hide flush both read draftRef, so
@@ -331,6 +340,12 @@ export default function WriterApp() {
   // toggles (before a re-render) compose instead of clobbering a stale closure.
   const onToggleTag = useCallback((label: string) => {
     setTags(prev => prev.includes(label) ? prev.filter(t => t !== label) : [...prev, label])
+  }, [])
+
+  // FEAT-genre-subgenres Step 2: toggle a sub-genre id. Functional updater (same
+  // reason as onToggleTag) so rapid picks compose instead of clobbering.
+  const onToggleGenre = useCallback((id: string) => {
+    setGenreIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }, [])
 
   const flash = useCallback((msg: string) => {
@@ -419,6 +434,8 @@ export default function WriterApp() {
         setSection(post.category)
       // STAB-5 Step 4: seed the tag picker from the post's attached tags.
       setTags(post.tags ?? [])
+      // FEAT-genre-subgenres Step 2: seed the sub-genre picker from post_genres.
+      setGenreIds(post.genre_ids ?? [])
       const loadedIds = post.recommended_track_ids ?? []
       if (loadedIds.length > 0)
         setRecommendedTrackIds(loadedIds)
@@ -454,7 +471,7 @@ export default function WriterApp() {
       return
     dirtyRef.current = true
     setStatus('dirty')
-  }, [subject, score, headline, dek, body, section, publishDate, recommendedTrackIds, tags, subjectBestNew])
+  }, [subject, score, headline, dek, body, section, publishDate, recommendedTrackIds, tags, genreIds, subjectBestNew])
 
   // Periodic autosave + safety flush when the tab is hidden/closed. Mounted once
   // (flushLocal is stable) so the 30s interval never resets mid-typing.
@@ -510,6 +527,7 @@ export default function WriterApp() {
       status: 'draft' as const,
       category: section || null,
       tags,
+      genre_ids: genreIds,
       album_ids: albumIds,
       artist_ids: artistIds,
       rating: score > 0 ? score : null,
@@ -581,6 +599,7 @@ export default function WriterApp() {
     setBody('')
     setRecommendedTrackIds([])
     setTags([])
+    setGenreIds([])
     setSettingsOpen(false)
     flash('초안이 삭제되었습니다.')
   }
@@ -608,6 +627,7 @@ export default function WriterApp() {
       artist_ids: artistIds,
       rating: score,
       tags,
+      genre_ids: genreIds,
       album_cover_url: subject.cover_url,
       recommended_track_ids: recommendedTrackIds,
       subject_best_new: !isArtistSubject ? subjectBestNew : null,
@@ -622,6 +642,7 @@ export default function WriterApp() {
         status: 'published',
         rating: score,
         tags,
+        genre_ids: genreIds,
         recommended_track_ids: recommendedTrackIds,
         // Step 6: same single-album-subject rule as draft path.
         subject_best_new: !isArtistSubject ? subjectBestNew : null,
@@ -684,6 +705,7 @@ export default function WriterApp() {
     setBody('')
     setRecommendedTrackIds([])
     setTags([])
+    setGenreIds([])
     flash('발행 완료! 3–5분 후 반영됩니다')
     setSettingsOpen(false)
     setTimeout(() => {
@@ -797,11 +819,13 @@ export default function WriterApp() {
 	onClose={() => setSettingsOpen(false)}
 	section={section}
 	tags={tags}
+	genreIds={genreIds}
 	publishDate={publishDate}
 	subject={subject}
 	body={body}
 	onSectionChange={setSection}
 	onToggleTag={onToggleTag}
+	onToggleGenre={onToggleGenre}
 	onPublishDateChange={setPublishDate}
 	onDraftSave={() => runExclusive(onSaveDraft)}
 	onPublish={() => runExclusive(onPublish)}

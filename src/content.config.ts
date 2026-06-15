@@ -90,6 +90,14 @@ const blog = defineCollection({
 			// vocabulary changes; the writer only emits seeded labels.
 			tags: z.array(z.string()).default([]),
 
+			// FEAT-genre-subgenres Step 3: editorial tier-1 sub-genre tags
+			// ({slug,label}), written by the publish service from post_genres —
+			// the critic's precise genre call, rendered on the review page
+			// (distinct from musicReview.genres, the machine tier-0 album labels).
+			subgenres: z
+				.array(z.object({ slug: z.string(), label: z.string() }))
+				.default([]),
+
 			// 초안 여부 (목록/검색 제외용)
 			draft: z.boolean().default(false),
 

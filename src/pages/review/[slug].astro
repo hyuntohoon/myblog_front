@@ -61,6 +61,9 @@ const albumTitle = post.musicReview?.title ?? null
 const cover = post.albumCover || post.image || post.musicReview?.cover?.src
 const genres = post.musicReview?.genres ?? []
 const genreLabel = genres[0] ?? post.category ?? ''
+// FEAT-genre-subgenres Step 3: editorial tier-1 sub-genre tags (the critic's
+// precise genre call) — distinct from the machine tier-0 album `genres` above.
+const subgenres = post.subgenres ?? []
 const recordLabel = post.musicReview?.label ?? null
 ---
 
@@ -147,6 +150,13 @@ const recordLabel = post.musicReview?.label ?? null
               {albumTitle && <h2 class="lfq-hero-album"><em>{albumTitle}</em></h2>}
               {genres.length > 0 && (
                 <p class="lfq-hero-genre">{genres.join(' · ')}</p>
+              )}
+              {subgenres.length > 0 && (
+                <ul class="lfq-hero-subgenres" aria-label="서브장르">
+                  {subgenres.map(sg => (
+                    <li class="lfq-subgenre-chip">{sg.label}</li>
+                  ))}
+                </ul>
               )}
               {ratingForStars != null && (
                 <div class="lfq-score">
@@ -516,6 +526,27 @@ const recordLabel = post.musicReview?.label ?? null
     color: var(--color-subtle);
     letter-spacing: 0.05em;
     text-transform: uppercase;
+  }
+  /* FEAT-genre-subgenres Step 3: editorial sub-genre chips — the critic's
+     precise genre call, distinct from the machine .lfq-hero-genre line above. */
+  .lfq-hero-subgenres {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .lfq-subgenre-chip {
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+    line-height: 1;
+    color: var(--color-text);
+    background: var(--color-paper);
+    padding: 5px 11px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    white-space: nowrap;
   }
   /* Accent-bordered score card (RFC: stars only, no number) */
   .lfq-score {
