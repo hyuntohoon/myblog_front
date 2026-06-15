@@ -42,43 +42,33 @@ window.addEventListener('storage', (e) => {
 		syncAuthUI()
 })
 
-// ── Magazine masthead collapse (FEAT-header-magazine-masthead) ──
-// The header is ALWAYS visible (no hide-on-scroll). Past ENTER it collapses the
-// centered masthead into the compact one-line bar; it only expands again once
-// scrolled back near the top (EXIT) — a hysteresis band so a small nudge mid-page
-// doesn't flip the masthead open/closed. Replaces the old 3-mode preference system.
-const ENTER = 48
-const EXIT = 16
-
-function setupHeaderScroll() {
-	const header = $('#site-header')
-	if (!header)
+// ── Magazine masthead collapse (FEAT-header-magazine-masthead, restructured) ──
+// The grand masthead is in normal flow and scrolls away on its own; a fixed,
+// constant-height compact bar fades in once it's gone. We drive that off an
+// IntersectionObserver on the masthead — NOT a scrollY threshold. The bar's
+// appearance is opacity/background only (no height change), so it never moves
+// scroll position; tying the toggle to the masthead's own visibility means the
+// decision can't be perturbed by the toggle (which killed the old jitter loop).
+function setupHeaderCollapse() {
+	const masthead = $('.hdr-masthead')
+	const bar = $('#hdr-bar')
+	if (!masthead || !bar)
 		return
 
-	let ticking = false
-	const apply = () => {
-		ticking = false
-		const y = Math.max(0, window.scrollY)
-		if (y > ENTER)
-			header.classList.add('is-scrolled')
-		else if (y < EXIT)
-			header.classList.remove('is-scrolled')
-	}
+	// Suppress the fade for the first applied state so a pre-scrolled load
+	// (reload / #hash deep-link) snaps to the right state without animating.
+	bar.classList.add('is-priming')
+	let primed = false
 
-	const onScroll = () => {
-		if (ticking)
-			return
-		ticking = true
-		requestAnimationFrame(apply)
-	}
+	const io = new IntersectionObserver(([entry]) => {
+		bar.classList.toggle('is-scrolled', !entry.isIntersecting)
+		if (!primed) {
+			primed = true
+			requestAnimationFrame(() => bar.classList.remove('is-priming'))
+		}
+	}, { threshold: 0 })
 
-	window.addEventListener('scroll', onScroll, { passive: true })
-
-	// Prime the initial state without animating, so a page that loads already
-	// scrolled (reload / #hash deep-link) snaps to the right state without a flash.
-	header.classList.add('is-priming')
-	apply()
-	requestAnimationFrame(() => header.classList.remove('is-priming'))
+	io.observe(masthead)
 }
 
-setupHeaderScroll()
+setupHeaderCollapse()
