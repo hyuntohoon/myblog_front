@@ -5,16 +5,18 @@ import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import GenreMap from '@components/genres/GenreMap'
 import '@styles/genres.css'
 
-// /genres — public Genre Map (FEAT-genre-system Step 7). A strict 2-tier
-// containment Outliner over the REAL tree from GET /api/genres/tree: the 12 fixed
-// top-level genres as a numbered canon with an album-share meter and click-to-open
-// editorial definitions. Logged-in owner gets inline rename / definition / reorder
-// (PUT /api/genres/{id}). Sub-genres + ego-view relationships are tier-1
-// (FEAT-genre-subgenres) and slot in here later with no page change.
+// /genres — public Genre Map (FEAT-genre-subgenres Step 4). A layout switcher over
+// the REAL taxonomy from GET /api/genres/tree: the 12 fixed top-level genres, their
+// tier-1 sub-genres, and the relationship edges. Three views —
+//   A Outliner · B Miller columns · C horizontal dendrogram —
+// each sharing one per-node EGO VIEW (definition + parent / influenced-by / related
+// diagram). Containment is the global layer; relationships live in the ego view.
+// Read-only. The island is client-only (interactive, fetches its own data); the
+// editorial header is server-rendered for SEO.
 ---
 
 <Layout>
-  <Seo slot="seo" title="Genre Map" description="이 사이트의 평론을 가르는 12개 최상위 장르 — 각 장르의 정의와 수록 분포를 담은 지도." />
+  <Seo slot="seo" title="Genre Map" description="이 사이트의 평론을 가르는 장르 지도 — 12개 최상위 장르와 하위 장르, 그리고 장르 사이의 관계를 세 가지 보기로 탐색합니다." />
 
   <SkipNavContent>
     <div class="container">
@@ -22,12 +24,15 @@ import '@styles/genres.css'
         <span class="gm-strip-kicker">GENRE MAP</span>
         <h1 class="gm-strip-h1">장르 맵</h1>
         <p class="gm-strip-sub">
-          이 사이트의 평론을 가르는 12개 최상위 장르. 부모→자식 포함 관계의 트리이며,
-          각 장르를 펼치면 정의와 수록 분포를 볼 수 있습니다.
+          이 사이트의 평론을 가르는 장르 지도. 최상위 장르의 포함(containment) 트리를
+          아웃라인·칼럼·다이어그램 세 가지로 보고, 노드를 열면 그 장르의 정의와 관계
+          (상위·영향·관련)를 펼쳐 볼 수 있습니다.
         </p>
       </header>
 
-      <GenreMap client:load />
+      <GenreMap client:only="react">
+        <div slot="fallback" class="gm-a-state">장르 맵을 불러오는 중…</div>
+      </GenreMap>
     </div>
   </SkipNavContent>
 </Layout>
