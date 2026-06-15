@@ -1,0 +1,185 @@
+/* FEAT-global-search — /search results page + shared search atoms, ported from
+   the 전역 검색 handoff (전역 검색.html). GLOBAL (islands are client:only so
+   Astro-scoped styles wouldn't reach them). Uses the site's --color-* tokens;
+   --color-spotify already exists in global.css. The dropdown (.gs-field/.gs-drop)
+   rules are added when the header search island lands. */
+
+/* ── cover (img or letter-tile) + source tag ──────────────────── */
+.gs-cover {
+	flex: 0 0 auto;
+	position: relative;
+	overflow: hidden;
+	display: grid;
+	place-items: center;
+	container: gscov / inline-size;
+	border: 1px solid var(--color-border-soft);
+	background: var(--color-paper);
+}
+.gs-cover img { width: 100%; height: 100%; object-fit: cover; }
+.gs-cover-init {
+	font-style: italic;
+	font-weight: 600;
+	color: var(--color-faded);
+	letter-spacing: -.04em;
+	line-height: 1;
+	font-size: min(42cqw, 30px);
+}
+.gs-srctag {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 10px;
+	letter-spacing: .08em;
+	text-transform: uppercase;
+	color: var(--color-spotify);
+	border: 1px solid color-mix(in srgb, var(--color-spotify) 45%, var(--color-border));
+	border-radius: 2px;
+	padding: 2px 6px;
+	line-height: 1.3;
+	white-space: nowrap;
+}
+.gs-srcdot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-spotify); flex: 0 0 auto; }
+.gs-unrated { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-faded); }
+
+/* ── results page shell ───────────────────────────────────────── */
+.gs-main {
+	max-width: 1200px;
+	margin: 0 auto;
+	padding: clamp(26px, 4vw, 46px) clamp(16px, 4vw, 40px) 64px;
+	container: gsmain / inline-size;
+}
+
+.gs-rhead { margin-bottom: clamp(22px, 3vw, 32px); }
+.gs-rhead-top { padding-bottom: 16px; border-bottom: 2px solid var(--color-text); }
+.gs-rhead-kicker { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--color-accent); }
+.gs-rhead-q {
+	font-size: clamp(30px, 4.6vw, 52px);
+	font-weight: 500;
+	letter-spacing: -.03em;
+	line-height: 1.04;
+	margin: 8px 0 0;
+	overflow-wrap: anywhere;
+	text-wrap: balance;
+}
+.gs-rhead-total { display: block; margin-top: 12px; font-size: 12px; letter-spacing: .04em; color: var(--color-subtle); }
+.gs-rhead-spot { color: var(--color-spotify); }
+
+/* filter pills */
+.gs-pills { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
+.gs-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	font-size: 11px;
+	letter-spacing: .06em;
+	text-transform: uppercase;
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid var(--color-border);
+	border-radius: 0;
+	padding: 7px 12px;
+	cursor: pointer;
+	transition: background .14s, color .14s, border-color .14s;
+}
+.gs-pill:hover:not(:disabled) { border-color: var(--color-text); }
+.gs-pill.is-on { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
+.gs-pill:disabled { opacity: .4; cursor: default; }
+.gs-pill-n { font-size: 10px; opacity: .7; }
+.gs-pill.is-on .gs-pill-n { opacity: .8; }
+
+/* sections */
+.gs-results, .gs-pagestate { display: flex; flex-direction: column; gap: clamp(36px, 5vw, 56px); }
+.gs-psec-head { display: flex; align-items: baseline; gap: 12px; padding-bottom: 11px; margin-bottom: 20px; border-bottom: 1px solid var(--color-border); }
+.gs-psec-title { font-size: clamp(19px, 2.2vw, 24px); font-weight: 500; letter-spacing: -.015em; }
+.gs-psec-count { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--color-faded); }
+
+/* artist cards */
+.gs-agrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px 18px; }
+.gs-acard {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	padding: 16px;
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-md);
+	background: var(--color-paper);
+	text-decoration: none;
+	color: inherit;
+	transition: border-color .16s, transform .2s, box-shadow .2s;
+}
+a.gs-acard:hover { border-color: var(--color-text); transform: translateY(-2px); box-shadow: 0 14px 30px -22px rgba(0, 0, 0, .5); }
+.gs-acard.is-spotify { background: transparent; }
+.gs-acard.is-spotify .gs-cover, .gs-acard.is-spotify .gs-acard-name { opacity: .62; }
+.gs-acard-body { min-width: 0; flex: 1; }
+.gs-acard-namerow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.gs-acard-name { font-size: clamp(19px, 2vw, 23px); font-weight: 500; letter-spacing: -.02em; line-height: 1.1; overflow-wrap: anywhere; margin: 0; }
+a.gs-acard:hover .gs-acard-name { color: var(--color-accent); }
+.gs-acard-genres { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.gs-genre { font-size: 10px; letter-spacing: .04em; color: var(--color-subtle); border: 1px solid var(--color-border); padding: 3px 8px; white-space: nowrap; }
+.gs-acard-go { display: block; margin-top: 11px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--color-faded); }
+a.gs-acard:hover .gs-acard-go { color: var(--color-accent); }
+
+/* album / review cards (review = album card + stars + BNM badge) */
+.gs-albgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: clamp(22px, 2.6vw, 32px) clamp(16px, 2vw, 24px); }
+.gs-albcard { display: block; text-decoration: none; color: inherit; }
+.gs-albcard-cov { position: relative; transition: transform .28s cubic-bezier(.2, .7, .2, 1), box-shadow .28s; }
+a.gs-albcard:hover .gs-albcard-cov { transform: translateY(-4px); box-shadow: 0 18px 34px -22px rgba(0, 0, 0, .55); }
+.gs-albcard-cov .gs-cover { width: 100% !important; height: auto !important; aspect-ratio: 1 / 1; }
+.gs-albcard-sp { position: absolute; left: 8px; bottom: 8px; }
+.gs-albcard.is-static { cursor: default; }
+.gs-albcard-body { margin-top: 12px; }
+.gs-albcard-stars { min-height: 16px; display: flex; align-items: center; gap: 8px; }
+.gs-bnm-badge { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #fff; background: var(--color-accent); padding: 3px 6px; border-radius: 2px; }
+.gs-albcard-title { font-size: 16px; font-weight: 500; letter-spacing: -.01em; line-height: 1.2; margin: 8px 0 0; text-wrap: pretty; overflow-wrap: anywhere; }
+a.gs-albcard:hover .gs-albcard-title { color: var(--color-accent); }
+.gs-albcard-meta { font-size: 11px; color: var(--color-faded); margin: 6px 0 0; letter-spacing: .01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* track rows (non-navigable in global search) */
+.gs-trklist { display: flex; flex-direction: column; }
+.gs-trk { display: flex; align-items: center; gap: 14px; padding: 11px 6px; border-bottom: 1px solid var(--color-border-soft); }
+.gs-trk-no { flex: 0 0 auto; width: 24px; font-size: 11px; color: var(--color-faded); letter-spacing: .06em; }
+.gs-trk-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.gs-trk-title { font-size: 16px; font-weight: 500; letter-spacing: -.01em; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-trk-sub { font-size: 11px; color: var(--color-faded); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-trk-feat { color: var(--color-subtle); }
+
+/* recent-search chips (empty state) */
+.gs-recent { display: flex; flex-wrap: wrap; gap: 7px; }
+.gs-recent-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	letter-spacing: .01em;
+	color: var(--color-subtle);
+	background: transparent;
+	border: 1px solid var(--color-border);
+	border-radius: 2px;
+	padding: 8px 14px;
+	cursor: pointer;
+	transition: border-color .14s, color .14s;
+}
+.gs-recent-chip:hover { border-color: var(--color-text); color: var(--color-text); }
+.gs-recent-ic { color: var(--color-faded); font-size: 11px; }
+
+/* no-results */
+.gs-noresults { padding: clamp(30px, 6vw, 72px) 0; max-width: 620px; }
+.gs-nr-kicker { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--color-accent); }
+.gs-nr-q { font-size: clamp(30px, 5vw, 52px); font-weight: 500; letter-spacing: -.03em; margin: 8px 0 0; overflow-wrap: anywhere; }
+.gs-nr-lead { font-size: clamp(20px, 2.6vw, 28px); margin: clamp(20px, 3vw, 30px) 0 0; color: var(--color-text); }
+.gs-nr-sub { font-size: 15px; line-height: 1.62; color: var(--color-subtle); margin: 12px 0 0; max-width: 48ch; text-wrap: pretty; }
+
+/* loading skeleton */
+.gs-sk { display: inline-block; background: var(--color-paper); position: relative; overflow: hidden; }
+.gs-sk::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-text) 6%, transparent), transparent); transform: translateX(-100%); animation: gs-shimmer 1.3s infinite; }
+@keyframes gs-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .gs-sk::after { animation: none; } }
+
+.gs-status { font-size: 13px; color: var(--color-subtle); padding: 24px 0; }
+
+/* responsive */
+@container gsmain (max-width: 720px) {
+	.gs-agrid { grid-template-columns: 1fr; }
+	.gs-albgrid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+}
