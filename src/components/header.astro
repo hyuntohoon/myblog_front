@@ -32,10 +32,30 @@ const navLinks = [
 
 <script src="../scripts/header.client.ts"></script>
 
-<header id="site-header" class="site-header">
-  <div class="container hdr-wrap">
+<!-- Compact bar — position:fixed + CONSTANT height. It never resizes on scroll,
+     so it can't perturb scroll position (the old height-animating sticky header
+     fed the browser's scroll-anchoring and ping-ponged the masthead open/closed
+     near the top). Utilities are always visible + interactive; the nav + small
+     wordmark fade in (opacity only, no layout change) once the masthead has
+     scrolled out of view. header.client.ts toggles `.is-scrolled`. -->
+<div id="hdr-bar" class="hdr-bar">
+  <div class="container hdr-bar-wrap">
+    <nav class="hdr-nav hdr-nav-left hdr-bar-nav" aria-hidden="true">
+      {navLinks.map((link) => {
+        const href = normalize(link.url)
+        return (
+          <a href={href} class={`hdr-nav-link${isActive(link.url) ? ' active' : ''}`} tabindex="-1">
+            {link.title}
+          </a>
+        )
+      })}
+    </nav>
 
-    <!-- Persistent utilities (rendered once; top-right in both states) -->
+    <a href="/" class="hdr-wordmark-sm" aria-label="buckit — 홈으로" tabindex="-1" aria-hidden="true">
+      bucki<span class="accent">t</span><span class="hdr-tag">LOWFREQ</span>
+    </a>
+
+    <!-- Persistent utilities (always visible + interactive, top-right in both states) -->
     <div class="hdr-utils">
       <HeaderSearch client:load />
       <a id="write-link" href="/write" class="hdr-write hidden" aria-label="글쓰기">
@@ -51,77 +71,97 @@ const navLinks = [
         <span>Logout</span>
       </button>
     </div>
+  </div>
+</div>
 
-    <!-- Expanded masthead (collapses on scroll) -->
-    <div class="hdr-masthead">
-      <a href="/" class="hdr-wordmark-lg" aria-label="buckit — 홈으로">bucki<span class="accent">t</span></a>
-      <hr class="hdr-rule" />
-      <nav class="hdr-nav hdr-nav-center" aria-label="Primary navigation">
-        {navLinks.map((link) => {
-          const href = normalize(link.url)
-          return (
-            <a href={href} class={`hdr-nav-link${isActive(link.url) ? ' active' : ''}`} aria-current={isActive(link.url) ? 'page' : undefined}>
-              {link.title}
-            </a>
-          )
-        })}
-      </nav>
-    </div>
-
-    <!-- Compact bar (appears on scroll; always visible) -->
-    <div class="hdr-compact">
-      <nav class="hdr-nav hdr-nav-left" aria-hidden="true">
-        {navLinks.map((link) => {
-          const href = normalize(link.url)
-          return (
-            <a href={href} class={`hdr-nav-link${isActive(link.url) ? ' active' : ''}`} tabindex="-1">
-              {link.title}
-            </a>
-          )
-        })}
-      </nav>
-      <a href="/" class="hdr-wordmark-sm" aria-label="buckit — 홈으로">
-        bucki<span class="accent">t</span><span class="hdr-tag">LOWFREQ</span>
-      </a>
-    </div>
-
+<!-- Expanded masthead — normal document flow, scrolls away naturally. -->
+<header id="site-header" class="site-header">
+  <div class="container hdr-masthead">
+    <a href="/" class="hdr-wordmark-lg" aria-label="buckit — 홈으로">bucki<span class="accent">t</span></a>
+    <hr class="hdr-rule" />
+    <nav class="hdr-nav hdr-nav-center" aria-label="Primary navigation">
+      {navLinks.map((link) => {
+        const href = normalize(link.url)
+        return (
+          <a href={href} class={`hdr-nav-link${isActive(link.url) ? ' active' : ''}`} aria-current={isActive(link.url) ? 'page' : undefined}>
+            {link.title}
+          </a>
+        )
+      })}
+    </nav>
   </div>
 </header>
 
 <style>
-  /* ── Magazine masthead (FEAT-header-magazine-masthead) ──────────────────────
-     At the top: a centered "buckit" masthead + centered nav. On scroll it
-     collapses (always visible) to a compact bar: nav left, small wordmark
-     centered, utilities right. header.client.ts toggles `.is-scrolled`. */
-  .site-header {
-    position: sticky;
+  /* ── Magazine masthead (FEAT-header-magazine-masthead, restructured) ─────────
+     At the top: a centered "buckit" masthead in NORMAL FLOW that scrolls away.
+     A fixed, constant-height compact bar sits at top:0 — utilities always shown,
+     nav + small wordmark fade in once the masthead has scrolled past. Keeping
+     the fixed bar's height constant is the whole point: an earlier version
+     animated the sticky header's height, which the browser's scroll-anchoring
+     compensated by nudging scrollY across the show/hide threshold → the masthead
+     flailed open/closed near the top. Fade is opacity-only, so no layout shift. */
+
+  /* ── fixed compact bar ── */
+  .hdr-bar {
+    position: fixed;
     top: 0;
-    z-index: 50;
+    left: 0;
+    right: 0;
+    z-index: var(--z-sticky);
+    height: 52px;
+    display: flex;
+    align-items: center;
+    background: transparent;
+    border-bottom: 1px solid transparent;
+    /* transparent at the top → clicks fall through to the masthead beneath;
+       opaque once scrolled → the bar itself catches clicks (see .is-scrolled). */
+    pointer-events: none;
+    transition: background 0.25s ease, border-color 0.25s ease, backdrop-filter 0.25s ease;
+  }
+  .hdr-bar.is-scrolled {
     background: color-mix(in srgb, var(--color-bg) 92%, transparent);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--color-border);
+    border-bottom-color: var(--color-border);
+    pointer-events: auto;
   }
   /* Fallback for browsers without backdrop-filter — keep it solid, never see-through. */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .site-header { background: var(--color-bg); }
+    .hdr-bar.is-scrolled { background: var(--color-bg); }
   }
-  .hdr-wrap { position: relative; }
+  .hdr-bar-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
 
-  /* While priming initial state on load, suppress transitions for one frame so a
-     pre-scrolled page (reload / #hash) snaps to the right state without a flash. */
+  /* While priming the initial state on load, suppress transitions for one frame
+     so a pre-scrolled page (reload / #hash) snaps to the right state, no flash. */
   .is-priming,
   .is-priming * { transition: none !important; }
 
-  /* ── persistent utilities (top-right, both states) ── */
+  /* compact-bar nav + small wordmark: fade in only once scrolled */
+  .hdr-bar-nav,
+  .hdr-wordmark-sm {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .hdr-bar.is-scrolled .hdr-bar-nav,
+  .hdr-bar.is-scrolled .hdr-wordmark-sm {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── persistent utilities (always visible, top-right) ── */
   .hdr-utils {
-    position: absolute;
-    top: 15px;
-    right: 0;
-    z-index: 3;
+    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 14px;
+    pointer-events: auto;
   }
   .hdr-write,
   .hdr-auth {
@@ -159,23 +199,20 @@ const navLinks = [
      Astro-scoped → `.hdr-write/.hdr-auth/.hdr-avatar[data-astro-cid]` is (0,2,0),
      which beats the global utility `.hidden{display:none}` (0,1,0). Without this
      local override the toggle is a no-op and write/avatar/login/logout all show
-     regardless of auth state. `!important` keeps it robust against rule reorder.
-     (Same fix pattern as drafts.astro.) */
+     regardless of auth state. `!important` keeps it robust against rule reorder. */
   .hdr-utils .hidden { display: none !important; }
 
-  /* ── expanded masthead ── */
-  .hdr-masthead {
-    max-height: 220px;
-    opacity: 1;
-    overflow: hidden;
-    text-align: center;
-    padding: 26px 0 15px;
-    transition: max-height 0.34s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.22s, padding 0.34s cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* ── expanded masthead (normal flow, scrolls away) ── */
+  .site-header {
+    position: relative;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
   }
-  .is-scrolled .hdr-masthead {
-    max-height: 0;
-    opacity: 0;
-    padding: 0;
+  .hdr-masthead {
+    text-align: center;
+    /* top padding clears the fixed 52px bar so the wordmark sits below the
+       utilities row; bottom keeps the original rhythm. */
+    padding: 60px 0 15px;
   }
   .hdr-wordmark-lg {
     display: inline-block;
@@ -228,22 +265,7 @@ const navLinks = [
   .hdr-nav-link.active { color: var(--color-text); }
   .hdr-nav-link.active::after { transform: scaleX(1); }
 
-  /* ── compact bar ── */
-  .hdr-compact {
-    position: relative;
-    display: flex;
-    align-items: center;
-    height: 0;
-    opacity: 0;
-    overflow: hidden;
-    border-top: 0 solid var(--color-border-soft);
-    transition: height 0.3s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.2s;
-  }
-  .is-scrolled .hdr-compact {
-    height: 52px;
-    opacity: 1;
-    border-top-width: 1px;
-  }
+  /* ── compact bar wordmark ── */
   .hdr-wordmark-sm {
     position: absolute;
     left: 50%;
@@ -251,7 +273,7 @@ const navLinks = [
     bottom: 0;
     transform: translateX(-50%);
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     font-family: var(--font-serif);
     font-weight: 600;
@@ -260,8 +282,8 @@ const navLinks = [
     line-height: 1;
     color: var(--color-text);
     white-space: nowrap;
+    text-decoration: none;
   }
-  .hdr-wordmark-sm { align-items: center; }
   .hdr-tag {
     font-family: var(--font-mono);
     font-size: 8.5px;
@@ -273,24 +295,21 @@ const navLinks = [
   /* ── responsive ── */
   @media (max-width: 640px) {
     .hdr-nav-center { gap: 20px; font-size: 10.5px; }
-    /* The top-right absolute utilities (top:15px, ~30px tall → bottom ~45px) would
-       otherwise collide with the centered masthead wordmark. Push the wordmark
-       below the utilities row so they don't overlap at narrow widths. */
-    .hdr-masthead { padding-top: 52px; }
     /* Grow nav-link tap targets (was 3px → ~22px tall) without moving the baseline. */
     .hdr-nav-link { padding-top: 9px; padding-bottom: 9px; }
     /* Grow the Login/write/logout hit area (was ~17px tall) for touch. */
     .hdr-write, .hdr-auth { padding-block: 6px; }
     /* In the compact bar, drop the left nav so the centered wordmark + utilities
        don't crowd; the expanded masthead nav still shows. */
-    .hdr-nav-left { display: none; }
+    .hdr-bar-nav { display: none; }
     .hdr-write span,
     .hdr-auth span { display: none; }
     .hdr-utils { gap: 12px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .hdr-masthead,
-    .hdr-compact,
+    .hdr-bar,
+    .hdr-bar-nav,
+    .hdr-wordmark-sm,
     .hdr-nav-link::after { transition: none; }
   }
 </style>
