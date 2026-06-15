@@ -1,0 +1,243 @@
+/* FEAT-artist-page — /artist/[id] hub layout, ported from the Claude Design
+   prototype (아티스트.html). Global (the page body is a client:only React
+   island, so Astro-scoped styles wouldn't reach it). Uses the site's --color-*
+   tokens. The numeric score is intentionally absent (stars only). */
+
+.art-root {
+	max-width: 1320px;
+	margin: 0 auto;
+	padding: clamp(28px, 5vw, 52px) clamp(16px, 4vw, 40px) 96px;
+	container: artmain / inline-size;
+}
+
+.art-block { margin-top: clamp(48px, 7vw, 88px); }
+
+/* transform-only entrance (stays opaque) */
+.rise { animation: art-rise .5s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes art-rise { from { transform: translateY(10px); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rise { animation: none !important; } }
+
+/* ── 1. identity masthead ─────────────────────────────────────── */
+.art-id-grid {
+	display: grid;
+	grid-template-columns: minmax(180px, 248px) 1fr;
+	gap: clamp(24px, 4vw, 56px);
+	align-items: center;
+}
+.art-id-photo {
+	aspect-ratio: 1 / 1;
+	overflow: hidden;
+	border-radius: 4px;
+	background: var(--color-border-soft);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.art-id-photo img { width: 100%; height: 100%; object-fit: cover; }
+.art-letter {
+	font-family: Georgia, 'Times New Roman', serif;
+	font-style: italic;
+	font-size: clamp(48px, 12cqw, 96px);
+	color: var(--color-faded);
+}
+.art-id-info { min-width: 0; }
+.art-id-kicker { display: block; }
+.art-id-name {
+	font-size: clamp(38px, 6vw, 70px);
+	font-weight: 500;
+	letter-spacing: -.035em;
+	line-height: 1.0;
+	margin: 10px 0 0;
+	text-wrap: balance;
+	overflow-wrap: anywhere;
+}
+.art-id-genres { display: flex; flex-wrap: wrap; gap: 7px; margin-top: clamp(14px, 2vw, 20px); }
+.art-id-gchip {
+	font-size: 11px;
+	letter-spacing: .06em;
+	color: var(--color-text);
+	border: 1px solid var(--color-border);
+	padding: 6px 11px;
+	white-space: nowrap;
+}
+.art-id-counts {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 11.5px;
+	letter-spacing: .08em;
+	text-transform: uppercase;
+	color: var(--color-subtle);
+	margin-top: 15px;
+}
+.art-id-counts > span { white-space: nowrap; }
+.art-id-foot {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	font-size: 10.5px;
+	letter-spacing: .08em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+	margin-top: 12px;
+}
+.art-id-foot > * { white-space: nowrap; }
+.art-id-dot { opacity: .55; }
+.art-id-spotify { color: var(--color-subtle); transition: color .16s; text-decoration: none; }
+.art-id-spotify:hover { color: var(--color-text); }
+
+/* ── 2. 평론한 앨범 ───────────────────────────────────────────── */
+.art-cov-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+	gap: clamp(28px, 3.4vw, 44px) clamp(20px, 2.6vw, 32px);
+}
+.art-rev-card { display: block; text-decoration: none; color: inherit; }
+.art-rev-cover {
+	position: relative;
+	transition: transform .3s cubic-bezier(.2, .7, .2, 1), box-shadow .3s;
+}
+.art-rev-card:hover .art-rev-cover {
+	transform: translateY(-4px);
+	box-shadow: 0 20px 38px -22px rgba(0, 0, 0, .55);
+}
+.art-rev-bnm {
+	position: absolute;
+	left: 10px;
+	bottom: 10px;
+	white-space: nowrap;
+	font-size: 10px;
+	letter-spacing: .1em;
+	text-transform: uppercase;
+	color: #fff;
+	background: var(--color-accent);
+	padding: 5px 9px;
+	border-radius: 2px;
+}
+.art-rev-body { margin-top: 14px; }
+.art-rev-title {
+	font-size: clamp(19px, 2.2vw, 23px);
+	font-weight: 500;
+	letter-spacing: -.015em;
+	line-height: 1.16;
+	margin: 9px 0 0;
+	transition: color .18s;
+	text-wrap: pretty;
+}
+.art-rev-card:hover .art-rev-title { color: var(--color-accent); }
+.art-rev-meta { margin-top: 8px; }
+.art-rev-pull {
+	font-size: 14.5px;
+	line-height: 1.55;
+	color: var(--color-faded);
+	margin: 11px 0 0;
+	max-width: 42ch;
+	text-wrap: pretty;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.art-cov-empty {
+	border-top: 1px solid var(--color-border-soft);
+	padding-top: clamp(20px, 3vw, 30px);
+	max-width: 640px;
+}
+.art-cov-empty-lead {
+	font-size: clamp(20px, 2.6vw, 28px);
+	font-weight: 500;
+	letter-spacing: -.01em;
+	margin: 0;
+}
+.art-cov-empty-sub {
+	font-size: 15.5px;
+	line-height: 1.62;
+	color: var(--color-subtle);
+	margin: 12px 0 0;
+	max-width: 52ch;
+	text-wrap: pretty;
+}
+
+/* ── 3. 디스코그래피 + 주요 트랙 ─────────────────────────────── */
+.art-lower-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr);
+	gap: clamp(34px, 4.5vw, 64px);
+	align-items: start;
+}
+.art-disco-block { min-width: 0; }
+.art-disco-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+	gap: clamp(22px, 2.6vw, 30px) clamp(16px, 2vw, 22px);
+}
+.art-disco-item { opacity: .66; transition: opacity .2s; }
+.art-disco-item:hover { opacity: 1; }
+.art-disco-grid.is-foreground .art-disco-item { opacity: 1; }
+.art-disco-cover { transition: transform .28s cubic-bezier(.2, .7, .2, 1); }
+.art-disco-item:hover .art-disco-cover { transform: translateY(-3px); }
+.art-disco-title {
+	font-size: 15px;
+	font-weight: 500;
+	letter-spacing: -.01em;
+	line-height: 1.2;
+	margin: 11px 0 0;
+	text-wrap: pretty;
+}
+.art-disco-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	margin-top: 6px;
+	font-size: 10px;
+	letter-spacing: .05em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+.art-disco-meta > span { white-space: nowrap; }
+.art-disco-unrated { color: var(--color-subtle); opacity: .85; }
+
+.art-tt-wrap { min-width: 0; }
+.art-tt-list { list-style: none; margin: 0; padding: 0; }
+.art-tt-row {
+	display: flex;
+	align-items: baseline;
+	gap: 14px;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--color-border-soft);
+}
+.art-tt-row:first-child { padding-top: 2px; }
+.art-tt-rank {
+	font-size: 11px;
+	color: var(--color-faded);
+	letter-spacing: .08em;
+	flex: 0 0 auto;
+	width: 22px;
+}
+.art-tt-name {
+	font-size: 16px;
+	font-weight: 500;
+	letter-spacing: -.01em;
+	color: var(--color-text);
+	text-wrap: pretty;
+}
+
+.art-pending {
+	color: var(--color-subtle);
+	font-size: 14px;
+	padding: 24px 0;
+}
+
+/* ── narrow ─────────────────────────────────────────────────── */
+@container artmain (max-width: 760px) {
+	.art-id-grid { grid-template-columns: 1fr; gap: clamp(20px, 5vw, 28px); justify-items: start; }
+	.art-id-photo { width: clamp(150px, 46cqw, 200px); }
+	.art-cov-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: clamp(24px, 5vw, 32px) 18px; }
+	.art-rev-pull { display: none; }
+	.art-rev-title { font-size: 18px; }
+	.art-lower-grid { grid-template-columns: 1fr; gap: clamp(44px, 9vw, 60px); }
+	.art-disco-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+}
