@@ -467,6 +467,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/music/artists/ids": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Artist Ids */
+        get: operations["list_artist_ids_api_music_artists_ids_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/music/artists/{artist_id}": {
         parameters: {
             query?: never;
@@ -1521,6 +1538,13 @@ export interface components {
              * @default 0
              */
             track_count: number;
+        };
+        /** ArtistIdItem */
+        Music_ArtistIdItem: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** ArtistItem */
         Music_ArtistItem: {
@@ -2616,6 +2640,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_artist_ids_api_music_artists_ids_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_ArtistIdItem"][];
                 };
             };
         };
