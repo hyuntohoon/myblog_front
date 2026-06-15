@@ -13,7 +13,7 @@
 //
 // `open` gates everything — when false the hook is inert. Pass the element that
 // wraps the overlay's focusable content as `ref`.
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
@@ -28,6 +28,20 @@ export function useDismissable(
 	opts: { trapFocus?: boolean, autoFocus?: boolean } = {},
 ) {
 	const { trapFocus = true, autoFocus = true } = opts
+
+	// Hold the latest onClose without making it an effect dependency. Callers
+	// routinely pass an inline `onClose={() => setX(null)}`, which is a fresh
+	// identity on every parent render. If the focus effect depended on it, any
+	// parent re-render WHILE the overlay is open (e.g. a bucket board re-rendering
+	// after an album is added) would tear down + re-run the effect — firing the
+	// focus-restore cleanup, which yanks focus (and scroll) back to the trigger
+	// mid-interaction. Keying the focus effect on `open` alone fixes that.
+	const onCloseRef = useRef(onClose)
+	onCloseRef.current = onClose
+
+	// Focus lifecycle: capture the trigger + autofocus on open; restore focus only
+	// on a real close / unmount (open flips false). Deps are all stable across a
+	// parent re-render (open stays true, ref is a useRef, autoFocus is a primitive).
 	useEffect(() => {
 		if (!open)
 			return
@@ -39,10 +53,23 @@ export function useDismissable(
 			;(f[0] ?? root).focus?.()
 		}
 
+		return () => {
+			// Restore focus to the trigger so keyboard users aren't dumped at <body>.
+			if (restoreTo && typeof restoreTo.focus === 'function')
+				restoreTo.focus()
+		}
+	}, [open, ref, autoFocus])
+
+	// Key handling: ESC closes, Tab is trapped within the overlay. Separate from
+	// the focus lifecycle so re-subscribing the listener never restores focus.
+	useEffect(() => {
+		if (!open)
+			return
+		const root = ref.current
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') {
 				e.stopPropagation()
-				onClose()
+				onCloseRef.current()
 				return
 			}
 			if (e.key === 'Tab' && trapFocus && root) {
@@ -61,11 +88,6 @@ export function useDismissable(
 			}
 		}
 		document.addEventListener('keydown', onKey, true)
-		return () => {
-			document.removeEventListener('keydown', onKey, true)
-			// Restore focus to the trigger so keyboard users aren't dumped at <body>.
-			if (restoreTo && typeof restoreTo.focus === 'function')
-				restoreTo.focus()
-		}
-	}, [open, onClose, ref, trapFocus, autoFocus])
+		return () => document.removeEventListener('keydown', onKey, true)
+	}, [open, ref, trapFocus])
 }
