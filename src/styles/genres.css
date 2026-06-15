@@ -280,6 +280,21 @@
 	background: color-mix(in srgb, var(--color-paper) 60%, var(--color-bg));
 }
 .gm-b-colhead-sub { color: color-mix(in srgb, var(--color-faded) 80%, transparent); }
+/* FEAT-genre-deepen: breadcrumb in the Miller column-2 head (drill path). */
+.gm-b-crumbhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px; }
+.gm-b-crumblink {
+	background: transparent;
+	border: none;
+	color: var(--color-faded);
+	font: inherit;
+	letter-spacing: inherit;
+	text-transform: inherit;
+	cursor: pointer;
+	padding: 0;
+}
+.gm-b-crumblink:hover { color: var(--color-text); }
+.gm-b-crumb-sep { margin: 0 3px; opacity: 0.5; }
+.gm-b-crumbcur { color: var(--color-text); }
 .gm-b-collist { flex: 1; overflow-y: auto; padding: 6px 0; min-height: 0; }
 
 .gm-b-row {

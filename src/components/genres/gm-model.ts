@@ -13,12 +13,15 @@
 //     multiple) · influence (directed) · related (lateral).
 import type { GenreEdge, GenreNode } from '@lib/genres'
 
-/** A flat registry node. `tier` 0 = top-level containment root, 1 = sub-genre. */
+/**
+ * A flat registry node. `tier` 0 = top-level containment root, 1+ = sub-genre
+ * depth (the taxonomy is N-tier as of FEAT-genre-deepen — was 2-tier).
+ */
 export interface GmNode {
 	id: string
 	slug: string
 	label: string
-	tier: 0 | 1
+	tier: number
 	count: number
 	def: string
 	parents: string[]
@@ -55,7 +58,7 @@ export function buildDoc(genres: GenreNode[], edges: GenreEdge[]): GmDoc {
 	const order: string[] = []
 	const childOrder: Record<string, string[]> = {}
 
-	function add(n: GenreNode, tier: 0 | 1) {
+	function add(n: GenreNode, tier: number) {
 		nodes[n.id] = {
 			id: n.id,
 			slug: n.slug,
@@ -69,13 +72,19 @@ export function buildDoc(genres: GenreNode[], edges: GenreEdge[]): GmDoc {
 		}
 	}
 
-	for (const root of genres) {
-		add(root, 0)
-		order.push(root.id)
-		const kids = root.children ?? []
-		childOrder[root.id] = kids.map(k => k.id)
+	// Recurse the full forest (N-tier as of FEAT-genre-deepen): every node gets
+	// its own childOrder, so a tier-3/4 node is reachable. tier = depth from root.
+	function walk(n: GenreNode, tier: number) {
+		add(n, tier)
+		const kids = n.children ?? []
+		childOrder[n.id] = kids.map(k => k.id)
 		for (const k of kids)
-			add(k, 1)
+			walk(k, tier + 1)
+	}
+
+	for (const root of genres) {
+		walk(root, 0)
+		order.push(root.id)
 	}
 
 	// Apply edges with directional storage (mirrors the seed model: the reverse

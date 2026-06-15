@@ -2,6 +2,8 @@
 // Global layer = containment dendrogram only (no cross-links). A sub-genre with
 // two parents simply appears under each branch. Opening a node docks its EGO
 // VIEW (relationships) on the right. Pan by dragging; ⌘/Ctrl+scroll to zoom.
+// FEAT-genre-deepen: N-tier — each column is one depth, any node with children
+// expands into the next column (was a fixed root→top→tier-1 3-column layout).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GmDoc, GmNode } from './gm-model'
 import { gmChildren, gmCount, gmNode, gmOtherParents, gmPrimaryParent, gmShare, gmShareLabel, gmTopList, gmTotal } from './gm-model'
@@ -12,12 +14,10 @@ const TC = {
 	rootW: 132,
 	rootH: 52,
 	gap1: 104,
-	genreW: 182,
-	genreH: 44,
-	gap2: 74,
-	childW: 168,
-	childH: 38,
-	rowH: 52,
+	colW: 178,
+	colGap: 60,
+	nodeH: 42,
+	rowH: 50,
 	blockGap: 10,
 	padY: 30,
 }
@@ -27,8 +27,22 @@ function tcLink(x1: number, y1: number, x2: number, y2: number): string {
 	return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`
 }
 
+// Ancestors of a node up the primary-parent chain (auto-open a deep-linked node).
+function ancestorIds(doc: GmDoc, id: string | null): string[] {
+	const out: string[] = []
+	let node = gmNode(doc, id)
+	let guard = 0
+	while (node && node.tier > 0 && node.parents.length && guard < 12) {
+		const pid = node.parents[0]
+		out.push(pid)
+		node = gmNode(doc, pid)
+		guard++
+	}
+	return out
+}
+
 interface View { zoom: number, x: number, y: number }
-interface PlacedNode { key: string, node: GmNode, parentId: string | null, kind: 'genre' | 'child', x: number, y: number, w: number, h: number }
+interface PlacedNode { key: string, node: GmNode, parentId: string | null, depth: number, x: number, y: number, w: number, h: number }
 
 function Detail({ doc, node, parent, total, onNavigate, onClose }: { doc: GmDoc, node: GmNode | null, parent: GmNode | null, total: number, onNavigate: (id: string) => void, onClose: () => void }) {
 	if (!node) {
@@ -85,18 +99,14 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 	const maxPct = Math.max(...tops.map(g => gmShare(g.count, total)), 1)
 	const [dockW, setDockW] = useStoredWidth('lfq-genremap-cw', 360)
 
-	const [expanded, setExpanded] = useState<Set<string>>(() => {
-		const s = new Set<string>()
-		const n = gmNode(doc, selId)
-		if (n && n.tier === 1)
-			n.parents.forEach(p => s.add(p))
-		return s
-	})
+	const [expanded, setExpanded] = useState<Set<string>>(() => new Set(ancestorIds(doc, selId)))
 	const [sel, setSel] = useState<string | null>(selId)
 	useEffect(() => {
-		if (selId)
+		if (selId) {
 			setSel(selId)
-	}, [selId])
+			setExpanded(s => new Set([...s, ...ancestorIds(doc, selId)]))
+		}
+	}, [selId, doc])
 
 	const toggleExpand = (id: string, e: React.MouseEvent) => {
 		e.stopPropagation()
@@ -186,48 +196,51 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 	}
 
 	const layout = useMemo(() => {
-		const genreX = TC.rootX + TC.rootW + TC.gap1
-		const childX = genreX + TC.genreW + TC.gap2
-		let y = TC.padY
+		const baseX = TC.rootX + TC.rootW + TC.gap1
+		const colStep = TC.colW + TC.colGap
 		const nodes: PlacedNode[] = []
-		const childLinks: { d: string }[] = []
-		const genreYs: number[] = []
-		let hasChildCol = false
+		const links: { d: string }[] = []
+		let y = TC.padY
+		let maxDepth = 0
 
-		tops.forEach((g) => {
-			const kids = gmChildren(doc, g.id)
-			const isOpen = expanded.has(g.id) && kids.length
-			let gy: number
+		// Recursive tidy-tree placement: leaves stack top-to-bottom (rowH), an
+		// open internal node centres on its children. Each depth is one column.
+		function place(node: GmNode, parentId: string | null, depth: number): number {
+			if (depth > maxDepth)
+				maxDepth = depth
+			const x = baseX + depth * colStep
+			const kids = gmChildren(doc, node.id)
+			const isOpen = expanded.has(node.id) && kids.length > 0
+			let cy: number
 			if (isOpen) {
-				hasChildCol = true
-				const cys: number[] = []
-				kids.forEach((c) => {
-					const cy = y + TC.rowH / 2
-					nodes.push({ key: `${g.id}:${c.id}`, node: c, parentId: g.id, kind: 'child', x: childX, y: cy, w: TC.childW, h: TC.childH })
-					cys.push(cy)
-					y += TC.rowH
-				})
-				gy = (cys[0] + cys[cys.length - 1]) / 2
-				cys.forEach(cy => childLinks.push({ d: tcLink(genreX + TC.genreW, gy, childX, cy) }))
+				const cys = kids.map(c => place(c, node.id, depth + 1))
+				cy = (cys[0] + cys[cys.length - 1]) / 2
+				const childX = baseX + (depth + 1) * colStep
+				cys.forEach(c => links.push({ d: tcLink(x + TC.colW, cy, childX, c) }))
 			}
 			else {
-				gy = y + TC.rowH / 2
+				cy = y + TC.rowH / 2
 				y += TC.rowH
 			}
+			nodes.push({ key: `${parentId ?? 'root'}:${node.id}`, node, parentId, depth, x, y: cy, w: TC.colW, h: TC.nodeH })
+			return cy
+		}
+
+		const genreYs = tops.map((g) => {
+			const gy = place(g, null, 0)
 			y += TC.blockGap
-			nodes.push({ key: `g:${g.id}`, node: g, parentId: null, kind: 'genre', x: genreX, y: gy, w: TC.genreW, h: TC.genreH })
-			genreYs.push(gy)
+			return gy
 		})
 
-		const rootY = (genreYs[0] + genreYs[genreYs.length - 1]) / 2
-		const rootLinks = genreYs.map(gy => ({ d: tcLink(TC.rootX + TC.rootW, rootY, genreX, gy) }))
-		const width = childX + TC.childW + 36
+		const rootY = genreYs.length ? (genreYs[0] + genreYs[genreYs.length - 1]) / 2 : TC.padY
+		const rootLinks = genreYs.map(gy => ({ d: tcLink(TC.rootX + TC.rootW, rootY, baseX, gy) }))
+		const width = baseX + (maxDepth + 1) * colStep + 36
 		const height = y - TC.blockGap + TC.padY
-		return { nodes, childLinks, rootLinks, rootY, width, height, genreX, childX, hasChildCol }
+		return { nodes, links, rootLinks, rootY, width, height, maxDepth }
 	}, [doc, expanded, tops])
 
 	const detailNode = gmNode(doc, sel)
-	const detailParent = detailNode && detailNode.tier === 1 ? gmPrimaryParent(doc, detailNode) : null
+	const detailParent = detailNode && detailNode.tier >= 1 ? gmPrimaryParent(doc, detailNode) : null
 	const canvasH = Math.max(layout.height, 200)
 
 	const fitView = () => {
@@ -247,7 +260,7 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 					<div className="gm-c-canvas" style={{ width: layout.width, height: canvasH }}>
 						<svg className="gm-c-links" width={layout.width} height={canvasH}>
 							{layout.rootLinks.map((l, i) => <path key={`r${i}`} d={l.d} className="gm-c-link root" fill="none" />)}
-							{layout.childLinks.map((l, i) => <path key={`c${i}`} d={l.d} className="gm-c-link child" fill="none" />)}
+							{layout.links.map((l, i) => <path key={`c${i}`} d={l.d} className="gm-c-link child" fill="none" />)}
 						</svg>
 
 						<div className="gm-c-node root" style={{ left: TC.rootX, top: layout.rootY - TC.rootH / 2, width: TC.rootW, minHeight: TC.rootH }}>
@@ -255,21 +268,18 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 							<span className="mono gm-c-root-sub">{`${tops.length} 장르 · ${gmCount(total)}장`}</span>
 						</div>
 
-						<div className="gm-c-collabel mono" style={{ left: layout.genreX, top: 4 }}>최상위 · Top-level</div>
-						{layout.hasChildCol ? <div className="gm-c-collabel mono" style={{ left: layout.childX, top: 4 }}>하위 · Sub-genre</div> : null}
-
 						{layout.nodes.map((nd) => {
 							const g = nd.node
-							const isGenre = nd.kind === 'genre'
+							const isTop = nd.depth === 0
 							const pct = gmShare(g.count, total)
-							const kids = isGenre ? gmChildren(doc, g.id) : []
-							const hasKids = isGenre && kids.length > 0
+							const kids = gmChildren(doc, g.id)
+							const hasKids = kids.length > 0
 							const open = expanded.has(g.id)
-							const others = !isGenre ? gmOtherParents(doc, g, nd.parentId) : []
+							const others = !isTop ? gmOtherParents(doc, g, nd.parentId) : []
 							return (
 								<div
 									key={nd.key}
-									className={`gm-c-node ${nd.kind}${sel === g.id ? ' active' : ''}`}
+									className={`gm-c-node ${isTop ? 'genre' : 'child'}${sel === g.id ? ' active' : ''}`}
 									style={{ left: nd.x, top: nd.y - nd.h / 2, width: nd.w, minHeight: nd.h }}
 									role="button"
 									tabIndex={0}
@@ -281,7 +291,7 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 										}
 									}}
 								>
-									{isGenre ?
+									{isTop ?
 										(
 											<>
 												<span className="mono gm-c-num">{String(tops.indexOf(g) + 1).padStart(2, '0')}</span>
@@ -292,14 +302,6 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 														<span className="mono gm-c-share">{gmShareLabel(pct)}</span>
 													</span>
 												</span>
-												{hasKids ?
-													(
-														<button type="button" className={`gm-c-expand${open ? ' open' : ''}`} title={open ? '접기' : '펼치기'} onClick={e => toggleExpand(g.id, e)}>
-															<span className="gm-c-expand-n mono">{kids.length}</span>
-															<Chevron open={open} size={11} />
-														</button>
-													) :
-													null}
 											</>
 										) :
 										(
@@ -312,6 +314,14 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 												<span className="mono gm-c-childcount">{gmCount(g.count)}</span>
 											</>
 										)}
+									{hasKids ?
+										(
+											<button type="button" className={`gm-c-expand${open ? ' open' : ''}`} title={open ? '접기' : '펼치기'} onClick={e => toggleExpand(g.id, e)}>
+												<span className="gm-c-expand-n mono">{kids.length}</span>
+												<Chevron open={open} size={11} />
+											</button>
+										) :
+										null}
 								</div>
 							)
 						})}

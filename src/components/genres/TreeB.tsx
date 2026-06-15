@@ -7,6 +7,20 @@ import type { GmDoc, GmNode } from './gm-model'
 import { gmChildren, gmCount, gmNode, gmOtherParents, gmShare, gmShareLabel, gmTopList, gmTotal } from './gm-model'
 import { Chevron, EgoBody, gmClamp, ResizeHandle, ShareBar, useStoredWidth } from './gm-shared'
 
+// Primary-parent chain from a node up to (but excluding) the root.
+function ancestorIds(doc: GmDoc, id: string | null): string[] {
+	const out: string[] = []
+	let node = gmNode(doc, id)
+	let guard = 0
+	while (node && node.tier > 0 && node.parents.length && guard < 12) {
+		const pid = node.parents[0]
+		out.push(pid)
+		node = gmNode(doc, pid)
+		guard++
+	}
+	return out
+}
+
 function Col1Row({ doc, node, idx, total, maxPct, active, onPick }: { doc: GmDoc, node: GmNode, idx: number, total: number, maxPct: number, active: boolean, onPick: (id: string) => void }) {
 	const pct = gmShare(node.count, total)
 	const kids = gmChildren(doc, node.id).length
@@ -39,6 +53,7 @@ function Col1Row({ doc, node, idx, total, maxPct, active, onPick }: { doc: GmDoc
 
 function Col2Row({ doc, node, parentId, active, onPick }: { doc: GmDoc, node: GmNode, parentId: string | null, active: boolean, onPick: (id: string) => void }) {
 	const others = gmOtherParents(doc, node, parentId)
+	const kids = gmChildren(doc, node.id).length
 	return (
 		<div
 			className={`gm-b-row col2${active ? ' active' : ''}`}
@@ -59,6 +74,7 @@ function Col2Row({ doc, node, parentId, active, onPick }: { doc: GmDoc, node: Gm
 			</span>
 			<span className="gm-b-rowend">
 				<span className="mono gm-b-count">{gmCount(node.count)}</span>
+				{kids ? <span className="mono gm-b-kids">{kids}</span> : <span className="gm-b-kids empty">·</span>}
 				<Chevron open={false} size={13} />
 			</span>
 		</div>
@@ -116,7 +132,8 @@ export default function TreeB({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 
 	const init = (() => {
 		const n = gmNode(doc, selId)
-		if (n && n.tier === 1 && n.parents.length)
+		// N-tier: open a deep node in its immediate-parent column with it selected.
+		if (n && n.tier >= 1 && n.parents.length)
 			return { p: n.parents[0], c: n.id }
 		if (n && n.tier === 0)
 			return { p: n.id, c: null as string | null }
@@ -131,14 +148,25 @@ export default function TreeB({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 	const childStillHere = !!child && kids.some(k => k.id === child.id)
 	const detailNode = childStillHere ? child : parent
 	const detailParent = childStillHere ? parent : null
+	// Breadcrumb (top → … → current parent) + which top-level row to highlight.
+	const crumbIds = parentId ? [...ancestorIds(doc, parentId)].reverse() : []
+	const topActive = crumbIds.length ? crumbIds[0] : parentId
 
 	const pickParent = (id: string) => {
 		setParentId(id)
 		setChildId(null)
 		onSelect(id)
 	}
+	// Clicking a child that itself has children DRILLS into it (it becomes the
+	// column-2 parent); a leaf just selects for the detail dock.
 	const pickChild = (id: string) => {
-		setChildId(id)
+		if (gmChildren(doc, id).length > 0) {
+			setParentId(id)
+			setChildId(null)
+		}
+		else {
+			setChildId(id)
+		}
 		onSelect(id)
 	}
 
@@ -153,7 +181,7 @@ export default function TreeB({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 					</div>
 					<div className="gm-b-collist">
 						{tops.map((g, i) => (
-							<Col1Row key={g.id} doc={doc} node={g} idx={i} total={total} maxPct={maxPct} active={g.id === parentId} onPick={pickParent} />
+							<Col1Row key={g.id} doc={doc} node={g} idx={i} total={total} maxPct={maxPct} active={g.id === topActive} onPick={pickParent} />
 						))}
 					</div>
 				</div>
@@ -161,8 +189,19 @@ export default function TreeB({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 				<ResizeHandle getBase={() => col1W} onResize={(b, dx) => setCol1W(gmClamp(b + dx, 230, 620))} />
 
 				<div className="gm-b-col gm-b-col2" style={{ flex: `0 0 ${col2W}px` }}>
-					<div className="gm-b-colhead mono">
-						{parent?.label}
+					<div className="gm-b-colhead mono gm-b-crumbhead">
+						{crumbIds.map((cid) => {
+							const cn = gmNode(doc, cid)
+							return cn ?
+								(
+									<button key={cid} type="button" className="gm-b-crumblink" onClick={() => pickParent(cid)}>
+										{cn.label}
+										<span className="gm-b-crumb-sep">/</span>
+									</button>
+								) :
+								null
+						})}
+						<span className="gm-b-crumbcur">{parent?.label}</span>
 						{' '}
 						<span className="gm-b-colhead-sub">하위 장르</span>
 					</div>

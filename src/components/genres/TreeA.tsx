@@ -16,12 +16,30 @@ interface RowCtx {
 	onNavigate: (id: string) => void
 }
 
+// Walk the primary-parent chain up to the root — used to auto-open every
+// ancestor of a deep-linked node (N-tier; was a single tier-1→parent hop).
+function ancestorIds(doc: GmDoc, id: string): string[] {
+	const out: string[] = []
+	let node = gmNode(doc, id)
+	let guard = 0
+	while (node && node.tier > 0 && node.parents.length && guard < 12) {
+		const pid = node.parents[0]
+		out.push(pid)
+		node = gmNode(doc, pid)
+		guard++
+	}
+	return out
+}
+
 function TreeARow({ node, idx, depth, parentId, ctx }: { node: GmNode, idx: number, depth: number, parentId: string | null, ctx: RowCtx }) {
 	const open = ctx.isOpen(node.id)
 	const pct = gmShare(node.count, ctx.total)
-	const kids = depth === 0 ? gmChildren(ctx.doc, node.id) : []
+	// N-tier (FEAT-genre-deepen): every node can expand its own children, not
+	// just the top-level roots. Collapsed by default, so the 1k+ deep tree only
+	// renders the branch you actually open.
+	const kids = gmChildren(ctx.doc, node.id)
 	const hasKids = kids.length > 0
-	const others = depth === 1 ? gmOtherParents(ctx.doc, node, parentId) : []
+	const others = depth >= 1 ? gmOtherParents(ctx.doc, node, parentId) : []
 	const num = depth === 0 ? String(idx + 1).padStart(2, '0') : null
 
 	function rowKey(e: React.KeyboardEvent) {
@@ -75,7 +93,7 @@ function TreeARow({ node, idx, depth, parentId, ctx }: { node: GmNode, idx: numb
 								<div className="gm-a-children">
 									<div className="mono gm-a-children-head">하위 장르 · 포함(contains)</div>
 									{kids.map((c, ci) => (
-										<TreeARow key={c.id} node={c} idx={ci} depth={1} parentId={node.id} ctx={ctx} />
+										<TreeARow key={c.id} node={c} idx={ci} depth={depth + 1} parentId={node.id} ctx={ctx} />
 									))}
 								</div>
 							) :
@@ -97,9 +115,7 @@ export default function TreeA({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 		const s = new Set<string>()
 		if (selId) {
 			s.add(selId)
-			const n = gmNode(doc, selId)
-			if (n && n.tier === 1)
-				n.parents.forEach(p => s.add(p))
+			ancestorIds(doc, selId).forEach(p => s.add(p))
 		}
 		return s
 	})
@@ -109,9 +125,7 @@ export default function TreeA({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 		setOpenIds((s) => {
 			const n = new Set(s)
 			n.add(selId)
-			const node = gmNode(doc, selId)
-			if (node && node.tier === 1)
-				node.parents.forEach(p => n.add(p))
+			ancestorIds(doc, selId).forEach(p => n.add(p))
 			return n
 		})
 	}, [selId, doc])
