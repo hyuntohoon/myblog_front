@@ -29,6 +29,22 @@ export interface GenreNode {
   children: GenreNode[]
 }
 
+/**
+ * A tier-1 relationship edge (FEAT-genre-subgenres). Drives the /genres ego-view.
+ * `type` ∈ influenced_by | related | parent (parent = the multi-parent fallback).
+ */
+export interface GenreEdge {
+  fromId: string
+  toId: string
+  type: string
+}
+
+/** The full genre map: containment forest + the relationship edges over it. */
+export interface GenreMapData {
+  genres: GenreNode[]
+  edges: GenreEdge[]
+}
+
 /** Fields the owner can PUT. All optional; only sent fields are applied. */
 export interface GenrePatch {
   label?: string
@@ -62,6 +78,20 @@ export async function fetchGenreTree(): Promise<GenreNode[]> {
   const res = await apiFetch(`${BASE}/api/genres/tree`, { method: 'GET' })
   const data = await asJson<ApiTreeResponse>(res)
   return (data.genres ?? []).map(mapNode)
+}
+
+/**
+ * GET /api/genres/tree — containment forest plus relationship edges, for the
+ * Genre Map ego-view (FEAT-genre-subgenres Step 4). Same endpoint as
+ * fetchGenreTree; this variant also surfaces the `edges` array.
+ */
+export async function fetchGenreMap(): Promise<GenreMapData> {
+  const res = await apiFetch(`${BASE}/api/genres/tree`, { method: 'GET' })
+  const data = await asJson<ApiTreeResponse>(res)
+  return {
+    genres: (data.genres ?? []).map(mapNode),
+    edges: (data.edges ?? []).map(e => ({ fromId: e.from_id, toId: e.to_id, type: e.type })),
+  }
 }
 
 /** PUT /api/genres/{id} — owner inline edit (label / definition / position). */
