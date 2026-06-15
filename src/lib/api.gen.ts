@@ -903,6 +903,20 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * GenreEdge
+         * @description A tier-1 relationship edge (FEAT-genre-subgenres). Drives the /genres
+         *     ego-view + the related-review recommendation. `type` ∈ influenced_by | related
+         *     | parent (the multi-parent fallback, unused in v1).
+         */
+        Backend_GenreEdge: {
+            /** From Id */
+            from_id: string;
+            /** To Id */
+            to_id: string;
+            /** Type */
+            type: string;
+        };
         /** GenreNode */
         Backend_GenreNode: {
             /**
@@ -933,6 +947,8 @@ export interface components {
         };
         /** GenreTreeResponse */
         Backend_GenreTreeResponse: {
+            /** Edges */
+            edges?: components["schemas"]["Backend_GenreEdge"][];
             /** Genres */
             genres: components["schemas"]["Backend_GenreNode"][];
         };
@@ -1018,6 +1034,8 @@ export interface components {
             category: string | null;
             /** Description */
             description: string;
+            /** Genre Ids */
+            genre_ids?: string[];
             /** Id */
             id: string;
             /**
@@ -1359,6 +1377,8 @@ export interface components {
             category?: string | null;
             /** Description */
             description?: string | null;
+            /** Genre Ids */
+            genre_ids?: string[] | null;
             /** Posted Date */
             posted_date?: string | null;
             /** Rating */
@@ -1406,6 +1426,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Genre Ids */
+            genre_ids?: string[];
             /**
              * Posted Date
              * Format: date
