@@ -7,52 +7,11 @@
 import { useEffect, useState } from 'react'
 import type { AlbumHit, ArtistHit, TrackHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
+import type { ReviewHit } from '@lib/reviewIndex'
+import { filterReviews, loadReviews } from '@lib/reviewIndex'
 import { GCover, GStars } from './atoms'
 
-interface ReviewHit {
-	slug: string
-	album: string
-	artist: string
-	genres: string[]
-	year: number
-	rating: number | null
-	bestNew: boolean
-	cover: string | null
-	excerpt: string
-	body: string
-}
-
 type Facet = 'all' | 'review' | 'artist' | 'album' | 'track'
-
-// ── build-time review index (fetched once, memoized) ──────────────
-let reviewIndex: ReviewHit[] | null = null
-let reviewPromise: Promise<ReviewHit[]> | null = null
-function loadReviews(): Promise<ReviewHit[]> {
-	if (reviewIndex)
-		return Promise.resolve(reviewIndex)
-	if (!reviewPromise) {
-		reviewPromise = fetch('/search-index.json')
-			.then(r => (r.ok ? (r.json() as Promise<ReviewHit[]>) : []))
-			.then((d) => {
-				reviewIndex = d
-				return d
-			})
-			.catch(() => [])
-	}
-	return reviewPromise
-}
-function filterReviews(idx: ReviewHit[], q: string): ReviewHit[] {
-	const n = q.trim().toLowerCase()
-	if (!n)
-		return []
-	return idx.filter(r =>
-		r.album.toLowerCase().includes(n) ||
-		r.artist.toLowerCase().includes(n) ||
-		r.genres.some(g => g.toLowerCase().includes(n)) ||
-		r.excerpt.toLowerCase().includes(n) ||
-		r.body.toLowerCase().includes(n),
-	)
-}
 
 function getQuery(): string {
 	if (typeof window === 'undefined')

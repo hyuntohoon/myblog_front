@@ -73,13 +73,13 @@ const recordLabel = post.musicReview?.label ?? null
 	type="article"
   >
     <meta name="twitter:label1" content="Author" />
-    <meta name="twitter:data1" data-pagefind-meta="author" content={SITE.defaultAuthor} />
-    <meta name="article:published_time" data-pagefind-meta="published_time" content={isoDateFormat(post.date)} />
-    <meta name="article:modified_time" data-pagefind-meta="modified_time" content={isoDateFormat(post.lastUpdated)} />
+    <meta name="twitter:data1" content={SITE.defaultAuthor} />
+    <meta name="article:published_time" content={isoDateFormat(post.date)} />
+    <meta name="article:modified_time" content={isoDateFormat(post.lastUpdated)} />
     <meta name="article:section" content={post.category} />
   </Seo>
 
-  <SkipNavContent searchIndex={post.searchIndex}>
+  <SkipNavContent>
     {!isReview && <ReviewHero post={post} />}
 
     {isReview && (

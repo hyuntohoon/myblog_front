@@ -6,7 +6,11 @@ import Header from '@components/header.astro'
 import Footer from '@components/footer.astro'
 import ThemeProvider from '@components/theme-provider.astro'
 
-import '../styles/global.css';
+import '../styles/global.css'
+// The header search island (FEAT-global-search) renders site-wide; its dropdown
+// styles live in search.css. Importing here (not just on /search) styles the
+// header field + dropdown on every page.
+import '../styles/search.css';
 ---
 
 <!doctype html>

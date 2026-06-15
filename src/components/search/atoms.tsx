@@ -1,9 +1,9 @@
 // FEAT-global-search — shared search atoms, ported from the 전역 검색 handoff
 // (gsearch-atoms.jsx). Surface-agnostic visuals reused by the global /search
-// page + header dropdown, and (later) the writer palette + bucket add-modal.
+// page + header dropdown + writer palette + bucket add-modal.
 // The design's demo cover_url:{hue} duotone branch is dropped — real covers are
 // image URLs (or null → letter tile). CSS lives in src/styles/search.css.
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 /**
  * Initials for the letter-tile fallback: a single Korean syllable, else the
@@ -77,4 +77,75 @@ export function GStars({ rating, size = 14 }: { rating: number | null, size?: nu
 			<span className="stars-fg" aria-hidden="true">★★★★★</span>
 		</span>
 	)
+}
+
+/**
+ * The action a result row performs — the per-surface divergence:
+ *  navigate (global search → an `<a>`), button (writer select / bucket add → a
+ *  `<button>`), or static (a non-navigable `<div>`, e.g. global album/track rows
+ *  with no destination, or a spotify candidate on the public surface).
+ */
+export type RowAction =
+	| { type: 'navigate', href: string } |
+	{ type: 'button', onClick: () => void, disabled?: boolean } |
+	{ type: 'static' }
+
+/**
+ * One search result row, shared by the header dropdown + writer + bucket. The
+ *  visual (cover + title + sub + trailing affordance + active/spotify state) is
+ *  fixed; the wrapper element and click behavior come from `action`.
+ */
+export function ResultRow({
+	name,
+	src,
+	shape = 'square',
+	title,
+	sub,
+	source = 'db',
+	active = false,
+	onHover,
+	idAttr,
+	trailing,
+	action,
+	extraClass,
+}: {
+	name: string
+	src?: string | null
+	shape?: 'square' | 'circle'
+	title: string
+	sub: string
+	source?: 'db' | 'spotify'
+	active?: boolean
+	onHover?: () => void
+	idAttr?: number
+	trailing?: ReactNode
+	action: RowAction
+	/**
+	 * Surface-specific state class, e.g. 'is-current' (writer subject) or
+	 *  'is-present' (already in bucket). Merged onto the row element.
+	 */
+	extraClass?: string
+}) {
+	const inner = (
+		<>
+			<GCover name={name} src={src} size={38} shape={shape} />
+			<span className="gs-row-main">
+				<span className="gs-row-title serif">{title}</span>
+				<span className="gs-row-sub mono">{sub}</span>
+			</span>
+			{trailing}
+		</>
+	)
+	const cls = `gs-row${active ? ' is-active' : ''}${source === 'spotify' ? ' is-spotify' : ''}${extraClass ? ` ${extraClass}` : ''}`
+	const shared = { className: cls, 'data-gsidx': idAttr, onMouseEnter: onHover }
+	if (action.type === 'navigate')
+		return <a href={action.href} {...shared}>{inner}</a>
+	if (action.type === 'button') {
+		return (
+			<button type="button" onClick={action.onClick} disabled={action.disabled} {...shared}>
+				{inner}
+			</button>
+		)
+	}
+	return <div role="option" aria-disabled="true" {...shared}>{inner}</div>
 }

@@ -103,19 +103,14 @@ jobs:
           aws s3 sync dist/_astro/ s3://${{ secrets.S3_BUCKET_WEB }}/_astro/ \
             --cache-control "public, max-age=31536000, immutable"
 
-      # 2) Pagefind search index — short cache
-      - name: Upload pagefind/** (short cache)
-        run: |
-          aws s3 sync dist/pagefind/ s3://${{ secrets.S3_BUCKET_WEB }}/pagefind/ \
-            --cache-control "public, max-age=3600"
-
-      # 3) HTML, XML, JSON — always revalidate
+      # 2) HTML, XML, JSON — always revalidate. The unqualified --delete also
+      #    purges the stale /pagefind/* objects (search is now the in-app global
+      #    search; FEAT-global-search removed Pagefind).
       - name: Upload HTML/XML/JSON (no-cache)
         run: |
           aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_WEB }} \
             --delete \
             --exclude "_astro/*" \
-            --exclude "pagefind/*" \
             --cache-control "no-cache"
 
       # 4) CloudFront cache invalidation
