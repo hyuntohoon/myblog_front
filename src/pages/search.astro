@@ -1,0 +1,20 @@
+---
+// FEAT-global-search — /search results page. Single static shell (CloudFront-Free
+// strips ?q from the cache key) hosting the SearchPage island, which reads the
+// browser's ?q at runtime and drives the unified music search + the build-time
+// 평론 index. No getStaticPaths — one literal /search route.
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import SearchPage from '@components/search/SearchPage'
+import Seo from '@components/seo.astro'
+import Layout from '@layouts/layout.astro'
+import '../styles/search.css'
+---
+
+<Layout>
+	<Seo slot="seo" forceTitle="검색" description="아티스트 · 앨범 · 트랙 · 평론을 한 곳에서 검색" noIndex={true} />
+	<SkipNavContent>
+		<div class="gs-main">
+			<SearchPage client:only="react" />
+		</div>
+	</SkipNavContent>
+</Layout>
