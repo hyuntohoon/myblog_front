@@ -4,6 +4,7 @@
  * musicReview 없으면 일반 글 헤더로 렌더링
  */
 import type { CollectionEntry } from 'astro:content'
+import { getArtistNameMap, resolveArtistLinks } from '../lib/artistNames'
 import PartialStars from './partial-stars.astro'
 
 export interface Props {
@@ -28,6 +29,10 @@ const ratingForStars = rawRating != null ?
 const hasReview = !!musicReview || ratingForStars != null
 const cover = albumCover || image || musicReview?.cover?.src
 const artist = musicReview?.artists?.join(', ')
+// FEAT-artist-page link-in: link the byline to each subject artist's hub. Uses the
+// post's canonical artistIds + authoritative catalog names; null (→ plain byline)
+// when any id isn't a catalog artist or the build can't reach the API.
+const artistLinks = resolveArtistLinks(post.artistIds, await getArtistNameMap())
 const albumTitle = musicReview?.title
 const releaseDate = musicReview?.releaseDate ?
   new Date(musicReview.releaseDate).getFullYear() :
@@ -78,8 +83,16 @@ day: 'numeric',
         <span class="mono-label rh-type" style="color: var(--color-faded);">Album Review</span>
       </div>
 
-      <!-- Artist -->
-      {artist && <p class="rh-artist">{artist}</p>}
+      <!-- Artist (links to each subject artist's hub when resolvable) -->
+      {artistLinks ?
+(
+        <p class="rh-artist">
+          {artistLinks.map((a, i) => (
+            <>{i > 0 ? ', ' : ''}<a class="rh-artist-link" href={`/artist/${a.id}/`}>{a.name}</a></>
+          ))}
+        </p>
+      ) :
+      (artist && <p class="rh-artist">{artist}</p>)}
 
       <!-- Album title -->
       <h1 class="rh-title"><em>{albumTitle ?? title}</em></h1>
@@ -203,6 +216,16 @@ day: 'numeric',
     letter-spacing: 0.15em;
     color: var(--color-text);
     margin: 0;
+  }
+  .rh-artist-link {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: color 0.14s, border-color 0.14s;
+  }
+  .rh-artist-link:hover {
+    color: var(--color-accent);
+    border-bottom-color: currentColor;
   }
   .rh-title {
     margin: 0;

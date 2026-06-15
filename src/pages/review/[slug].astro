@@ -11,6 +11,7 @@ import Aside from '@components/aside.astro'
 import Playground from '@components/playground.astro'
 import ReviewHero from '@components/review-hero.astro'
 import PartialStars from '@components/partial-stars.astro'
+import { getArtistNameMap, resolveArtistLinks } from '@lib/artistNames'
 
 export const prerender = true
 
@@ -52,6 +53,10 @@ const releaseYear = post.musicReview?.releaseDate ?
   new Date(post.musicReview.releaseDate).getFullYear() :
   null
 const artistText = post.musicReview?.artists?.join(', ') ?? null
+// FEAT-artist-page link-in: link the byline to each subject artist's hub. Resolved
+// from the post's canonical artistIds + authoritative catalog names; null (→ plain
+// byline) when an id isn't a catalog artist or the build can't reach the API.
+const artistLinks = resolveArtistLinks(post.artistIds, await getArtistNameMap())
 const albumTitle = post.musicReview?.title ?? null
 const cover = post.albumCover || post.image || post.musicReview?.cover?.src
 const genres = post.musicReview?.genres ?? []
@@ -130,7 +135,15 @@ const recordLabel = post.musicReview?.label ?? null
                   {releaseYear && <span class="mono-label">{releaseYear}</span>}
                 </div>
               )}
-              {artistText && <p class="lfq-hero-artist">{artistText}</p>}
+              {artistLinks ?
+                (
+                  <p class="lfq-hero-artist">
+                    {artistLinks.map((a, i) => (
+                      <>{i > 0 ? ', ' : ''}<a class="lfq-hero-artist-link" href={`/artist/${a.id}/`}>{a.name}</a></>
+                    ))}
+                  </p>
+                ) :
+                (artistText && <p class="lfq-hero-artist">{artistText}</p>)}
               {albumTitle && <h2 class="lfq-hero-album"><em>{albumTitle}</em></h2>}
               {genres.length > 0 && (
                 <p class="lfq-hero-genre">{genres.join(' · ')}</p>
@@ -475,6 +488,16 @@ const recordLabel = post.musicReview?.label ?? null
     letter-spacing: 0.15em;
     color: var(--color-text);
     margin: 0;
+  }
+  .lfq-hero-artist-link {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: color 0.14s, border-color 0.14s;
+  }
+  .lfq-hero-artist-link:hover {
+    color: var(--color-accent);
+    border-bottom-color: currentColor;
   }
   .lfq-hero-album {
     margin: 0;
