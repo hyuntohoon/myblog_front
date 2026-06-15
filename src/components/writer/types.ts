@@ -77,6 +77,9 @@ export interface DraftPersist {
   // STAB-5 Step 4: selected review-tag labels (cross-cutting M:N). Optional so
   // older drafts in localStorage deserialize cleanly (undefined → no tags).
   tags?: string[]
+  // FEAT-genre-subgenres Step 2: selected sub-genre ids (post_genres). Optional so
+  // older drafts in localStorage deserialize cleanly (undefined → no genres).
+  genreIds?: string[]
   lastSaved: string
   // FEAT-writer-lowfreq-redesign Step 6: editor-set BEST NEW MUSIC flag.
   // Optional so older drafts in localStorage deserialize cleanly (undefined → off).

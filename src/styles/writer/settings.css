@@ -104,6 +104,85 @@
   font-size: 10px;
   color: var(--ink-faint);
 }
+/* FEAT-genre-subgenres Step 2: sub-genre picker (searchable, parent-grouped). */
+.gp-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.gp-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 9px;
+  background: var(--ink);
+  color: var(--bg);
+  font-family: var(--sans);
+  font-size: 11.5px;
+  border-radius: 999px;
+}
+.gp-pill button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 10px;
+  line-height: 1;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+.gp-pill button:hover { opacity: 1; background: rgba(255, 255, 255, 0.16); }
+.gp-search { margin-top: 2px; }
+.gp-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--rule-soft);
+  background: var(--paper);
+}
+.gp-group { border-bottom: 1px solid var(--rule-soft); }
+.gp-group:last-child { border-bottom: none; }
+.gp-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.gp-row:hover { background: var(--bg); color: var(--ink); }
+.gp-root {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.gp-child { padding-left: 22px; }
+.gp-row.on { color: var(--ink); font-weight: 500; }
+.gp-row.on .gp-row-label::before {
+  content: '✓ ';
+  color: var(--accent);
+}
+.gp-row-label { flex: 1; }
+.gp-row-crumb {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+}
+.gp-empty {
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  text-align: center;
+}
 .tags-wrap {
   display: flex;
   flex-wrap: wrap;

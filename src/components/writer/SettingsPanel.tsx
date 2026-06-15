@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
 import { useDismissable } from '../../lib/useDismissable'
+import GenrePicker from './GenrePicker'
 import type { AlbumDetail } from './types'
 
 interface Props {
@@ -9,11 +10,13 @@ interface Props {
   onClose: () => void
   section: string
   tags: string[]
+  genreIds: string[]
   publishDate: string
   subject: AlbumDetail | null
   body: string
   onSectionChange: (v: string) => void
   onToggleTag: (label: string) => void
+  onToggleGenre: (id: string) => void
   onPublishDateChange: (v: string) => void
   onDraftSave: () => void
   onPublish: () => void
@@ -26,11 +29,13 @@ export default function SettingsPanel({
   onClose,
   section,
   tags,
+  genreIds,
   publishDate,
   subject,
   body,
   onSectionChange,
   onToggleTag,
+  onToggleGenre,
   onPublishDateChange,
   onDraftSave,
   onPublish,
@@ -75,6 +80,8 @@ export default function SettingsPanel({
               })}
             </div>
           </div>
+
+          <GenrePicker value={genreIds} onToggle={onToggleGenre} />
 
           <div className="set-block">
             <label className="set-l">발행일</label>
