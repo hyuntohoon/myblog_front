@@ -1,0 +1,71 @@
+---
+// FEAT-artist-page — public artist hub /artist/[id] ("한 아티스트를 보는 비평적
+// 렌즈"). Static site: getStaticPaths prebuilds a thin shell per catalog artist;
+// the ArtistHub island fetches hero/albums/top-tracks at runtime, and the
+// "평론한 앨범" overlay is composed at build time from the blog content collection.
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import ArtistHub from '@components/artist/ArtistHub'
+import Seo from '@components/seo.astro'
+import Layout from '@layouts/layout.astro'
+import { buildArtistReviews } from '@lib/artistReviews'
+import { getCollection } from 'astro:content'
+import '../../styles/artist.css'
+
+interface ArtistIdItem { id: string, name: string }
+
+export async function getStaticPaths() {
+	const entries = await getCollection('blog')
+
+	// Always buildable with no network: every artist linked from a review.
+	const byId = new Map<string, string>()
+	for (const e of entries) {
+		const names = e.data.musicReview?.artists ?? []
+		const ids = e.data.artistIds ?? []
+		ids.forEach((id, i) => {
+			if (!byId.has(id))
+				byId.set(id, names[i] ?? names[0] ?? '')
+		})
+	}
+
+	// Full catalog-artist list from the music API (build time). On any failure
+	// (local/offline build, API blip) fall back to the review-linked set above so
+	// the build never hard-fails — those artists still get a hub; the rest are
+	// added when the next build can reach the API.
+	try {
+		const base = import.meta.env.PUBLIC_API_URL
+		const res = await fetch(`${base}/api/music/artists/ids`)
+		if (res.ok) {
+			const list = (await res.json()) as ArtistIdItem[]
+			for (const a of list)
+				byId.set(a.id, a.name)
+		}
+	}
+	catch {
+		// offline build → review-linked artists only
+	}
+
+	return [...byId].map(([id, name]) => ({ params: { id }, props: { name } }))
+}
+
+const id = Astro.params.id as string
+const { name } = Astro.props as { name: string }
+
+const entries = await getCollection('blog')
+const reviews = buildArtistReviews(entries, id)
+const reviewedAlbumIds = reviews
+	.map(r => r.albumId)
+	.filter((x): x is string => x != null)
+---
+
+<Layout>
+	<Seo slot="seo" forceTitle={name || '아티스트'} description={`${name || '아티스트'} — 평론과 디스코그래피`} />
+	<SkipNavContent>
+		<ArtistHub
+			client:only="react"
+			artistId={id}
+			name={name}
+			reviews={reviews}
+			reviewedAlbumIds={reviewedAlbumIds}
+		/>
+	</SkipNavContent>
+</Layout>
