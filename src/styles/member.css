@@ -490,42 +490,8 @@
 }
 .qb-modal-more:hover { background: var(--color-paper); border-color: var(--color-text); }
 .qb-modal-more:disabled { opacity: 0.5; cursor: not-allowed; }
-.qb-hit {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s, border-color 0.1s;
-}
-.qb-hit:hover { background: var(--color-paper); border-color: var(--color-border-soft); }
-.qb-hit:disabled { opacity: 0.6; cursor: default; }
-.qb-hit-cover {
-  flex: 0 0 44px; width: 44px; height: 44px;
-  position: relative; overflow: hidden;
-  border: 1px solid var(--color-border-soft); border-radius: 3px;
-  background: var(--color-paper);
-}
-.qb-hit-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.qb-hit-cover-ph { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-mono); font-size: 13px; color: var(--color-faded); }
-.qb-hit-text { flex: 1; min-width: 0; }
-.qb-hit-title { font-family: var(--font-serif); font-size: 15px; color: var(--color-text); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qb-hit-sub { font-family: var(--font-sans); font-size: 12px; color: var(--color-subtle); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qb-hit-src {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  color: var(--color-faded);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 999px;
-  padding: 2px 7px;
-  flex-shrink: 0;
-}
-.qb-hit-src.spotify { color: var(--color-spotify); border-color: color-mix(in srgb, var(--color-spotify) 45%, transparent); }
+/* The album-pick rows now use the shared .gs-row (search/atoms ResultRow) —
+   FEAT-global-search ④. The old .qb-hit* styles were removed with the re-skin. */
 
 @media (prefers-reduced-motion: reduce) {
   .qb-modal, .qb-modal-scrim { animation: none; }
