@@ -490,6 +490,15 @@
 }
 .qb-modal-more:hover { background: var(--color-paper); border-color: var(--color-text); }
 .qb-modal-more:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* "앨범 담기" modal (AddAlbumModal) — a focused search overlay, larger than the
+   shared confirm dialogs that also use .qb-modal. Scoped via --add so the small
+   delete/publish confirms (own inline max-width) are unaffected. Background page
+   scroll is locked in JS; only .qb-modal-results scrolls (items 5/6). */
+.qb-modal-scrim--add { padding-top: clamp(var(--space-4), 4vh, 48px); }
+.qb-modal--add { width: min(760px, 94vw); max-height: 86vh; }
+.qb-modal--add .qb-modal-search-input { font-size: 16px; }
+.qb-modal--add .qb-modal-results { flex: 1; min-height: 360px; }
 /* The album-pick rows now use the shared .gs-row (search/atoms ResultRow) —
    FEAT-global-search ④. The old .qb-hit* styles were removed with the re-skin. */
 

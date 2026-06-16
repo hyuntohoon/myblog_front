@@ -70,6 +70,10 @@ const SECTION_ORDER: { kind: BucketKey, label: string }[] = [
   { kind: 'track', label: '트랙' },
 ]
 
+// In the "전체" view, cap each kind so the palette stays compact + scannable
+// (fewer, better) — a single-kind filter still shows the full page + "더 보기".
+const ALL_VIEW_CAP = 5
+
 type SourceMode = 'db' | 'spotify'
 
 // ⌘K command palette. Search engine (DB unified + Spotify candidates + paging +
@@ -80,7 +84,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   // Shared search engine — DB unified + Spotify candidates, per-bucket paging,
   // CP-1/CP-4 race guards, Spotify cooldown. recallTypes = all 3 (the writer
   // shows every bucket; this also drives artist→album expansion for free).
-  const search = useMusicSearch({ recallTypes: ['album', 'artist', 'track'], pageLimit: 20 })
+  const search = useMusicSearch({ recallTypes: ['album', 'artist', 'track'], pageLimit: 8 })
   const [filter, setFilter] = useState<FilterType>('all')
   // Pick-path errors (album-lookup failures) — kept apart from the hook's search
   // status so a lookup error isn't clobbered by a stale search message.
@@ -142,12 +146,29 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     [results, filter],
   )
 
+  // The actually-rendered rows: in "전체" view each kind is capped to ALL_VIEW_CAP
+  // (keyboard nav + count + render all read from this same list so they agree).
+  const displayResults = useMemo(() => {
+    if (filter !== 'all')
+      return visibleResults
+    return SECTION_ORDER.flatMap(({ kind }) => visibleResults.filter(r => r.kind === kind).slice(0, ALL_VIEW_CAP))
+  }, [visibleResults, filter])
+
   // CP-3: reset the keyboard-active row whenever the visible result set changes
   // (new search, filter toggle, load-more) so the highlight never points at a
   // stale index.
   useEffect(() => {
     setActiveIndex(-1)
-  }, [visibleResults])
+  }, [displayResults])
+
+  // Auto-search: debounce the DB search as the query changes (same UX as the
+  // header search). Spotify stays manual — it enqueues SQS + has a 3 s cooldown.
+  useEffect(() => {
+    if (search.source !== 'db' || !search.query.trim())
+      return
+    const id = setTimeout(() => void search.runDbSearch(), 200)
+    return () => clearTimeout(id)
+  }, [search.query, search.source, search.runDbSearch])
 
   // CP-3: keep the active row scrolled into view as the user arrows through.
   useEffect(() => {
@@ -165,19 +186,19 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   }
 
   function onSearchKeyDown(e: KeyboardEvent) {
-    // CP-3: ↓/↑ move the active row (clamped to the visible range).
+    // CP-3: ↓/↑ move the active row (clamped to the rendered range).
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      if (visibleResults.length === 0)
+      if (displayResults.length === 0)
         return
-      setActiveIndex(prev => prev >= visibleResults.length - 1 ? 0 : prev + 1)
+      setActiveIndex(prev => prev >= displayResults.length - 1 ? 0 : prev + 1)
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
-      if (visibleResults.length === 0)
+      if (displayResults.length === 0)
         return
-      setActiveIndex(prev => prev <= 0 ? visibleResults.length - 1 : prev - 1)
+      setActiveIndex(prev => prev <= 0 ? displayResults.length - 1 : prev - 1)
       return
     }
     // Ignore Enter while an IME composition is active (e.g. confirming a Hangul
@@ -188,7 +209,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
       e.preventDefault()
       // CP-3: if a row is active, Enter picks it (artist rows drill in, same as
       // a click). Otherwise fall back to (re-)running the search.
-      const active = activeIndex >= 0 ? visibleResults[activeIndex] : undefined
+      const active = activeIndex >= 0 ? displayResults[activeIndex] : undefined
       if (active)
         void onPickResult(active)
       else
@@ -484,18 +505,20 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                   </div>
                 )}
                 {SECTION_ORDER.map(({ kind, label }) => {
-                  const items = visibleResults.filter(r => r.kind === kind)
-                  if (items.length === 0)
+                  const all = visibleResults.filter(r => r.kind === kind)
+                  if (all.length === 0)
                     return null
+                  const items = displayResults.filter(r => r.kind === kind)
+                  const moreInAll = filter === 'all' && all.length > items.length
                   const showLoadMore = filter === kind && !search.loading && search.hasMore[kind] > 0
                   return (
                     <section key={kind} className="wr-palette-section">
                       <div className="wr-palette-seclabel">
                         <span className="wr-seclabel">{label}</span>
-                        <span className="mono">{items.length}</span>
+                        <span className="mono">{all.length}</span>
                       </div>
                       {items.map((r) => {
-                        const flatIndex = visibleResults.indexOf(r)
+                        const flatIndex = displayResults.indexOf(r)
                         const isCurrent = r.kind === 'album' && currentSubjectId === r.id
                         const isSpotify = r.source === 'spotify'
                         const trailing = isCurrent ?
@@ -523,6 +546,15 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                           />
                         )
                       })}
+                      {moreInAll && (
+                        <button
+	type="button"
+	className="wr-palette-more mono"
+	onClick={() => setFilter(kind)}
+                        >
+                          {`${label} ${all.length}건 모두 보기 →`}
+                        </button>
+                      )}
                       {showLoadMore && (
                         <button
 	type="button"
