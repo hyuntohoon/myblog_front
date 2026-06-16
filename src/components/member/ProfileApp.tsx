@@ -8,7 +8,6 @@ import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
 import { AlbumDetail } from './AlbumDetail'
 import { BucketBoard } from './BucketBoard'
-import { LibraryTab } from './LibraryTab'
 import { OverviewDash } from './OverviewDash'
 import { ReviewsTab } from './ReviewsTab'
 import { SpotifyIntegrationTab } from './SpotifyIntegrationTab'
@@ -19,7 +18,6 @@ const TABS = [
   { id: 'overview', label: '개요' },
   { id: 'reviews', label: '평론' },
   { id: 'bucket', label: '평론 버킷' },
-  { id: 'library', label: '라이브러리' },
   { id: 'stats', label: '통계' },
   { id: 'integration', label: '연동' },
 ]
@@ -289,7 +287,6 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       {tab === 'overview' && <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} chartStyle={chartStyle} onOpen={openDetail} goBucket={() => setTab('bucket')} reviews={reviews} />}
       {tab === 'reviews' && <ReviewsTab reviews={reviews} onOpen={openDetail} />}
       {tab === 'bucket' && <BucketBoard onOpen={openDetail} reviews={reviews} />}
-      {tab === 'library' && <LibraryTab onOpen={openDetail} reviews={reviews} />}
       {tab === 'stats' && <StatsTab chartStyle={chartStyle} setChartStyle={setChartStyle} />}
       {tab === 'integration' && <SpotifyIntegrationTab />}
     </div>

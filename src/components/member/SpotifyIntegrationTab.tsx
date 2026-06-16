@@ -55,7 +55,7 @@ function relTime(iso: string | null): string | null {
 function Powers() {
   return (
     <ul className="lf-sans" style={{ margin: '4px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {['라이브러리 · 최근 들은 앨범', '개요 · 지금 재생 중'].map(p => (
+      {['개요 · 최근 들은 앨범', '개요 · 지금 재생 중'].map(p => (
         <li key={p} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13.5, color: 'var(--color-subtle)' }}>
           <span className="lf-mono" style={{ color: 'var(--color-accent)' }}>→</span>
           {p}
