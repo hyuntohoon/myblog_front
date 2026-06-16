@@ -581,7 +581,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 {' '}
 닫기
                 </span>
-                <span className="wr-palette-foot-src">{search.source === 'spotify' ? 'Spotify 카탈로그' : 'Lowfreq DB'}</span>
+                <span className="wr-palette-foot-src">{search.source === 'spotify' ? 'Spotify 카탈로그' : 'buckit DB'}</span>
               </div>
             </>
           )}
