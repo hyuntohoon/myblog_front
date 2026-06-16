@@ -1,4 +1,4 @@
-// Member dashboard — 평론 버킷 board ("크레이트" gallery, nested, API-backed).
+// Member dashboard — 평론 버킷 board (nested, API-backed).
 //
 // Crate-gallery redesign (FEAT-crate-redesign): each bucket is a distinct card
 // with a colored left spine, status dot + label, and a wrap-grid of large album
@@ -1883,7 +1883,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   return (
     <div>
       <SectionTitle
-	kicker={tree == null ? '불러오는 중…' : `${normalTree.length} 버킷 · 크레이트`}
+	kicker={tree == null ? '불러오는 중…' : `${normalTree.length}개 버킷`}
 	title="평론 버킷"
 	right={(
           <div style={{ display: 'flex', gap: 8 }}>
