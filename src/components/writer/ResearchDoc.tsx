@@ -33,6 +33,9 @@ export default function ResearchDoc({ albumId, subject, onQuote }: Props) {
 	const [action, setAction] = useState<null | 'refine' | 'restart'>(null)
 	const [instr, setInstr] = useState('')
 	const [activeSec, setActiveSec] = useState<string | null>(null)
+	// Collapsed section ids (open by default — the doc pane is for reading; collapse
+	// is an affordance for the long info-dense note).
+	const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
 	const rootRef = useRef<HTMLDivElement>(null)
 
 	const md = note?.result_md ?? null
@@ -40,9 +43,26 @@ export default function ResearchDoc({ albumId, subject, onQuote }: Props) {
 	const navSections = sections.filter(s => s.title != null)
 	const busy = loading
 
+	const toggleSec = (id: string) => setCollapsed((prev) => {
+		const next = new Set(prev)
+		if (next.has(id))
+			next.delete(id)
+		else
+			next.add(id)
+		return next
+	})
+
 	const jumpTo = (id: string) => {
 		setActiveSec(id)
-		rootRef.current?.querySelector(`[data-sec="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+		// expand the target if collapsed, then scroll once it's laid out
+		setCollapsed((prev) => {
+			if (!prev.has(id))
+				return prev
+			const next = new Set(prev)
+			next.delete(id)
+			return next
+		})
+		requestAnimationFrame(() => rootRef.current?.querySelector(`[data-sec="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 	}
 
 	// ── first paint, before the GET resolves ──
@@ -221,11 +241,33 @@ export default function ResearchDoc({ albumId, subject, onQuote }: Props) {
 			</div>
 
 			{md ?
-				sections.map(s => (
-					<div key={s.id} data-sec={s.id}>
-						<div className="rsh-prose rsh-doc">{renderMarkdown(s.md, { onQuote })}</div>
-					</div>
-				)) :
+				sections.map((s) => {
+					// preamble (no `## ` heading) — render plainly, no collapse header
+					if (s.title == null) {
+						return (
+							<div key={s.id} data-sec={s.id}>
+								<div className="rsh-prose rsh-doc">{renderMarkdown(s.md, { onQuote })}</div>
+							</div>
+						)
+					}
+					const open = !collapsed.has(s.id)
+					// body = section md minus its own "## title" line (rendered by the header)
+					const body = s.md.replace(/^[^\n]*\n?/, '')
+					return (
+						<section key={s.id} data-sec={s.id} className="rsh-sec">
+							<button
+								type="button"
+								className={`rsh-sec-head${open ? ' is-open' : ''}`}
+								aria-expanded={open}
+								onClick={() => toggleSec(s.id)}
+							>
+								<span className="rsh-sec-chev" aria-hidden="true">▸</span>
+								<span className="rsh-sec-title">{s.title}</span>
+							</button>
+							{open && <div className="rsh-prose rsh-doc rsh-sec-body">{renderMarkdown(body, { onQuote })}</div>}
+						</section>
+					)
+				}) :
 				<p className="rsh-caption">{active ? '결과가 생성되면 여기에 표시됩니다.' : '내용이 없습니다.'}</p>}
 		</div>
 	)

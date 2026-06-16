@@ -122,6 +122,28 @@
 }
 .rsh-h3 { font-size: 15px; }
 .rsh-h4 { font-size: 13.5px; }
+
+/* Inline status chips ([확인]/[미확인]/추정/…) — reuse the note-status color
+   vocabulary (research.ts researchStatusColor): confirmed = green, unconfirmed/
+   inferred = ochre warn, unknown = faded. Confirmed-vs-not is scannable at a
+   glance instead of inert bracketed text. */
+.rsh-mark {
+	display: inline-block;
+	font-family: var(--font-mono);
+	font-size: 0.72em;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	line-height: 1.35;
+	padding: 0 6px;
+	border-radius: 3px;
+	vertical-align: 0.08em;
+	white-space: nowrap;
+	border: 1px solid currentColor;
+}
+.rsh-mark--ok { color: oklch(0.52 0.10 155); background: color-mix(in oklab, oklch(0.58 0.10 155) 14%, transparent); }
+.rsh-mark--warn { color: var(--color-warn); background: color-mix(in srgb, var(--color-warn) 13%, transparent); }
+.rsh-mark--muted { color: var(--color-faded); background: transparent; }
+
 .rsh-ul, .rsh-ol { margin: 0 0 0.9em; padding-left: 1.25em; }
 .rsh-ul li, .rsh-ol li { margin: 0.25em 0; }
 .rsh-ul { list-style: none; padding-left: 1em; }

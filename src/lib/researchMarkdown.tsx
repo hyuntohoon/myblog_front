@@ -17,8 +17,14 @@ import type { ReactNode } from 'react'
 // The two branches are disjoint (non-paren char | a parenthesized group), so the
 // '+' can't backtrack super-linearly.
 const URL_FRAG = '(?:[^()\\s]|\\([^()\\s]*\\))+'
-const INLINE = new RegExp(`(\\*\\*[^*]+\\*\\*)|(\`[^\`]+\`)|(\\[[^\\]]+\\]\\(${URL_FRAG}\\))|(\\*[^*]+\\*)|(_[^_]+_)`, 'g')
+// Status markers the research prompt emits inline, e.g. "[확인]" / "[미확인]".
+// They are bracketed but NOT links (no "(url)" follows), so the link alternative
+// (listed first) ignores them and they render as status chips instead of inert
+// bracket text — the single biggest scannability win for the note.
+const STATUS_WORDS = '확인|미확인|부분\\s*확인|검색\\s*결과\\s*경유|추정|불명|미상'
+const INLINE = new RegExp(`(\\*\\*[^*]+\\*\\*)|(\`[^\`]+\`)|(\\[[^\\]]+\\]\\(${URL_FRAG}\\))|(\\[(?:${STATUS_WORDS})\\])|(\\*[^*]+\\*)|(_[^_]+_)`, 'g')
 const LINK = new RegExp(`^\\[([^\\]]+)\\]\\((${URL_FRAG})\\)$`)
+const STATUS_RE = new RegExp(`^\\[(${STATUS_WORDS})\\]$`)
 // Scheme allowlist — the note is AI-generated from web research, so a crafted
 // citation could carry a `javascript:`/`data:` URL that would XSS in the
 // (authed) writer's session. Only http(s)/mailto/relative destinations render
@@ -45,11 +51,19 @@ function inline(text: string, keyBase: string): ReactNode[] {
 			out.push(<code key={key} className="rsh-code">{match.slice(1, -1)}</code>)
 		}
 		else if (match.startsWith('[')) {
-			const lm = LINK.exec(match)
-			if (lm && SAFE_URL.test(lm[2]))
-				out.push(<a key={key} href={lm[2]} target="_blank" rel="noopener noreferrer" className="rsh-link">{lm[1]}</a>)
-			else
-				out.push(lm ? lm[1] : match)
+			const sm = STATUS_RE.exec(match)
+			if (sm) {
+				const w = sm[1]
+				const tone = w === '확인' ? 'ok' : /미상|불명/.test(w) ? 'muted' : 'warn'
+				out.push(<span key={key} className={`rsh-mark rsh-mark--${tone}`}>{w}</span>)
+			}
+			else {
+				const lm = LINK.exec(match)
+				if (lm && SAFE_URL.test(lm[2]))
+					out.push(<a key={key} href={lm[2]} target="_blank" rel="noopener noreferrer" className="rsh-link">{lm[1]}</a>)
+				else
+					out.push(lm ? lm[1] : match)
+			}
 		}
 		else {
 			out.push(<em key={key}>{match.slice(1, -1)}</em>)
@@ -94,6 +108,8 @@ export function stripInline(text: string): string {
 		.replace(/_([^_]+)_/g, '$1')
 		.replace(/`([^`]+)`/g, '$1')
 		.replace(new RegExp(`\\[([^\\]]+)\\]\\(${URL_FRAG}\\)`, 'g'), '$1')
+		// drop inline status markers ([확인]/[미확인]/…) so quoted prose stays clean
+		.replace(new RegExp(`\\s*\\[(?:${STATUS_WORDS})\\]`, 'g'), '')
 }
 
 export interface RenderOpts {
