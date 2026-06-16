@@ -242,15 +242,62 @@
 	padding-left: 16px;
 	border-left-color: var(--accent);
 }
+/* doc-mode section heading: serif, ABOVE body size — the structural anchor was
+   inverted (12.5px header < 16.5px body), which buried the section boundaries. */
 .rsh-prose.rsh-doc .rsh-h2 {
-	font-size: 12.5px;
+	font-family: var(--serif);
+	font-size: 18px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	text-transform: none;
+	color: var(--ink);
 	margin: 38px 0 15px;
-	padding-bottom: 9px;
-	border-bottom: 1px solid var(--rule);
+	padding-bottom: 10px;
+	border-bottom: 1.5px solid var(--rule);
 }
 .rsh-prose.rsh-doc > .rsh-h2:first-child,
 .rsh-prose.rsh-doc > .rsh-blk:first-child .rsh-h2 { margin-top: 0; }
 .rsh-prose.rsh-doc .rsh-h3 { font-size: 16px; }
+
+/* ── collapsible section (Namuwiki-style) — the clickable header replaces the
+   per-section "## " heading; sections default open. ── */
+.rsh-sec + .rsh-sec { margin-top: 4px; }
+.rsh-sec-head {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	width: 100%;
+	margin: 36px 0 0;
+	padding: 0 0 10px;
+	border: 0;
+	border-bottom: 1.5px solid var(--rule);
+	background: transparent;
+	cursor: pointer;
+	text-align: left;
+	color: var(--ink);
+	transition: color 0.14s, border-color 0.14s;
+}
+.rsh-sec:first-of-type .rsh-sec-head { margin-top: 6px; }
+.rsh-sec-head:hover { color: var(--accent); border-color: var(--accent); }
+.rsh-sec-chev {
+	flex: 0 0 auto;
+	font-size: 12px;
+	line-height: 1;
+	color: var(--ink-faint);
+	position: relative;
+	top: -1px;
+	transition: transform 0.16s ease;
+}
+.rsh-sec-head.is-open .rsh-sec-chev { transform: rotate(90deg); }
+.rsh-sec-head:hover .rsh-sec-chev { color: var(--accent); }
+.rsh-sec-title {
+	font-family: var(--serif);
+	font-size: 18px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.25;
+}
+.rsh-sec-body { margin-top: 14px; }
 
 /* ── hover quote button (❝ 인용) on quotable blocks ── */
 .rsh-blk { position: relative; }
