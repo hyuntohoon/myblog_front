@@ -271,10 +271,12 @@ export default function WriterApp() {
   const [splitPct, setSplitPct] = useState(() => {
     try {
       const v = Number.parseFloat(localStorage.getItem(SPLIT_KEY) ?? '')
-      return Number.isFinite(v) ? Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, v)) : 57
+      // Default 52 (editor 52% / research doc 48%) gives the dense research note
+      // a wider reading column; a persisted drag still wins.
+      return Number.isFinite(v) ? Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, v)) : 52
     }
     catch {
-      return 57
+      return 52
     }
   })
   const [splitDrag, setSplitDrag] = useState(false)
