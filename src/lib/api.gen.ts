@@ -1030,6 +1030,8 @@ export interface components {
         Backend_NowPlayingResponse: {
             /** Album */
             album?: string | null;
+            /** Album Cover Url */
+            album_cover_url?: string | null;
             /** Album Id */
             album_id?: string | null;
             /** Artist */

@@ -39,6 +39,26 @@ function SyncNote({ iso }: { iso?: string | null }) {
   return <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{`동기화 ${s}`}</span>
 }
 
+/**
+ * Fixed-size album cover (item 9): the real catalog art when a cover URL is
+ *  available, else the editorial letter tile. (ui's AlbumArt fills 100% width, so
+ *  it can't drive these fixed-size now-playing slots — hence a sized variant.)
+ */
+function NpCover({ url, label, size, radius = 4 }: { url?: string | null, label: string, size: number, radius?: number }) {
+  if (url) {
+    return (
+      <img
+	src={url}
+	alt={label}
+	loading="lazy"
+	decoding="async"
+	style={{ width: size, height: size, objectFit: 'cover', borderRadius: radius, display: 'block', flex: '0 0 auto', border: '1px solid var(--color-border)' }}
+      />
+    )
+  }
+  return <Cover label={label} size={size} radius={radius} />
+}
+
 /** Shared fetch — one snapshot, loading/error tracked. */
 function useNowPlaying() {
   const [np, setNp] = useState<NowPlayingData | null>(null)
@@ -117,7 +137,7 @@ function NowPlayingFull() {
     return <IdleBox iso={np?.updated_at} latest={latest} />
   return (
     <div className="lf-panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
-      <Cover label={np.album ?? np.track ?? '?'} size={88} radius={4} />
+      <NpCover url={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={88} radius={4} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <Equalizer playing h={12} />
@@ -154,7 +174,7 @@ function NowPlayingList() {
         live ?
           (
               <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
-                <Cover label={live.album ?? live.track ?? '?'} size={50} radius={3} />
+                <NpCover url={live.album_cover_url} label={live.album ?? live.track ?? '?'} size={50} radius={3} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="lf-kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
                     ● 재생 중
@@ -174,7 +194,7 @@ function NowPlayingList() {
         {recent != null && recent.length === 0 && <div className="lf-meta" style={{ padding: '4px 8px' }}>기록이 없습니다</div>}
         {(recent ?? []).slice(0, 6).map((it, i) => (
           <div key={it.album_id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
-            <Cover label={it.album?.title ?? '?'} size={32} radius={2} />
+            <NpCover url={it.album?.cover_url} label={it.album?.title ?? '?'} size={32} radius={2} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.album?.title}</div>
               <div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it.album?.artist_names ?? []).join(', ')}</div>
@@ -203,7 +223,7 @@ function NowPlayingBanner() {
   return (
     <div className="lf-panel" style={{ padding: 0, overflow: 'hidden', borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'var(--color-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, padding: 24 }}>
-        <Cover label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={116} radius={4} />
+        <NpCover url={live ? live.album_cover_url : (latest?.album?.cover_url ?? null)} label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={116} radius={4} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="lf-kicker" style={{ marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
