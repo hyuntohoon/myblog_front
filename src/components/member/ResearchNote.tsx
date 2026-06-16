@@ -10,6 +10,7 @@
 // default markdown + 재조사 split (보강 = refine / 처음부터 = restart-confirm) ·
 // failed → error + 다시 시도 (the prior note, if any, stays — refine never blanks).
 import { useState } from 'react'
+import NoteBody from '@components/research/NoteBody'
 import { renderMarkdown } from '@lib/researchMarkdown'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearch } from '@lib/research'
 import type { ResearchStatus } from '@lib/research'
@@ -37,16 +38,24 @@ function fmtDate(iso: string | null | undefined): string {
 
 interface Props {
 	albumId: string
-	/** 'panel' = full slide-over body; 'rail' = compact /write margin column. */
-	variant?: 'panel' | 'rail'
+	/**
+	 * 'panel' = collapsible slide-over body · 'rail' = compact /write margin column
+	 * · 'doc' = always-open structured reading view (the bucket reading modal): the
+	 * note renders via NoteBody (sections + pill nav + collapsible) instead of one
+	 * flat blob, and there is no collapse header (the modal owns the title/close).
+	 */
+	variant?: 'panel' | 'rail' | 'doc'
 	/** Lazy-load the note on mount. Default true (both live surfaces want it). */
 	auto?: boolean
 }
 
 export default function ResearchNote({ albumId, variant = 'panel', auto = true }: Props) {
 	const { note, status, loading, error, loaded, trigger, refine, restart, reload } = useResearch(albumId, { auto })
+	const docMode = variant === 'doc'
 	// Collapsed by default (RFC) — the note can be long; the gist is the badge.
+	// In doc mode the body is always open (the modal is a dedicated reading view).
 	const [open, setOpen] = useState(false)
+	const isOpen = docMode || open
 	const [action, setAction] = useState<null | 'refine' | 'restart'>(null)
 	const [instr, setInstr] = useState('')
 
@@ -92,18 +101,26 @@ export default function ResearchNote({ albumId, variant = 'panel', auto = true }
 	const active = status === 'queued' || status === 'running'
 	const refineInFlight = active && note.refine_count > 0 && !!md
 
+	const headInner = (
+		<span className="rsh-head-l">
+			<span className="rsh-kicker">리서치 노트</span>
+			<StatusBadge status={status} />
+			{note.refine_count > 0 && (
+				<span className="rsh-refcount">{`보강 ${note.refine_count}회`}</span>
+			)}
+		</span>
+	)
+
 	return (
 		<div className={`rsh rsh--${variant}`}>
-			<button type="button" className="rsh-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
-				<span className="rsh-head-l">
-					<span className="rsh-kicker">리서치 노트</span>
-					<StatusBadge status={status} />
-					{note.refine_count > 0 && (
-						<span className="rsh-refcount">{`보강 ${note.refine_count}회`}</span>
-					)}
-				</span>
-				<span className={`rsh-chevron${open ? ' is-open' : ''}`} aria-hidden="true">▾</span>
-			</button>
+			{docMode ?
+				<div className="rsh-head rsh-head--static">{headInner}</div> :
+				(
+					<button type="button" className="rsh-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+						{headInner}
+						<span className={`rsh-chevron${open ? ' is-open' : ''}`} aria-hidden="true">▾</span>
+					</button>
+				)}
 
 			{/* live caption — shown even while collapsed so progress is never hidden */}
 			{active && (
@@ -117,10 +134,12 @@ export default function ResearchNote({ albumId, variant = 'panel', auto = true }
 				</div>
 			)}
 
-			{open && (
+			{isOpen && (
 				<div className="rsh-body">
 					{md ?
-						<div className="rsh-prose">{renderMarkdown(md)}</div> :
+						(docMode ?
+							<NoteBody md={md} /> :
+							<div className="rsh-prose">{renderMarkdown(md)}</div>) :
 						<p className="rsh-caption">{active ? '결과가 생성되면 여기에 표시됩니다.' : '내용이 없습니다.'}</p>}
 
 					{(note.model || note.finished_at) && (

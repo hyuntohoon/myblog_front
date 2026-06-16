@@ -1369,10 +1369,21 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   const confirmModalRef = useRef<HTMLDivElement>(null)
   useDismissable(!!pendingBucketDelete, () => setPendingBucketDelete(null), confirmModalRef)
 
-  // FEAT-album-research-notes — the album whose research note slide-over is open.
+  // FEAT-album-research-notes — the album whose research note reading modal is open.
   const [researchTarget, setResearchTarget] = useState<{ albumId: string, title: string } | null>(null)
   const researchPanelRef = useRef<HTMLElement>(null)
   useDismissable(!!researchTarget, () => setResearchTarget(null), researchPanelRef)
+  // Lock background page scroll while the reading modal is open (only the modal
+  // body scrolls). useDismissable handles ESC + focus, not scroll.
+  useEffect(() => {
+    if (!researchTarget)
+      return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [researchTarget])
 
   // album_id → the member's own star rating (0–5). Feeds the rated-bucket chips
   // without any extra fetch (reviews are already server-built into props).
@@ -2036,13 +2047,19 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
       )}
 
       {researchTarget && (
-        <div className="lf-scrim" onClick={() => setResearchTarget(null)} role="presentation">
-          <aside ref={researchPanelRef} className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="리서치 노트">
-            <button type="button" className="lf-iconbtn" onClick={() => setResearchTarget(null)} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
-            <div className="lf-kicker" style={{ marginBottom: 6 }}>리서치 노트</div>
-            <h2 className="lf-serif" style={{ fontSize: 22, fontWeight: 500, lineHeight: 1.25, marginBottom: 18 }}>{researchTarget.title}</h2>
-            <ResearchNote albumId={researchTarget.albumId} variant="panel" />
-          </aside>
+        <div className="rsh-modal-scrim" onClick={() => setResearchTarget(null)} role="presentation">
+          <section ref={researchPanelRef} className="rsh-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="리서치 노트">
+            <header className="rsh-modal-head">
+              <div>
+                <p className="rsh-modal-kicker">리서치 노트</p>
+                <h2 className="rsh-modal-title">{researchTarget.title}</h2>
+              </div>
+              <button type="button" className="rsh-modal-close" onClick={() => setResearchTarget(null)} aria-label="닫기">✕</button>
+            </header>
+            <div className="rsh-modal-body">
+              <ResearchNote albumId={researchTarget.albumId} variant="doc" />
+            </div>
+          </section>
         </div>
       )}
     </div>

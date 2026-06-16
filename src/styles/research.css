@@ -370,3 +370,185 @@
 	z-index: 3;
 	accent-color: var(--color-accent);
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   Structured reading view (NoteBody) — shared by the /write split doc and the
+   /profile bucket reading modal so both render the note identically. Ported
+   from the writer reading view to --color-* (global) tokens; loaded on both
+   pages. The writer aliases (--ink etc.) equal these, so /write is unchanged.
+   ════════════════════════════════════════════════════════════════════ */
+.rsh-notebody [data-sec] { scroll-margin-top: 64px; }
+
+/* sticky section pill nav — wraps to extra rows instead of scrolling sideways */
+.rsh-nav {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+	padding: 12px 0 11px;
+	background: color-mix(in srgb, var(--color-bg) 88%, transparent);
+	backdrop-filter: blur(10px);
+	-webkit-backdrop-filter: blur(10px);
+}
+.rsh-nav button {
+	flex-shrink: 0;
+	border: 1px solid var(--color-border);
+	background: transparent;
+	cursor: pointer;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--color-subtle);
+	padding: 5px 12px;
+	border-radius: 999px;
+	transition: all 0.13s;
+	white-space: nowrap;
+}
+.rsh-nav button:hover { border-color: var(--color-text); color: var(--color-text); }
+.rsh-nav button.on { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
+
+/* document-scale note typography (.rsh-doc overrides the base .rsh-prose sizes) */
+.rsh-prose.rsh-doc .rsh-p { font-size: 16.5px; line-height: 1.84; margin: 0 0 14px; }
+.rsh-prose.rsh-doc .rsh-ul li,
+.rsh-prose.rsh-doc .rsh-ol li { font-size: 15.5px; line-height: 1.7; margin: 0.3em 0; }
+.rsh-prose.rsh-doc .rsh-ul,
+.rsh-prose.rsh-doc .rsh-ol { margin: 0 0 16px; }
+.rsh-prose.rsh-doc .rsh-quote { font-size: 15.5px; line-height: 1.74; padding-left: 16px; border-left-color: var(--color-accent); }
+.rsh-prose.rsh-doc .rsh-h2 {
+	font-family: var(--font-serif);
+	font-size: 18px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	text-transform: none;
+	color: var(--color-text);
+	margin: 38px 0 15px;
+	padding-bottom: 10px;
+	border-bottom: 1.5px solid var(--color-border);
+}
+.rsh-prose.rsh-doc > .rsh-h2:first-child,
+.rsh-prose.rsh-doc > .rsh-blk:first-child .rsh-h2 { margin-top: 0; }
+.rsh-prose.rsh-doc .rsh-h3 { font-size: 16px; }
+
+/* collapsible section — the clickable header replaces the per-section "## " heading */
+.rsh-sec + .rsh-sec { margin-top: 4px; }
+.rsh-sec-head {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	width: 100%;
+	margin: 36px 0 0;
+	padding: 0 0 10px;
+	border: 0;
+	border-bottom: 1.5px solid var(--color-border);
+	background: transparent;
+	cursor: pointer;
+	text-align: left;
+	color: var(--color-text);
+	transition: color 0.14s, border-color 0.14s;
+}
+.rsh-sec:first-of-type .rsh-sec-head { margin-top: 6px; }
+.rsh-sec-head:hover { color: var(--color-accent); border-color: var(--color-accent); }
+.rsh-sec-chev {
+	flex: 0 0 auto;
+	font-size: 12px;
+	line-height: 1;
+	color: var(--color-faded);
+	position: relative;
+	top: -1px;
+	transition: transform 0.16s ease;
+}
+.rsh-sec-head.is-open .rsh-sec-chev { transform: rotate(90deg); }
+.rsh-sec-head:hover .rsh-sec-chev { color: var(--color-accent); }
+.rsh-sec-title {
+	font-family: var(--font-serif);
+	font-size: 18px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1.25;
+}
+.rsh-sec-body { margin-top: 14px; }
+
+/* hover quote button (❝ 인용) — only present where onQuote is passed (/write) */
+.rsh-blk { position: relative; }
+.rsh-qbtn {
+	position: absolute;
+	top: -3px;
+	right: 0;
+	z-index: 2;
+	font-family: var(--font-mono);
+	font-size: 8.5px;
+	letter-spacing: 0.05em;
+	padding: 2px 7px;
+	border: 1px solid var(--color-border);
+	background: var(--color-bg);
+	color: var(--color-subtle);
+	cursor: pointer;
+	opacity: 0;
+	transform: translateY(-2px);
+	transition: opacity 0.14s, transform 0.14s, border-color 0.14s, color 0.14s;
+}
+.rsh-blk:hover .rsh-qbtn,
+.rsh-qbtn:focus-visible { opacity: 1; transform: none; }
+.rsh-qbtn:hover { border-color: var(--color-accent); color: var(--color-accent); }
+
+/* ── bucket research reading modal (/profile) — large centered reading view ── */
+.rsh-modal-scrim {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-panel);
+	display: grid;
+	place-items: start center;
+	padding: clamp(var(--space-4), 5vh, 56px) var(--space-4) var(--space-6);
+	background: rgba(10, 9, 8, 0.5);
+	backdrop-filter: blur(2px);
+	animation: rsh-modal-fade 0.16s ease;
+}
+@keyframes rsh-modal-fade { from { opacity: 0; } to { opacity: 1; } }
+.rsh-modal {
+	width: min(860px, 96vw);
+	max-height: 88vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border);
+	border-radius: 6px;
+	box-shadow: 0 30px 80px -24px rgba(0, 0, 0, 0.6);
+	animation: rsh-modal-pop 0.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes rsh-modal-pop { from { opacity: 0; transform: translateY(8px) scale(0.99); } to { opacity: 1; transform: none; } }
+.rsh-modal-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 14px;
+	padding: 22px 26px 14px;
+	border-bottom: 1px solid var(--color-border-soft);
+}
+.rsh-modal-kicker { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-faded); margin: 0; }
+.rsh-modal-title { font-family: var(--font-serif); font-size: 22px; font-weight: 500; line-height: 1.2; margin: 4px 0 0; }
+.rsh-modal-close {
+	flex: 0 0 auto;
+	width: 30px;
+	height: 30px;
+	display: grid;
+	place-items: center;
+	font-size: 14px;
+	color: var(--color-faded);
+	background: none;
+	border: 1px solid var(--color-border-soft);
+	border-radius: 4px;
+	cursor: pointer;
+}
+.rsh-modal-close:hover { color: var(--color-text); border-color: var(--color-border); }
+.rsh-modal-body {
+	overflow-y: auto;
+	padding: 6px 26px 30px;
+	flex: 1;
+	min-height: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+	.rsh-modal, .rsh-modal-scrim { animation: none; }
+}
