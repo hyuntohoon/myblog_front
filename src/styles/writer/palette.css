@@ -10,7 +10,7 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding: 90px 16px 16px;
+  padding: 64px 16px 24px;
   background: color-mix(in srgb, var(--ink) 32%, transparent);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
@@ -18,8 +18,8 @@
 }
 @keyframes wrPaletteFade { from { opacity: 0; } to { opacity: 1; } }
 .wr-palette {
-  width: min(620px, 100%);
-  max-height: min(560px, calc(100vh - 120px));
+  width: min(760px, 94vw);
+  max-height: min(680px, calc(100vh - 96px));
   background: var(--bg);
   border: 1px solid var(--rule);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
@@ -117,7 +117,13 @@
 .wr-palette-seclabel .mono { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
 
 /* result rows now use the shared .gs-row (search/atoms ResultRow) —
-   FEAT-global-search ③. The old .wr-row* styles were removed with the re-skin. */
+   FEAT-global-search ③. The old .wr-row* styles were removed with the re-skin.
+   The palette is a dedicated dialog (not the compact header dropdown), so its
+   rows get more breathing room to read like cards. */
+.wr-palette-body .gs-row { padding: 11px 18px; gap: 14px; }
+.wr-palette-body .gs-row-title { font-size: 16px; }
+.wr-palette-body .gs-row-sub { font-size: 12px; }
+.wr-palette-seclabel { padding: 14px 18px 6px; }
 
 .wr-palette-more {
   align-self: flex-start;

@@ -185,7 +185,10 @@ a.gs-albcard:hover .gs-albcard-title { color: var(--color-accent); }
 }
 
 /* ════ header search field + instant dropdown ════════════════════ */
-.gs-search { position: relative; width: clamp(150px, 22vw, 300px); }
+/* Compact by default; expands on focus so the input lines up with its (wider)
+   dropdown — the two used to mismatch (300px input vs 440px right-anchored drop). */
+.gs-search { position: relative; width: clamp(150px, 22vw, 300px); transition: width .18s cubic-bezier(.2, .7, .2, 1); }
+.gs-search:focus-within { width: clamp(320px, 34vw, 420px); }
 .gs-field {
 	display: flex;
 	align-items: center;
@@ -248,7 +251,11 @@ a.gs-albcard:hover .gs-albcard-title { color: var(--color-accent); }
 	position: absolute;
 	top: calc(100% + 8px);
 	right: 0;
-	width: min(440px, calc(100vw - 32px));
+	/* Match the (focus-expanded) input width so the panel edges line up; floor +
+	   viewport cap keep rows readable and on-screen. */
+	width: 100%;
+	min-width: 320px;
+	max-width: calc(100vw - 24px);
 	background: var(--color-bg);
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);

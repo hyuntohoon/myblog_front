@@ -50,6 +50,25 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose, existingAlbu
     inputRef.current?.focus()
   }, [])
 
+  // Lock background page scroll while the modal is open — only the results area
+  // scrolls (item 5). Self-restores on close.
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [])
+
+  // Auto-search: debounce the DB search as the query changes (same UX as the
+  // header search). Spotify stays manual — it enqueues SQS + has a 3 s cooldown.
+  useEffect(() => {
+    if (!search.query.trim())
+      return
+    const id = setTimeout(() => void search.runDbSearch(), 200)
+    return () => clearTimeout(id)
+  }, [search.query, search.runDbSearch])
+
   function doSearch() {
     setNotice('')
     void search.runDbSearch()
@@ -122,8 +141,8 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose, existingAlbu
   const statusText = notice || search.status
 
   return (
-    <div className="qb-modal-scrim" onClick={onClose} role="presentation">
-      <div ref={modalRef} className="qb-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="앨범 담기">
+    <div className="qb-modal-scrim qb-modal-scrim--add" onClick={onClose} role="presentation">
+      <div ref={modalRef} className="qb-modal qb-modal--add" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="앨범 담기">
         <header className="qb-modal-head">
           <div>
             <p className="qb-modal-kicker">앨범 담기</p>

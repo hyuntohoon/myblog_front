@@ -22,7 +22,7 @@ export default function WriterChrome({ status, lastSaved, pulseKey, view, onView
       <div className="chrome-l">
         <a className="chrome-back" href="/reviews">← 매거진</a>
         <span className="chrome-sep">/</span>
-        <em className="chrome-logo">Lowfreq</em>
+        <em className="chrome-logo">buckit</em>
       </div>
       <div className="chrome-r">
         <button type="button" className="chrome-search" onClick={onOpenSearch}>

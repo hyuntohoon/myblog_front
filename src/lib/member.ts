@@ -88,8 +88,8 @@ export interface MemberProfile {
  *  accounts (FEAT-member-dashboard Step 6) will source this per-user.
  */
 export const MEMBER_IDENTITY = {
-	name: '김저음',
-	handle: 'lowfreq',
+	name: 'buckit',
+	handle: 'buckit',
 	joined: '2021.03',
 	location: '서울',
 } as const
