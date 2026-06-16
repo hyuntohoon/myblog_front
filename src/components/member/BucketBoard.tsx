@@ -26,7 +26,7 @@ import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import type { ResearchStatus } from '@lib/research'
-import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearch } from '@lib/research'
+import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
 import ResearchNote from './ResearchNote'
 import { BUCKETS_KEY } from '@lib/member'
@@ -407,19 +407,13 @@ function SlibBadges({ row }: { row: SpotifyLibraryAlbumState }) {
 
 // ── per-cover research affordance ───────────────────────────────────────────
 // A small dot at the cover's bottom-left that opens the research slide-over.
-// When the bucket is research-active it auto-loads the note so the dot shows the
-// live status color (queued/running/done/failed); otherwise it stays a faint
-// neutral dot (no fetch) and the note loads on demand when opened.
-function CoverResearchBadge({ albumId, active, seedStatus, onOpen }: { albumId: string, active: boolean, seedStatus?: ResearchStatus | null, onOpen: () => void }) {
-  const { note, status } = useResearch(albumId, { auto: active })
-  // Prefer the live store status (fresher — reflects a just-opened panel / poll),
-  // then fall back to the bucket-payload seed so a done album paints its dot on the
-  // first render even when the bucket isn't research-active (mode 'off' = no auto-GET).
-  const effStatus = status ?? seedStatus ?? null
-  const has = !!note || !!seedStatus
-  const show = active || has
-  const color = show ? researchStatusColor(effStatus) : 'var(--color-bg)'
-  const title = show && effStatus ? `리서치: ${RESEARCH_STATUS_LABEL[effStatus]}` : '조사 노트'
+// `status` is resolved by the board (one batched GET /api/research/status poll ⊕
+// the bucket-payload seed) — NOT a per-cover note GET. The old per-cover fetch
+// fired album-count concurrent requests on mount and throttled the Lambda → 503s.
+function CoverResearchBadge({ status, active, onOpen }: { status: ResearchStatus | null, active: boolean, onOpen: () => void }) {
+  const show = active || status != null
+  const color = show ? researchStatusColor(status) : 'var(--color-bg)'
+  const title = show && status ? `리서치: ${RESEARCH_STATUS_LABEL[status]}` : '조사 노트'
   return (
     <button
 	type="button"
@@ -466,7 +460,7 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
    * auto-research checkbox. Only passed for normal-bucket covers (not the recent
    * strip / Spotify-library bucket).
    */
-  research?: { mode: string, selected: boolean, onOpen: () => void, onToggleSelected: (next: boolean) => void }
+  research?: { mode: string, selected: boolean, status: ResearchStatus | null, onOpen: () => void, onToggleSelected: (next: boolean) => void }
 }) {
   const [over, setOver] = useState(false)
   const dragging = draggingId === album.itemId
@@ -545,7 +539,7 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
             <span className="lf-mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
           )}
           {research && (
-            <CoverResearchBadge albumId={album.albumId} active={research.mode !== 'off'} seedStatus={album.researchStatus} onOpen={research.onOpen} />
+            <CoverResearchBadge status={research.status} active={research.mode !== 'off'} onOpen={research.onOpen} />
           )}
           {research && research.mode === 'selected' && (
             <input
@@ -617,12 +611,15 @@ interface SharedProps {
   // missing entry means DEFAULT_BUCKET_VIEW. Persisted to localStorage by the board.
   bucketViews: Record<string, BucketView>
   setBucketViews: Dispatch<SetStateAction<Record<string, BucketView>>>
+  // album_id → live research status (one batched GET /api/research/status poll for
+  // the whole board), falling back to the bucket-payload seed. No per-cover GET.
+  researchStatus: Record<string, ResearchStatus>
 }
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
@@ -719,6 +716,8 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 		{
 			mode: bucket.researchMode,
 			selected: a.researchSelected,
+			// live batched status ⊕ bucket-payload seed — no per-cover GET.
+			status: researchStatus[a.albumId] ?? a.researchStatus ?? null,
 			onOpen: () => ops.openResearch(a.albumId, a.title),
 			onToggleSelected: (next: boolean) => ops.setItemSelected(bucket.id, a.itemId, next),
 		}}
@@ -1410,6 +1409,18 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     [tree],
   )
 
+  // Every album id that shows a research dot (normal buckets — the library bucket
+  // has no research). One batched GET /api/research/status poll keeps all the
+  // cover dots live; covers fall back to the bucket-payload seed meanwhile. This
+  // replaces the per-cover note GET that fired album-count concurrent requests on
+  // mount and throttled the Lambda → 503s ("조사 안 됨" until refresh).
+  const researchAlbumIds = useMemo(() => {
+    const ids: string[] = []
+    visit(normalTree, b => b.albums.forEach(a => ids.push(a.albumId)))
+    return ids
+  }, [normalTree])
+  const researchStatus = useResearchStatusMap(researchAlbumIds)
+
   // Load the real tree on mount.
   useEffect(() => {
     let alive = true
@@ -1867,7 +1878,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus }
 
   return (
     <div>

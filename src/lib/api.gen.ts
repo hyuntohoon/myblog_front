@@ -658,6 +658,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/research/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Research Status Map
+         * @description Batched {album_id -> status} for a board's covers in ONE query. Replaces
+         *     the per-cover GET fan-out (album-count concurrent requests on mount) that hit
+         *     the Lambda concurrency ceiling and 503'd. Unresearched albums are absent.
+         */
+        get: operations["get_research_status_map_api_research_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sections": {
         parameters: {
             query?: never;
@@ -1202,6 +1224,18 @@ export interface components {
         Backend_ReorderRequest: {
             /** Buckets */
             buckets?: components["schemas"]["Backend_ReorderBucket"][];
+        };
+        /**
+         * ResearchStatusMapResponse
+         * @description Batched album_id -> research status, for the cover dots. One query for a
+         *     whole board instead of one GET per cover (the per-cover fan-out throttled the
+         *     Lambda → 503s). Albums with no note are simply absent from the map.
+         */
+        Backend_ResearchStatusMapResponse: {
+            /** Statuses */
+            statuses: {
+                [key: string]: string;
+            };
         };
         /** ResearchTriggerRequest */
         Backend_ResearchTriggerRequest: {
@@ -3171,6 +3205,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_AlbumResearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_research_status_map_api_research_status_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated album ids. */
+                album_ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ResearchStatusMapResponse"];
                 };
             };
             /** @description Validation Error */
