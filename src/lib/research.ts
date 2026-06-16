@@ -7,7 +7,7 @@
 // share one cache keyed by album_id. A tiny external store (useSyncExternalStore)
 // lets a cover badge and an opened panel for the same album stay in lock-step,
 // and dedupes the GET when several surfaces mount for one album at once.
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { apiFetch } from '@lib/api'
 import type { components } from '@lib/api.gen'
 
@@ -48,6 +48,24 @@ export async function fetchAlbumResearch(albumId: string): Promise<ResearchNote 
 	if (!res.ok)
 		throw new Error(`HTTP ${res.status}`)
 	return res.json() as Promise<ResearchNote>
+}
+
+type StatusMapResponse = components['schemas']['Backend_ResearchStatusMapResponse']
+
+/**
+ * GET batched {album_id -> status} for many albums in ONE request — backs the
+ * cover dots. Replaces the per-cover note GET fan-out (album-count concurrent
+ * requests on board mount) that hit the Lambda concurrency ceiling → 503s.
+ */
+export async function fetchResearchStatusBatch(albumIds: string[]): Promise<Record<string, ResearchStatus>> {
+	const ids = [...new Set(albumIds.filter(Boolean))]
+	if (!ids.length)
+		return {}
+	const res = await apiFetch(`${BASE}/api/research/status?album_ids=${encodeURIComponent(ids.join(','))}`, { method: 'GET' })
+	if (!res || !res.ok)
+		throw new Error(`HTTP ${res?.status}`)
+	const data = await res.json() as StatusMapResponse
+	return (data.statuses ?? {}) as Record<string, ResearchStatus>
 }
 
 /** POST a trigger — no body = first run; {mode:'restart'} redo; {mode:'refine',instruction} augment. */
@@ -186,4 +204,52 @@ export function useResearch(albumId: string | null, opts: { auto?: boolean } = {
 	const reload = useCallback(() => (albumId ? load(albumId, true) : Promise.resolve()), [albumId])
 
 	return { note: entry.note, status, loading: entry.loading, error: entry.error, loaded: entry.loaded, trigger, refine, restart, reload }
+}
+
+/**
+ * Batched research status for a whole board's covers in ONE request, polled
+ * (still one request) only while some album is queued/running. Replaces the
+ * per-cover GET that fired album-count concurrent note fetches on mount and
+ * throttled the Lambda. Covers fall back to the bucket-payload seed when this
+ * hasn't resolved (or the batch GET transiently fails), so it never blanks a dot.
+ */
+export function useResearchStatusMap(albumIds: string[]): Record<string, ResearchStatus> {
+	// Stable key so the effect doesn't re-fire on array identity every render.
+	const key = useMemo(() => [...new Set(albumIds.filter(Boolean))].sort().join(','), [albumIds])
+	const [map, setMap] = useState<Record<string, ResearchStatus>>({})
+
+	useEffect(() => {
+		if (!key) {
+			setMap({})
+			return
+		}
+		const ids = key.split(',')
+		let alive = true
+		let timer: ReturnType<typeof setTimeout> | null = null
+		const tick = async () => {
+			let m: Record<string, ResearchStatus> | null = null
+			try {
+				m = await fetchResearchStatusBatch(ids)
+			}
+			catch {
+				m = null // keep the last good map; covers fall back to the seed
+			}
+			if (!alive)
+				return
+			if (m)
+				setMap(m)
+			// Keep polling (one request) only while the poller is still working a row.
+			const busy = m ? Object.values(m).some(s => s === 'queued' || s === 'running') : false
+			if (busy)
+				timer = setTimeout(() => void tick(), 4000)
+		}
+		void tick()
+		return () => {
+			alive = false
+			if (timer)
+				clearTimeout(timer)
+		}
+	}, [key])
+
+	return map
 }
