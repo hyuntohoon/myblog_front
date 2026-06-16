@@ -356,6 +356,50 @@ html {
 }
 .btn-accent:hover { opacity: 0.88; }
 
+/* ── editorial home · Variant B (홈 방향 비교 / buckit-home-b) ──────────
+   Pitchfork-grade: feature hero + type-forward review list + hairline rules.
+   Grids live here (not inline) so they stay responsive. */
+.rule-strong { height: 2px; background: var(--color-text); border: 0; margin: 0; }
+.bk-lift { transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.18s; border-radius: 4px; }
+.bk-lift:hover { transform: translateY(-4px); box-shadow: 0 14px 30px -12px color-mix(in srgb, var(--color-text) 40%, transparent); }
+.bk-album { transition: color 0.16s; }
+.bk-heroB,
+.bk-revrow { text-decoration: none; color: inherit; }
+.bk-heroB:hover .bk-album,
+.bk-revrow:hover .bk-album { color: var(--color-accent); }
+
+.bk-heroB {
+	display: grid;
+	grid-template-columns: minmax(240px, 320px) 1fr;
+	gap: 44px;
+	align-items: center;
+}
+.bk-revrow {
+	display: grid;
+	grid-template-columns: 76px 1fr auto;
+	gap: 22px;
+	align-items: center;
+	padding: 20px 6px;
+}
+.bk-revrow + .bk-revrow { border-top: 1px solid var(--color-border); }
+.bk-revrow-aside {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 8px;
+	white-space: nowrap;
+}
+@media (max-width: 760px) {
+	.bk-heroB { grid-template-columns: 1fr; gap: 22px; }
+}
+@media (max-width: 540px) {
+	.bk-revrow { grid-template-columns: 60px 1fr; row-gap: 8px; }
+	.bk-revrow-aside { grid-column: 2; flex-direction: row; align-items: center; gap: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.bk-lift { transition: none; }
+}
+
 /* partial-fill stars — shares the look of partial-stars.astro; number never shown */
 .stars {
 	position: relative;
