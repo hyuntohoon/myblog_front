@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useDismissable } from '../../lib/useDismissable'
 import ResearchNote from '../member/ResearchNote'
 import WriterChrome from './WriterChrome'
+import DraftsInbox from './DraftsInbox'
 import SubjectHero from './SubjectHero'
 import CommandPalette from './CommandPalette'
 import RecommendedTracksBlock from './RecommendedTracksBlock'
@@ -13,6 +14,7 @@ import PreviewView from './PreviewView'
 import type { AlbumDetail, DraftPersist, SaveStatus, WriterView } from './types'
 import { SECTION_LABELS } from '../../lib/sections'
 import { REVIEW_TAG_LABELS } from '../../lib/tags'
+import type { PostListItem } from '../../scripts/write/api'
 import { fetchPostById, listDrafts, publishToGit, readErrorDetail, savePost, updatePost } from '../../scripts/write/api'
 import { fetchArtistHero } from '../../scripts/write/artistApi'
 import { activeDraftId, loadDraftSlot, migrateLegacyDraft, removeDraftSlot, saveDraftSlot } from '../../scripts/write/draftStore'
@@ -259,6 +261,23 @@ export default function WriterApp() {
   const [view, setView] = useState<WriterView>('edit')
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // FEAT-editor-buckit Stage 2 Step 6: the '임시 저장함' inbox. `drafts` is the
+  // single source of truth for both the chrome's "drafts waiting" count chip and
+  // the inbox list (null = still loading). Fetched once on mount for the morning
+  // arrival signal; re-fetched when the inbox opens so it reflects drafts saved
+  // this session. listDrafts() returns [] on failure, so it never throws here.
+  const [draftsOpen, setDraftsOpen] = useState(false)
+  const [drafts, setDrafts] = useState<PostListItem[] | null>(null)
+  const reloadDrafts = useCallback(() => {
+    void listDrafts().then(setDrafts)
+  }, [])
+  useEffect(() => {
+    reloadDrafts()
+  }, [reloadDrafts])
+  const openDrafts = useCallback(() => {
+    setDraftsOpen(true)
+    reloadDrafts()
+  }, [reloadDrafts])
   // FEAT-album-research-notes — wide viewports show the editor|doc split view
   // (design option D); narrow ones (≤1120px CSS) fall back to this toggleable
   // drawer instead.
@@ -764,6 +783,8 @@ export default function WriterApp() {
 	lastSaved={lastSaved}
 	pulseKey={pulseKey}
 	onOpenSearch={() => setPaletteOpen(true)}
+	onOpenDrafts={openDrafts}
+	draftCount={drafts?.length ?? null}
 	onSave={() => runExclusive(onSaveDraft)}
 	onPublish={() => setSettingsOpen(true)}
 	busy={busy}
@@ -813,6 +834,14 @@ export default function WriterApp() {
 	currentSubjectId={subject?.id ?? null}
 	onPick={onSubjectSelect}
 	onClose={() => setPaletteOpen(false)}
+        />
+      )}
+
+      {draftsOpen && (
+        <DraftsInbox
+	drafts={drafts}
+	currentPostId={dbPostId}
+	onClose={() => setDraftsOpen(false)}
         />
       )}
 

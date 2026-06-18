@@ -12,6 +12,7 @@
 @import './writer/hero.css';
 @import './writer/picks.css';
 @import './writer/palette.css';
+@import './writer/drafts.css';
 @import './writer/editor.css';
 @import './writer/settings.css';
 @import './writer/preview.css';
