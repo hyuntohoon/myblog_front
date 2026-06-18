@@ -7,12 +7,16 @@ interface Props {
   view: WriterView
   onViewChange: (v: WriterView) => void
   onOpenSearch: () => void
+  onOpenDrafts: () => void
+  // status='draft' count, for the inbox trigger's "drafts waiting" chip. null
+  // while the count is still loading (no chip rendered yet).
+  draftCount: number | null
   onSave: () => void
   onPublish: () => void
   busy?: boolean
 }
 
-export default function WriterChrome({ status, lastSaved, pulseKey, view, onViewChange, onOpenSearch, onSave, onPublish, busy = false }: Props) {
+export default function WriterChrome({ status, lastSaved, pulseKey, view, onViewChange, onOpenSearch, onOpenDrafts, draftCount, onSave, onPublish, busy = false }: Props) {
   const saved = status === 'saved'
   // Text alternative for the color dot — keeps it from being color-only and
   // carries the timestamp as a hover tooltip instead of always-on chrome text.
@@ -25,6 +29,11 @@ export default function WriterChrome({ status, lastSaved, pulseKey, view, onView
         <em className="chrome-logo">buckit</em>
       </div>
       <div className="chrome-r">
+        <button type="button" className="chrome-drafts" onClick={onOpenDrafts} title="임시 저장함 — 저장된 초안 열기">
+          <span className="chrome-drafts-ico" aria-hidden>🗂</span>
+          <span className="chrome-drafts-label">임시 저장함</span>
+          {draftCount != null && draftCount > 0 && <span className="chrome-drafts-count">{draftCount}</span>}
+        </button>
         <button type="button" className="chrome-search" onClick={onOpenSearch}>
           <span className="chrome-search-ico" aria-hidden>⌕</span>
           <span className="chrome-search-label">작품 검색</span>
