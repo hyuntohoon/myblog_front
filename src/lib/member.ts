@@ -73,6 +73,17 @@ export interface DetailTarget {
 	 *  최근 들은, sample tracks) → the modal stays info-only.
 	 */
 	writable?: boolean
+	/**
+	 * FEAT-editor-buckit Step 3 — the bucket-item handle for the memo window.
+	 * When a writable bucket album (write mode) carries both `bucketId` + `itemId`,
+	 *  the album-click modal opens the memo "쓰레기통" (freeform note + "오늘 밤 키우기"
+	 *  gate) instead of the old inline draft composer, persisting via the item PATCH.
+	 *  `note`/`prepTonight` seed the textarea + toggle without an extra fetch.
+	 */
+	bucketId?: string
+	itemId?: string
+	note?: string | null
+	prepTonight?: boolean
 }
 
 export interface MemberProfile {

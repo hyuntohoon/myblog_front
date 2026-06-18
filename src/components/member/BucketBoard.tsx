@@ -515,7 +515,7 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           setDraggingId(null)
           setDragKind(null)
         }}
-	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year, writable: !copySource && !fromLib })}
+	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year, writable: !copySource && !fromLib, bucketId, itemId: album.itemId, note: album.note ?? null, prepTonight: album.prepTonight ?? false })}
 	// Warm the album-detail cache on intent (hover / tap-start) so the modal
 	// opens on an edge hit instead of a ~1s miss (see lib/albumDetail.ts).
 	onPointerEnter={() => prefetchAlbumDetail(album.albumId)}

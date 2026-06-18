@@ -505,3 +505,237 @@
 @media (prefers-reduced-motion: reduce) {
   .qb-modal, .qb-modal-scrim { animation: none; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   FEAT-editor-buckit Step 3 — 앨범 메모 "쓰레기통" 창 (AlbumDetail MemoWindow).
+   Ported from the design (memo.css). Reuses the existing editorial tokens; only
+   the desktop large 2-column variant is built (mobile stacks via the 740px query).
+   ════════════════════════════════════════════════════════════════════════════ */
+
+@keyframes memo-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@keyframes memo-rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* body text area — borderless serif over paper */
+.memo-area {
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 16.5px;
+  line-height: 1.78;
+  color: var(--color-text);
+  padding: 12px 2px 6px;
+  letter-spacing: -0.003em;
+}
+.memo-area::placeholder { color: var(--color-faded); font-style: italic; opacity: 1; }
+
+/* "오늘 밤 키우기" toggle — full-width row, pin track */
+.memo-grow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 11px 16px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background .22s, border-color .22s, color .22s, box-shadow .22s;
+}
+.memo-grow:hover { border-color: var(--color-text); }
+.memo-grow-ico {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--color-subtle);
+  background: color-mix(in srgb, var(--color-text) 4%, transparent);
+  border: 1px solid var(--color-border-soft);
+  transition: all .22s;
+}
+.memo-grow-label {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+.memo-grow-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--color-faded);
+  white-space: nowrap;
+  transition: color .22s;
+}
+.memo-grow-track {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 23px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  border: 1px solid var(--color-border);
+  position: relative;
+  transition: background .22s, border-color .22s;
+}
+.memo-grow-knob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  box-shadow: 0 1px 3px rgba(26, 26, 26, .28);
+  transform: translateY(-50%);
+  transition: left .24s cubic-bezier(.2, .7, .2, 1), background .22s;
+}
+
+/* ON = 밤(night): ink-fill, matching the .btn-solid convention */
+.memo-grow.on {
+  background: var(--color-text);
+  border-color: var(--color-text);
+  box-shadow: 0 6px 22px -12px rgba(26, 26, 26, .6);
+}
+.memo-grow.on .memo-grow-label { color: var(--color-bg); }
+.memo-grow.on .memo-grow-sub { color: color-mix(in srgb, var(--color-bg) 64%, transparent); }
+.memo-grow.on .memo-grow-ico {
+  color: var(--color-bg);
+  background: color-mix(in srgb, var(--color-bg) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-bg) 22%, transparent);
+}
+.memo-grow.on .memo-grow-track {
+  background: color-mix(in srgb, var(--color-bg) 22%, transparent);
+  border-color: color-mix(in srgb, var(--color-bg) 30%, transparent);
+}
+.memo-grow.on .memo-grow-knob { left: 20px; background: var(--color-bg); }
+
+/* close button */
+.memo-x {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: var(--color-subtle);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.memo-x:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); color: var(--color-text); }
+.memo-x-abs { position: absolute; top: 14px; right: 14px; width: 32px; height: 32px; z-index: 2; }
+
+/* the modal shell (large 2-column) */
+.memo-modal {
+  position: relative;
+  width: 100%;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 34px 80px rgba(0, 0, 0, .42);
+  padding: 28px 28px 22px;
+  transition: background .4s ease, box-shadow .3s;
+}
+.memo-modal.is-night {
+  background:
+    radial-gradient(120% 70% at 90% 0%, color-mix(in srgb, var(--color-text) 5%, transparent) 0%, transparent 46%),
+    var(--color-bg);
+}
+.memo-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+.memo-modal-foot .memo-grow { flex: 1; }
+
+.memo-modal-lg {
+  max-width: 1140px;
+  padding: 26px 34px 28px;
+}
+.memo-modal-lg.size-m { max-width: 900px; }
+.memo-modal-lg.size-l { max-width: 1140px; }
+.memo-modal-lg.size-xl { max-width: 1380px; }
+
+.memo-lg-bar { display: flex; align-items: center; gap: 12px; padding-right: 40px; margin-bottom: 18px; }
+
+.memo-cover-wrap { width: 100%; max-width: 180px; margin-bottom: 16px; }
+.size-l .memo-cover-wrap { max-width: 200px; }
+.size-xl .memo-cover-wrap { max-width: 240px; }
+
+.memo-lg-grid {
+  display: grid;
+  grid-template-columns: 286px minmax(0, 1fr);
+  gap: 32px;
+  align-items: stretch;
+}
+.size-l .memo-lg-grid { grid-template-columns: 320px minmax(0, 1fr); gap: 36px; }
+.size-xl .memo-lg-grid { grid-template-columns: 360px minmax(0, 1fr); gap: 42px; }
+.memo-info { display: flex; flex-direction: column; min-width: 0; }
+.memo-main { display: flex; flex-direction: column; min-width: 0; }
+.memo-main .memo-area { flex: 1 1 auto; }
+
+.memo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.memo-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-subtle);
+  white-space: nowrap;
+}
+
+.memo-tracks { display: flex; flex-direction: column; max-height: 196px; overflow-y: auto; margin-top: 2px; }
+.size-xl .memo-tracks { max-height: 320px; }
+.memo-trow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--color-border-soft);
+}
+.memo-trow:last-child { border-bottom: none; }
+.memo-trow-no { font-family: var(--font-mono); font-size: 10.5px; color: var(--color-faded); font-variant-numeric: tabular-nums; }
+.memo-trow-title { font-family: var(--font-serif); font-size: 13.5px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.memo-trow-len { font-family: var(--font-mono); font-size: 10px; color: var(--color-faded); font-variant-numeric: tabular-nums; }
+
+/* the single preserved path to the full editor */
+.memo-write-link { margin-top: 14px; text-align: right; }
+.memo-write-link a {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--color-subtle);
+  text-decoration: none;
+  transition: color .15s;
+}
+.memo-write-link a:hover { color: var(--color-text); }
+
+/* narrow — stack album info above the memo; compact the identity column so the
+   memo textarea (the point) stays reachable without scrolling past everything */
+@media (max-width: 740px) {
+  .memo-modal-lg { padding: 24px 22px 22px; }
+  .memo-lg-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .memo-cover-wrap,
+  .size-l .memo-cover-wrap,
+  .size-xl .memo-cover-wrap { max-width: 116px; }
+  .memo-tracks { max-height: 120px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .memo-grow, .memo-grow-knob, .memo-grow-ico, .memo-modal { transition: none; }
+}

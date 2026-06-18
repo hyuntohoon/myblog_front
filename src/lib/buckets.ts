@@ -62,6 +62,17 @@ export interface BoardAlbum {
    * has no high-confidence genre rows. Drives the genre group + filter chips.
    */
   genres?: string[]
+  /**
+   * FEAT-editor-buckit Step 3: the freeform bucket memo (`review_bucket_items.note`)
+   * — the "쓰레기통" memo body shown in the album-click memo window. Optional: non-bucket
+   * sources (recent strip, optimistic copies) omit it.
+   */
+  note?: string | null
+  /**
+   * FEAT-editor-buckit Step 3: the "오늘 밤 키우기" gate (`review_bucket_items.prep_tonight`)
+   * — when on, the nightly $0 memo→skeleton job is cleared to process this item.
+   */
+  prepTonight?: boolean
 }
 
 /** A bucket node in the board tree (mapped from the API's nested BucketResponse). */
@@ -106,6 +117,8 @@ function mapItem(it: ApiItem): BoardAlbum {
     year: rel ? Number(String(rel).slice(0, 4)) || null : null,
     alreadyReviewed: it.already_reviewed ?? false,
     researchSelected: it.research_selected ?? false,
+    note: it.note ?? null,
+    prepTonight: it.prep_tonight ?? false,
     researchStatus: (it.research_status ?? null) as ResearchStatus | null,
     popularity: a?.popularity ?? null,
     releaseDate: rel ?? null,
@@ -274,6 +287,25 @@ export async function setItemResearchSelected(bucketId: string, itemId: string, 
 	const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items/${itemId}`, {
 		method: 'PATCH',
 		body: JSON.stringify({ research_selected: selected }),
+	})
+	await asJson<ApiItem>(res)
+}
+
+/**
+ * PATCH /api/buckets/{bucketId}/items/{itemId} — persist the freeform memo (`note`)
+ * and/or the "오늘 밤 키우기" gate (`prep_tonight`). FEAT-editor-buckit Step 3: backed
+ * by the existing item PATCH (Step 2), which is **set-only** for these fields (no
+ * enqueue side-effect — the offline nightly job is their only reader). An empty
+ * `note` string clears it to NULL server-side (`note or None`). Throws on non-2xx.
+ */
+export async function updateBucketItemMemo(
+	bucketId: string,
+	itemId: string,
+	patch: { note?: string | null, prep_tonight?: boolean },
+): Promise<void> {
+	const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items/${itemId}`, {
+		method: 'PATCH',
+		body: JSON.stringify(patch),
 	})
 	await asJson<ApiItem>(res)
 }
