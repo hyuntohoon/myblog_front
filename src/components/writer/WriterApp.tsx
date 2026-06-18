@@ -841,6 +841,14 @@ export default function WriterApp() {
         <DraftsInbox
 	drafts={drafts}
 	currentPostId={dbPostId}
+	onDeleted={(id) => {
+		reloadDrafts()
+		// Deleting the open draft leaves the editor content intact but its DB
+		// row gone — drop the linkage so the next save creates a fresh row
+		// instead of PUTting a 404 (the publish path already self-heals on 404).
+		if (id === dbPostId)
+			setDbPostId(null)
+	}}
 	onClose={() => setDraftsOpen(false)}
         />
       )}
