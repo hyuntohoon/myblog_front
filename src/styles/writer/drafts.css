@@ -67,6 +67,39 @@
 .wr-drafts-body .gs-row-title { font-size: 15px; }
 .wr-drafts-body .gs-row-sub { font-size: 11.5px; }
 
+/* per-row wrapper: the .gs-row anchor + a sibling delete button in a reserved
+   right gutter (padding-right keeps the "열기 →" tag clear of the button). The
+   button reveals on row hover / keyboard focus — quiet until you want it. */
+.wr-draft-row { position: relative; }
+.wr-drafts-body .wr-draft-row .gs-row { padding-right: 54px; }
+.wr-draft-del {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s, color 0.14s;
+}
+/* quiet until you want it — reveal on row hover / keyboard focus. The armed +
+   failed states stay visible regardless so an armed row never looks idle. */
+.wr-draft-row:hover .wr-draft-del,
+.wr-draft-del:focus-visible,
+.wr-draft-del.is-armed,
+.wr-draft-del.is-failed { opacity: 1; }
+.wr-draft-del:hover { color: var(--accent); }
+.wr-draft-del.is-armed,
+.wr-draft-del.is-failed { color: var(--accent); font-weight: 600; }
+.wr-draft-del:disabled { opacity: 0.5; cursor: default; }
+
 .wr-drafts-msg {
   font-family: var(--mono);
   font-size: 12px;
