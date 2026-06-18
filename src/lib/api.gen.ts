@@ -818,6 +818,11 @@ export interface components {
             position: number;
             /** Post Id */
             post_id?: string | null;
+            /**
+             * Prep Tonight
+             * @default false
+             */
+            prep_tonight: boolean;
             /** Rec Reason */
             rec_reason?: string | null;
             /**
@@ -1372,6 +1377,8 @@ export interface components {
             note?: string | null;
             /** Post Id */
             post_id?: string | null;
+            /** Prep Tonight */
+            prep_tonight?: boolean | null;
             /** Research Selected */
             research_selected?: boolean | null;
             /** Status */
