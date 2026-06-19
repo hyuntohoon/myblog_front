@@ -252,7 +252,19 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [layout, setLayout] = useState<Layout>(() => readPref(LAYOUT_KEY, LAYOUT_OPTS.map(o => o.v), 'sidebar'))
   const [density, setDensity] = useState<Density>(() => readPref(DENSITY_KEY, DENSITY_OPTS.map(o => o.v), 'regular'))
-  const openDetail = (a: DetailTarget) => setDetail(a)
+  // Latest in-session memo edits (note / prepTonight) keyed by bucket-item id.
+  // The bucket board's BoardAlbum snapshot isn't refreshed after a memo PATCH, so
+  // reopening a memo would re-seed from the stale value (and a later note edit
+  // could clobber a saved prep_tonight). openDetail merges any fresh edit so the
+  // modal always opens on the saved state. See AlbumDetail.useBucketMemo.
+  const memoEdits = useRef<Map<string, { note: string | null, prepTonight: boolean }>>(new Map())
+  const onMemoSaved = (itemId: string, memo: { note: string | null, prepTonight: boolean }) => {
+    memoEdits.current.set(itemId, memo)
+  }
+  const openDetail = (a: DetailTarget) => {
+    const edit = a.itemId ? memoEdits.current.get(a.itemId) : undefined
+    setDetail(edit ? { ...a, note: edit.note, prepTonight: edit.prepTonight } : a)
+  }
 
   useEffect(() => {
     try {
@@ -329,7 +341,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
         </>
       )}
 
-      {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} />}
+      {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} />}
     </div>
   )
 }

@@ -23,14 +23,14 @@ import { AlbumArt, fmtTime, Seg, Stars } from './ui'
 
 type Mode = 'info' | 'edit'
 
-export function AlbumDetail({ album, reviews, onClose }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void }) {
+export function AlbumDetail({ album, reviews, onClose, onMemoSaved }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void }) {
   const published = album.albumId ? reviews.find(r => r.albumIds.includes(album.albumId!)) : undefined
 
   // FEAT-editor-buckit Step 3: a writable, not-yet-published 평론 버킷 album that
   // carries its bucket-item handle opens the memo "쓰레기통" window. Without the
   // handle (unexpected on a bucket surface) it degrades to the read-only info modal.
   if (album.writable && !published && album.albumId && album.bucketId && album.itemId)
-    return <MemoWindow album={album} onClose={onClose} />
+    return <MemoWindow album={album} onClose={onClose} onMemoSaved={onMemoSaved} />
 
   // edit when published + writable; otherwise read-only info (covers non-writable
   // surfaces AND the rare writable-but-no-handle fallback).
@@ -247,7 +247,7 @@ const MEMO_SIZES = [{ v: 'm', label: '보통' }, { v: 'l', label: '크게' }, { 
 // The backend field is set-only + idempotent, so each PATCH carries full state (last
 // write wins). Flushing on unmount means a type/toggle-then-close (incl. ESC) within
 // the debounce window is never silently dropped — autosave with no save button.
-function useBucketMemo(album: DetailTarget) {
+function useBucketMemo(album: DetailTarget, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void) {
   const [text, setText] = useState(album.note ?? '')
   const [grow, setGrow] = useState(album.prepTonight ?? false)
   const [save, setSave] = useState<SavePhase>((album.note ?? '').trim() || album.prepTonight ? 'saved' : 'idle')
@@ -269,8 +269,26 @@ function useBucketMemo(album: DetailTarget) {
     if (!pending.current || !bucketId || !itemId)
       return
     pending.current = false
+    // Only PATCH the fields that actually changed from the seed. Sending the full
+    // pair every time lets a stale seed clobber a field the user never touched —
+    // e.g. editing the note after reopening on a stale prepTonight=false would
+    // reset a saved prep_tonight=true. The backend treats omitted fields as
+    // no-change (UpdateBucketItemRequest, exclude_unset).
+    const patch: { note?: string | null, prep_tonight?: boolean } = {}
+    if (textRef.current !== (album.note ?? ''))
+      patch.note = textRef.current
+    if (growRef.current !== (album.prepTonight ?? false))
+      patch.prep_tonight = growRef.current
+    if (Object.keys(patch).length === 0) {
+      if (live)
+        setSave('saved')
+      return
+    }
+    // Keep the board's in-memory item fresh so reopening the modal seeds the
+    // saved values, not the stale snapshot the modal was opened from.
+    onMemoSaved?.(itemId, { note: textRef.current, prepTonight: growRef.current })
     const mySeq = ++seq.current
-    const sent = updateBucketItemMemo(bucketId, itemId, { note: textRef.current, prep_tonight: growRef.current })
+    const sent = updateBucketItemMemo(bucketId, itemId, patch)
     if (!live) {
       sent.catch(() => {})
       return
@@ -284,7 +302,7 @@ function useBucketMemo(album: DetailTarget) {
         if (mySeq === seq.current)
           setSave('error')
       })
-  }, [album])
+  }, [album, onMemoSaved])
 
   const schedule = useCallback(() => {
     pending.current = true
@@ -395,7 +413,7 @@ function uniqueGenres(artists: MusicArtist[]): string[] {
   return [...seen].slice(0, 4)
 }
 
-function MemoWindow({ album, onClose }: { album: DetailTarget, onClose: () => void }) {
+function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore. autoFocus off so MemoBody's own autoFocus
   // owns initial focus (the textarea, not the ✕) — zero-friction 쓰레기통 intent.
@@ -436,7 +454,7 @@ function MemoWindow({ album, onClose }: { album: DetailTarget, onClose: () => vo
     }
   }
 
-  const { text, grow, save, onText, onToggle } = useBucketMemo(album)
+  const { text, grow, save, onText, onToggle } = useBucketMemo(album, onMemoSaved)
   const empty = text.trim().length === 0
 
   const a = data?.album
