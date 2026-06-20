@@ -117,6 +117,7 @@ function TitleArea({ headline, setHeadline, dek, setDek, dim }: {
 	className="title-input"
 	rows={1}
 	placeholder="제목"
+	aria-label="제목"
 	value={headline}
 	onChange={e => setHeadline(e.target.value)}
 	spellCheck={false}
@@ -126,6 +127,7 @@ function TitleArea({ headline, setHeadline, dek, setDek, dim }: {
 	className="dek-input"
 	rows={1}
 	placeholder="부제"
+	aria-label="부제"
 	value={dek}
 	onChange={e => setDek(e.target.value)}
 	spellCheck={false}

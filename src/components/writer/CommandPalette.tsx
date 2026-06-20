@@ -452,6 +452,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
                 <input
 	ref={inputRef}
 	className="wr-palette-input"
+	aria-label="작품 검색"
 	placeholder={search.source === 'spotify' ? 'Spotify에서 검색…' : '평론할 작품 검색…'}
 	value={search.query}
 	onChange={e => search.setQuery(e.target.value)}
