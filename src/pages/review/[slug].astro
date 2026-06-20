@@ -360,7 +360,12 @@ const recordLabel = post.musicReview?.label ?? null
   .lfq-size-btn {
     background: transparent;
     border: none;
-    padding: 6px 10px;
+    padding: 0 12px;
+    min-height: 38px;
+    min-width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-family: var(--font-mono);
     font-size: 12px;
     color: var(--color-faded);
@@ -489,8 +494,10 @@ const recordLabel = post.musicReview?.label ?? null
     gap: 8px;
     flex-wrap: wrap;
   }
-  .lfq-hero-label .mono-label { color: var(--color-faded); }
-  .lfq-hero-dot { color: var(--color-faded); opacity: 0.6; }
+  /* audit L15: lift the record-label/year credit from faded to subtle so it
+     reads clearly (faded passes AA but sits right at the floor at 10.5px). */
+  .lfq-hero-label .mono-label { color: var(--color-subtle); }
+  .lfq-hero-dot { color: var(--color-subtle); }
   .lfq-hero-artist {
     font-family: var(--font-mono);
     font-size: 13px;
@@ -603,6 +610,8 @@ const recordLabel = post.musicReview?.label ?? null
     .lfq-hero { grid-template-columns: 1fr; gap: 24px; }
     .lfq-hero-cover { width: 100%; max-width: 320px; }
     .lfq-size-toggle { top: 6px; }
+    /* ≥44px tap targets on touch (WCAG 2.5.5) */
+    .lfq-size-btn { min-height: 44px; min-width: 44px; }
   }
 </style>
 

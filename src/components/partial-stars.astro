@@ -15,12 +15,15 @@ export interface Props {
 const { value, max = 5, size = 22, ariaLabel } = Astro.props
 const clamped = Math.max(0, Math.min(max, Number.isFinite(value) ? value : 0))
 const pct = (clamped / max) * 100
+// Announce the rounded score (3.3) to match the cards' display; the star fill
+// width still uses the raw value (audit L13: detail announced raw 3.27).
+const scoreLabel = ariaLabel ?? `${clamped.toFixed(1)} / ${max}`
 ---
 
 <span
 	class="partial-stars"
 	role="img"
-	aria-label={ariaLabel ?? `${clamped} / ${max}`}
+	aria-label={scoreLabel}
 	style={`--ps-size:${size}px; --ps-pct:${pct}%;`}
 >
   <span class="ps-bg" aria-hidden="true">★★★★★</span>
