@@ -65,6 +65,38 @@
 .gs-rhead-total { display: block; margin-top: 12px; font-size: 12px; letter-spacing: .04em; color: var(--color-subtle); }
 .gs-rhead-spot { color: var(--color-spotify); }
 
+/* First-class on-page search field (M4) — the primary input for the /search
+   route, so the header combobox dropdown no longer has to overlay this hero. */
+.gs-pagefield {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-top: 22px;
+	padding: 0 16px;
+	height: 54px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-bg);
+	transition: border-color .16s, box-shadow .16s;
+}
+.gs-pagefield:focus-within {
+	border-color: var(--color-text);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+.gs-pagefield-ic { flex: 0 0 auto; color: var(--color-faded); display: inline-flex; }
+.gs-pagefield-input {
+	flex: 1;
+	min-width: 0;
+	border: none;
+	background: none;
+	outline: none;
+	font-family: var(--font-serif);
+	font-size: clamp(16px, 2.2vw, 20px);
+	color: var(--color-text);
+	letter-spacing: -.01em;
+}
+.gs-pagefield-input::placeholder { color: var(--color-faded); font-style: italic; }
+
 /* filter pills */
 .gs-pills { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 16px; }
 .gs-pill {
