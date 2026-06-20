@@ -262,6 +262,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/play-events/artist-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Play Events Artist Distribution */
+        get: operations["play_events_artist_distribution_api_library_play_events_artist_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/play-events/genre-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Play Events Genre Distribution */
+        get: operations["play_events_genre_distribution_api_library_play_events_genre_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/recent-tracks": {
         parameters: {
             query?: never;
@@ -322,6 +356,74 @@ export interface paths {
         };
         /** List Reviewed */
         get: operations["list_reviewed_api_library_reviewed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/saved-tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Saved Tracks */
+        get: operations["list_saved_tracks_api_library_saved_tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/saved-tracks/artist-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Saved Tracks Artist Distribution */
+        get: operations["saved_tracks_artist_distribution_api_library_saved_tracks_artist_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/saved-tracks/classify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Classify Saved Tracks */
+        post: operations["classify_saved_tracks_api_library_saved_tracks_classify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/saved-tracks/genre-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Saved Tracks Genre Distribution */
+        get: operations["saved_tracks_genre_distribution_api_library_saved_tracks_genre_distribution_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -872,6 +974,24 @@ export interface components {
             /** Buckets */
             buckets?: components["schemas"]["Backend_BucketResponse"][];
         };
+        /** ClassifyResponse */
+        Backend_ClassifyResponse: {
+            /**
+             * Enqueued
+             * @default 0
+             */
+            enqueued: number;
+            /**
+             * Skipped Needs Backfill
+             * @default 0
+             */
+            skipped_needs_backfill: number;
+            /**
+             * Status
+             * @default queued
+             */
+            status: string;
+        };
         /** CreateBucketRequest */
         Backend_CreateBucketRequest: {
             /** Color */
@@ -929,6 +1049,31 @@ export interface components {
             tags?: string[];
             /** Title */
             title: string;
+        };
+        /** DistItem */
+        Backend_DistItem: {
+            /** Count */
+            count: number;
+            /** Label */
+            label: string;
+        };
+        /** DistributionResponse */
+        Backend_DistributionResponse: {
+            /** Items */
+            items?: components["schemas"]["Backend_DistItem"][];
+            /** Last Synced At */
+            last_synced_at?: string | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            unclassified_breakdown?: components["schemas"]["Backend_UnclassifiedBreakdown"] | null;
+            /**
+             * Unclassified Count
+             * @default 0
+             */
+            unclassified_count: number;
         };
         /**
          * GenreEdge
@@ -1264,6 +1409,39 @@ export interface components {
             /** Items */
             items?: components["schemas"]["Backend_ReviewedAlbumResponse"][];
         };
+        /** SavedTrackItem */
+        Backend_SavedTrackItem: {
+            /**
+             * Added At
+             * Format: date-time
+             */
+            added_at: string;
+            album?: components["schemas"]["Backend_AlbumBrief"] | null;
+            /** Album Id */
+            album_id?: string | null;
+            /** Album Name */
+            album_name?: string | null;
+            /** Album Sid */
+            album_sid?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /** Track Name */
+            track_name: string;
+        };
+        /** SavedTracksResponse */
+        Backend_SavedTracksResponse: {
+            /** Items */
+            items?: components["schemas"]["Backend_SavedTrackItem"][];
+            /** Last Synced At */
+            last_synced_at?: string | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
         /** SectionItem */
         Backend_SectionItem: {
             /** Name */
@@ -1370,6 +1548,19 @@ export interface components {
         Backend_ToListenResponse: {
             /** Items */
             items?: components["schemas"]["Backend_ToListenItemResponse"][];
+        };
+        /** UnclassifiedBreakdown */
+        Backend_UnclassifiedBreakdown: {
+            /**
+             * Uncatalogued
+             * @default 0
+             */
+            uncatalogued: number;
+            /**
+             * Ungenred
+             * @default 0
+             */
+            ungenred: number;
         };
         /** UpdateBucketItemRequest */
         Backend_UpdateBucketItemRequest: {
@@ -2352,6 +2543,46 @@ export interface operations {
             };
         };
     };
+    play_events_artist_distribution_api_library_play_events_artist_distribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DistributionResponse"];
+                };
+            };
+        };
+    };
+    play_events_genre_distribution_api_library_play_events_genre_distribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DistributionResponse"];
+                };
+            };
+        };
+    };
     list_recent_tracks_api_library_recent_tracks_get: {
         parameters: {
             query?: never;
@@ -2439,6 +2670,98 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_saved_tracks_api_library_saved_tracks_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_SavedTracksResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_tracks_artist_distribution_api_library_saved_tracks_artist_distribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DistributionResponse"];
+                };
+            };
+        };
+    };
+    classify_saved_tracks_api_library_saved_tracks_classify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ClassifyResponse"];
+                };
+            };
+        };
+    };
+    saved_tracks_genre_distribution_api_library_saved_tracks_genre_distribution_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DistributionResponse"];
                 };
             };
         };
