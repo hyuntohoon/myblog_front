@@ -90,7 +90,10 @@
 /* ── 2. 평론한 앨범 ───────────────────────────────────────────── */
 .art-cov-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+	/* auto-fit + capped track + start-align so 1-2 albums sit as normal cards
+	   instead of leaving a wide empty void to the right (audit M6). */
+	grid-template-columns: repeat(auto-fit, minmax(248px, 360px));
+	justify-content: start;
 	gap: clamp(28px, 3.4vw, 44px) clamp(20px, 2.6vw, 32px);
 }
 .art-rev-card { display: block; text-decoration: none; color: inherit; }
@@ -171,7 +174,10 @@
 .art-disco-block { min-width: 0; }
 .art-disco-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+	/* auto-fit + capped track + start-align so a lone release doesn't sit in a
+	   wide empty grid (audit M6). */
+	grid-template-columns: repeat(auto-fit, minmax(132px, 176px));
+	justify-content: start;
 	gap: clamp(22px, 2.6vw, 30px) clamp(16px, 2vw, 22px);
 }
 .art-disco-item { opacity: .66; transition: opacity .2s; }

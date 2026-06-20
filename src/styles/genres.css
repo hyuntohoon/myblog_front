@@ -103,6 +103,22 @@
 	border-radius: var(--radius-md);
 	background: var(--color-bg);
 }
+/* Bottom fade as a scroll affordance — the panel clips its scroller and macOS
+   overlay scrollbars are invisible at rest, so a clipped list reads as
+   truncated (audit M5). The gradient blends into the panel bg, so it's
+   invisible until scrollable content sits under it. */
+.gm-stage-host::after {
+	content: '';
+	position: absolute;
+	left: 1px;
+	right: 1px;
+	bottom: 1px;
+	height: 40px;
+	pointer-events: none;
+	z-index: 1;
+	background: linear-gradient(to top, var(--color-bg), transparent);
+	border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
 
 /* ── load / error / empty states ─────────────────────────────────────────── */
 .gm-a-state {
@@ -152,7 +168,7 @@
 /* ============================================================
    LAYOUT A — indented outliner
    ============================================================ */
-.gm-a-wrap { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.gm-a-wrap { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; scrollbar-width: thin; }
 .gm-a-col {
 	max-width: 760px;
 	margin: 0 auto;

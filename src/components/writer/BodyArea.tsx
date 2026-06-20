@@ -103,6 +103,7 @@ export default function BodyArea({ body, setBody, dim }: Props) {
 	ref={taRef}
 	className="body-input"
 	placeholder="본문…"
+	aria-label="본문"
 	value={body}
 	onChange={(e) => {
           setBody(e.target.value)

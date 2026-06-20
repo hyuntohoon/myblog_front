@@ -4,7 +4,7 @@
 // for the public surface), and overlays a first-class 평론(reviews) facet from the
 // build-time /search-index.json. Artists link to their hub; albums/tracks are
 // shown but not navigable (no album page); reviews link to /review/{slug}.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AlbumHit, ArtistHit, TrackHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
 import type { ReviewHit } from '@lib/reviewIndex'
@@ -90,6 +90,35 @@ feat.
 	)
 }
 
+// First-class on-page search field. /search previously had no input of its own
+// and relied on the header combobox, whose dropdown overlaid this hero (audit
+// M4). This is the primary search surface for the route.
+function PageField({ value, onType, onEnter }: { value: string, onType: (v: string) => void, onEnter: () => void }) {
+	return (
+		<div className="gs-pagefield">
+			<svg className="gs-pagefield-ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+				<circle cx="11" cy="11" r="7" />
+				<path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+			</svg>
+			<input
+				id="gs-page-search"
+				name="q"
+				className="gs-pagefield-input"
+				value={value}
+				placeholder="아티스트 · 앨범 · 트랙 · 평론 검색"
+				aria-label="검색"
+				autoComplete="off"
+				autoFocus
+				onChange={e => onType(e.target.value)}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter')
+						onEnter()
+				}}
+			/>
+		</div>
+	)
+}
+
 function Section({ label, count, children }: { label: string, count: number, children: React.ReactNode }) {
 	return (
 		<section className="gs-psec">
@@ -109,17 +138,37 @@ export default function SearchPage() {
 	const s = useMusicSearch({ recallTypes: ['album', 'artist', 'track'] })
 	const { setQuery, runDbSearch } = s
 	const [q, setQ] = useState(getQuery)
+	const [input, setInput] = useState(getQuery)
 	const [reviews, setReviews] = useState<ReviewHit[]>([])
 	const [filter, setFilter] = useState<Facet>('all')
+	const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+	// Commit a typed query to the search core + URL (replaceState, not push, so
+	// per-keystroke typing doesn't flood history). Matches HeaderSearch's 180ms.
+	function commit(v: string) {
+		clearTimeout(debounceRef.current)
+		setQ(v)
+		const t = v.trim()
+		window.history.replaceState(null, '', t ? `/search?q=${encodeURIComponent(t)}` : '/search')
+	}
+	function onType(v: string) {
+		setInput(v)
+		clearTimeout(debounceRef.current)
+		debounceRef.current = setTimeout(() => commit(v), 180)
+	}
 
 	// back/forward between queries re-reads the URL
 	useEffect(() => {
-		const onPop = () => setQ(getQuery())
+		const onPop = () => {
+			const next = getQuery()
+			setQ(next)
+			setInput(next)
+		}
 		window.addEventListener('popstate', onPop)
 		return () => window.removeEventListener('popstate', onPop)
 	}, [])
 
-	// push the URL query into the search core + the review filter
+	// push the committed query into the search core + the review filter
 	useEffect(() => {
 		setFilter('all')
 		setQuery(q)
@@ -135,36 +184,9 @@ export default function SearchPage() {
 	const query = q.trim()
 	const total = reviews.length + s.artists.length + s.albums.length + s.tracks.length
 	const show = (k: Facet) => filter === 'all' || filter === k
-
-	if (!query) {
-		return (
-			<div className="gs-rhead">
-				<div className="gs-rhead-top">
-					<span className="mono gs-rhead-kicker">전역 검색</span>
-					<h1 className="serif gs-rhead-q">무엇을 평론하시겠어요?</h1>
-					<span className="mono gs-rhead-total">평론 · 아티스트 · 앨범 · 트랙을 한 곳에서</span>
-				</div>
-			</div>
-		)
-	}
-
-	if (s.loading && total === 0)
-		return <div className="gs-status">검색 중…</div>
-
-	if (!s.loading && total === 0) {
-		return (
-			<div className="gs-noresults">
-				<span className="mono gs-nr-kicker">검색 결과</span>
-				<h1 className="serif gs-nr-q">
-‘
-{query}
-’
-    </h1>
-				<p className="serif gs-nr-lead"><em>일치하는 결과가 없습니다.</em></p>
-				<p className="serif gs-nr-sub">철자를 확인하거나 더 짧은 키워드로 시도해 보세요. 찾는 작품이 카탈로그에 아직 없을 수도 있습니다.</p>
-			</div>
-		)
-	}
+	const empty = !query
+	const noResults = !empty && !s.loading && total === 0
+	const hasResults = !empty && total > 0
 
 	const pills: [Facet, string, number][] = [
 		['all', '전체', total],
@@ -174,62 +196,83 @@ export default function SearchPage() {
 		['track', '트랙', s.tracks.length],
 	]
 
+	// PageField is rendered ONCE in a stable position so it never remounts on
+	// empty → results → no-results transitions (a remount would drop focus and
+	// break Korean IME composition mid-type).
 	return (
 		<>
 			<div className="gs-rhead">
 				<div className="gs-rhead-top">
-					<span className="mono gs-rhead-kicker">검색 결과</span>
-					<h1 className="serif gs-rhead-q">
-‘
-{query}
-’
-     </h1>
-					<span className="mono gs-rhead-total">
-총
-{total}
-건
-     </span>
+					{empty ?
+						(
+							<>
+								<span className="mono gs-rhead-kicker">전역 검색</span>
+								<h1 className="serif gs-rhead-q">무엇을 평론하시겠어요?</h1>
+								<span className="mono gs-rhead-total">평론 · 아티스트 · 앨범 · 트랙을 한 곳에서</span>
+							</>
+						) :
+						(
+							<>
+								<span className="mono gs-rhead-kicker">검색 결과</span>
+								<h1 className="serif gs-rhead-q">{`‘${query}’`}</h1>
+								<span className="mono gs-rhead-total">{s.loading && total === 0 ? '검색 중…' : noResults ? '일치하는 결과 없음' : `총 ${total}건`}</span>
+							</>
+						)}
+					<PageField value={input} onType={onType} onEnter={() => commit(input)} />
 				</div>
-				<div className="gs-pills" role="tablist">
-					{pills.map(([v, label, n]) => (
-						<button
-							key={v}
-							type="button"
-							role="tab"
-							aria-selected={filter === v}
-							className={`gs-pill mono${filter === v ? ' is-on' : ''}`}
-							onClick={() => setFilter(v)}
-							disabled={v !== 'all' && n === 0}
-						>
-							{label}
-							<span className="gs-pill-n">{n}</span>
-						</button>
-					))}
-				</div>
+				{hasResults && (
+					<div className="gs-pills" role="tablist">
+						{pills.map(([v, label, n]) => (
+							<button
+								key={v}
+								type="button"
+								role="tab"
+								aria-selected={filter === v}
+								className={`gs-pill mono${filter === v ? ' is-on' : ''}`}
+								onClick={() => setFilter(v)}
+								disabled={v !== 'all' && n === 0}
+							>
+								{label}
+								<span className="gs-pill-n">{n}</span>
+							</button>
+						))}
+					</div>
+				)}
 			</div>
 
-			<div className="gs-results">
-				{show('review') && reviews.length > 0 && (
-					<Section label="평론" count={reviews.length}>
-						<div className="gs-albgrid">{reviews.map(r => <ReviewCard key={r.slug} r={r} />)}</div>
-					</Section>
-				)}
-				{show('artist') && s.artists.length > 0 && (
-					<Section label="아티스트" count={s.artists.length}>
-						<div className="gs-agrid">{s.artists.map(a => <ArtistCard key={a.id ?? a.name} a={a} />)}</div>
-					</Section>
-				)}
-				{show('album') && s.albums.length > 0 && (
-					<Section label="앨범" count={s.albums.length}>
-						<div className="gs-albgrid">{s.albums.map(a => <AlbumCard key={a.id ?? a.title} a={a} />)}</div>
-					</Section>
-				)}
-				{show('track') && s.tracks.length > 0 && (
-					<Section label="트랙" count={s.tracks.length}>
-						<div className="gs-trklist">{s.tracks.map((t, i) => <TrackRow key={t.id ?? `${t.title}${i}`} t={t} no={i + 1} />)}</div>
-					</Section>
-				)}
-			</div>
+			{!empty && s.loading && total === 0 && <div className="gs-status">검색 중…</div>}
+
+			{noResults && (
+				<div className="gs-noresults">
+					<p className="serif gs-nr-lead"><em>일치하는 결과가 없습니다.</em></p>
+					<p className="serif gs-nr-sub">철자를 확인하거나 더 짧은 키워드로 시도해 보세요. 찾는 작품이 카탈로그에 아직 없을 수도 있습니다.</p>
+				</div>
+			)}
+
+			{hasResults && (
+				<div className="gs-results">
+					{show('review') && reviews.length > 0 && (
+						<Section label="평론" count={reviews.length}>
+							<div className="gs-albgrid">{reviews.map(r => <ReviewCard key={r.slug} r={r} />)}</div>
+						</Section>
+					)}
+					{show('artist') && s.artists.length > 0 && (
+						<Section label="아티스트" count={s.artists.length}>
+							<div className="gs-agrid">{s.artists.map(a => <ArtistCard key={a.id ?? a.name} a={a} />)}</div>
+						</Section>
+					)}
+					{show('album') && s.albums.length > 0 && (
+						<Section label="앨범" count={s.albums.length}>
+							<div className="gs-albgrid">{s.albums.map(a => <AlbumCard key={a.id ?? a.title} a={a} />)}</div>
+						</Section>
+					)}
+					{show('track') && s.tracks.length > 0 && (
+						<Section label="트랙" count={s.tracks.length}>
+							<div className="gs-trklist">{s.tracks.map((t, i) => <TrackRow key={t.id ?? `${t.title}${i}`} t={t} no={i + 1} />)}</div>
+						</Section>
+					)}
+				</div>
+			)}
 		</>
 	)
 }

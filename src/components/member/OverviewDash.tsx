@@ -8,17 +8,15 @@
 // <body>) moves. On drop the new arrangement commits. Layout persists to
 // localStorage. Ported from overview.jsx (kept pointer-based, NOT @dnd-kit).
 import type { CSSProperties, ReactNode } from 'react'
-import type { ChartStyle } from './charts'
 import type { NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/member'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { bucketCount, getActivity, getArtists, getGenres, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
+import { bucketCount, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
 import { useDismissable } from '@lib/useDismissable'
-import { DistChart } from './charts'
 import { NowPlaying } from './NowPlaying'
 import { listListenedAlbums, listRecentlyListened, listRecentTracks } from './spotify.api'
-import { AlbumArt, BucketShortcut, SampleBadge, SectionTitle, Seg, Stars } from './ui'
+import { AlbumArt, BucketShortcut, SectionTitle, Seg, Stars } from './ui'
 
 /** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
 function fmtWhen(iso: string): string {
@@ -43,7 +41,6 @@ interface DashCtx {
   onOpen: (t: DetailTarget) => void
   npStyle: NpStyle
   setNpStyle: (s: NpStyle) => void
-  chartStyle: ChartStyle
   goBucket: () => void
   reviews: MemberReview[]
 }
@@ -186,16 +183,9 @@ const WIDGET_TITLES: Record<string, string> = {
   'recent-tracks': '최근 재생 트랙',
   'listened-albums': '들은 앨범 (누적)',
   'bucket': '평론 버킷',
-  'genre': '장르 분포',
-  'artists': '톱 아티스트',
   'latest-reviews': '최근 평론',
-  'activity': '감상 활동',
 }
 const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
-/** widgets whose body is sample data → show a 샘플 badge in the header. */
-// nowplaying + recent-albums + recent-tracks + listened-albums are now real
-// (FEAT-member-dashboard-realdata); genre/artists/activity remain sample.
-const SAMPLE_WIDGETS = new Set(['genre', 'artists', 'activity'])
 
 function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
   return (
@@ -213,15 +203,6 @@ function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) 
       </div>
       {r.rating != null && <Stars score={r.rating} size={12} />}
     </button>
-  )
-}
-
-function Activity({ data }: { data: number[] }) {
-  const max = Math.max(...data)
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 5, height: 56 }}>
-      {data.map((v, i) => <div key={i} title={`${v}장`} style={{ flex: 1, height: `${(v / max) * 100}%`, background: i === data.length - 1 ? 'var(--color-accent)' : 'var(--color-text)', opacity: i === data.length - 1 ? 1 : 0.3, minHeight: 3 }} />)}
-    </div>
   )
 }
 
@@ -447,10 +428,7 @@ function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
     case 'recent-tracks': return <RecentTracksWidget view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
     case 'listened-albums': return <ListenedAlbumsWidget view={ctx.views['listened-albums']} onOpen={ctx.onOpen} />
     case 'bucket': return <BucketShortcut count={bucketCount()} onGo={ctx.goBucket} />
-    case 'genre': return <DistChart style={ctx.chartStyle === 'donut' ? 'donut' : 'bar'} items={getGenres().slice(0, 6)} />
-    case 'artists': return <DistChart style="list" items={getArtists().slice(0, 5)} />
     case 'latest-reviews': return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{ctx.reviews.slice(0, 2).map(r => <MiniReview key={r.slug} r={r} onOpen={ctx.onOpen} />)}</div>
-    case 'activity': return <Activity data={getActivity()} />
     default: return null
   }
 }
@@ -632,7 +610,6 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, borderBottom: '1px solid var(--color-text)', paddingBottom: 10 }}>
         <span {...handleProps} className="lf-drag-handle lf-mono" style={{ ...handleProps.style, color: dragging ? 'var(--color-accent)' : 'var(--color-faded)', fontSize: 15, lineHeight: 1, userSelect: 'none' }} title="드래그하여 순서 변경">⠿</span>
         <span className="lf-mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{WIDGET_TITLES[id]}</span>
-        {SAMPLE_WIDGETS.has(id) && <SampleBadge />}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {id === 'nowplaying' && <Seg value={ctx.npStyle} onChange={v => ctx.setNpStyle(v as NpStyle)} options={[{ v: 'banner', label: '배너' }, { v: 'full', label: '플레이어' }, { v: 'list', label: '리스트' }]} />}
           {hasView && <ViewToggle value={ctx.views[id]} onChange={v => ctx.setView(id, v)} />}
@@ -645,9 +622,9 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
 }
 
 /* ── dashboard ───────────────────────────────────────────── */
-const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['listened-albums'], ['bucket'], ['genre', 'artists']]
+const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['listened-albums'], ['bucket']]
 
-export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket, reviews }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, chartStyle: ChartStyle, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[] }) {
+export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[] }) {
   const [rows, setRows] = useState<string[][]>(() => {
     try {
       const s = JSON.parse(localStorage.getItem(OV_ROWS_KEY) || 'null')
@@ -698,7 +675,7 @@ export function OverviewDash({ npStyle, setNpStyle, chartStyle, onOpen, goBucket
     document.addEventListener('pointerdown', onDown, true)
     return () => document.removeEventListener('pointerdown', onDown, true)
   }, [addOpen])
-  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, chartStyle, goBucket, reviews }
+  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, goBucket, reviews }
   const flat = rows.flat()
   const remove = (id: string) => setRows(prev => prev.map(r => r.filter(x => x !== id)).filter(r => r.length))
   const add = (id: string) => {

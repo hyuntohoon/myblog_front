@@ -192,11 +192,30 @@
    its natural width on one line. The save-dot is tiny, so it stays visible. */
 @media (max-width: 600px) {
   .chrome { padding: 10px 14px; gap: 10px; }
-  .chrome-r { gap: 8px; }
+  /* let the action cluster wrap to a second line instead of overflowing */
+  .chrome-r { gap: 8px; flex-wrap: wrap; row-gap: 8px; }
   .chrome-search-label,
   .chrome-kbd,
   .chrome-drafts-label { display: none; }
-  .chrome-search { padding: 6px 9px; }
-  .chrome-drafts { padding: 6px 9px; }
+  /* ≥44px tap targets (WCAG 2.5.5) once the labels collapse to icons */
+  .chrome-search,
+  .chrome-drafts {
+    padding: 0 12px;
+    min-height: 44px;
+    min-width: 44px;
+    justify-content: center;
+  }
+  .chrome-btn {
+    padding: 0 16px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .view-toggle button { padding: 0 14px; min-height: 40px; }
+}
+/* The ⌘K hint is meaningless without a physical keyboard. */
+@media (pointer: coarse) {
+  .chrome-kbd,
+  .wr-hero-empty-sub kbd { display: none; }
 }
 

@@ -29,12 +29,12 @@ export default function WriterChrome({ status, lastSaved, pulseKey, view, onView
         <em className="chrome-logo">buckit</em>
       </div>
       <div className="chrome-r">
-        <button type="button" className="chrome-drafts" onClick={onOpenDrafts} title="임시 저장함 — 저장된 초안 열기">
+        <button type="button" className="chrome-drafts" onClick={onOpenDrafts} aria-label="임시 저장함" title="임시 저장함 — 저장된 초안 열기">
           <span className="chrome-drafts-ico" aria-hidden>🗂</span>
           <span className="chrome-drafts-label">임시 저장함</span>
           {draftCount != null && draftCount > 0 && <span className="chrome-drafts-count">{draftCount}</span>}
         </button>
-        <button type="button" className="chrome-search" onClick={onOpenSearch}>
+        <button type="button" className="chrome-search" onClick={onOpenSearch} aria-label="작품 검색" title="작품 검색 (⌘K)">
           <span className="chrome-search-ico" aria-hidden>⌕</span>
           <span className="chrome-search-label">작품 검색</span>
           <kbd className="chrome-kbd">⌘K</kbd>

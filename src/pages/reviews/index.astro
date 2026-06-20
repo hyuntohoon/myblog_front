@@ -32,11 +32,6 @@ const reviews = buildReviewCards(await getCollection('blog'))
 (
         <ReviewsIndex client:load reviews={reviews} variant="editorial" />
       )}
-
-      <!-- Footer -->
-      <footer class="rev-footer">
-        <span>bucki<span style="color: var(--color-accent)">t</span></span>
-      </footer>
     </div>
   </SkipNavContent>
 </Layout>

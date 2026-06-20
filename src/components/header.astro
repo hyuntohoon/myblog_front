@@ -15,7 +15,12 @@ function normalize(p: string) {
 }
 
 const pathOnly = (url: string) => normalize(url.split(/[?#]/)[0])
-const isActive = (url: string) => pathOnly(pathname) === pathOnly(url)
+const search = Astro.url.search
+// Path match, then disambiguate the ?bnm=1 filter link from the plain /reviews
+// route so they don't both light up on either page (audit L17).
+function isActive(url: string) {
+  return pathOnly(pathname) === pathOnly(url) && url.includes('bnm=1') === search.includes('bnm=1')
+}
 
 const navLinks = [
   { title: 'Reviews', url: '/reviews' },

@@ -18,6 +18,25 @@ function Notice({ title, sub }: { title: string, sub?: string }) {
   )
 }
 
+// Skeleton mirroring the real bucket-section grid so the load doesn't flash a
+// bare "불러오는 중…" line then pop (audit M9). Reuses the .lf-skeleton shimmer.
+function CollectionSkeleton() {
+  return (
+    <div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중" style={{ gap: 44 }}>
+      {[0, 1].map(s => (
+        <section key={s}>
+          <div className="lf-skeleton" style={{ height: 22, width: 180, marginBottom: 18 }} />
+          <div style={{ display: 'grid', gap: '16px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+            {Array.from({ length: 10 }, (_, i) => (
+              <div key={i} className="lf-skeleton" style={{ aspectRatio: '1 / 1' }} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}
+
 export default function CollectionView() {
   const [data, setData] = useState<PublicCollection[] | null>(null)
   const [error, setError] = useState(false)
@@ -35,7 +54,7 @@ export default function CollectionView() {
   if (error)
     return <Notice title="컬렉션을 불러오지 못했습니다" sub="잠시 후 다시 시도해 주세요." />
   if (data == null)
-    return <Notice title="불러오는 중…" />
+    return <CollectionSkeleton />
 
   const collections = data.filter(c => c.albums.length > 0)
   if (collections.length === 0)

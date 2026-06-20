@@ -128,10 +128,12 @@ function ColdStart() {
 }
 
 /* ── 최신 평론 — type-forward list with hairline dividers ──────── */
-function Latest({ reviews }: { reviews: ReviewCard[] }) {
-	if (reviews.length === 0)
+function Latest({ reviews, excludeSlug }: { reviews: ReviewCard[], excludeSlug?: string }) {
+	// Drop the album already shown in the hero so it isn't featured twice in one
+	// viewport (audit L16). With a single review the list collapses entirely.
+	const items = reviews.filter(r => r.slug !== excludeSlug).slice(0, 12)
+	if (items.length === 0)
 		return null
-	const items = reviews.slice(0, 12)
 	return (
 		<section>
 			<Measure style={{ paddingTop: 56 }}>
@@ -162,7 +164,7 @@ export default function EditorialHome({ bnm, reviews, stats }: Props) {
 	return (
 		<div className="bk-page">
 			{feature ? <Hero feature={feature} /> : <ColdStart />}
-			<Latest reviews={reviews} />
+			<Latest reviews={reviews} excludeSlug={feature?.slug} />
 			<Measure style={{ paddingTop: 56 }}><BrowseGenres /></Measure>
 			<Measure style={{ paddingTop: 56, paddingBottom: 40 }}><ByTheNumbers stats={stats} /></Measure>
 		</div>

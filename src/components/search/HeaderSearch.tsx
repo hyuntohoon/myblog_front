@@ -39,6 +39,10 @@ export default function HeaderSearch() {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const wrapRef = useRef<HTMLDivElement>(null)
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+	// On /search the page renders its own first-class field (M4); suppress this
+	// header dropdown there so it doesn't overlay the page hero. The input still
+	// works as a quick-nav (Enter → submitAll).
+	const onSearchPage = typeof window !== 'undefined' && window.location.pathname.startsWith('/search')
 
 	// ⌘K / Ctrl+K focuses the field (the single global owner, post-Pagefind)
 	useEffect(() => {
@@ -171,6 +175,8 @@ export default function HeaderSearch() {
 				</svg>
 				<input
 					ref={inputRef}
+					id="gs-header-search"
+					name="q"
 					className="gs-input"
 					value={q}
 					placeholder="아티스트 · 앨범 · 트랙 · 평론 검색"
@@ -196,7 +202,7 @@ export default function HeaderSearch() {
 					<kbd className="gs-kbd mono">⌘K</kbd>}
 			</label>
 
-			{open && (
+			{open && !onSearchPage && (
 				<div className="gs-drop" id="gs-drop" role="listbox">
 					<div className="gs-drop-scroll">
 						{!q.trim() ?
