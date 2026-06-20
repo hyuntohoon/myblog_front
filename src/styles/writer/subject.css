@@ -350,3 +350,32 @@
   white-space: nowrap;
   color: var(--accent);
 }
+
+/* ────────── MOBILE ────────── */
+/* Touch devices can't hover → the pick affordances stay always-visible. */
+@media (hover: none), (pointer: coarse) {
+  .art-track-pick { opacity: 1; }
+  .art-album-pick { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+  /* The duration + pick columns crowd out the title on a phone — collapse to
+     3 cols (number, cover, info) and tuck dur + pick onto the info column's
+     own rows so nothing overflows. */
+  .art-track {
+    grid-template-columns: 22px 36px 1fr;
+    gap: 4px 10px;
+  }
+  .art-track-n { grid-row: 1 / span 3; }
+  .art-track-cover { grid-row: 1 / span 3; }
+  .art-track-info { grid-column: 3; }
+  .art-track-dur {
+    grid-column: 3;
+    text-align: left;
+  }
+  .art-track-pick {
+    grid-column: 3;
+    text-align: left;
+  }
+  .art-albums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

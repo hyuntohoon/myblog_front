@@ -23,6 +23,7 @@
 .canon-card {
 	color: inherit;
 	text-decoration: none;
+	min-width: 0;
 }
 
 .canon-cover {
@@ -36,6 +37,8 @@
 
 .canon-title {
 	transition: color 0.16s;
+	overflow-wrap: anywhere;
+	min-width: 0;
 }
 
 .canon-card:hover .canon-title {

@@ -237,6 +237,20 @@
 	padding: 24px 0;
 }
 
+/* ── phone: kill the double gutter (parent .container already pads 2rem) ── */
+@media (max-width: 640px) {
+	.art-root { padding-left: 0; padding-right: 0; }
+}
+
+/* ── touch: enlarge the Spotify external-link tap target (was ~14px tall) ── */
+@media (pointer: coarse) {
+	.art-id-spotify {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+	}
+}
+
 /* ── narrow ─────────────────────────────────────────────────── */
 @container artmain (max-width: 760px) {
 	.art-id-grid { grid-template-columns: 1fr; gap: clamp(20px, 5vw, 28px); justify-items: start; }

@@ -568,7 +568,7 @@ slot++
   return (
     <div>
       {rows.map((row, ri) => (
-        <div key={ri} style={{ display: 'flex', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
+        <div key={ri} className="ov-dash-row" style={{ display: 'flex', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
           {row.map(id => (
             <div key={id} ref={(el) => { cellRefs.current[id] = el }} style={{ flex: 1, minWidth: 0, opacity: d && d.id === id ? 0.3 : 1 }}>
               {render(id, { onPointerDown: e => begin(e, id), style: { touchAction: 'none', cursor: 'grab' } }, !!(d && d.id === id))}

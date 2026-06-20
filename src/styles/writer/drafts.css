@@ -99,6 +99,11 @@
 .wr-draft-del.is-armed,
 .wr-draft-del.is-failed { color: var(--accent); font-weight: 600; }
 .wr-draft-del:disabled { opacity: 0.5; cursor: default; }
+/* Touch devices can't hover-reveal the delete button → keep it visible. */
+@media (hover: none), (pointer: coarse) {
+  .wr-draft-del { opacity: 1; }
+  .wr-draft-del:disabled { opacity: 0.5; }
+}
 
 .wr-drafts-msg {
   font-family: var(--mono);

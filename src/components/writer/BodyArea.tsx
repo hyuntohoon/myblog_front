@@ -62,7 +62,7 @@ export default function BodyArea({ body, setBody, dim }: Props) {
       {bubble && (
         <div className="bubble-toolbar" style={{ top: bubble.top, left: bubble.left }}>
           <button
-	onMouseDown={(e) => {
+	onPointerDown={(e) => {
               e.preventDefault()
               wrapSelection('**')
             }}
@@ -71,7 +71,7 @@ export default function BodyArea({ body, setBody, dim }: Props) {
             <strong>B</strong>
           </button>
           <button
-	onMouseDown={(e) => {
+	onPointerDown={(e) => {
               e.preventDefault()
               wrapSelection('*')
             }}
@@ -80,7 +80,7 @@ export default function BodyArea({ body, setBody, dim }: Props) {
             <em>I</em>
           </button>
           <button
-	onMouseDown={(e) => {
+	onPointerDown={(e) => {
               e.preventDefault()
               wrapSelection('"')
             }}
@@ -89,7 +89,7 @@ export default function BodyArea({ body, setBody, dim }: Props) {
             "
           </button>
           <button
-	onMouseDown={(e) => {
+	onPointerDown={(e) => {
               e.preventDefault()
               wrapSelection('\n\n> ', '')
             }}

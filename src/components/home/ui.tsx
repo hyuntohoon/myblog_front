@@ -55,8 +55,8 @@ export function SectionTitle({ kicker, title, right, size = 26 }: {
 }) {
 	return (
 		<div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', borderBottom: '1px solid var(--color-text)', paddingBottom: 12, marginBottom: 22 }}>
-			<div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', flexShrink: 0 }}>
-				<h2 className="serif" style={{ fontSize: size, fontWeight: 500, letterSpacing: '-.01em', color: 'var(--color-text)', whiteSpace: 'nowrap', margin: 0 }}>{title}</h2>
+			<div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
+				<h2 className="serif" style={{ fontSize: size, fontWeight: 500, letterSpacing: '-.01em', color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', margin: 0 }}>{title}</h2>
 				{kicker && <span className="meta">{kicker}</span>}
 			</div>
 			{right}
