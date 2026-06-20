@@ -373,7 +373,7 @@ export default function ReviewsIndex({
               </ul>
             ) :
           (
-              <ul className={isEditorial ? 'rev-grid rev-c-grid' : 'rev-grid'}>
+              <ul className={isEditorial ? `rev-grid rev-c-grid${shown.length < 3 ? ' rev-c-grid--few' : ''}` : 'rev-grid'}>
                 {shown.map(r => (
                   <li key={r.slug}>
                     <a href={`/review/${r.slug}`} className="rev-card">

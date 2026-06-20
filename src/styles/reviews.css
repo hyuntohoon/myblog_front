@@ -418,7 +418,9 @@
 /* ── Grid view ────────────────────────────────────────────── */
 .rev-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  /* auto-fit (not auto-fill) so a low-count grid collapses empty tracks
+     instead of leaving phantom columns (audit M6). */
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
   gap: 32px 28px;
   padding: 40px 0;
   list-style: none;
@@ -570,19 +572,6 @@
   color: var(--color-faded);
   margin: 0;
 }
-.rev-footer {
-  border-top: 1px solid var(--color-border);
-  padding: 28px 0 48px;
-  text-align: center;
-}
-.rev-footer span {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-faded);
-}
-
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 880px) {
   .rev-featured {
@@ -742,6 +731,12 @@
 .rev-c-grid {
   grid-template-columns: repeat(3, 1fr);
   gap: 38px 34px;
+}
+/* 1-2 reviews: drop the hard 3-up so the lone card doesn't sit beside two
+   empty columns (audit M6) — cap the card width + left-align instead. */
+.rev-c-grid.rev-c-grid--few {
+  grid-template-columns: repeat(auto-fit, minmax(290px, 360px));
+  justify-content: start;
 }
 .rev-c-grid .rev-card-album {
   font-size: 21px;
