@@ -20,9 +20,9 @@ function CanonCard({ item }: { item: ReviewCard }) {
 			<div className="canon-cover">
 				<Cover label={item.album} src={item.cover} square radius={4} />
 			</div>
-			<div style={{ marginTop: 13 }}>
+			<div style={{ marginTop: 13, minWidth: 0 }}>
 				{item.artist && (
-					<div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', letterSpacing: '.01em' }}>{item.artist}</div>
+					<div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', letterSpacing: '.01em', overflowWrap: 'anywhere' }}>{item.artist}</div>
 				)}
 				<h3 className="serif canon-title" style={{ fontSize: 19, fontWeight: 500, letterSpacing: '-.012em', lineHeight: 1.18, margin: '2px 0 0' }}>{item.album}</h3>
 				<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9, flexWrap: 'wrap' }}>

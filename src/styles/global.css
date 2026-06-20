@@ -105,6 +105,11 @@
 		max-width: 1320px;
 		padding-inline: 2rem;
 	}
+
+	/* Tighter gutter on phones so content keeps more usable width. */
+	@media (max-width: 480px) {
+		padding-inline: 1rem;
+	}
 }
 
 /* ─── Prose / markdown ─── */
@@ -119,6 +124,13 @@ html {
 	font-size: 16px;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Guard against horizontal overflow from any single wide child blowing out the
+   viewport on mobile. `clip` (not `hidden`) so the fixed/sticky header still works. */
+html,
+body {
+	overflow-x: clip;
 }
 
 body {
@@ -343,6 +355,10 @@ html {
 	transition: background 0.16s, color 0.16s, border-color 0.16s, opacity 0.16s;
 }
 .btn:hover { border-color: var(--color-text); }
+/* Touch tap target — desktop padding/height unchanged. */
+@media (pointer: coarse) {
+	.btn { min-height: 44px; }
+}
 .btn-solid {
 	color: var(--color-bg);
 	background: var(--color-text);

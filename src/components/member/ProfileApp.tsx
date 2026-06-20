@@ -150,7 +150,7 @@ function MenuGroup<T extends string>({ label, value, options, onChange }: { labe
   return (
     <div>
       <div className="lf-kicker" style={{ marginBottom: 8 }}>{label}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+      <div className="lf-menu-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
         {options.map(o => (
           <button
 	key={o.v}
@@ -283,6 +283,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
         <button
 	key={tb.id}
 	type="button"
+	className="lf-tab-btn"
 	onClick={() => setTab(tb.id)}
 	style={{ border: 'none', background: 'none', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: tab === tb.id ? 'var(--color-text)' : 'var(--color-faded)', borderBottom: tab === tb.id ? '2px solid var(--color-accent)' : '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
         >

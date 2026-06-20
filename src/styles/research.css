@@ -549,6 +549,20 @@
 	flex: 1;
 	min-height: 0;
 }
+/* Touch-only: enlarge the section-pill nav buttons + modal close to ≥44px
+   tap targets (WCAG 2.5.5). Desktop pointer users keep the compact sizing. */
+@media (pointer: coarse) {
+	.rsh-nav button {
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
+	}
+	.rsh-modal-close {
+		width: 44px;
+		height: 44px;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.rsh-modal, .rsh-modal-scrim { animation: none; }
 }

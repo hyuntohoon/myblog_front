@@ -96,7 +96,7 @@ function Hero({ feature }: { feature: Feature }) {
 					<div className="bk-lift"><Cover label={feature.album} src={feature.cover} square radius={4} /></div>
 					<div style={{ minWidth: 0 }}>
 						<div className="mono" style={{ fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-subtle)', marginBottom: 12 }}>{feature.artist}</div>
-						<h1 className="serif italic bk-album" style={{ fontSize: 'clamp(34px, 3.8vw, 54px)', fontWeight: 500, lineHeight: 0.98, letterSpacing: '-.02em', margin: 0, textWrap: 'balance' }}>{feature.album}</h1>
+						<h1 className="serif italic bk-album" style={{ fontSize: 'clamp(34px, 3.8vw, 54px)', fontWeight: 500, lineHeight: 0.98, letterSpacing: '-.02em', margin: 0, textWrap: 'balance', overflowWrap: 'anywhere', minWidth: 0 }}>{feature.album}</h1>
 						<p className="serif" style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--color-subtle)', margin: '18px 0 22px', maxWidth: '46ch', textWrap: 'pretty' }}>{feature.pull}</p>
 						<div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
 							<Stars rating={feature.score} size={26} />

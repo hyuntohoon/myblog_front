@@ -29,6 +29,7 @@ import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
 import ResearchNote from './ResearchNote'
+import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
 import { getSpotifyLibraryState, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
@@ -433,7 +434,7 @@ function CoverResearchBadge({ status, active, onOpen }: { status: ResearchStatus
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research }: {
+function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions }: {
   album: BoardAlbum
   bucketId: string
   rated: boolean
@@ -461,6 +462,13 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
    * strip / Spotify-library bucket).
    */
   research?: { mode: string, selected: boolean, status: ResearchStatus | null, onOpen: () => void, onToggleSelected: (next: boolean) => void }
+  /**
+   * Touch fallback (coarse pointers): open the album action sheet. The ⋯ button
+   * shows only on hover (desktop) / always (touch); it never affects the drag
+   * path. Absent → no button (the read-only recent strip passes none? it DOES
+   * pass it as a copy source).
+   */
+  onTouchActions?: () => void
 }) {
   const [over, setOver] = useState(false)
   const dragging = draggingId === album.itemId
@@ -552,6 +560,21 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
 	onChange={e => research.onToggleSelected(e.target.checked)}
             />
           )}
+          {onTouchActions && (
+            <button
+	type="button"
+	className="bb-tile-kebab"
+	title="동작"
+	aria-label="앨범 동작"
+	draggable={false}
+	onClick={(e) => {
+                e.stopPropagation()
+                onTouchActions()
+              }}
+            >
+              ⋯
+            </button>
+          )}
         </div>
         <div style={{ marginTop: 7 }}>
           <div className="lf-serif lf-italic" style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
@@ -614,12 +637,21 @@ interface SharedProps {
   // album_id → live research status (one batched GET /api/research/status poll for
   // the whole board), falling back to the bucket-payload seed. No per-cover GET.
   researchStatus: Record<string, ResearchStatus>
+  // Touch fallback (coarse pointers): open the per-album / per-bucket action
+  // sheet. The board owns the single open sheet + the picker it spawns; these
+  // are no-ops on the drag path (desktop keeps using DnD).
+  openAlbumSheet: (a: AlbumSheet) => void
+  openBucketSheet: (b: BoardBucket) => void
 }
+
+// A pending album action sheet — carries enough to drive the exact ops the drop
+// handlers would, plus the copy/library flags so the right verbs show.
+interface AlbumSheet { album: BoardAlbum, bucketId: string, copySource: boolean, fromLib: boolean, source?: string }
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
@@ -710,6 +742,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	draggingId={draggingId}
 	setDraggingId={setDraggingId}
 	setDragKind={setDragKind}
+	onTouchActions={() => openAlbumSheet({ album: a, bucketId: bucket.id, copySource: false, fromLib: isLib, source: isLib ? libState.get(a.albumId)?.source : undefined })}
 	onInsert={isLib ? undefined : handleInsert}
 	research={isLib ?
 		undefined :
@@ -889,6 +922,11 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
           )}
           <button type="button" className="lf-iconbtn" title="앨범 추가" onClick={() => ops.requestAdd(bucket.id, bucket.name)}>＋</button>
           <button type="button" className="lf-iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
+          {!isLib && (
+            // Touch fallback (coarse pointers only — hidden on desktop, which uses
+            // the draggable header). 이동/중첩 + 삭제 via the bucket action sheet.
+            <button type="button" className="lf-iconbtn bb-bucket-actions" title="버킷 동작" aria-label="버킷 동작" onClick={() => openBucketSheet(bucket)}>⋯</button>
+          )}
         </div>
       </div>
 
@@ -1269,6 +1307,50 @@ function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: T
   )
 }
 
+// ── action sheet (touch fallback) ────────────────────────────────────────────
+// A small bottom sheet of labeled actions, portaled to <body> like TrashDock.
+// Replaces drag-and-drop on touch devices (where onDragStart never fires). Each
+// row's onClick runs the SAME ops the drop handlers call. Dismissable on
+// backdrop tap / ESC.
+interface SheetAction { label: string, onClick: () => void, danger?: boolean }
+function ActionSheet({ title, subtitle, actions, onClose }: { title: string, subtitle?: string, actions: SheetAction[], onClose: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key === 'Escape')
+        onClose()
+    }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+  return createPortal(
+    <div className="bps-scrim" onClick={onClose} role="presentation">
+      <div className="bps-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="bps-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="lf-serif" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+            {subtitle && <div className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-subtle)', letterSpacing: '0.04em', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>}
+          </div>
+          <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기">✕</button>
+        </div>
+        <div className="bps-list">
+          {actions.map(a => (
+            <button
+	key={a.label}
+	type="button"
+	className="bps-item"
+	onClick={a.onClick}
+	style={a.danger ? { color: 'var(--color-accent)' } : undefined}
+            >
+              <span className="lf-serif">{a.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ── board ────────────────────────────────────────────────────────────────---
 export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => void, reviews: MemberReview[] }) {
   // Seed both from localStorage so the board paints immediately on mount and
@@ -1366,6 +1448,12 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
   })
   const [trashOpen, setTrashOpen] = useState(false)
   const [pendingBucketDelete, setPendingBucketDelete] = useState<{ id: string, name: string } | null>(null)
+  // Touch fallback (coarse pointers): the single open album / bucket action
+  // sheet, and a pending bucket-picker spawned from a sheet (carries the chosen
+  // op to run once a target bucket is tapped). Drag is unaffected by all three.
+  const [albumSheet, setAlbumSheet] = useState<AlbumSheet | null>(null)
+  const [bucketSheet, setBucketSheet] = useState<BoardBucket | null>(null)
+  const [picker, setPicker] = useState<{ title: string, skip?: (b: BoardBucket) => boolean, allowRoot?: boolean, onPick: (bucketId: string | null) => void } | null>(null)
   const confirmModalRef = useRef<HTMLDivElement>(null)
   useDismissable(!!pendingBucketDelete, () => setPendingBucketDelete(null), confirmModalRef)
 
@@ -1889,7 +1977,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet }
 
   return (
     <div>
@@ -1918,7 +2006,7 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
           <div style={{ display: 'flex', gap: 14, padding: 14, overflowX: 'auto', alignItems: 'flex-start' }}>
             {recent.map(a => (
               <div key={a.itemId} style={{ flex: '0 0 116px', width: 116 }}>
-                <AlbumChip album={a} bucketId={RECENT_ID} rated={false} score={null} onOpen={onOpen} copySource draggingId={draggingId} setDraggingId={setDraggingId} setDragKind={setDragKind} />
+                <AlbumChip album={a} bucketId={RECENT_ID} rated={false} score={null} onOpen={onOpen} copySource draggingId={draggingId} setDraggingId={setDraggingId} setDragKind={setDragKind} onTouchActions={() => setAlbumSheet({ album: a, bucketId: RECENT_ID, copySource: true, fromLib: false })} />
               </div>
             ))}
           </div>
@@ -2074,6 +2162,118 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
             </div>
           </section>
         </div>
+      )}
+
+      {/* ── touch fallback (coarse pointers) — album / bucket action sheets +
+          the shared bucket picker. These mirror the drag paths: every action
+          runs the SAME ops a drop would. Reorder-before-a-specific-cover is
+          dropped on touch (append is fine). Desktop never opens these (the
+          ⋯ triggers are coarse-pointer-only). */}
+      {albumSheet && (
+        <ActionSheet
+	title={albumSheet.album.title}
+	subtitle={albumSheet.album.artist}
+	onClose={() => setAlbumSheet(null)}
+	actions={(() => {
+            const s = albumSheet
+            const list: SheetAction[] = []
+            if (s.copySource || s.fromLib) {
+              list.push({
+                label: '버킷에 추가',
+                onClick: () => {
+                  setAlbumSheet(null)
+                  setPicker({
+                    title: '버킷에 추가',
+                    onPick: (to) => {
+                      if (to)
+                        ops.copyAlbum(s.album.albumId, to)
+                      setPicker(null)
+                    },
+                  })
+                },
+              })
+            }
+            else {
+              list.push({
+                label: '다른 버킷으로 이동',
+                onClick: () => {
+                  setAlbumSheet(null)
+                  setPicker({
+                    title: '다른 버킷으로 이동',
+                    skip: b => b.id === s.bucketId,
+                    onPick: (to) => {
+                      if (to && to !== s.bucketId)
+                        ops.insertAlbum(s.album.itemId, s.bucketId, to, null)
+                      setPicker(null)
+                    },
+                  })
+                },
+              })
+            }
+            // 휴지통: normal items, and myblog_added library items (a 기존/preexisting
+            // library album can't be trashed — mirrors TrashDock.accepts()).
+            if (!s.copySource && !(s.fromLib && s.source === 'preexisting')) {
+              list.push({
+                label: '휴지통으로',
+                danger: true,
+                onClick: () => {
+                  trashAlbum(s.album.itemId, s.bucketId)
+                  setAlbumSheet(null)
+                },
+              })
+            }
+            return list
+          })()}
+        />
+      )}
+
+      {bucketSheet && (
+        <ActionSheet
+	title={bucketSheet.name}
+	subtitle="버킷 동작"
+	onClose={() => setBucketSheet(null)}
+	actions={[
+            {
+              label: '이동 / 중첩',
+              onClick: () => {
+                const b = bucketSheet
+                setBucketSheet(null)
+                setPicker({
+                  title: '이동 / 중첩할 위치',
+                  allowRoot: true,
+                  // Can't nest a bucket into itself or its own subtree.
+                  skip: t => subtreeHas(b, t.id),
+                  onPick: (to) => {
+                    if (to == null)
+                      ops.moveBucketTo(b.id, null, null)
+                    else
+                      ops.moveBucketInto(b.id, to)
+                    setPicker(null)
+                  },
+                })
+              },
+            },
+            {
+              label: '삭제',
+              danger: true,
+              onClick: () => {
+                setPendingBucketDelete({ id: bucketSheet.id, name: bucketSheet.name })
+                setBucketSheet(null)
+              },
+            },
+          ]}
+        />
+      )}
+
+      {picker && tree && (
+        <BucketPickerSheet
+	title={picker.title}
+	tree={normalTree}
+	skip={picker.skip}
+	allowRoot={picker.allowRoot}
+	onPick={picker.onPick}
+	onClose={() => setPicker(null)}
+        />
       )}
     </div>
   )

@@ -724,6 +724,22 @@
 	.gm-c-dockwrap { flex: 0 0 auto !important; max-width: none; max-height: 44%; border-left: none; border-top: 1px solid var(--color-border); }
 	.gm-c-resizer, .gm-a-resizer { display: none; }
 	.gm-c-stage { flex: 1; }
+	/* gesture hint advertises ⌘/Ctrl+scroll zoom — meaningless on phones; the
+	   +/- zoom buttons remain. */
+	.gm-c-panhint { display: none; }
+	/* long English labels mustn't clip on a narrow phone column → allow wrap. */
+	.gm-a-label, .gm-b-label, .gm-c-label { white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* ── touch affordance (desktop untouched) ────────────────── */
+@media (pointer: coarse) {
+	/* ≥44px tap targets for the genre-map controls. */
+	.gm-c-zoomctl { width: 44px; }
+	.gm-c-zoombtn { width: 44px; height: 44px; }
+	.gm-c-fitbtn { height: 44px; }
+	.gm-c-zoompct { height: 32px; }
+	.gm-c-detail-x { width: 44px; height: 44px; }
+	.gm-peek-x { width: 44px; height: 44px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

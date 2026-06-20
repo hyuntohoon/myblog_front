@@ -125,6 +125,14 @@
   justify-content: center;
 }
 .bubble-toolbar button:hover { background: rgba(255, 255, 255, 0.12); }
+/* Touch devices need larger tap targets than the 28px desktop icon buttons. */
+@media (pointer: coarse), (hover: none) {
+  .bubble-toolbar button {
+    width: 42px;
+    height: 42px;
+    font-size: 16px;
+  }
+}
 
 /* Native auto-sizing where supported (Chromium 123+): CSS grows the textareas
    with no JS and no jank. The JS resizer (autoGrow.ts) early-returns when this
