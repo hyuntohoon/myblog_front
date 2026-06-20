@@ -1971,7 +1971,20 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
         </div>
       )}
 
-      {tree == null && <div className="lf-meta" style={{ padding: '8px 0' }}>불러오는 중…</div>}
+      {tree == null && (
+        <div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중" style={{ gap: 18 }}>
+          {[0, 1].map(s => (
+            <div key={s} className="lf-panel" style={{ padding: 16 }}>
+              <div className="lf-skeleton" style={{ height: 18, width: 160, marginBottom: 14 }} />
+              <div style={{ display: 'flex', gap: 12 }}>
+                {Array.from({ length: 5 }, (_, i) => (
+                  <div key={i} className="lf-skeleton" style={{ width: 96, height: 96, flex: '0 0 96px' }} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {tree != null && normalTree.length === 0 && (
         <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
