@@ -13,7 +13,7 @@ import Icon from './icon.astro'
 	<label class="relative flex items-center gap-2">
 		<span class="sr-only">Select theme</span>
 		<Icon name="laptop" class="icon label-icon" />
-		<select value="auto" autocomplete="off">
+		<select id="theme-select" name="theme" value="auto" autocomplete="off">
 			{
 				[
 					{ label: 'Dark', selected: false, value: 'dark' },

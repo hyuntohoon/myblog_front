@@ -263,6 +263,8 @@ export default function ReviewsIndex({
         <div className="rev-controls-right">
           <input
 	type="search"
+	id="rev-search"
+	name="q"
 	className="rev-search"
 	placeholder="검색"
 	aria-label="앨범·아티스트 검색"
@@ -270,6 +272,8 @@ export default function ReviewsIndex({
 	onChange={e => commit({ ...filters, q: e.target.value }, true)}
           />
           <select
+	id="rev-sort"
+	name="sort"
 	className="rev-field"
 	aria-label="정렬"
 	value={filters.sort}
@@ -280,6 +284,8 @@ export default function ReviewsIndex({
             <option value="artist">가나다순</option>
           </select>
           <select
+	id="rev-year"
+	name="year"
 	className="rev-field"
 	aria-label="발매 연도"
 	value={filters.year}
