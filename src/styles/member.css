@@ -65,10 +65,15 @@
 }
 
 /* ── cover (square editorial placeholder) ───────────────── */
+/* Cover-less tiles get a faint diagonal hatch + subtle initials so a grid of
+   missing covers reads as intentional placeholders, not empty dark squares
+   (UI/UX audit L12). Real covers render as <img>, never .lf-cover. */
 .lf-cover {
 	position: relative;
 	overflow: hidden;
-	background: var(--color-paper);
+	background:
+		repeating-linear-gradient(135deg, color-mix(in srgb, var(--color-text) 5%, transparent) 0 2px, transparent 2px 10px),
+		var(--color-paper);
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-sm);
 	flex: 0 0 auto;
@@ -81,7 +86,7 @@
 	font-family: var(--font-serif);
 	font-style: italic;
 	font-weight: 600;
-	color: var(--color-faded);
+	color: var(--color-subtle);
 	letter-spacing: -0.03em;
 }
 

@@ -69,7 +69,7 @@ const profile = { ...MEMBER_IDENTITY, stats: computeStats(reviews) }
   <Seo slot="seo" title="회원" />
 
   <SkipNavContent>
-    <ProfileApp client:load reviews={reviews} profile={profile} />
+    <ProfileApp client:only="react" reviews={reviews} profile={profile} />
   </SkipNavContent>
 </Layout>
 

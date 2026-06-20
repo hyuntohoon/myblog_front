@@ -2,7 +2,6 @@
 // state. Reviews + profile stats are REAL (server-built, passed as props);
 // other surfaces are sample (see lib/member.ts). Ported from app.jsx (the dev
 // "tweaks panel" + prototype TopNav are dropped; the site header is the nav).
-import type { ChartStyle } from './charts'
 import type { NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
@@ -56,7 +55,7 @@ function readPref<T extends string>(key: string, allowed: readonly T[], fallback
 function STAT_ITEMS(s: MemberProfile['stats']): [string, string | number][] {
   return [
   ['평론', s.reviews],
-  ['들은 앨범', s.albums.toLocaleString()],
+  ['평론한 앨범', s.albums.toLocaleString()],
   ['평균 평점', s.avgRating == null ? '—' : s.avgRating.toFixed(1)],
 ]
 }
@@ -248,7 +247,6 @@ function ThemeToggle() {
 export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], profile: MemberProfile }) {
   const [tab, setTab] = useState('overview')
   const [npStyle, setNpStyle] = useState<NpStyle>('banner')
-  const [chartStyle, setChartStyle] = useState<ChartStyle>('bar')
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [layout, setLayout] = useState<Layout>(() => readPref(LAYOUT_KEY, LAYOUT_OPTS.map(o => o.v), 'sidebar'))
   const [density, setDensity] = useState<Density>(() => readPref(DENSITY_KEY, DENSITY_OPTS.map(o => o.v), 'regular'))
@@ -296,10 +294,10 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
 
   const content = (
     <div key={tab} className="lf-rise">
-      {tab === 'overview' && <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} chartStyle={chartStyle} onOpen={openDetail} goBucket={() => setTab('bucket')} reviews={reviews} />}
+      {tab === 'overview' && <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => setTab('bucket')} reviews={reviews} />}
       {tab === 'reviews' && <ReviewsTab reviews={reviews} onOpen={openDetail} />}
       {tab === 'bucket' && <BucketBoard onOpen={openDetail} reviews={reviews} />}
-      {tab === 'stats' && <StatsTab chartStyle={chartStyle} setChartStyle={setChartStyle} />}
+      {tab === 'stats' && <StatsTab />}
       {tab === 'integration' && <SpotifyIntegrationTab />}
     </div>
   )
