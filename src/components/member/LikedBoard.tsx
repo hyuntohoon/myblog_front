@@ -113,23 +113,6 @@ function defaultDir(col: SortKey): SortDir {
 	return col === 'recent' ? 'desc' : 'asc'
 }
 
-// ── small marks ───────────────────────────────────────────────────────────
-function SpotifyMark({ size = 12 }: { size?: number }) {
-	return (
-		<span style={{ width: size, height: size, borderRadius: size, background: 'var(--color-spotify)', flex: '0 0 auto', display: 'inline-grid', placeItems: 'center' }}>
-			<span style={{ width: 0, height: 0, borderTop: `${size * 0.22}px solid transparent`, borderBottom: `${size * 0.22}px solid transparent`, borderLeft: `${size * 0.32}px solid #0b3d1f`, marginLeft: 1 }} />
-		</span>
-	)
-}
-
-function Heart({ size = 14 }: { size?: number }) {
-	return (
-		<svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-			<path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3.2 1.2 4 2.3.8-1.1 2-2.3 4-2.3 3.5 0 5 3.5 3.5 6.5C19 16.5 12 21 12 21z" />
-		</svg>
-	)
-}
-
 // ── table column template — shared by header + rows ───────────────────────
 const LK_COLS = '30px minmax(0,1.7fr) minmax(0,1fr) 108px 38px'
 
@@ -280,7 +263,6 @@ function Row({ row, n, onOpen, onPromote }: {
 			<div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
 				<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} title={catalogued ? '작품 상세' : '카탈로그 미등록'} style={{ position: 'relative', padding: 0, border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', flex: '0 0 auto', lineHeight: 0 }}>
 					<LkCover label={row.albumName} cover={row.cover} size={42} />
-					<span style={{ position: 'absolute', left: 5, top: 5, lineHeight: 0 }}><SpotifyMark size={12} /></span>
 				</button>
 				<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} style={{ minWidth: 0, flex: 1, textAlign: 'left', border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', padding: 0 }}>
 					<div className="lf-serif" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text)' }}>{row.track}</div>
@@ -305,7 +287,6 @@ function Card({ row, onOpen, onPromote }: {
 		<div className="lf-panel" style={{ padding: 13, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column', gap: 10 }}>
 			<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} style={{ position: 'relative', padding: 0, border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', lineHeight: 0 }}>
 				<LkCover label={row.albumName} cover={row.cover} square />
-				<span style={{ position: 'absolute', left: 7, top: 7, lineHeight: 0 }}><SpotifyMark size={13} /></span>
 			</button>
 			<div style={{ minWidth: 0 }}>
 				<div className="lf-serif" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.track}</div>
@@ -343,49 +324,6 @@ function Pill({ on, children, onClick }: { on: boolean, children: React.ReactNod
 	)
 }
 
-// ── immersive hero banner ─────────────────────────────────────────────────
-function Hero({ total, artists, truncated }: { total: number, artists: number, truncated: boolean }) {
-	return (
-		<div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', marginBottom: 18, background: 'linear-gradient(155deg, color-mix(in srgb, var(--color-accent) 40%, var(--color-text)) 0%, var(--color-text) 56%)', color: '#f3efe8', padding: '32px 30px 28px' }}>
-			<span aria-hidden="true" className="lf-serif" style={{ position: 'absolute', right: 22, top: -22, fontSize: 'clamp(96px,15vw,210px)', fontWeight: 600, letterSpacing: '-.04em', color: 'rgba(255,255,255,.06)', lineHeight: 1, pointerEvents: 'none', whiteSpace: 'nowrap' }}>좋아요</span>
-			<div style={{ position: 'relative', display: 'flex', gap: 24, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-				<div style={{ width: 130, height: 130, borderRadius: 10, flex: '0 0 auto', color: '#fff', background: 'linear-gradient(145deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 22%, #141312))', display: 'grid', placeItems: 'center', boxShadow: '0 20px 46px rgba(0,0,0,.42)' }}><Heart size={56} /></div>
-				<div style={{ minWidth: 0 }}>
-					<div className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', opacity: 0.74, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-						<SpotifyMark size={13} />
-						{' '}
-						플레이리스트 · 좋아요한 곡
-					</div>
-					<h1 className="lf-serif" style={{ fontSize: 'clamp(34px,5vw,60px)', fontWeight: 600, letterSpacing: '-.03em', lineHeight: 0.95, margin: '10px 0 14px', whiteSpace: 'nowrap' }}>좋아요한 트랙</h1>
-					<div className="lf-mono" style={{ fontSize: 12, opacity: 0.82, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-						<span>
-							{total.toLocaleString()}
-							곡
-						</span>
-						<span style={{ opacity: 0.5 }}>·</span>
-						<span>
-							{artists.toLocaleString()}
-							{' '}
-							아티스트
-						</span>
-						{truncated && (
-							<>
-								<span style={{ opacity: 0.5 }}>·</span>
-								<span style={{ opacity: 0.7 }}>
-									최근
-									{' '}
-									{CEILING.toLocaleString()}
-									곡 표시
-								</span>
-							</>
-						)}
-					</div>
-				</div>
-			</div>
-		</div>
-	)
-}
-
 // ── toast ─────────────────────────────────────────────────────────────────
 function Toast({ msg }: { msg: string }) {
 	return createPortal(
@@ -399,7 +337,6 @@ function Toast({ msg }: { msg: string }) {
 // ── board ─────────────────────────────────────────────────────────────────
 export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 	const [rows, setRows] = useState<LikedRowVM[] | null>(null)
-	const [truncated, setTruncated] = useState(false)
 	const [loadError, setLoadError] = useState(false)
 
 	const [view, setView] = useState<View>('list')
@@ -427,10 +364,6 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 					acc.push(...page.items)
 					if (page.items.length < PAGE)
 						break
-					if (offset + PAGE >= CEILING && page.total > acc.length) {
-						if (on)
-							setTruncated(true)
-					}
 				}
 				if (on)
 					setRows(acc.map(toRow))
@@ -463,7 +396,6 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 	// Facet sources (over the whole loaded set, not the filtered view).
 	const genreCounts = useMemo(() => aggCounts(allRows, 'genre'), [allRows])
 	const artistCounts = useMemo(() => aggCounts(allRows, 'artist'), [allRows])
-	const artistCount = useMemo(() => new Set(allRows.map(r => r.artist)).size, [allRows])
 
 	const onSortHead = (col: SortKey) => {
 		if (sort === col) {
@@ -581,7 +513,6 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 
 	return (
 		<div style={{ paddingBottom: 56 }}>
-			<Hero total={allRows.length} artists={artistCount} truncated={truncated} />
 
 			{loadError && (
 				<div className="lf-meta" style={{ marginBottom: 14, color: 'var(--color-accent)' }}>일부 데이터를 불러오지 못했어요.</div>
