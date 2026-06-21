@@ -125,12 +125,13 @@ function DecadeMini({ rows }: { rows: LikedRowVM[] }) {
 	)
 }
 
-/** The 미분류 panel — classify / fill-genres (reused from StatsTab, liked source). */
+/**
+ * The 미분류 panel — one 분류하기 fires catalog sync + genre backfill together
+ * (Promise.allSettled), mirroring StatsTab's unified action (#186, liked source).
+ */
 function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
 	const [classifying, setClassifying] = useState(false)
 	const [classifyMsg, setClassifyMsg] = useState<string | null>(null)
-	const [filling, setFilling] = useState(false)
-	const [fillMsg, setFillMsg] = useState<string | null>(null)
 
 	const unclassified = dist?.unclassified_count ?? 0
 	const total = dist?.total ?? 0
@@ -138,38 +139,31 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
 	if (unclassified <= 0)
 		return null
 
+	// 미분류엔 두 원인(카탈로그 미등록 / 장르 대기)이 있어 한 버튼이 둘 다 트리거:
+	// classify = catalog-absent 앨범 카탈로그 싱크, fillGenres = 카탈로그-있는-무장르 장르 백필.
+	// 하나가 실패해도 다른 하나는 진행(allSettled).
 	const onClassify = () => {
 		setClassifying(true)
 		setClassifyMsg(null)
-		classifySavedTracks()
-			.then((r) => {
-				const enq = r.enqueued ?? 0
-				const skip = r.skipped_needs_backfill ?? 0
+		Promise.allSettled([classifySavedTracks(), fillGenres()])
+			.then(([c, g]) => {
+				const enq = c.status === 'fulfilled' ? (c.value.enqueued ?? 0) : 0
+				const genreOk = g.status === 'fulfilled'
+				const failed = c.status === 'rejected' || g.status === 'rejected'
+				const parts: string[] = []
+				if (enq > 0)
+					parts.push(`${enq}개 앨범 카탈로그 동기화`)
+				if (genreOk)
+					parts.push('장르 채우기')
 				setClassifyMsg(
-					enq > 0 ?
-						`${enq}개 앨범 동기화를 요청했어요${skip ? ` · ${skip}곡은 장르 백필 대기` : ''}. 잠시 후 장르가 채워집니다.` :
-						skip > 0 ?
-								`동기화할 신규 앨범은 없어요 · ${skip}곡은 장르 백필이 필요합니다.` :
-								'분류할 미분류 트랙이 없어요.',
+					parts.length > 0 ?
+						`${parts.join(' + ')}를 요청했어요. 잠시 후 미분류가 줄어듭니다.${failed ? ' (일부 요청 실패)' : ''}` :
+						failed ?
+							'요청에 실패했어요. 잠시 후 다시 시도해 주세요.' :
+							'정리할 미분류가 없어요.',
 				)
 			})
-			.catch(() => setClassifyMsg('분류 요청에 실패했어요. 잠시 후 다시 시도해 주세요.'))
 			.finally(() => setClassifying(false))
-	}
-
-	const onFillGenres = () => {
-		setFilling(true)
-		setFillMsg(null)
-		fillGenres()
-			.then((r) => {
-				setFillMsg(
-					r.status === 'already_pending' ?
-						'이미 장르 채우기 요청이 대기 중이에요.' :
-						'장르 채우기를 요청했어요. 잠시 후(최대 5분) 카탈로그된 앨범의 장르가 채워집니다.',
-				)
-			})
-			.catch(() => setFillMsg('장르 채우기 요청에 실패했어요. 잠시 후 다시 시도해 주세요.'))
-			.finally(() => setFilling(false))
 	}
 
 	return (
@@ -201,19 +195,11 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
 						</span>
 					)}
 				</div>
-				<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-					<button type="button" className="lf-btn lf-btn-solid" disabled={classifying} onClick={onClassify} style={{ opacity: classifying ? 0.6 : 1 }}>
-						{classifying ? '요청 중…' : '분류하기'}
-					</button>
-					{(breakdown?.ungenred ?? 0) > 0 && (
-						<button type="button" className="lf-btn" disabled={filling} onClick={onFillGenres} style={{ opacity: filling ? 0.6 : 1 }}>
-							{filling ? '요청 중…' : '장르 채우기'}
-						</button>
-					)}
-				</div>
+				<button type="button" className="lf-btn lf-btn-solid" disabled={classifying} onClick={onClassify} style={{ opacity: classifying ? 0.6 : 1 }}>
+					{classifying ? '요청 중…' : '분류하기'}
+				</button>
 			</div>
 			{classifyMsg && <div className="lf-meta" style={{ color: 'var(--color-subtle)' }}>{classifyMsg}</div>}
-			{fillMsg && <div className="lf-meta" style={{ color: 'var(--color-subtle)' }}>{fillMsg}</div>}
 		</div>
 	)
 }
