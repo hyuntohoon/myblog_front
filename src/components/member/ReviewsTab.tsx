@@ -54,13 +54,18 @@ function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: Deta
 )}
         </h3>
         <p className="lf-serif" style={{ margin: '8px 0 12px', fontSize: 14, color: 'var(--color-subtle)', lineHeight: 1.6, textWrap: 'pretty', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '3.2em' }}>{r.excerpt}</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, borderTop: '1px solid var(--color-border)', paddingTop: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14, borderTop: '1px solid var(--color-border)', paddingTop: 12 }}>
           {r.rating != null ? <Stars score={r.rating} size={16} /> : <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', letterSpacing: '.08em', textTransform: 'uppercase' }}>칼럼</span>}
-          <a href={`/review/${r.slug}`} className="lf-chip" style={{ marginLeft: 'auto', textDecoration: 'none' }}>보기</a>
-          {r.postId && (
-            <a href={`/write?id=${r.postId}`} className="lf-chip" style={{ textDecoration: 'none' }}>수정</a>
-          )}
-          <button type="button" className="lf-chip" onClick={() => onDelete(r)} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 35%, var(--color-border))' }}>삭제</button>
+          {/* Keep 보기/수정/삭제 together: right-aligned on a wide row, and on a narrow
+              phone the whole group wraps below the rating instead of pushing 삭제
+              off-screen (it clipped past the viewport at <=360px). */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 'auto' }}>
+            <a href={`/review/${r.slug}`} className="lf-chip" style={{ textDecoration: 'none' }}>보기</a>
+            {r.postId && (
+              <a href={`/write?id=${r.postId}`} className="lf-chip" style={{ textDecoration: 'none' }}>수정</a>
+            )}
+            <button type="button" className="lf-chip" onClick={() => onDelete(r)} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 35%, var(--color-border))' }}>삭제</button>
+          </div>
         </div>
       </div>
     </article>
