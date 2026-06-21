@@ -1450,6 +1450,8 @@ export interface components {
             album_sid?: string | null;
             /** Artist Name */
             artist_name?: string | null;
+            /** Duration Ms */
+            duration_ms?: number | null;
             /** Spotify Track Id */
             spotify_track_id: string;
             /** Track Name */
