@@ -10,6 +10,7 @@ import type { DistItem } from '@lib/member'
 import { useEffect, useState } from 'react'
 import {
 	classifySavedTracks,
+	fillGenres,
 	getPlayedArtistDistribution,
 	getPlayedGenreDistribution,
 	getSavedArtistDistribution,
@@ -92,6 +93,8 @@ export function StatsTab() {
 	const [error, setError] = useState(false)
 	const [classifying, setClassifying] = useState(false)
 	const [classifyMsg, setClassifyMsg] = useState<string | null>(null)
+	const [filling, setFilling] = useState(false)
+	const [fillMsg, setFillMsg] = useState<string | null>(null)
 
 	useEffect(() => {
 		let on = true
@@ -138,6 +141,21 @@ export function StatsTab() {
 			})
 			.catch(() => setClassifyMsg('분류 요청에 실패했어요. 잠시 후 다시 시도해 주세요.'))
 			.finally(() => setClassifying(false))
+	}
+
+	const onFillGenres = () => {
+		setFilling(true)
+		setFillMsg(null)
+		fillGenres()
+			.then((r) => {
+				setFillMsg(
+					r.status === 'already_pending' ?
+						'이미 장르 채우기 요청이 대기 중이에요.' :
+						'장르 채우기를 요청했어요. 잠시 후(최대 5분) 카탈로그된 앨범의 장르가 채워집니다.',
+				)
+			})
+			.catch(() => setFillMsg('장르 채우기 요청에 실패했어요. 잠시 후 다시 시도해 주세요.'))
+			.finally(() => setFilling(false))
 	}
 
 	return (
@@ -213,22 +231,39 @@ export function StatsTab() {
 							</span>
 						)}
 					</div>
-					{source === 'liked' && (
-						<button
-							type="button"
-							className="lf-btn lf-btn-solid"
-							disabled={classifying}
-							onClick={onClassify}
-							style={{ opacity: classifying ? 0.6 : 1 }}
-						>
-							{classifying ? '요청 중…' : '분류하기'}
-						</button>
-					)}
+					<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+						{source === 'liked' && (
+							<button
+								type="button"
+								className="lf-btn lf-btn-solid"
+								disabled={classifying}
+								onClick={onClassify}
+								style={{ opacity: classifying ? 0.6 : 1 }}
+							>
+								{classifying ? '요청 중…' : '분류하기'}
+							</button>
+						)}
+						{(breakdown?.ungenred ?? 0) > 0 && (
+							<button
+								type="button"
+								className="lf-btn"
+								disabled={filling}
+								onClick={onFillGenres}
+								style={{ opacity: filling ? 0.6 : 1 }}
+							>
+								{filling ? '요청 중…' : '장르 채우기'}
+							</button>
+						)}
+					</div>
 				</div>
 			)}
 
 			{classifyMsg && (
 				<div className="lf-meta" style={{ color: 'var(--color-subtle)' }}>{classifyMsg}</div>
+			)}
+
+			{fillMsg && (
+				<div className="lf-meta" style={{ color: 'var(--color-subtle)' }}>{fillMsg}</div>
 			)}
 
 			{source === 'liked' && savedTracks && savedTracks.length > 0 && (

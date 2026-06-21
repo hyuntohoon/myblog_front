@@ -12,6 +12,7 @@ export type Distribution = components['schemas']['Backend_DistributionResponse']
 export type DistEntry = components['schemas']['Backend_DistItem']
 export type SavedTrack = components['schemas']['Backend_SavedTrackItem']
 export type ClassifyResult = components['schemas']['Backend_ClassifyResponse']
+export type FillGenresResult = components['schemas']['Backend_FillGenresResponse']
 type SavedTracksResponse = components['schemas']['Backend_SavedTracksResponse']
 
 async function asJson<T>(res: Response | null): Promise<T> {
@@ -53,4 +54,16 @@ export async function listSavedTracks(limit = 60): Promise<SavedTracks> {
 export async function classifySavedTracks(): Promise<ClassifyResult> {
 	const res = await apiFetch(`${BASE}/api/library/saved-tracks/classify`, { method: 'POST' })
 	return asJson<ClassifyResult>(res)
+}
+
+/**
+ * POST /api/library/saved-tracks/fill-genres (Cognito-JWT) — enqueue an on-demand
+ * genre-backfill run. A local 5-min poller claims it and runs the existing
+ * backfill_genres.py --incremental --label --execute (S1→S2→S3) — the same pipeline
+ * as the daily 04:00 run. Rule #9: only enqueues; the LLM (claude -p) runs on the
+ * owner's laptop via the poller. Returns { status: 'queued' | 'already_pending' }.
+ */
+export async function fillGenres(): Promise<FillGenresResult> {
+	const res = await apiFetch(`${BASE}/api/library/saved-tracks/fill-genres`, { method: 'POST' })
+	return asJson<FillGenresResult>(res)
 }
