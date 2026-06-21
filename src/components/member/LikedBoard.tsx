@@ -1,0 +1,691 @@
+// 분석 버킷 → 좋아요한 트랙 (Liked Tracks) workbench. FEAT-liked-tracks-workbench
+// Step 2-3. Ported from the design prototype (liked-tracks.jsx `LikedBoard`),
+// adapted to real saved-track data + the member.css `lf-*` design system — no
+// inline-style prototype, no localStorage persistence. The whole 좋아요 set is
+// loaded via offset pagination (≤1000-row ceiling); the row table / hero /
+// facets / decade / likes-flow are liked-only, while the analysis charts carry a
+// 좋아요/재생 source toggle (LikedAnalysis). Row actions: 작품 상세 (onOpen) ·
+// 평론 버킷에 담기 (reuses BucketPickerSheet + buckets.ts) · 평론 쓰기 (/write).
+import type { DetailTarget } from '@lib/member'
+import type { BoardBucket } from '@lib/buckets'
+import type { SavedTrack } from './analysis.api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { addBucketItem, listBuckets } from '@lib/buckets'
+import { listSavedTracks } from './analysis.api'
+import { BucketPickerSheet } from './BucketPickerSheet'
+import { LikedAnalysis } from './LikedAnalysis'
+import { Cover, Seg } from './ui'
+
+// Endpoint caps `limit` at 500/call; accumulate by offset to this ceiling.
+const PAGE = 500
+const CEILING = 1000
+
+type SortKey = 'recent' | 'title' | 'artist' | 'album' | 'genre'
+type View = 'list' | 'card'
+type SortDir = 'asc' | 'desc'
+type ClassifyBy = 'genre' | 'artist'
+
+/** A flattened, display-ready view of one saved track. */
+export interface LikedRowVM {
+	/** spotify_track_id — stable React key. */
+	id: string
+	track: string
+	artist: string
+	albumName: string
+	/** DB album id — present only for catalogued tracks (gates promote/detail). */
+	albumId: string | null
+	cover: string | null
+	/** Release year (null when uncatalogued / no release_date). */
+	year: number | null
+	/** `${decade}년대` or null. */
+	decade: string | null
+	/** Primary resolved genre, else '미분류'. */
+	genre: string
+	/** Raw ISO added_at — for weekly likes-flow bucketing + recency sort. */
+	addedAtRaw: string
+	/** `YYYY.MM.DD` formatted added_at. */
+	likedAt: string
+}
+
+const SORT_OPTS: { v: SortKey, label: string }[] = [
+	{ v: 'recent', label: '최근 추가' },
+	{ v: 'title', label: '제목' },
+	{ v: 'artist', label: '아티스트' },
+	{ v: 'album', label: '앨범' },
+	{ v: 'genre', label: '장르' },
+]
+const VIEW_OPTS: { v: View, label: string }[] = [
+	{ v: 'list', label: '리스트' },
+	{ v: 'card', label: '카드' },
+]
+const CLASSIFY_OPTS: { v: ClassifyBy, label: string }[] = [
+	{ v: 'genre', label: '장르' },
+	{ v: 'artist', label: '아티스트' },
+]
+
+const UNGENRED = '미분류'
+
+/** Build a row view-model from a raw saved track, coding defensively for nulls. */
+function toRow(t: SavedTrack): LikedRowVM {
+	const album = t.album ?? null
+	const rel = album?.release_date ?? null
+	const year = rel ? Number(String(rel).slice(0, 4)) || null : null
+	const decade = year ? `${Math.floor(year / 10) * 10}년대` : null
+	const genre = album?.genres?.[0] ?? UNGENRED
+	return {
+		id: t.spotify_track_id,
+		track: t.track_name,
+		artist: t.artist_name ?? '—',
+		albumName: t.album_name ?? album?.title ?? '—',
+		albumId: t.album_id ?? null,
+		cover: album?.cover_url ?? null,
+		year,
+		decade,
+		genre,
+		addedAtRaw: t.added_at,
+		likedAt: fmtLiked(t.added_at),
+	}
+}
+
+/** ISO/date-time → `YYYY.MM.DD`; empty string when unparseable. */
+function fmtLiked(iso: string): string {
+	const d = new Date(iso)
+	if (Number.isNaN(d.getTime()))
+		return ''
+	const y = d.getFullYear()
+	const m = String(d.getMonth() + 1).padStart(2, '0')
+	const day = String(d.getDate()).padStart(2, '0')
+	return `${y}.${m}.${day}`
+}
+
+/** Count rows by a string key, descending — used for the facet pills. */
+function aggCounts(rows: LikedRowVM[], key: 'genre' | 'artist'): { name: string, count: number }[] {
+	const m = new Map<string, number>()
+	for (const r of rows)
+		m.set(r[key], (m.get(r[key]) ?? 0) + 1)
+	return [...m.entries()]
+		.map(([name, count]) => ({ name, count }))
+		.sort((a, b) => b.count - a.count)
+}
+
+function defaultDir(col: SortKey): SortDir {
+	return col === 'recent' ? 'desc' : 'asc'
+}
+
+// ── small marks ───────────────────────────────────────────────────────────
+function SpotifyMark({ size = 12 }: { size?: number }) {
+	return (
+		<span style={{ width: size, height: size, borderRadius: size, background: 'var(--color-spotify)', flex: '0 0 auto', display: 'inline-grid', placeItems: 'center' }}>
+			<span style={{ width: 0, height: 0, borderTop: `${size * 0.22}px solid transparent`, borderBottom: `${size * 0.22}px solid transparent`, borderLeft: `${size * 0.32}px solid #0b3d1f`, marginLeft: 1 }} />
+		</span>
+	)
+}
+
+function Heart({ size = 14 }: { size?: number }) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+			<path d="M12 21s-7-4.5-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3.2 1.2 4 2.3.8-1.1 2-2.3 4-2.3 3.5 0 5 3.5 3.5 6.5C19 16.5 12 21 12 21z" />
+		</svg>
+	)
+}
+
+// ── table column template — shared by header + rows ───────────────────────
+const LK_COLS = '30px minmax(0,1.7fr) minmax(0,1fr) 108px 38px'
+
+// ── row action menu ───────────────────────────────────────────────────────
+function RowMenu({ row, onOpen, onPromote }: {
+	row: LikedRowVM
+	onOpen: (t: DetailTarget) => void
+	onPromote: (row: LikedRowVM) => void
+}) {
+	const [open, setOpen] = useState(false)
+	useEffect(() => {
+		if (!open)
+			return
+		const close = () => setOpen(false)
+		window.addEventListener('click', close)
+		return () => window.removeEventListener('click', close)
+	}, [open])
+	const catalogued = row.albumId != null
+	const itemStyle: React.CSSProperties = {
+		display: 'flex',
+		alignItems: 'center',
+		gap: 8,
+		width: '100%',
+		textAlign: 'left',
+		padding: '8px 10px',
+		fontSize: 11,
+		letterSpacing: '0.03em',
+		textTransform: 'uppercase',
+		border: 'none',
+		background: 'none',
+		borderRadius: 3,
+		cursor: 'pointer',
+	}
+	return (
+		<div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+			<button type="button" className="lf-iconbtn" title="동작" aria-label="동작" onClick={() => setOpen(o => !o)} style={{ fontSize: 16, letterSpacing: '1px' }}>⋯</button>
+			{open && (
+				<div className="lf-panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 5px)', zIndex: 40, padding: 5, minWidth: 184, background: 'var(--color-bg)', boxShadow: '0 16px 36px -14px rgba(0,0,0,.45)' }}>
+					<button
+						type="button"
+						className="lf-mono"
+						disabled={!catalogued}
+						title={catalogued ? undefined : '카탈로그 미등록 — 분류하기 먼저'}
+						onClick={() => {
+							openDetail(row, onOpen)
+							setOpen(false)
+						}}
+						style={{ ...itemStyle, color: 'var(--color-text)', opacity: catalogued ? 1 : 0.4, cursor: catalogued ? 'pointer' : 'not-allowed' }}
+					>
+						작품 상세 열기
+					</button>
+					<button
+						type="button"
+						className="lf-mono"
+						disabled={!catalogued}
+						title={catalogued ? undefined : '카탈로그 미등록 — 분류하기 먼저'}
+						onClick={() => {
+							onPromote(row)
+							setOpen(false)
+						}}
+						style={{ ...itemStyle, color: catalogued ? 'var(--color-accent)' : 'var(--color-text)', opacity: catalogued ? 1 : 0.4, cursor: catalogued ? 'pointer' : 'not-allowed' }}
+					>
+						평론 버킷에 담기
+					</button>
+					<a
+						href="/write"
+						className="lf-mono"
+						style={{ ...itemStyle, color: 'var(--color-text)', textDecoration: 'none' }}
+					>
+						평론 쓰기 →
+					</a>
+				</div>
+			)}
+		</div>
+	)
+}
+
+/** Map a catalogued row → a read-only album-detail target. */
+function openDetail(row: LikedRowVM, onOpen: (t: DetailTarget) => void) {
+	if (row.albumId == null)
+		return
+	onOpen({
+		album: row.albumName,
+		artist: row.artist,
+		track: row.track,
+		genre: row.genre === UNGENRED ? undefined : row.genre,
+		year: row.year,
+		rating: null,
+		real: true,
+		albumId: row.albumId,
+		cover: row.cover,
+	})
+}
+
+// ── sortable table header ─────────────────────────────────────────────────
+function SortHead({ col, label, sort, sortDir, onSort, className }: {
+	col: SortKey
+	label: string
+	sort: SortKey
+	sortDir: SortDir
+	onSort: (c: SortKey) => void
+	className?: string
+}) {
+	const active = sort === col
+	return (
+		<button
+			type="button"
+			onClick={() => onSort(col)}
+			className={`lf-mono${className ? ` ${className}` : ''}`}
+			title="클릭하여 정렬"
+			style={{ display: 'inline-flex', alignItems: 'center', gap: 5, width: '100%', padding: 0, background: 'none', border: 'none', cursor: 'pointer', justifyContent: 'flex-start', color: active ? 'var(--color-text)' : 'var(--color-faded)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}
+		>
+			{label}
+			<span style={{ fontSize: 7, opacity: active ? 1 : 0 }}>{active && sortDir === 'asc' ? '▲' : '▼'}</span>
+		</button>
+	)
+}
+
+function TableHead({ sort, sortDir, onSort }: { sort: SortKey, sortDir: SortDir, onSort: (c: SortKey) => void }) {
+	return (
+		<div style={{ display: 'grid', gridTemplateColumns: LK_COLS, gap: 14, alignItems: 'center', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 0, background: 'var(--color-bg)', zIndex: 5 }}>
+			<span className="lf-mono" style={{ color: 'var(--color-faded)', fontSize: 10.5, textAlign: 'center' }}>#</span>
+			<SortHead col="title" label="제목" sort={sort} sortDir={sortDir} onSort={onSort} />
+			<SortHead col="album" label="앨범" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-album" />
+			<SortHead col="recent" label="추가한 날짜" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-date" />
+			<span />
+		</div>
+	)
+}
+
+// ── table row ─────────────────────────────────────────────────────────────
+function Row({ row, n, onOpen, onPromote }: {
+	row: LikedRowVM
+	n: number
+	onOpen: (t: DetailTarget) => void
+	onPromote: (row: LikedRowVM) => void
+}) {
+	const [hover, setHover] = useState(false)
+	const catalogued = row.albumId != null
+	return (
+		<div
+			className="lk-row"
+			onMouseEnter={() => setHover(true)}
+			onMouseLeave={() => setHover(false)}
+			style={{ display: 'grid', gridTemplateColumns: LK_COLS, gap: 14, alignItems: 'center', padding: '9px 12px', borderRadius: 4, background: hover ? 'color-mix(in srgb, var(--color-text) 4%, transparent)' : 'transparent', transition: 'background .12s' }}
+		>
+			<span className="lf-mono" style={{ fontSize: 12.5, color: 'var(--color-faded)', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{n}</span>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+				<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} title={catalogued ? '작품 상세' : '카탈로그 미등록'} style={{ position: 'relative', padding: 0, border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', flex: '0 0 auto', lineHeight: 0 }}>
+					<LkCover label={row.albumName} cover={row.cover} size={42} />
+					<span style={{ position: 'absolute', left: 5, top: 5, lineHeight: 0 }}><SpotifyMark size={12} /></span>
+				</button>
+				<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} style={{ minWidth: 0, flex: 1, textAlign: 'left', border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', padding: 0 }}>
+					<div className="lf-serif" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text)' }}>{row.track}</div>
+					<div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{row.artist}</div>
+				</button>
+			</div>
+			<span className="lf-sans lk-col-album" style={{ fontSize: 12.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.albumName}</span>
+			<span className="lf-mono lk-col-date" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{row.likedAt}</span>
+			<span style={{ display: 'inline-flex', justifyContent: 'flex-end' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>
+		</div>
+	)
+}
+
+// ── card (grid view) ──────────────────────────────────────────────────────
+function Card({ row, onOpen, onPromote }: {
+	row: LikedRowVM
+	onOpen: (t: DetailTarget) => void
+	onPromote: (row: LikedRowVM) => void
+}) {
+	const catalogued = row.albumId != null
+	return (
+		<div className="lf-panel" style={{ padding: 13, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+			<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} style={{ position: 'relative', padding: 0, border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', lineHeight: 0 }}>
+				<LkCover label={row.albumName} cover={row.cover} square />
+				<span style={{ position: 'absolute', left: 7, top: 7, lineHeight: 0 }}><SpotifyMark size={13} /></span>
+			</button>
+			<div style={{ minWidth: 0 }}>
+				<div className="lf-serif" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.track}</div>
+				<div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{row.artist}</div>
+			</div>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid var(--color-border-soft)', paddingTop: 9 }}>
+				<span className="lf-chip" style={{ pointerEvents: 'none', padding: '3px 7px', fontSize: 9.5 }}>{row.genre}</span>
+				<span className="lf-mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{row.likedAt.slice(5)}</span>
+				<span style={{ marginLeft: 'auto' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>
+			</div>
+		</div>
+	)
+}
+
+/** Real cover image when available, else the editorial letter tile. */
+function LkCover({ label, cover, size = 42, square = false }: { label: string, cover: string | null, size?: number, square?: boolean }) {
+	if (cover) {
+		const dim = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }
+		return <img src={cover} alt={label} loading="lazy" decoding="async" style={{ ...dim, objectFit: 'cover', borderRadius: square ? 4 : 3, display: 'block', border: '1px solid var(--color-border)' }} />
+	}
+	return <Cover label={label} size={size} radius={square ? 4 : 3} square={square} />
+}
+
+// ── filter pill ───────────────────────────────────────────────────────────
+function Pill({ on, children, onClick }: { on: boolean, children: React.ReactNode, onClick: () => void }) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className="lf-sans"
+			style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', cursor: 'pointer', padding: '7px 14px', borderRadius: 999, fontSize: 12.5, fontWeight: 500, transition: 'background .14s, border-color .14s, color .14s', border: `1px solid ${on ? 'var(--color-text)' : 'var(--color-border)'}`, background: on ? 'var(--color-text)' : 'var(--color-paper)', color: on ? 'var(--color-bg)' : 'var(--color-text)' }}
+		>
+			{children}
+		</button>
+	)
+}
+
+// ── immersive hero banner ─────────────────────────────────────────────────
+function Hero({ total, artists, truncated }: { total: number, artists: number, truncated: boolean }) {
+	return (
+		<div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', marginBottom: 18, background: 'linear-gradient(155deg, color-mix(in srgb, var(--color-accent) 40%, var(--color-text)) 0%, var(--color-text) 56%)', color: '#f3efe8', padding: '32px 30px 28px' }}>
+			<span aria-hidden="true" className="lf-serif" style={{ position: 'absolute', right: 22, top: -22, fontSize: 'clamp(96px,15vw,210px)', fontWeight: 600, letterSpacing: '-.04em', color: 'rgba(255,255,255,.06)', lineHeight: 1, pointerEvents: 'none', whiteSpace: 'nowrap' }}>좋아요</span>
+			<div style={{ position: 'relative', display: 'flex', gap: 24, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+				<div style={{ width: 130, height: 130, borderRadius: 10, flex: '0 0 auto', color: '#fff', background: 'linear-gradient(145deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 22%, #141312))', display: 'grid', placeItems: 'center', boxShadow: '0 20px 46px rgba(0,0,0,.42)' }}><Heart size={56} /></div>
+				<div style={{ minWidth: 0 }}>
+					<div className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', opacity: 0.74, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+						<SpotifyMark size={13} />
+						{' '}
+						플레이리스트 · 좋아요한 곡
+					</div>
+					<h1 className="lf-serif" style={{ fontSize: 'clamp(34px,5vw,60px)', fontWeight: 600, letterSpacing: '-.03em', lineHeight: 0.95, margin: '10px 0 14px', whiteSpace: 'nowrap' }}>좋아요한 트랙</h1>
+					<div className="lf-mono" style={{ fontSize: 12, opacity: 0.82, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+						<span>
+							{total.toLocaleString()}
+							곡
+						</span>
+						<span style={{ opacity: 0.5 }}>·</span>
+						<span>
+							{artists.toLocaleString()}
+							{' '}
+							아티스트
+						</span>
+						{truncated && (
+							<>
+								<span style={{ opacity: 0.5 }}>·</span>
+								<span style={{ opacity: 0.7 }}>
+									최근
+									{' '}
+									{CEILING.toLocaleString()}
+									곡 표시
+								</span>
+							</>
+						)}
+					</div>
+				</div>
+			</div>
+		</div>
+	)
+}
+
+// ── toast ─────────────────────────────────────────────────────────────────
+function Toast({ msg }: { msg: string }) {
+	return createPortal(
+		<div className="lf-rise" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 200, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 8, background: 'var(--color-text)', color: 'var(--color-bg)', boxShadow: '0 16px 40px rgba(0,0,0,.3)', maxWidth: '90vw' }}>
+			<span className="lf-sans" style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg}</span>
+		</div>,
+		document.body,
+	)
+}
+
+// ── board ─────────────────────────────────────────────────────────────────
+export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
+	const [rows, setRows] = useState<LikedRowVM[] | null>(null)
+	const [truncated, setTruncated] = useState(false)
+	const [loadError, setLoadError] = useState(false)
+
+	const [view, setView] = useState<View>('list')
+	const [showAnalysis, setShowAnalysis] = useState(true)
+	const [sort, setSort] = useState<SortKey>('recent')
+	const [sortDir, setSortDir] = useState<SortDir>('desc')
+	const [classifyBy, setClassifyBy] = useState<ClassifyBy>('genre')
+	const [q, setQ] = useState('')
+	const [fGenres, setFGenres] = useState<Set<string>>(() => new Set())
+	const [fArtists, setFArtists] = useState<Set<string>>(() => new Set())
+
+	const [toast, setToast] = useState<string | null>(null)
+	const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const [bucketTree, setBucketTree] = useState<BoardBucket[] | null>(null)
+	const [promoting, setPromoting] = useState<LikedRowVM | null>(null)
+
+	// Load the whole 좋아요 set by offset pagination to the ceiling.
+	useEffect(() => {
+		let on = true
+		;(async () => {
+			try {
+				const acc: SavedTrack[] = []
+				for (let offset = 0; offset < CEILING; offset += PAGE) {
+					const page = await listSavedTracks(PAGE, offset)
+					acc.push(...page.items)
+					if (page.items.length < PAGE)
+						break
+					if (offset + PAGE >= CEILING && page.total > acc.length) {
+						if (on)
+							setTruncated(true)
+					}
+				}
+				if (on)
+					setRows(acc.map(toRow))
+			}
+			catch {
+				if (on) {
+					setLoadError(true)
+					setRows([])
+				}
+			}
+		})()
+		return () => {
+			on = false
+		}
+	}, [])
+
+	const flash = (msg: string) => {
+		setToast(msg)
+		if (toastTimer.current)
+			clearTimeout(toastTimer.current)
+		toastTimer.current = setTimeout(() => setToast(null), 4500)
+	}
+	useEffect(() => () => {
+		if (toastTimer.current)
+			clearTimeout(toastTimer.current)
+	}, [])
+
+	const allRows = rows ?? []
+
+	// Facet sources (over the whole loaded set, not the filtered view).
+	const genreCounts = useMemo(() => aggCounts(allRows, 'genre'), [allRows])
+	const artistCounts = useMemo(() => aggCounts(allRows, 'artist'), [allRows])
+	const artistCount = useMemo(() => new Set(allRows.map(r => r.artist)).size, [allRows])
+
+	const onSortHead = (col: SortKey) => {
+		if (sort === col) {
+			setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
+		}
+		else {
+			setSort(col)
+			setSortDir(defaultDir(col))
+		}
+	}
+	const onSortPick = (col: SortKey) => {
+		setSort(col)
+		setSortDir(defaultDir(col))
+	}
+	const toggleSet = (setter: typeof setFGenres, val: string) => setter((s) => {
+		const n = new Set(s)
+		if (n.has(val))
+			n.delete(val)
+		else
+			n.add(val)
+		return n
+	})
+
+	const filtered = useMemo(() => {
+		const needle = q.trim().toLowerCase()
+		return allRows.filter((r) => {
+			if (fGenres.size && !fGenres.has(r.genre))
+				return false
+			if (fArtists.size && !fArtists.has(r.artist))
+				return false
+			if (needle) {
+				const hay = (r.track + r.artist + r.albumName).toLowerCase()
+				if (!hay.includes(needle))
+					return false
+			}
+			return true
+		})
+	}, [allRows, fGenres, fArtists, q])
+
+	const sorted = useMemo(() => {
+		const dir = sortDir === 'asc' ? 1 : -1
+		const copy = filtered.slice()
+		copy.sort((a, b) => {
+			let r: number
+			if (sort === 'title')
+				r = a.track.localeCompare(b.track)
+			else if (sort === 'album')
+				r = a.albumName.localeCompare(b.albumName) || a.track.localeCompare(b.track)
+			else if (sort === 'artist')
+				r = a.artist.localeCompare(b.artist) || a.track.localeCompare(b.track)
+			else if (sort === 'genre')
+				r = a.genre.localeCompare(b.genre) || a.artist.localeCompare(b.artist)
+			else
+				r = a.addedAtRaw.localeCompare(b.addedAtRaw)
+			return r * dir
+		})
+		return copy
+	}, [filtered, sort, sortDir])
+
+	// Group when sorting by artist / genre — makes 분류 visceral.
+	const grouped = sort === 'artist' || sort === 'genre'
+	const groups = useMemo(() => {
+		if (!grouped)
+			return []
+		const map = new Map<string, LikedRowVM[]>()
+		for (const r of sorted) {
+			const k = sort === 'artist' ? r.artist : r.genre
+			if (!map.has(k))
+				map.set(k, [])
+			map.get(k)!.push(r)
+		}
+		return [...map.entries()].map(([key, items]) => ({ key, items }))
+	}, [sorted, grouped, sort])
+
+	const anyFilter = fGenres.size > 0 || fArtists.size > 0 || q.trim().length > 0
+	const resetFilters = () => {
+		setFGenres(new Set())
+		setFArtists(new Set())
+		setQ('')
+	}
+	const facet = classifyBy === 'genre' ?
+		{ counts: genreCounts, set: fGenres, setter: setFGenres } :
+		{ counts: artistCounts, set: fArtists, setter: setFArtists }
+
+	// Promote → open the bucket picker (loading the tree lazily on first open).
+	const startPromote = (row: LikedRowVM) => {
+		setPromoting(row)
+		if (bucketTree == null) {
+			listBuckets()
+				.then(setBucketTree)
+				.catch(() => setBucketTree([]))
+		}
+	}
+	const onPickBucket = async (bucketId: string | null) => {
+		const row = promoting
+		setPromoting(null)
+		if (!row || !bucketId || row.albumId == null)
+			return
+		try {
+			const { conflict } = await addBucketItem(bucketId, row.albumId)
+			flash(conflict ?
+				`‘${row.albumName}’ 은(는) 이미 이 버킷에 있어요.` :
+				`‘${row.albumName}’ 을(를) 평론 버킷에 담았어요.`)
+		}
+		catch {
+			flash('버킷에 담지 못했어요. 잠시 후 다시 시도해 주세요.')
+		}
+	}
+
+	if (rows == null) {
+		return (
+			<div className="lf-meta" style={{ textAlign: 'center', padding: '64px 0', color: 'var(--color-faded)' }}>좋아요한 트랙을 불러오는 중…</div>
+		)
+	}
+
+	return (
+		<div style={{ paddingBottom: 56 }}>
+			<Hero total={allRows.length} artists={artistCount} truncated={truncated} />
+
+			{loadError && (
+				<div className="lf-meta" style={{ marginBottom: 14, color: 'var(--color-accent)' }}>일부 데이터를 불러오지 못했어요.</div>
+			)}
+
+			{/* analysis — above search */}
+			<div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: showAnalysis ? 12 : 14 }}>
+				<Pill on={showAnalysis} onClick={() => setShowAnalysis(a => !a)}>
+					분석
+					{' '}
+					{showAnalysis ? '숨기기' : '보기'}
+				</Pill>
+			</div>
+			{showAnalysis && <LikedAnalysis rows={sorted} />}
+
+			{/* classify */}
+			<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+				<span className="lf-meta">분류</span>
+				<Seg value={classifyBy} onChange={v => setClassifyBy(v as ClassifyBy)} options={CLASSIFY_OPTS} />
+			</div>
+
+			{/* facet pills — genre OR artist */}
+			<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+				{facet.counts.map(g => (
+					<Pill key={g.name} on={facet.set.has(g.name)} onClick={() => toggleSet(facet.setter, g.name)}>
+						{g.name}
+						<span style={{ opacity: 0.55, fontSize: 11.5, marginLeft: 2 }}>{g.count}</span>
+					</Pill>
+				))}
+			</div>
+
+			{/* search · sort · view */}
+			<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+				<div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
+					<span className="lf-serif" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'var(--color-faded)', pointerEvents: 'none' }}>⌕</span>
+					<input
+						value={q}
+						onChange={e => setQ(e.target.value)}
+						placeholder="곡·아티스트·앨범 검색…"
+						aria-label="곡·아티스트·앨범 검색"
+						className="lf-sans"
+						style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--color-border)', borderRadius: 999, background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 13.5, outline: 'none' }}
+					/>
+				</div>
+				<Seg value={sort} onChange={v => onSortPick(v as SortKey)} options={SORT_OPTS} />
+				<Seg value={view} onChange={v => setView(v as View)} options={VIEW_OPTS} />
+			</div>
+
+			{anyFilter && (
+				<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+					<span className="lf-meta">
+						{sorted.length.toLocaleString()}
+						곡 일치
+					</span>
+					<button type="button" className="lf-chip" onClick={resetFilters} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 40%, var(--color-border))', color: 'var(--color-accent)' }}>필터 초기화 ✕</button>
+				</div>
+			)}
+
+			{/* list / cards */}
+			{sorted.length === 0 ?
+				(
+					<div className="lf-panel" style={{ padding: 48, textAlign: 'center' }}>
+						<span className="lf-meta">{anyFilter ? '조건에 맞는 좋아요가 없습니다' : '아직 좋아요한 트랙이 없어요.'}</span>
+					</div>
+				) :
+				view === 'card' ?
+						(
+							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
+								{sorted.map(t => <Card key={t.id} row={t} onOpen={onOpen ?? (() => {})} onPromote={startPromote} />)}
+							</div>
+						) :
+						(
+							<div className="lf-panel" style={{ padding: '0 8px 8px' }}>
+								<TableHead sort={sort} sortDir={sortDir} onSort={onSortHead} />
+								{grouped ?
+									groups.map(grp => (
+										<div key={grp.key}>
+											<div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '16px 12px 6px' }}>
+												<span className="lf-serif lf-italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap' }}>{grp.key}</span>
+												<span className="lf-meta" style={{ whiteSpace: 'nowrap' }}>
+													{grp.items.length}
+													곡
+												</span>
+											</div>
+											{grp.items.map((t, i) => <Row key={t.id} row={t} n={i + 1} onOpen={onOpen ?? (() => {})} onPromote={startPromote} />)}
+										</div>
+									)) :
+									sorted.map((t, i) => <Row key={t.id} row={t} n={i + 1} onOpen={onOpen ?? (() => {})} onPromote={startPromote} />)}
+							</div>
+						)}
+
+			{promoting && bucketTree && (
+				<BucketPickerSheet
+					title="평론 버킷에 담기"
+					tree={bucketTree}
+					onPick={onPickBucket}
+					onClose={() => setPromoting(null)}
+				/>
+			)}
+			{promoting && bucketTree == null && (
+				<div className="lf-meta" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 200, padding: '10px 14px', borderRadius: 8, background: 'var(--color-text)', color: 'var(--color-bg)' }}>버킷 목록 불러오는 중…</div>
+			)}
+
+			{toast && <Toast msg={toast} />}
+		</div>
+	)
+}

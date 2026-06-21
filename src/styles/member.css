@@ -889,3 +889,11 @@
 @media (max-width: 640px) {
 	.ov-dash-row { flex-direction: column; }
 }
+
+/* ── 좋아요한 트랙 (Liked Tracks) workbench — FEAT-liked-tracks-workbench ──
+   The track table uses an inline grid template (fixed widths); these are styling
+   hooks for the columns + the analysis flow grid. The likes-flow / decade panels
+   sit side-by-side on desktop and stack on phones. */
+@media (max-width: 720px) {
+	.lk-flow-grid { grid-template-columns: 1fr; }
+}
