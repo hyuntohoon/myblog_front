@@ -15,13 +15,13 @@ import { addBucketItem, listBuckets } from '@lib/buckets'
 import { listSavedTracks } from './analysis.api'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { LikedAnalysis } from './LikedAnalysis'
-import { Cover, Seg } from './ui'
+import { Cover, fmtTime, Seg } from './ui'
 
 // Endpoint caps `limit` at 500/call; accumulate by offset to this ceiling.
 const PAGE = 500
 const CEILING = 1000
 
-type SortKey = 'recent' | 'title' | 'artist' | 'album' | 'genre'
+type SortKey = 'recent' | 'title' | 'artist' | 'album' | 'genre' | 'length'
 type View = 'list' | 'card'
 type SortDir = 'asc' | 'desc'
 type ClassifyBy = 'genre' | 'artist'
@@ -46,6 +46,10 @@ export interface LikedRowVM {
 	addedAtRaw: string
 	/** `YYYY.MM.DD` formatted added_at. */
 	likedAt: string
+	/** Track length in ms (FEAT-liked-tracks-workbench Step 4); null when unknown / pre-backfill. */
+	durationMs: number | null
+	/** `m:ss` formatted length, or '' when unknown. */
+	durationLabel: string
 }
 
 const SORT_OPTS: { v: SortKey, label: string }[] = [
@@ -54,6 +58,7 @@ const SORT_OPTS: { v: SortKey, label: string }[] = [
 	{ v: 'artist', label: '아티스트' },
 	{ v: 'album', label: '앨범' },
 	{ v: 'genre', label: '장르' },
+	{ v: 'length', label: '길이' },
 ]
 const VIEW_OPTS: { v: View, label: string }[] = [
 	{ v: 'list', label: '리스트' },
@@ -73,6 +78,7 @@ function toRow(t: SavedTrack): LikedRowVM {
 	const year = rel ? Number(String(rel).slice(0, 4)) || null : null
 	const decade = year ? `${Math.floor(year / 10) * 10}년대` : null
 	const genre = album?.genres?.[0] ?? UNGENRED
+	const durationMs = t.duration_ms ?? null
 	return {
 		id: t.spotify_track_id,
 		track: t.track_name,
@@ -85,6 +91,8 @@ function toRow(t: SavedTrack): LikedRowVM {
 		genre,
 		addedAtRaw: t.added_at,
 		likedAt: fmtLiked(t.added_at),
+		durationMs,
+		durationLabel: durationMs != null ? fmtTime(Math.round(durationMs / 1000)) : '',
 	}
 }
 
@@ -110,11 +118,11 @@ function aggCounts(rows: LikedRowVM[], key: 'genre' | 'artist'): { name: string,
 }
 
 function defaultDir(col: SortKey): SortDir {
-	return col === 'recent' ? 'desc' : 'asc'
+	return col === 'recent' || col === 'length' ? 'desc' : 'asc'
 }
 
 // ── table column template — shared by header + rows ───────────────────────
-const LK_COLS = '30px minmax(0,1.7fr) minmax(0,1fr) 108px 38px'
+const LK_COLS = '30px minmax(0,1.7fr) minmax(0,1fr) 108px 56px 38px'
 
 // ── row action menu ───────────────────────────────────────────────────────
 function RowMenu({ row, onOpen, onPromote }: {
@@ -238,6 +246,7 @@ function TableHead({ sort, sortDir, onSort }: { sort: SortKey, sortDir: SortDir,
 			<SortHead col="title" label="제목" sort={sort} sortDir={sortDir} onSort={onSort} />
 			<SortHead col="album" label="앨범" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-album" />
 			<SortHead col="recent" label="추가한 날짜" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-date" />
+			<SortHead col="length" label="길이" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-length" />
 			<span />
 		</div>
 	)
@@ -271,6 +280,7 @@ function Row({ row, n, onOpen, onPromote }: {
 			</div>
 			<span className="lf-sans lk-col-album" style={{ fontSize: 12.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.albumName}</span>
 			<span className="lf-mono lk-col-date" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{row.likedAt}</span>
+			<span className="lf-mono lk-col-length" style={{ fontSize: 11, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{row.durationLabel}</span>
 			<span style={{ display: 'inline-flex', justifyContent: 'flex-end' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>
 		</div>
 	)
@@ -448,6 +458,8 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 				r = a.artist.localeCompare(b.artist) || a.track.localeCompare(b.track)
 			else if (sort === 'genre')
 				r = a.genre.localeCompare(b.genre) || a.artist.localeCompare(b.artist)
+			else if (sort === 'length')
+				r = (a.durationMs ?? -1) - (b.durationMs ?? -1)
 			else
 				r = a.addedAtRaw.localeCompare(b.addedAtRaw)
 			return r * dir
