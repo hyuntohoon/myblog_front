@@ -39,9 +39,13 @@ export interface SavedTracks {
 	lastSyncedAt: string | null
 }
 
-/** GET /api/library/saved-tracks — the owner's 좋아요 tracks, most-recently-liked first. */
-export async function listSavedTracks(limit = 60): Promise<SavedTracks> {
-	const res = await apiFetch(`${BASE}/api/library/saved-tracks?limit=${limit}`, { method: 'GET' })
+/**
+ * GET /api/library/saved-tracks — the owner's 좋아요 tracks, most-recently-liked
+ * first. The backend caps `limit` at 500/call and accepts an `offset`, so the
+ * Liked Tracks workbench paginate-accumulates to its ~1000-row ceiling.
+ */
+export async function listSavedTracks(limit = 60, offset = 0): Promise<SavedTracks> {
+	const res = await apiFetch(`${BASE}/api/library/saved-tracks?limit=${limit}&offset=${offset}`, { method: 'GET' })
 	const data = await asJson<SavedTracksResponse>(res)
 	return { items: data.items ?? [], total: data.total ?? 0, lastSyncedAt: data.last_synced_at ?? null }
 }

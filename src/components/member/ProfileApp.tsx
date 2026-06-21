@@ -298,7 +298,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       {tab === 'overview' && <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => setTab('bucket')} reviews={reviews} />}
       {tab === 'reviews' && <ReviewsTab reviews={reviews} onOpen={openDetail} />}
       {tab === 'bucket' && <BucketBoard onOpen={openDetail} reviews={reviews} />}
-      {tab === 'stats' && <StatsTab />}
+      {tab === 'stats' && <StatsTab onOpen={openDetail} />}
       {tab === 'integration' && <SpotifyIntegrationTab />}
     </div>
   )
