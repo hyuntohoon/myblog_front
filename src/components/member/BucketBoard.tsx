@@ -829,7 +829,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
           setDropTarget(null)
           setDragKind(null)
         }}
-	style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: editing ? 'default' : 'grab' }}
+	style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12, cursor: editing ? 'default' : 'grab' }}
       >
         <span
 	className="lf-mono"
