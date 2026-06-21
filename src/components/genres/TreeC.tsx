@@ -22,6 +22,10 @@ const TC = {
 	padY: 30,
 }
 
+// Below this finger spread (px) a pinch frame is ignored — dividing by a
+// sub-pixel gap would slam the zoom across its full range in a single frame.
+const MIN_PINCH_DIST = 10
+
 function tcLink(x1: number, y1: number, x2: number, y2: number): string {
 	const mx = (x1 + x2) / 2
 	return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`
@@ -167,25 +171,112 @@ export default function TreeC({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 		return () => el.removeEventListener('wheel', onWheel)
 	}, [zoomAt])
 
+	// Active pointers on the stage, keyed by pointerId. One pointer pans; two
+	// pinch-zoom. A single set of window listeners drives both, so a finger added
+	// or lifted mid-gesture transitions cleanly — no rival per-pointer pan loops.
+	// .gm-c-stage has touch-action:none, so the browser hands us both touch points
+	// instead of claiming the pinch as page zoom. Each entry's `pan` flag records
+	// whether it may drive a single-finger pan (false when it began on a node / zoom
+	// button, so a tap still selects); a two-finger pinch ignores `pan` and zooms
+	// even when a finger rests on a node.
+	const pointersRef = useRef<Map<number, { x: number, y: number, pan: boolean }>>(new Map())
+	const listeningRef = useRef(false)
+
+	const onGestureMove = useCallback((ev: PointerEvent) => {
+		const pts = pointersRef.current
+		const cur = pts.get(ev.pointerId)
+		if (!cur)
+			return
+		const el = stageRef.current
+		if (!el)
+			return
+		const r = el.getBoundingClientRect()
+		if (pts.size >= 2) {
+			// Pinch about the two oldest pointers; a 3rd touch only updates its store.
+			const [id0, id1] = [...pts.keys()]
+			if (ev.pointerId !== id0 && ev.pointerId !== id1) {
+				pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, pan: cur.pan })
+				return
+			}
+			const a0 = pts.get(id0)!
+			const b0 = pts.get(id1)!
+			const prevDist = Math.hypot(a0.x - b0.x, a0.y - b0.y)
+			const pmx = (a0.x + b0.x) / 2 - r.left
+			const pmy = (a0.y + b0.y) / 2 - r.top
+			pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, pan: cur.pan })
+			const a1 = pts.get(id0)!
+			const b1 = pts.get(id1)!
+			const nextDist = Math.hypot(a1.x - b1.x, a1.y - b1.y)
+			const nmx = (a1.x + b1.x) / 2 - r.left
+			const nmy = (a1.y + b1.y) / 2 - r.top
+			// Skip frames where the fingers are near-coincident: dividing by a
+			// sub-pixel prevDist would slam the zoom across its whole range at once.
+			if (prevDist < MIN_PINCH_DIST)
+				return
+			const factor = nextDist / prevDist
+			setView((v) => {
+				const nz = gmClamp(v.zoom * factor, 0.4, 2.4)
+				const ratio = nz / v.zoom
+				// Scale about the pinch midpoint, then follow the midpoint's drift.
+				return {
+					zoom: nz,
+					x: pmx - (pmx - v.x) * ratio + (nmx - pmx),
+					y: pmy - (pmy - v.y) * ratio + (nmy - pmy),
+				}
+			})
+		}
+		else {
+			const dx = ev.clientX - cur.x
+			const dy = ev.clientY - cur.y
+			pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, pan: cur.pan })
+			// A lone pointer that began on a node / zoom button tracks (so a second
+			// finger can still join a pinch) but never pans — the tap selects.
+			if (!cur.pan)
+				return
+			setView(v => ({ ...v, x: v.x + dx, y: v.y + dy }))
+		}
+	}, [])
+
+	const onGestureEnd = useCallback((ev: PointerEvent) => {
+		const pts = pointersRef.current
+		pts.delete(ev.pointerId)
+		if (pts.size === 0) {
+			setPanning(false)
+			window.removeEventListener('pointermove', onGestureMove)
+			window.removeEventListener('pointerup', onGestureEnd)
+			window.removeEventListener('pointercancel', onGestureEnd)
+			listeningRef.current = false
+		}
+	}, [onGestureMove])
+
+	// Safety net: drop the window listeners if we unmount mid-gesture.
+	useEffect(() => () => {
+		window.removeEventListener('pointermove', onGestureMove)
+		window.removeEventListener('pointerup', onGestureEnd)
+		window.removeEventListener('pointercancel', onGestureEnd)
+	}, [onGestureMove, onGestureEnd])
+
 	const onPanStart = (e: React.PointerEvent) => {
 		if (e.pointerType === 'mouse' && e.button !== 0)
 			return
+		// A fresh primary press begins a new touch sequence — clear any pointer left
+		// stuck by a swallowed pointerup/cancel (focus loss, OS gesture), which would
+		// otherwise make this single press read as a pinch against a phantom anchor.
+		if (e.isPrimary)
+			pointersRef.current.clear()
 		const target = e.target as HTMLElement
-		if (target.closest('.gm-c-node') || target.closest('.gm-c-zoomctl'))
-			return
-		const sx = e.clientX
-		const sy = e.clientY
-		const bx = viewRef.current.x
-		const by = viewRef.current.y
-		setPanning(true)
-		const move = (ev: PointerEvent) => setView(v => ({ ...v, x: bx + (ev.clientX - sx), y: by + (ev.clientY - sy) }))
-		const up = () => {
-			setPanning(false)
-			window.removeEventListener('pointermove', move)
-			window.removeEventListener('pointerup', up)
+		const onCtl = !!(target.closest('.gm-c-node') || target.closest('.gm-c-zoomctl'))
+		// Track every pointer (so a finger on a node can still complete a pinch);
+		// `pan` gates only the single-finger pan, so a tap on a node still selects.
+		pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY, pan: !onCtl })
+		if (!onCtl)
+			setPanning(true)
+		if (!listeningRef.current) {
+			listeningRef.current = true
+			window.addEventListener('pointermove', onGestureMove)
+			window.addEventListener('pointerup', onGestureEnd)
+			window.addEventListener('pointercancel', onGestureEnd)
 		}
-		window.addEventListener('pointermove', move)
-		window.addEventListener('pointerup', up)
 	}
 	const zoomBtn = (f: number) => {
 		const el = stageRef.current
