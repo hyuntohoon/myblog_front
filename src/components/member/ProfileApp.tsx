@@ -2,6 +2,7 @@
 // state. Reviews + profile stats are REAL (server-built, passed as props);
 // other surfaces are sample (see lib/member.ts). Ported from app.jsx (the dev
 // "tweaks panel" + prototype TopNav are dropped; the site header is the nav).
+import type { ReactNode } from 'react'
 import type { NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
@@ -244,8 +245,43 @@ function ThemeToggle() {
   )
 }
 
+/**
+ * One tab's content. Mounted on first visit and then KEPT MOUNTED — inactive
+ * tabs are hidden with display:none rather than unmounted, so revisiting a tab
+ * never refetches data or resets its in-tab state (scroll, filters, open sheets).
+ * The lf-rise entrance plays once, on the panel's first appearance; later
+ * re-shows skip it (toggling display would otherwise replay the animation).
+ */
+function TabPanel({ active, children }: { active: boolean, children: ReactNode }) {
+  const seenRef = useRef(false)
+  const firstShow = active && !seenRef.current
+  useEffect(() => {
+    if (active)
+      seenRef.current = true
+  }, [active])
+  return (
+    <div className={firstShow ? 'lf-rise' : undefined} style={{ display: active ? undefined : 'none' }}>
+      {children}
+    </div>
+  )
+}
+
 export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], profile: MemberProfile }) {
   const [tab, setTab] = useState('overview')
+  // Tabs visited at least once. Each is mounted lazily on first visit and then
+  // kept mounted (hidden, not unmounted) so a re-visit never refetches. The
+  // functional updater keeps rapid clicks from clobbering the set.
+  const [visited, setVisited] = useState<Set<string>>(() => new Set(['overview']))
+  const selectTab = (id: string) => {
+    setTab(id)
+    setVisited((v) => {
+      if (v.has(id))
+        return v
+      const next = new Set(v)
+      next.add(id)
+      return next
+    })
+  }
   const [npStyle, setNpStyle] = useState<NpStyle>('banner')
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   const [layout, setLayout] = useState<Layout>(() => readPref(LAYOUT_KEY, LAYOUT_OPTS.map(o => o.v), 'sidebar'))
@@ -284,7 +320,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
 	key={tb.id}
 	type="button"
 	className="lf-tab-btn"
-	onClick={() => setTab(tb.id)}
+	onClick={() => selectTab(tb.id)}
 	style={{ border: 'none', background: 'none', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: tab === tb.id ? 'var(--color-text)' : 'var(--color-faded)', borderBottom: tab === tb.id ? '2px solid var(--color-accent)' : '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
         >
           {tb.label}
@@ -293,13 +329,24 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
     </div>
   )
 
+  // Keep-alive: render every visited tab once and keep it mounted; TabPanel hides
+  // the inactive ones with display:none. Stable per-tab keys (NOT key={tab}) stop
+  // React from unmounting a tab on switch, so its fetched data + UI state persist.
+  // BucketBoard's research poll is gated on `active` so it goes quiet when hidden.
+  const panels: { id: string, node: ReactNode }[] = [
+    { id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => selectTab('bucket')} reviews={reviews} /> },
+    { id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> },
+    { id: 'bucket', node: <BucketBoard onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
+    { id: 'stats', node: <StatsTab onOpen={openDetail} /> },
+    { id: 'integration', node: <SpotifyIntegrationTab /> },
+  ]
   const content = (
-    <div key={tab} className="lf-rise">
-      {tab === 'overview' && <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => setTab('bucket')} reviews={reviews} />}
-      {tab === 'reviews' && <ReviewsTab reviews={reviews} onOpen={openDetail} />}
-      {tab === 'bucket' && <BucketBoard onOpen={openDetail} reviews={reviews} />}
-      {tab === 'stats' && <StatsTab onOpen={openDetail} />}
-      {tab === 'integration' && <SpotifyIntegrationTab />}
+    <div>
+      {panels.map(p => (
+        visited.has(p.id) ?
+          <TabPanel key={p.id} active={p.id === tab}>{p.node}</TabPanel> :
+          null
+      ))}
     </div>
   )
 
