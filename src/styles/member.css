@@ -768,7 +768,12 @@
    memo textarea (the point) stays reachable without scrolling past everything */
 @media (max-width: 740px) {
   .memo-modal-lg { padding: 24px 22px 22px; }
-  .memo-lg-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  /* List the .size-* variants too: `.size-l/.size-xl .memo-lg-grid` (0,2,0) would
+     otherwise out-specify a bare `.memo-lg-grid` (0,1,0) here and keep the 320/360px
+     two-column track on a phone, crushing the memo column to 0px (default size = l). */
+  .memo-lg-grid,
+  .size-l .memo-lg-grid,
+  .size-xl .memo-lg-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .memo-cover-wrap,
   .size-l .memo-cover-wrap,
   .size-xl .memo-cover-wrap { max-width: 116px; }
