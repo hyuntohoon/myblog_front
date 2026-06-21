@@ -415,6 +415,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/saved-tracks/fill-genres": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fill Saved Track Genres */
+        post: operations["fill_saved_track_genres_api_library_saved_tracks_fill_genres_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/saved-tracks/genre-distribution": {
         parameters: {
             query?: never;
@@ -1074,6 +1091,14 @@ export interface components {
              * @default 0
              */
             unclassified_count: number;
+        };
+        /** FillGenresResponse */
+        Backend_FillGenresResponse: {
+            /**
+             * Status
+             * @default queued
+             */
+            status: string;
         };
         /**
          * GenreEdge
@@ -2742,6 +2767,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_ClassifyResponse"];
+                };
+            };
+        };
+    };
+    fill_saved_track_genres_api_library_saved_tracks_fill_genres_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_FillGenresResponse"];
                 };
             };
         };
