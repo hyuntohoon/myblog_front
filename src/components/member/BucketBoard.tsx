@@ -1352,7 +1352,11 @@ function ActionSheet({ title, subtitle, actions, onClose }: { title: string, sub
 }
 
 // ── board ────────────────────────────────────────────────────────────────---
-export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => void, reviews: MemberReview[] }) {
+// Stable empty id-set: passed to useResearchStatusMap when the bucket tab is
+// hidden so the hook clears its map + stops polling without thrashing the memo.
+const NO_RESEARCH_IDS: string[] = []
+
+export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: DetailTarget) => void, reviews: MemberReview[], active?: boolean }) {
   // Seed both from localStorage so the board paints immediately on mount and
   // only the (background) revalidation is async — no "불러오는 중…" flash, no
   // disappear-then-reappear when returning to the tab. Stale by design; the
@@ -1518,7 +1522,10 @@ export function BucketBoard({ onOpen, reviews }: { onOpen: (t: DetailTarget) => 
     visit(normalTree, b => b.albums.forEach(a => ids.push(a.albumId)))
     return ids
   }, [normalTree])
-  const researchStatus = useResearchStatusMap(researchAlbumIds)
+  // Pause the 4s research-status self-poll while this tab is hidden (ProfileApp
+  // keeps the board mounted). An empty id-set makes the hook clear its map and
+  // stop the poll; it re-arms with a fresh tick when the tab becomes active.
+  const researchStatus = useResearchStatusMap(active ? researchAlbumIds : NO_RESEARCH_IDS)
 
   // Load the real tree on mount.
   useEffect(() => {
