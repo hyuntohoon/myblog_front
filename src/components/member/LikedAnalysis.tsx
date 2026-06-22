@@ -272,12 +272,19 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 	const genreDist = dists[`${source}:genre`] ?? null
 	const artistDist = dists[`${source}:artist`] ?? null
 	const genreItems = toChartItems(genreDist)
-	const artistItems = toChartItems(artistDist).slice(0, 8)
+	// Artist tail is long (hundreds), so cap the chart — but say how many of how
+	// many are shown so it doesn't read as "that's all there is".
+	const ARTIST_CAP = 15
+	const artistAll = toChartItems(artistDist)
+	const artistItems = artistAll.slice(0, ARTIST_CAP)
 	const unit = source === 'played' ? '회' : '곡'
 
 	// Population basis, surfaced as panel captions so the server-whole charts and
 	// the client-side (loaded-only) widgets can't be read against the same N.
 	const serverBasis = <span className="lf-meta" style={{ color: 'var(--color-faded)' }}>전체 집계</span>
+	const artistBasis = artistAll.length > artistItems.length ?
+		<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`상위 ${artistItems.length} · 전체 ${artistAll.length.toLocaleString()}`}</span> :
+		serverBasis
 	const viewBasis = <span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`좋아요 ${rows.length.toLocaleString()}곡`}</span>
 	const likedTotal = dists['liked:genre']?.total ?? 0
 	const overCeiling = likedTotal > loadedCount
@@ -301,7 +308,7 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 										<div className="lf-meta">표시할 장르가 없어요.</div> :
 										<DistChart style={chartStyle} items={genreItems} unit={unit} />}
 				</Panel>
-				<Panel title="아티스트 분포" right={serverBasis}>
+				<Panel title="아티스트 분포" right={artistBasis}>
 					{error ?
 						<div className="lf-meta">불러오지 못했어요.</div> :
 						!loaded ?
