@@ -538,7 +538,7 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 					{showAnalysis ? '숨기기' : '보기'}
 				</Pill>
 			</div>
-			{showAnalysis && <LikedAnalysis rows={sorted} />}
+			{showAnalysis && <LikedAnalysis rows={sorted} loadedCount={allRows.length} />}
 
 			{/* classify */}
 			<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
