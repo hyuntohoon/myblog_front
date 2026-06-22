@@ -54,6 +54,41 @@ function Panel({ title, right, children }: { title: string, right?: React.ReactN
 	)
 }
 
+/** ISO → `YYYY.MM.DD`; '' when missing/unparseable. */
+function fmtDate(iso: string | null | undefined): string {
+	if (!iso)
+		return ''
+	const d = new Date(iso)
+	if (Number.isNaN(d.getTime()))
+		return ''
+	const y = d.getFullYear()
+	const m = String(d.getMonth() + 1).padStart(2, '0')
+	const day = String(d.getDate()).padStart(2, '0')
+	return `${y}.${m}.${day}`
+}
+
+/**
+ * One honest line under the source toggle: what the active source MEANS (좋아요 =
+ * intent vs 재생 = behavior), its denominator (liked-N / played-N), and its time
+ * horizon — so a 좋아요 chart can't be misread as a 재생(listened) chart. The two
+ * sources barely overlap (saved vs played), so this label is load-bearing.
+ * FEAT-analysis-source-clarity.
+ */
+function SourceNote({ source, dist }: { source: Source, dist: Distribution | null }) {
+	const synced = fmtDate(dist?.last_synced_at)
+	const n = dist ? dist.total.toLocaleString() : '—'
+	const label = source === 'played' ? '재생' : '좋아요'
+	const rest = source === 'played' ?
+		` — 실제 들은 기록(행동). ${n}회 재생 · 첫 배포일 이후만 집계(평생 기록 아님)${synced ? ` · 최근 ${synced}` : ''}` :
+		` — 내가 담은 곡(의도). 전체 ${n}곡${synced ? ` · 동기화 ${synced}` : ''}`
+	return (
+		<div className="lf-meta" style={{ marginBottom: 14, lineHeight: 1.5 }}>
+			<strong style={{ color: 'var(--color-text)' }}>{label}</strong>
+			{rest}
+		</div>
+	)
+}
+
 /** Parse a row's added_at (ISO) safely to ms; NaN when unparseable. */
 function addedMs(row: LikedRowVM): number {
 	return new Date(row.addedAtRaw).getTime()
@@ -209,7 +244,7 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
  * the client-side decade + likes-flow widgets. The genre/artist charts read the
  * server distributions (whole-set accurate) under a 좋아요/재생 source toggle.
  */
-export function LikedAnalysis({ rows }: { rows: LikedRowVM[] }) {
+export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loadedCount: number }) {
 	const [source, setSource] = useState<Source>('liked')
 	const [chartStyle, setChartStyle] = useState<ChartStyle>('bar')
 	const [dists, setDists] = useState<Record<string, Distribution>>({})
@@ -240,15 +275,24 @@ export function LikedAnalysis({ rows }: { rows: LikedRowVM[] }) {
 	const artistItems = toChartItems(artistDist).slice(0, 8)
 	const unit = source === 'played' ? '회' : '곡'
 
+	// Population basis, surfaced as panel captions so the server-whole charts and
+	// the client-side (loaded-only) widgets can't be read against the same N.
+	const serverBasis = <span className="lf-meta" style={{ color: 'var(--color-faded)' }}>전체 집계</span>
+	const viewBasis = <span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`좋아요 ${rows.length.toLocaleString()}곡`}</span>
+	const likedTotal = dists['liked:genre']?.total ?? 0
+	const overCeiling = likedTotal > loadedCount
+
 	return (
 		<div style={{ marginBottom: 26 }}>
-			<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14, justifyContent: 'space-between' }}>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, justifyContent: 'space-between' }}>
 				<Seg value={source} onChange={v => setSource(v as Source)} options={SOURCES} />
 				<Seg value={chartStyle} onChange={v => setChartStyle(v as ChartStyle)} options={STYLES} />
 			</div>
 
+			<SourceNote source={source} dist={genreDist} />
+
 			<div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-				<Panel title="장르 분포">
+				<Panel title="장르 분포" right={serverBasis}>
 					{error ?
 						<div className="lf-meta">불러오지 못했어요.</div> :
 						!loaded ?
@@ -257,7 +301,7 @@ export function LikedAnalysis({ rows }: { rows: LikedRowVM[] }) {
 										<div className="lf-meta">표시할 장르가 없어요.</div> :
 										<DistChart style={chartStyle} items={genreItems} unit={unit} />}
 				</Panel>
-				<Panel title="아티스트 분포">
+				<Panel title="아티스트 분포" right={serverBasis}>
 					{error ?
 						<div className="lf-meta">불러오지 못했어요.</div> :
 						!loaded ?
@@ -269,8 +313,12 @@ export function LikedAnalysis({ rows }: { rows: LikedRowVM[] }) {
 			</div>
 
 			<div className="lk-flow-grid" style={{ display: 'grid', gap: 16, gridTemplateColumns: '1.5fr 1fr', marginTop: 16 }}>
-				<Panel title="좋아요 흐름"><LikedFlow rows={rows} /></Panel>
-				<Panel title="연대 분포"><DecadeMini rows={rows} /></Panel>
+				<Panel title="좋아요 흐름" right={viewBasis}><LikedFlow rows={rows} /></Panel>
+				<Panel title="연대 분포" right={viewBasis}><DecadeMini rows={rows} /></Panel>
+			</div>
+
+			<div className="lf-meta" style={{ marginTop: 10, color: 'var(--color-faded)' }}>
+				{`‘좋아요 흐름·연대’는 화면에 적재된 좋아요만 집계해요${overCeiling ? ` — 전체 ${likedTotal.toLocaleString()}곡 중 ${loadedCount.toLocaleString()}곡 적재` : ''}.`}
 			</div>
 
 			{/* 미분류 affordance always reads the 좋아요 (saved) genre distribution. */}
