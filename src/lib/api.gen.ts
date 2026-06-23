@@ -466,6 +466,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/stream-history/era-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Era Distribution */
+        get: operations["stream_history_era_distribution_api_library_stream_history_era_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/stream-history/genre-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Genre Distribution */
+        get: operations["stream_history_genre_distribution_api_library_stream_history_genre_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/stream-history/retrospective": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Retrospective */
+        get: operations["stream_history_retrospective_api_library_stream_history_retrospective_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/stream-history/top-albums": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Top Albums */
+        get: operations["stream_history_top_albums_api_library_stream_history_top_albums_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/stream-history/top-artists": {
         parameters: {
             query?: never;
@@ -1255,6 +1323,22 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
         };
+        /** OnThisDayItem */
+        Backend_OnThisDayItem: {
+            album?: components["schemas"]["Backend_AlbumBrief"] | null;
+            /** Album Id */
+            album_id?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /** Ms Played */
+            ms_played: number;
+            /** Plays */
+            plays: number;
+            /** Track Name */
+            track_name?: string | null;
+            /** Year */
+            year: number;
+        };
         /** PostDetailResponse */
         Backend_PostDetailResponse: {
             /** Album Ids */
@@ -1455,6 +1539,26 @@ export interface components {
             /** Mode */
             mode?: ("restart" | "refine") | null;
         };
+        /** RetroYearStat */
+        Backend_RetroYearStat: {
+            /** Ms Played */
+            ms_played: number;
+            /** Plays */
+            plays: number;
+            /** Year */
+            year: number;
+        };
+        /** RetrospectiveResponse */
+        Backend_RetrospectiveResponse: {
+            /** As Of */
+            as_of?: string | null;
+            /** On This Day */
+            on_this_day?: components["schemas"]["Backend_OnThisDayItem"][];
+            /** Per Year */
+            per_year?: components["schemas"]["Backend_RetroYearStat"][];
+            /** Today Kst */
+            today_kst: string;
+        };
         /** ReviewedAlbumResponse */
         Backend_ReviewedAlbumResponse: {
             album: components["schemas"]["Backend_AlbumBrief"];
@@ -1571,6 +1675,39 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** StreamAlbumRankItem */
+        Backend_StreamAlbumRankItem: {
+            album: components["schemas"]["Backend_AlbumBrief"];
+            /** Value */
+            value: number;
+        };
+        /** StreamAlbumRankResponse */
+        Backend_StreamAlbumRankResponse: {
+            /** As Of */
+            as_of?: string | null;
+            /** Items */
+            items?: components["schemas"]["Backend_StreamAlbumRankItem"][];
+            /**
+             * Total Ms
+             * @default 0
+             */
+            total_ms: number;
+            /**
+             * Total Streams
+             * @default 0
+             */
+            total_streams: number;
+            /**
+             * Unit
+             * @default count
+             */
+            unit: string;
+            /**
+             * Unresolved
+             * @default 0
+             */
+            unresolved: number;
+        };
         /** StreamRankItem */
         Backend_StreamRankItem: {
             /** Artist */
@@ -1598,6 +1735,11 @@ export interface components {
              * @default 0
              */
             total_streams: number;
+            /**
+             * Unclassified
+             * @default 0
+             */
+            unclassified: number;
             /**
              * Unit
              * @default count
@@ -2896,6 +3038,131 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_SpotifyConnectionResponse"];
+                };
+            };
+        };
+    };
+    stream_history_era_distribution_api_library_stream_history_era_distribution_get: {
+        parameters: {
+            query?: {
+                metric?: "count" | "time";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_StreamRankResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_history_genre_distribution_api_library_stream_history_genre_distribution_get: {
+        parameters: {
+            query?: {
+                metric?: "count" | "time";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_StreamRankResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_history_retrospective_api_library_stream_history_retrospective_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_RetrospectiveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_history_top_albums_api_library_stream_history_top_albums_get: {
+        parameters: {
+            query?: {
+                metric?: "count" | "time";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_StreamAlbumRankResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };
