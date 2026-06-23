@@ -1,8 +1,8 @@
 // 분석 버킷 → 좋아요한 트랙 — analysis panel. FEAT-liked-tracks-workbench Step 2.
 // Ported from the prototype (liked-analysis.jsx `LikedAnalysis`), adapted to real
 // data. 장르·아티스트 distribution come from the SERVER distribution endpoints
-// (accurate over the WHOLE set, not the loaded page) with a 좋아요/재생 source
-// toggle (charts only); 연대 분포 + 좋아요 흐름 are computed client-side from the
+// (accurate over the WHOLE set, not the loaded page) for the 좋아요 source;
+// 연대 분포 + 좋아요 흐름 are computed client-side from the
 // loaded rows. The 미분류 affordance (분류하기 / 장르 채우기) reuses StatsTab's
 // classify/fill logic + messages (enqueue-only — rule #9).
 import type { LikedRowVM } from './LikedBoard'
@@ -13,8 +13,6 @@ import { useEffect, useState } from 'react'
 import {
 	classifySavedTracks,
 	fillGenres,
-	getPlayedArtistDistribution,
-	getPlayedGenreDistribution,
 	getSavedArtistDistribution,
 	getSavedGenreDistribution,
 } from './analysis.api'
@@ -22,15 +20,15 @@ import { DistChart } from './charts'
 import { ImportAnalysis } from './ImportAnalysis'
 import { Seg } from './ui'
 
-// 임포트(평생) is the post-import PRIMARY "favorite" signal (true lifetime play + time);
-// 좋아요 = intent, 재생 = recent behavior are the secondary lenses (FEAT-listening-
-// history-import Step 6).
-type Source = 'import' | 'liked' | 'played'
+// 임포트(평생+라이브) is the post-import PRIMARY "favorite" signal: the GDPR import
+// (true lifetime play + time) unioned with the live recently-played tail past its
+// as_of horizon (FEAT-listening-live-merge — the separate 재생 toggle is gone).
+// 좋아요 = intent is the secondary lens.
+type Source = 'import' | 'liked'
 
 const SOURCES: { v: Source, label: string }[] = [
-	{ v: 'import', label: '임포트(평생)' },
+	{ v: 'import', label: '임포트(평생+라이브)' },
 	{ v: 'liked', label: '좋아요' },
-	{ v: 'played', label: '재생' },
 ]
 const STYLES: { v: ChartStyle, label: string }[] = [
 	{ v: 'bar', label: '막대' },
@@ -73,23 +71,18 @@ function fmtDate(iso: string | null | undefined): string {
 }
 
 /**
- * One honest line under the source toggle: what the active source MEANS (좋아요 =
- * intent vs 재생 = behavior), its denominator (liked-N / played-N), and its time
- * horizon — so a 좋아요 chart can't be misread as a 재생(listened) chart. The two
- * sources barely overlap (saved vs played), so this label is load-bearing.
- * FEAT-analysis-source-clarity.
+ * One honest line under the source toggle: what the 좋아요 source MEANS (intent, not
+ * listened), its denominator (liked-N), and its sync horizon — so a 좋아요 chart can't
+ * be misread as a 들은-기록 chart. (The lifetime/live listening signal lives in the
+ * sibling 임포트 source.) FEAT-analysis-source-clarity.
  */
-function SourceNote({ source, dist }: { source: Source, dist: Distribution | null }) {
+function SourceNote({ dist }: { dist: Distribution | null }) {
 	const synced = fmtDate(dist?.last_synced_at)
 	const n = dist ? dist.total.toLocaleString() : '—'
-	const label = source === 'played' ? '재생' : '좋아요'
-	const rest = source === 'played' ?
-		` — 실제 들은 기록(행동). ${n}회 재생 · 첫 배포일 이후만 집계(평생 기록 아님)${synced ? ` · 최근 ${synced}` : ''}` :
-		` — 내가 담은 곡(의도). 전체 ${n}곡${synced ? ` · 동기화 ${synced}` : ''}`
 	return (
 		<div className="lf-meta" style={{ marginBottom: 14, lineHeight: 1.5 }}>
-			<strong style={{ color: 'var(--color-text)' }}>{label}</strong>
-			{rest}
+			<strong style={{ color: 'var(--color-text)' }}>좋아요</strong>
+			{` — 내가 담은 곡(의도). 전체 ${n}곡${synced ? ` · 동기화 ${synced}` : ''}`}
 		</div>
 	)
 }
@@ -247,7 +240,8 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
 /**
  * The analysis panel. `rows` = the current liked view (filtered+sorted) used for
  * the client-side decade + likes-flow widgets. The genre/artist charts read the
- * server distributions (whole-set accurate) under a 좋아요/재생 source toggle.
+ * server 좋아요 distributions (whole-set accurate). The sibling 임포트 source renders
+ * its own (lifetime + live) view.
  */
 export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loadedCount: number }) {
 	const [source, setSource] = useState<Source>('import')
@@ -260,12 +254,10 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 		Promise.all([
 			getSavedGenreDistribution(),
 			getSavedArtistDistribution(),
-			getPlayedGenreDistribution(),
-			getPlayedArtistDistribution(),
 		])
-			.then(([sg, sa, pg, pa]) => {
+			.then(([sg, sa]) => {
 				if (on)
-					setDists({ 'liked:genre': sg, 'liked:artist': sa, 'played:genre': pg, 'played:artist': pa })
+					setDists({ 'liked:genre': sg, 'liked:artist': sa })
 			})
 			.catch(() => on && setError(true))
 		return () => {
@@ -282,7 +274,7 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 	const ARTIST_CAP = 15
 	const artistAll = toChartItems(artistDist)
 	const artistItems = artistAll.slice(0, ARTIST_CAP)
-	const unit = source === 'played' ? '회' : '곡'
+	const unit = '곡'
 
 	// Population basis, surfaced as panel captions so the server-whole charts and
 	// the client-side (loaded-only) widgets can't be read against the same N.
@@ -304,7 +296,7 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 			{source === 'import' && <ImportAnalysis chartStyle={chartStyle} />}
 			{source !== 'import' && (
 				<>
-					<SourceNote source={source} dist={genreDist} />
+					<SourceNote dist={genreDist} />
 
 			<div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
 				<Panel title="장르 분포" right={serverBasis}>
