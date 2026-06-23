@@ -4,11 +4,42 @@ import type { DistItem } from '@lib/member'
 
 export type ChartStyle = 'bar' | 'donut' | 'treemap' | 'tag' | 'list'
 
-interface Normalized { name: string, value: number, pct: number }
+// FEAT-analysis-explore: a datum may carry an optional `id` (drill-down handle — a track
+// uri or artist name) alongside the display name. DistItem ({name,value}) stays assignable,
+// so non-interactive callers (the 좋아요 charts) are unchanged.
+export interface ChartDatum extends DistItem { id?: string }
 
-function normalize(items: DistItem[]): Normalized[] {
+/** Click/keyboard handler for a drill-down — given the clicked datum. */
+export type ChartSelect = (item: ChartDatum) => void
+
+interface Normalized { name: string, value: number, pct: number, id?: string }
+
+function normalize(items: ChartDatum[]): Normalized[] {
   const total = items.reduce((s, it) => s + it.value, 0) || 1
-  return items.map(it => ({ name: it.name, value: it.value, pct: (it.value / total) * 100 }))
+  return items.map(it => ({ name: it.name, value: it.value, pct: (it.value / total) * 100, id: it.id }))
+}
+
+/**
+ * When `onSelect` is set, make a chart leaf a keyboard-operable button that drills into the
+ * datum; otherwise return no props (zero behaviour change). The caller spreads the result
+ * and merges its own inline style after (so `cursor` only applies when interactive).
+ */
+function selectable(onSelect: ChartSelect | undefined, it: Normalized) {
+  if (!onSelect)
+    return {}
+  return {
+    'role': 'button',
+    'tabIndex': 0,
+    'data-chart-click': '', // hover/cursor/focus affordance lives in member.css
+    'aria-label': `${it.name} 상세`,
+    'onClick': () => onSelect(it),
+    'onKeyDown': (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onSelect(it)
+      }
+    },
+  } as const
 }
 
 /** rank 0 = accent red; rest = descending ink tones (theme-safe). */
@@ -22,12 +53,12 @@ function colorFor(i: number) {
   }
 }
 
-function ChartBar({ items, unit = '' }: { items: Normalized[], unit?: string }) {
+function ChartBar({ items, unit = '', onSelect }: { items: Normalized[], unit?: string, onSelect?: ChartSelect }) {
   const max = Math.max(...items.map(i => i.value))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {items.map((it, i) => (
-        <div key={it.name}>
+        <div key={it.name} {...selectable(onSelect, it)}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
             <span className="lf-sans" style={{ fontSize: 13, fontWeight: 500, color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.name}</span>
             <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>
@@ -48,7 +79,7 @@ function ChartBar({ items, unit = '' }: { items: Normalized[], unit?: string }) 
   )
 }
 
-function ChartDonut({ items }: { items: Normalized[] }) {
+function ChartDonut({ items, onSelect }: { items: Normalized[], onSelect?: ChartSelect }) {
   let acc = 0
   const stops = items.map((it, i) => {
     const start = acc
@@ -72,7 +103,7 @@ function ChartDonut({ items }: { items: Normalized[] }) {
       </div>
       <div style={{ flex: 1, minWidth: 160, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '9px 16px' }}>
         {items.map((it, i) => (
-          <div key={it.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div key={it.name} {...selectable(onSelect, it)} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ width: 9, height: 9, background: colorFor(i).bg, flex: '0 0 auto' }} />
             <span className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</span>
             <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--color-faded)' }}>
@@ -86,7 +117,7 @@ function ChartDonut({ items }: { items: Normalized[] }) {
   )
 }
 
-function ChartTreemap({ items, unit = '' }: { items: Normalized[], unit?: string }) {
+function ChartTreemap({ items, unit = '', onSelect }: { items: Normalized[], unit?: string, onSelect?: ChartSelect }) {
   const total = items.reduce((s, i) => s + i.value, 0)
   const rows: (Normalized & { _i: number })[][] = [[], [], []]
   const rowTargets = [0.42, 0.33, 0.25]
@@ -111,6 +142,7 @@ function ChartTreemap({ items, unit = '' }: { items: Normalized[], unit?: string
               <div
 	key={it.name}
 	title={`${it.name} · ${it.value}${unit}`}
+	{...selectable(onSelect, it)}
 	style={{ flex: it.value, minWidth: 0, borderRadius: 3, padding: 11, background: c.bg, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflow: 'hidden' }}
               >
                 <span className="lf-sans" style={{ fontSize: 12.5, fontWeight: 600, color: c.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</span>
@@ -127,7 +159,7 @@ function ChartTreemap({ items, unit = '' }: { items: Normalized[], unit?: string
   )
 }
 
-function ChartTag({ items }: { items: Normalized[] }) {
+function ChartTag({ items, onSelect }: { items: Normalized[], onSelect?: ChartSelect }) {
   const max = Math.max(...items.map(i => i.value))
   const min = Math.min(...items.map(i => i.value))
   const size = (v: number) => 15 + ((v - min) / (max - min || 1)) * 28
@@ -137,6 +169,7 @@ function ChartTag({ items }: { items: Normalized[] }) {
         <span
 	key={it.name}
 	className="lf-serif lf-italic"
+	{...selectable(onSelect, it)}
 	style={{ fontSize: size(it.value), fontWeight: 500, lineHeight: 1.1, letterSpacing: '-.01em', color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)', opacity: i === 0 ? 1 : Math.max(0.45, 1 - i * 0.08) }}
         >
           {it.name}
@@ -147,12 +180,12 @@ function ChartTag({ items }: { items: Normalized[] }) {
   )
 }
 
-function ChartList({ items, unit = '' }: { items: Normalized[], unit?: string }) {
+function ChartList({ items, unit = '', onSelect }: { items: Normalized[], unit?: string, onSelect?: ChartSelect }) {
   const max = Math.max(...items.map(i => i.value))
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {items.map((it, i) => (
-        <div key={it.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: i < items.length - 1 ? '1px solid var(--color-border-soft)' : 'none' }}>
+        <div key={it.name} {...selectable(onSelect, it)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: i < items.length - 1 ? '1px solid var(--color-border-soft)' : 'none' }}>
           <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 22 }}>{String(i + 1).padStart(2, '0')}</span>
           <span className="lf-serif lf-italic" style={{ fontSize: 15, fontWeight: 500, flex: '0 0 auto', minWidth: 0, color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.name}</span>
           <div style={{ flex: 1, height: 3, background: 'var(--color-border-soft)', margin: '0 8px', overflow: 'hidden' }}>
@@ -172,13 +205,13 @@ function ChartList({ items, unit = '' }: { items: Normalized[], unit?: string })
   )
 }
 
-export function DistChart({ style, items, unit = '' }: { style: ChartStyle, items: DistItem[], unit?: string }) {
+export function DistChart({ style, items, unit = '', onSelect }: { style: ChartStyle, items: ChartDatum[], unit?: string, onSelect?: ChartSelect }) {
   const data = normalize(items)
   switch (style) {
-    case 'donut': return <ChartDonut items={data} />
-    case 'treemap': return <ChartTreemap items={data} unit={unit} />
-    case 'tag': return <ChartTag items={data} />
-    case 'list': return <ChartList items={data} unit={unit} />
-    default: return <ChartBar items={data} unit={unit} />
+    case 'donut': return <ChartDonut items={data} onSelect={onSelect} />
+    case 'treemap': return <ChartTreemap items={data} unit={unit} onSelect={onSelect} />
+    case 'tag': return <ChartTag items={data} onSelect={onSelect} />
+    case 'list': return <ChartList items={data} unit={unit} onSelect={onSelect} />
+    default: return <ChartBar items={data} unit={unit} onSelect={onSelect} />
   }
 }

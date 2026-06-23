@@ -466,6 +466,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/stream-history/clock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Clock */
+        get: operations["stream_history_clock_api_library_stream_history_clock_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/stream-history/era-distribution": {
         parameters: {
             query?: never;
@@ -492,6 +509,23 @@ export interface paths {
         };
         /** Stream History Genre Distribution */
         get: operations["stream_history_genre_distribution_api_library_stream_history_genre_distribution_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/stream-history/item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Item */
+        get: operations["stream_history_item_api_library_stream_history_item_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1717,6 +1751,87 @@ export interface components {
              * @default 0
              */
             unresolved: number;
+        };
+        /** StreamClockCell */
+        Backend_StreamClockCell: {
+            /** Hour */
+            hour: number;
+            /** Ms Played */
+            ms_played: number;
+            /** Plays */
+            plays: number;
+            /** Weekday */
+            weekday: number;
+        };
+        /** StreamClockResponse */
+        Backend_StreamClockResponse: {
+            /** As Of */
+            as_of?: string | null;
+            /** Cells */
+            cells?: components["schemas"]["Backend_StreamClockCell"][];
+            /**
+             * Live Streams
+             * @default 0
+             */
+            live_streams: number;
+            /**
+             * Total Ms
+             * @default 0
+             */
+            total_ms: number;
+            /**
+             * Total Streams
+             * @default 0
+             */
+            total_streams: number;
+            /**
+             * Unit
+             * @default count
+             */
+            unit: string;
+        };
+        /** StreamItemDetailResponse */
+        Backend_StreamItemDetailResponse: {
+            /** Artist */
+            artist?: string | null;
+            /** As Of */
+            as_of?: string | null;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /** First Listen */
+            first_listen?: string | null;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Last Listen */
+            last_listen?: string | null;
+            /**
+             * Live Streams
+             * @default 0
+             */
+            live_streams: number;
+            /** Per Year */
+            per_year?: components["schemas"]["Backend_RetroYearStat"][];
+            /**
+             * Time Ms
+             * @default 0
+             */
+            time_ms: number;
+            /** Top Albums */
+            top_albums?: components["schemas"]["Backend_StreamAlbumRankItem"][];
+            /** Top Tracks */
+            top_tracks?: components["schemas"]["Backend_StreamRankItem"][];
+            /** Type */
+            type: string;
+            /**
+             * Unit
+             * @default count
+             */
+            unit: string;
         };
         /** StreamRankItem */
         Backend_StreamRankItem: {
@@ -3057,10 +3172,49 @@ export interface operations {
             };
         };
     };
+    stream_history_clock_api_library_stream_history_clock_get: {
+        parameters: {
+            query?: {
+                metric?: "count" | "time";
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_StreamClockResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_history_era_distribution_api_library_stream_history_era_distribution_get: {
         parameters: {
             query?: {
                 metric?: "count" | "time";
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -3092,6 +3246,10 @@ export interface operations {
         parameters: {
             query?: {
                 metric?: "count" | "time";
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -3119,10 +3277,51 @@ export interface operations {
             };
         };
     };
+    stream_history_item_api_library_stream_history_item_get: {
+        parameters: {
+            query: {
+                type: "artist" | "album" | "track";
+                id: string;
+                metric?: "count" | "time";
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_StreamItemDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_history_retrospective_api_library_stream_history_retrospective_get: {
         parameters: {
             query?: {
                 limit?: number;
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -3155,6 +3354,10 @@ export interface operations {
             query?: {
                 metric?: "count" | "time";
                 limit?: number;
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -3187,6 +3390,10 @@ export interface operations {
             query?: {
                 metric?: "count" | "time";
                 limit?: number;
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
             };
             header?: never;
             path?: never;
@@ -3219,6 +3426,10 @@ export interface operations {
             query?: {
                 metric?: "count" | "time";
                 limit?: number;
+                /** @description range start, inclusive (ISO 8601); omit for lifetime */
+                from?: string | null;
+                /** @description range end, exclusive (ISO 8601); omit for open-ended */
+                to?: string | null;
             };
             header?: never;
             path?: never;
