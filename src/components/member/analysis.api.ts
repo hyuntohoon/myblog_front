@@ -38,23 +38,62 @@ export const getPlayedArtistDistribution = (): Promise<Distribution> => getDistr
 // listening time (ms), which no Spotify API exposes. Every endpoint takes a
 // count↔time `metric`; album/genre/era are coverage-GATED (the residual 미분류 rides
 // the `unclassified`/`unresolved` field). All edge_guard GET reads (DB-only — rule #9).
+// FEAT-analysis-explore: every panel also takes an optional [from, to) `Range` (the
+// front maps presets/dropdowns → raw UTC ISO instants), plus the item drill-down + clock.
 export type StreamRank = components['schemas']['Backend_StreamRankResponse']
 export type StreamRankItem = components['schemas']['Backend_StreamRankItem']
 export type StreamAlbumRank = components['schemas']['Backend_StreamAlbumRankResponse']
 export type Retrospective = components['schemas']['Backend_RetrospectiveResponse']
+export type StreamItemDetail = components['schemas']['Backend_StreamItemDetailResponse']
+export type StreamClock = components['schemas']['Backend_StreamClockResponse']
+export type StreamClockCell = components['schemas']['Backend_StreamClockCell']
 export type StreamMetric = 'count' | 'time'
+export type DrillType = 'artist' | 'album' | 'track'
+
+/** A half-open listening window [from, to); null bound = open. UTC ISO instants. */
+export interface Range { from: string | null, to: string | null }
+
+/**
+ * Build a `?…` query from the given params, dropping null/undefined/empty. URLSearchParams
+ * percent-encodes safely; the range bounds are UTC `…Z` instants (no `+`), so they survive
+ * cleanly. Returns '' when no params, so callers can append unconditionally.
+ */
+function streamQuery(params: Record<string, string | number | null | undefined>): string {
+	const sp = new URLSearchParams()
+	for (const [k, v] of Object.entries(params)) {
+		if (v !== null && v !== undefined && v !== '')
+			sp.set(k, String(v))
+	}
+	const s = sp.toString()
+	return s ? `?${s}` : ''
+}
+
+function rangeParams(range?: Range | null): Record<string, string> {
+	const out: Record<string, string> = {}
+	if (range?.from)
+		out.from = range.from
+	if (range?.to)
+		out.to = range.to
+	return out
+}
 
 async function getStream<T>(path: string): Promise<T> {
 	const res = await apiFetch(`${BASE}/api/library/stream-history/${path}`, { method: 'GET' })
 	return asJson<T>(res)
 }
 
-export const getStreamTopTracks = (metric: StreamMetric): Promise<StreamRank> => getStream(`top-tracks?metric=${metric}&limit=15`)
-export const getStreamTopArtists = (metric: StreamMetric): Promise<StreamRank> => getStream(`top-artists?metric=${metric}&limit=15`)
-export const getStreamTopAlbums = (metric: StreamMetric): Promise<StreamAlbumRank> => getStream(`top-albums?metric=${metric}&limit=12`)
-export const getStreamGenreDistribution = (metric: StreamMetric): Promise<StreamRank> => getStream(`genre-distribution?metric=${metric}`)
-export const getStreamEraDistribution = (metric: StreamMetric): Promise<StreamRank> => getStream(`era-distribution?metric=${metric}`)
-export const getStreamRetrospective = (): Promise<Retrospective> => getStream(`retrospective?limit=20`)
+export const getStreamTopTracks = (metric: StreamMetric, range?: Range): Promise<StreamRank> => getStream(`top-tracks${streamQuery({ metric, limit: 15, ...rangeParams(range) })}`)
+export const getStreamTopArtists = (metric: StreamMetric, range?: Range): Promise<StreamRank> => getStream(`top-artists${streamQuery({ metric, limit: 15, ...rangeParams(range) })}`)
+export const getStreamTopAlbums = (metric: StreamMetric, range?: Range): Promise<StreamAlbumRank> => getStream(`top-albums${streamQuery({ metric, limit: 12, ...rangeParams(range) })}`)
+export const getStreamGenreDistribution = (metric: StreamMetric, range?: Range): Promise<StreamRank> => getStream(`genre-distribution${streamQuery({ metric, ...rangeParams(range) })}`)
+export const getStreamEraDistribution = (metric: StreamMetric, range?: Range): Promise<StreamRank> => getStream(`era-distribution${streamQuery({ metric, ...rangeParams(range) })}`)
+// Retrospective stays lifetime (it IS the all-time per-year + on-this-day companion); no range.
+export const getStreamRetrospective = (): Promise<Retrospective> => getStream(`retrospective${streamQuery({ limit: 20 })}`)
+
+/** Drill-down for one entity (artist_name | catalog album_id | track uri), honouring the range. */
+export const getStreamItem = (type: DrillType, id: string, metric: StreamMetric, range?: Range): Promise<StreamItemDetail> => getStream(`item${streamQuery({ type, id, metric, ...rangeParams(range) })}`)
+/** Hour×weekday (KST) listening clock, honouring the range. */
+export const getStreamClock = (metric: StreamMetric, range?: Range): Promise<StreamClock> => getStream(`clock${streamQuery({ metric, ...rangeParams(range) })}`)
 
 export interface SavedTracks {
 	items: SavedTrack[]

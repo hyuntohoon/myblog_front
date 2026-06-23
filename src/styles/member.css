@@ -238,6 +238,13 @@
 .lf-iconbtn:hover { color: var(--color-text); border-color: var(--color-border); }
 .lf-iconbtn.danger:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
+/* FEAT-analysis-explore — a drillable chart leaf (track/artist/album → detail slide-over).
+   Only present when the chart is given an onSelect, so the 좋아요 charts are unaffected. */
+[data-chart-click] { cursor: pointer; border-radius: 3px; outline: none; transition: opacity 0.15s; }
+[data-chart-click]:hover { opacity: 0.62; }
+[data-chart-click]:focus-visible { outline: 1.5px solid var(--color-accent); outline-offset: 2px; opacity: 0.62; }
+@media (prefers-reduced-motion: reduce) { [data-chart-click] { transition: none; } }
+
 /* ── bucket album cover-tile (크레이트 갤러리) ──────────────
    Fills its grid cell (covers laid out in a wrap grid) or the fixed-width
    wrapper in the 최근 들은 앨범 strip. Hover lifts the cover. */
