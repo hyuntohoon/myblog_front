@@ -1,9 +1,12 @@
-// 분석 버킷 → 임포트(평생) source — FEAT-listening-history-import Step 6 (final).
-// The imported Spotify Extended Streaming History: true LIFETIME play counts AND
-// listening time (ms), which no Spotify API exposes. This is the post-import PRIMARY
-// "favorite" signal (좋아요 = secondary intent). Every panel carries the import horizon
-// (as_of) so a stale export can't be misread as live, and the GATED album/genre/era
-// panels surface their residual 미분류 rather than hiding it. All edge_guard GET reads.
+// 분석 버킷 → 임포트(평생+라이브) source — FEAT-listening-history-import Step 6 +
+// FEAT-listening-live-merge Step 2. The imported Spotify Extended Streaming History
+// (true LIFETIME play counts AND listening time (ms), which no Spotify API exposes),
+// unioned with the live recently-played tail past its as_of horizon. The post-import
+// PRIMARY "favorite" signal (좋아요 = secondary intent). The hero carries the import
+// horizon (as_of) + the live tail count; the live tail's time is ESTIMATED
+// (duration_sec × plays — the poller has no ms_played) so the time total is marked
+// 추정 once live > 0. GATED album/genre/era panels surface their residual 미분류.
+// All edge_guard GET reads.
 import type { ChartStyle } from './charts'
 import type { Retrospective, StreamAlbumRank, StreamMetric, StreamRank } from './analysis.api'
 import type { DistItem } from '@lib/member'
@@ -80,18 +83,24 @@ interface MetricData {
  */
 function LifetimeHero({ totals }: { totals: StreamRank }) {
 	const horizon = fmtDate(totals.as_of)
+	const live = totals.live_streams ?? 0
+	// The live tail's time is ESTIMATED (duration_sec × plays — the poller has no
+	// ms_played), so once it's non-empty the time total is no longer exact: mark it ≈/추정.
+	const estimated = live > 0
 	return (
 		<div className="lf-panel" style={{ padding: '22px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '6px 28px', marginBottom: 16 }}>
 			<div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-				<span className="lf-serif" style={{ fontSize: 38, lineHeight: 1, color: 'var(--color-accent)' }}>{(totals.total_ms / 3.6e6).toFixed(0)}</span>
-				<span className="lf-mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>시간 청취</span>
+				<span className="lf-serif" style={{ fontSize: 38, lineHeight: 1, color: 'var(--color-accent)' }}>{`${estimated ? '≈' : ''}${(totals.total_ms / 3.6e6).toFixed(0)}`}</span>
+				<span className="lf-mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>{estimated ? '시간 청취 (추정)' : '시간 청취'}</span>
 			</div>
 			<div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
 				<span className="lf-serif" style={{ fontSize: 38, lineHeight: 1 }}>{totals.total_streams.toLocaleString()}</span>
 				<span className="lf-mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>회 재생</span>
 			</div>
 			<span className="lf-meta" style={{ marginLeft: 'auto', color: 'var(--color-faded)' }}>
-				{horizon ? `평생 기록 · ${horizon}까지 임포트` : '평생 기록'}
+				{live > 0 ?
+					(horizon ? `평생 + 라이브 · ${horizon}까지 임포트 · 이후 ${live.toLocaleString()}회 라이브` : `평생 + 라이브 · 라이브 ${live.toLocaleString()}회`) :
+					(horizon ? `평생 기록 · ${horizon}까지 임포트` : '평생 기록')}
 			</span>
 		</div>
 	)
@@ -223,10 +232,11 @@ function GateNote({ shown, total, label, metric }: { shown: number, total: numbe
 }
 
 /**
- * The 임포트(평생) analysis view. Primary "favorite" signal post-import (lifetime play +
- * time). `chartStyle` is shared with the sibling 좋아요/재생 view so the chart language is
- * consistent across sources. A count↔time toggle is unique to this source (only the
- * import carries ms_played).
+ * The 임포트(평생+라이브) analysis view. Primary "favorite" signal post-import (lifetime
+ * play + time, unioned with the live recently-played tail past as_of). `chartStyle` is
+ * shared with the sibling 좋아요 view so the chart language is consistent across sources.
+ * A count↔time toggle is unique to this source (only the import carries ms_played; the
+ * live tail's time is estimated — marked 추정 in the hero/caption when non-empty).
  */
 export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 	const [metric, setMetric] = useState<StreamMetric>('count')
@@ -286,7 +296,8 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 		)
 	}
 
-	const totals = data.tracks // total_streams/total_ms/as_of are identical across the stream endpoints
+	const totals = data.tracks // total_streams/total_ms/as_of/live_streams are identical across the stream endpoints
+	const live = totals.live_streams ?? 0
 	const unit = metric === 'time' ? '분' : '회'
 	const trackItems = rankToItems(data.tracks, metric)
 	const artistItems = rankToItems(data.artists, metric)
@@ -303,7 +314,8 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 				<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>
 					{metric === 'time' ? '오래 들은 순' : '많이 들은 순'}
 					{' · '}
-					{loading ? '갱신 중…' : '평생 집계'}
+					{loading ? '갱신 중…' : live > 0 ? '평생 + 라이브 집계' : '평생 집계'}
+					{!loading && metric === 'time' && live > 0 ? ' · 라이브 시간 추정' : ''}
 				</span>
 			</div>
 
