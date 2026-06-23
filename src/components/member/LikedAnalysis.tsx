@@ -19,11 +19,16 @@ import {
 	getSavedGenreDistribution,
 } from './analysis.api'
 import { DistChart } from './charts'
+import { ImportAnalysis } from './ImportAnalysis'
 import { Seg } from './ui'
 
-type Source = 'liked' | 'played'
+// 임포트(평생) is the post-import PRIMARY "favorite" signal (true lifetime play + time);
+// 좋아요 = intent, 재생 = recent behavior are the secondary lenses (FEAT-listening-
+// history-import Step 6).
+type Source = 'import' | 'liked' | 'played'
 
 const SOURCES: { v: Source, label: string }[] = [
+	{ v: 'import', label: '임포트(평생)' },
 	{ v: 'liked', label: '좋아요' },
 	{ v: 'played', label: '재생' },
 ]
@@ -245,7 +250,7 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
  * server distributions (whole-set accurate) under a 좋아요/재생 source toggle.
  */
 export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loadedCount: number }) {
-	const [source, setSource] = useState<Source>('liked')
+	const [source, setSource] = useState<Source>('import')
 	const [chartStyle, setChartStyle] = useState<ChartStyle>('bar')
 	const [dists, setDists] = useState<Record<string, Distribution>>({})
 	const [error, setError] = useState(false)
@@ -296,7 +301,10 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 				<Seg value={chartStyle} onChange={v => setChartStyle(v as ChartStyle)} options={STYLES} />
 			</div>
 
-			<SourceNote source={source} dist={genreDist} />
+			{source === 'import' && <ImportAnalysis chartStyle={chartStyle} />}
+			{source !== 'import' && (
+				<>
+					<SourceNote source={source} dist={genreDist} />
 
 			<div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
 				<Panel title="장르 분포" right={serverBasis}>
@@ -328,8 +336,10 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 				{`‘좋아요 흐름·연대’는 화면에 적재된 좋아요만 집계해요${overCeiling ? ` — 전체 ${likedTotal.toLocaleString()}곡 중 ${loadedCount.toLocaleString()}곡 적재` : ''}.`}
 			</div>
 
-			{/* 미분류 affordance always reads the 좋아요 (saved) genre distribution. */}
-			<UnclassifiedPanel dist={dists['liked:genre'] ?? null} />
+					{/* 미분류 affordance always reads the 좋아요 (saved) genre distribution. */}
+					<UnclassifiedPanel dist={dists['liked:genre'] ?? null} />
+				</>
+			)}
 		</div>
 	)
 }

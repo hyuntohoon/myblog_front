@@ -33,6 +33,29 @@ export const getSavedArtistDistribution = (): Promise<Distribution> => getDistri
 export const getPlayedGenreDistribution = (): Promise<Distribution> => getDistribution('play-events/genre-distribution')
 export const getPlayedArtistDistribution = (): Promise<Distribution> => getDistribution('play-events/artist-distribution')
 
+// ── 임포트(평생): lifetime stream-history analytics (FEAT-listening-history-import) ──
+// The imported Spotify Extended Streaming History — true lifetime play counts AND
+// listening time (ms), which no Spotify API exposes. Every endpoint takes a
+// count↔time `metric`; album/genre/era are coverage-GATED (the residual 미분류 rides
+// the `unclassified`/`unresolved` field). All edge_guard GET reads (DB-only — rule #9).
+export type StreamRank = components['schemas']['Backend_StreamRankResponse']
+export type StreamRankItem = components['schemas']['Backend_StreamRankItem']
+export type StreamAlbumRank = components['schemas']['Backend_StreamAlbumRankResponse']
+export type Retrospective = components['schemas']['Backend_RetrospectiveResponse']
+export type StreamMetric = 'count' | 'time'
+
+async function getStream<T>(path: string): Promise<T> {
+	const res = await apiFetch(`${BASE}/api/library/stream-history/${path}`, { method: 'GET' })
+	return asJson<T>(res)
+}
+
+export const getStreamTopTracks = (metric: StreamMetric): Promise<StreamRank> => getStream(`top-tracks?metric=${metric}&limit=15`)
+export const getStreamTopArtists = (metric: StreamMetric): Promise<StreamRank> => getStream(`top-artists?metric=${metric}&limit=15`)
+export const getStreamTopAlbums = (metric: StreamMetric): Promise<StreamAlbumRank> => getStream(`top-albums?metric=${metric}&limit=12`)
+export const getStreamGenreDistribution = (metric: StreamMetric): Promise<StreamRank> => getStream(`genre-distribution?metric=${metric}`)
+export const getStreamEraDistribution = (metric: StreamMetric): Promise<StreamRank> => getStream(`era-distribution?metric=${metric}`)
+export const getStreamRetrospective = (): Promise<Retrospective> => getStream(`retrospective?limit=20`)
+
 export interface SavedTracks {
 	items: SavedTrack[]
 	total: number
