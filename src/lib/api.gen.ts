@@ -1552,6 +1552,11 @@ export interface components {
         Backend_RetrospectiveResponse: {
             /** As Of */
             as_of?: string | null;
+            /**
+             * Live Streams
+             * @default 0
+             */
+            live_streams: number;
             /** On This Day */
             on_this_day?: components["schemas"]["Backend_OnThisDayItem"][];
             /** Per Year */
@@ -1688,6 +1693,11 @@ export interface components {
             /** Items */
             items?: components["schemas"]["Backend_StreamAlbumRankItem"][];
             /**
+             * Live Streams
+             * @default 0
+             */
+            live_streams: number;
+            /**
              * Total Ms
              * @default 0
              */
@@ -1725,6 +1735,11 @@ export interface components {
             as_of?: string | null;
             /** Items */
             items?: components["schemas"]["Backend_StreamRankItem"][];
+            /**
+             * Live Streams
+             * @default 0
+             */
+            live_streams: number;
             /**
              * Total Ms
              * @default 0
