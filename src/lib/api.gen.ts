@@ -466,6 +466,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/library/stream-history/top-artists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Top Artists */
+        get: operations["stream_history_top_artists_api_library_stream_history_top_artists_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/library/stream-history/top-tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream History Top Tracks */
+        get: operations["stream_history_top_tracks_api_library_stream_history_top_tracks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/to-listen": {
         parameters: {
             query?: never;
@@ -1536,6 +1570,39 @@ export interface components {
         Backend_SpotifyLibrarySyncResponse: {
             /** Status */
             status: string;
+        };
+        /** StreamRankItem */
+        Backend_StreamRankItem: {
+            /** Artist */
+            artist?: string | null;
+            /** Label */
+            label: string;
+            /** Spotify Track Uri */
+            spotify_track_uri?: string | null;
+            /** Value */
+            value: number;
+        };
+        /** StreamRankResponse */
+        Backend_StreamRankResponse: {
+            /** As Of */
+            as_of?: string | null;
+            /** Items */
+            items?: components["schemas"]["Backend_StreamRankItem"][];
+            /**
+             * Total Ms
+             * @default 0
+             */
+            total_ms: number;
+            /**
+             * Total Streams
+             * @default 0
+             */
+            total_streams: number;
+            /**
+             * Unit
+             * @default count
+             */
+            unit: string;
         };
         /** TagItem */
         Backend_TagItem: {
@@ -2829,6 +2896,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_SpotifyConnectionResponse"];
+                };
+            };
+        };
+    };
+    stream_history_top_artists_api_library_stream_history_top_artists_get: {
+        parameters: {
+            query?: {
+                metric?: "count" | "time";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_StreamRankResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_history_top_tracks_api_library_stream_history_top_tracks_get: {
+        parameters: {
+            query?: {
+                metric?: "count" | "time";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_StreamRankResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };
