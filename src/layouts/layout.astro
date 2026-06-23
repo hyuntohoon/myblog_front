@@ -5,6 +5,7 @@ import SkipNavLink from '@components/a11y/skip-nav-link.astro'
 import Header from '@components/header.astro'
 import Footer from '@components/footer.astro'
 import ThemeProvider from '@components/theme-provider.astro'
+import PocketBuckit from '@components/member/pocket/PocketBuckit'
 
 import '../styles/global.css'
 // The header search island (FEAT-global-search) renders site-wide; its dropdown
@@ -34,5 +35,6 @@ import '../styles/search.css';
 		<Header />
 		<slot />
 		<Footer />
+		<PocketBuckit client:only="react" />
 	</body>
 </html>
