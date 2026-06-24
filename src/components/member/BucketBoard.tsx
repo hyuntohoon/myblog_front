@@ -21,9 +21,10 @@ import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import type { Dispatch, SetStateAction } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
+import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
@@ -1392,7 +1393,18 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   // only the (background) revalidation is async — no "불러오는 중…" flash, no
   // disappear-then-reappear when returning to the tab. Stale by design; the
   // mount effects below overwrite with the canonical server data (SWR).
-  const [tree, setTree] = useState<BoardBucket[] | null>(() => readSeed<BoardBucket[]>(BUCKETS_KEY))
+  // FEAT-pocket-buckit-workspace Step B — the tree lives in the SHARED bucketStore so the
+  // board, the layout tray, and the library are one source of truth (a mutation in one is
+  // seen by the others instantly, no refetch). `setTree` is a drop-in shim writing the
+  // store, so every existing call site is unchanged.
+  const storeSnap = useBucketStore()
+  const tree = storeSnap.tree
+  const setTree = useCallback<Dispatch<SetStateAction<BoardBucket[] | null>>>((updater) => {
+    const prev = bucketStore.getTree()
+    const next = typeof updater === 'function' ? updater(prev) : updater
+    if (next)
+      bucketStore.setTree(next)
+  }, [])
   const [recent, setRecent] = useState<BoardAlbum[] | null>(() => readSeed<BoardAlbum[]>(RECENT_KEY))
   const [error, setError] = useState(false)
   const [addingTo, setAddingTo] = useState<{ id: string, name: string } | null>(null)
@@ -1561,16 +1573,16 @@ ids.push(a.albumId)
   // stop the poll; it re-arms with a fresh tick when the tab becomes active.
   const researchStatus = useResearchStatusMap(active ? researchAlbumIds : NO_RESEARCH_IDS)
 
-  // Load the real tree on mount.
+  // Load the real tree on mount via the shared store (SWR: reuses the cache the tray may
+  // already have filled — often zero extra fetches on /profile). Store load errors sync
+  // into the local error flag.
   useEffect(() => {
-    let alive = true
-    api.listBuckets()
-      .then(t => alive && setTree(t))
-      .catch(() => alive && setError(true))
-    return () => {
-      alive = false
-    }
+    void bucketStore.ensureFresh()
   }, [])
+  useEffect(() => {
+    if (storeSnap.error)
+      setError(true)
+  }, [storeSnap.error])
 
   // Load the pinned 최근 들은 앨범 strip — same worker-fed cache the overview uses
   // (GET /api/library/recently-listened, no synchronous Spotify call, rule #9).
@@ -1639,12 +1651,7 @@ ids.push(a.albumId)
   }, [trash])
 
   async function refresh() {
-    try {
-      setTree(await api.listBuckets())
-    }
-    catch {
-      setError(true)
-    }
+    await bucketStore.ensureFresh(true)
   }
 
   // 동기화 — model on refreshRecent(): POST enqueues the worker reconcile (rule

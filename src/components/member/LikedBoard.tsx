@@ -7,11 +7,11 @@
 // 좋아요/재생 source toggle (LikedAnalysis). Row actions: 작품 상세 (onOpen) ·
 // 평론 버킷에 담기 (reuses BucketPickerSheet + buckets.ts) · 평론 쓰기 (/write).
 import type { DetailTarget } from '@lib/member'
-import type { BoardBucket } from '@lib/buckets'
 import type { SavedTrack } from './analysis.api'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { addBucketItem, listBuckets } from '@lib/buckets'
+import { addBucketItem } from '@lib/buckets'
+import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { listSavedTracks } from './analysis.api'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { LikedAnalysis } from './LikedAnalysis'
@@ -360,7 +360,9 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 
 	const [toast, setToast] = useState<string | null>(null)
 	const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-	const [bucketTree, setBucketTree] = useState<BoardBucket[] | null>(null)
+	// FEAT-pocket-buckit-workspace Step B — read the bucket tree from the SHARED store
+	// (reuses what the tray/board already loaded; no third independent fetch).
+	const bucketTree = useBucketStore().tree
 	const [promoting, setPromoting] = useState<LikedRowVM | null>(null)
 
 	// Load the whole 좋아요 set by offset pagination to the ceiling.
@@ -495,11 +497,8 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 	// Promote → open the bucket picker (loading the tree lazily on first open).
 	const startPromote = (row: LikedRowVM) => {
 		setPromoting(row)
-		if (bucketTree == null) {
-			listBuckets()
-				.then(setBucketTree)
-				.catch(() => setBucketTree([]))
-		}
+		if (bucketTree == null)
+			void bucketStore.ensureFresh()
 	}
 	const onPickBucket = async (bucketId: string | null) => {
 		const row = promoting
