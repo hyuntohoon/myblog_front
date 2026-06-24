@@ -4,11 +4,14 @@
 // quick-inspection surface, and bucket-local Undo. A single dispatcher: new shells
 // extend the family switch, never fork the tray (mirrors the atlas configurator).
 import type { CSSProperties } from 'react'
+import type { BoardAlbum } from '@lib/buckets'
 import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
-import { useMemo, useState } from 'react'
+import type { PlaybackTarget } from '@lib/spotifyPlayback'
+import { useEffect, useMemo, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
+import { requestPlayback } from '@lib/spotifyPlayback'
 import { usePocket } from './PocketBuckitProvider'
 
 function accentFor(leaf: PocketLeaf): string {
@@ -23,6 +26,16 @@ const ITEM_TYPE_LABEL: Record<string, string> = {
   review: '평론',
   playback: '재생',
   snapshot: '스냅샷',
+}
+
+// FEAT-pocket-buckit Step 5b — a bucket item → a provider-neutral play target.
+// Prod rows are all `album` (track members are forward-compat until Step 6).
+function playbackTargetFor(a: BoardAlbum): PlaybackTarget | null {
+  if (a.itemType === 'track' && a.trackId)
+    return { kind: 'track', trackId: a.trackId, title: a.title }
+  if (a.albumId)
+    return { kind: 'album', albumId: a.albumId, title: a.title }
+  return null
 }
 
 function Cover({ label, size }: { label: string, size: number }) {
@@ -203,9 +216,27 @@ Pocket
 // ── quick-inspection surface (above / card / side / drawer) ───────────────────
 function InspectSurface({ design }: { design: PocketBuckitDesign }) {
   const { inspectId, setInspectId, bucketById, removeItem } = usePocket()
+  const [notice, setNotice] = useState<string | null>(null)
+  // auto-dismiss the play notice a few seconds after it appears
+  useEffect(() => {
+    if (!notice)
+      return
+    const t = setTimeout(() => setNotice(null), 5000)
+    return () => clearTimeout(t)
+  }, [notice])
   const bucket = inspectId ? bucketById(inspectId) : undefined
   if (!bucket)
     return null
+  // FEAT-pocket-buckit Step 5b — explicit play on an item. Token-first; in the
+  // dormant v1 this surfaces a "not connected yet" notice and pulls NO SDK (rule #9).
+  const onPlay = (a: BoardAlbum) => {
+    const target = playbackTargetFor(a)
+    if (!target) {
+      setNotice('재생할 수 없는 항목이에요.')
+      return
+    }
+    void requestPlayback(target).then(o => setNotice(o.message))
+  }
   const cls = design.inspect === 'card' ? 'pb-inspect pb-inspect-card' : design.inspect === 'side' ? 'pb-inspect pb-inspect-side' : design.inspect === 'drawer' ? 'pb-inspect pb-inspect-drawer' : 'pb-inspect'
   const style: CSSProperties = design.inspect === 'side' ?
     {} :
@@ -232,10 +263,14 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
             <Cover label={a.title} size={26} />
             <span className="serif" style={{ fontSize: 12.5, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>
             <span className="tgt-meta">{a.itemType === 'album' ? a.artist : (ITEM_TYPE_LABEL[a.itemType] ?? a.itemType)}</span>
+            <button type="button" className="pb-play" title="재생 (Spotify Premium)" aria-label={`${a.title} 재생`} onClick={() => onPlay(a)}>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+            </button>
           </div>
         ))}
         {bucket.albums.length === 0 && <span className="sans" style={{ fontSize: 11, color: 'var(--color-faded)' }}>비어 있음 — 드롭 영역으로 유지</span>}
       </div>
+      {notice && <div className="pb-playnote" role="status">{notice}</div>}
       <a className="btn" href="/profile" style={{ display: 'block', textAlign: 'center', padding: '7px 0', fontSize: 10, marginTop: 10, textDecoration: 'none' }}>전체 버킷 페이지 열기 ↗</a>
     </div>
   )

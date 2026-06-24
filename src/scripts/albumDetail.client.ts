@@ -1,4 +1,5 @@
 import type { components } from '../lib/api.gen'
+import { requestPlayback } from '../lib/spotifyPlayback'
 
 type AlbumDetail = components['schemas']['Music_AlbumDetail']
 type Track = components['schemas']['Music_TrackOut']
@@ -59,11 +60,17 @@ function buildTracklistHtml(tracks: Track[]): string {
       const title = escapeHtml(t.title ?? '')
       const num = t.track_no ?? ''
       const dur = fmtDur(t.duration_sec)
+      // FEAT-pocket-buckit Step 5b — per-track play (dormant until the owner
+      // provisions Spotify streaming). Only when the track has a DB id to target.
+      const playBtn = id ?
+        `<button type="button" class="lfq-tt-play" data-track-id="${escapeHtml(id)}" data-track-title="${title}" aria-label="${title || '트랙'} 재생" title="재생 (Spotify Premium)">▶</button>` :
+        '<span></span>'
       return `
         <li class="lfq-tt-row${isPick ? ' is-pick' : ''}">
           <span class="lfq-tt-no">${num}</span>
           <span class="lfq-tt-title">${title}${featNames(t.feat_artist_names)}${isPick ? ' <span class="lfq-tt-star" aria-label="추천 트랙">★</span>' : ''}</span>
           <span class="lfq-tt-dur">${dur}</span>
+          ${playBtn}
         </li>
       `
     })
@@ -81,4 +88,38 @@ function render(d: AlbumDetailPayload): void {
 window.addEventListener('album:detail', (e: Event) => {
   const payload = (e as CustomEvent<AlbumDetailPayload>).detail
   render(payload)
+})
+
+// FEAT-pocket-buckit Step 5b — explicit per-track play. `requestPlayback` mints
+// the token / pulls the SDK ONLY here, on a real click. On this public review
+// page an anonymous (or dormant-503) play just shows a notice — no SDK load, no
+// redirect (rule #9 + the SDK-must-not-load-on-page-load guarantee).
+let noteTimer: number | undefined
+function showPlayNote(msg: string): void {
+  const section = root?.parentElement
+  if (!section)
+    return
+  let note = section.querySelector<HTMLDivElement>('.lfq-tt-playnote')
+  if (!note) {
+    note = document.createElement('div')
+    note.className = 'lfq-tt-playnote'
+    note.setAttribute('role', 'status')
+    section.appendChild(note)
+  }
+  note.textContent = msg
+  void note.offsetWidth // restart the transition on repeat clicks
+  note.classList.add('is-on')
+  if (noteTimer !== undefined)
+    window.clearTimeout(noteTimer)
+  noteTimer = window.setTimeout(() => note?.classList.remove('is-on'), 5000)
+}
+
+root?.addEventListener('click', (e) => {
+  const btn = (e.target as Element | null)?.closest<HTMLButtonElement>('.lfq-tt-play')
+  if (!btn)
+    return
+  const trackId = btn.dataset.trackId
+  if (!trackId)
+    return
+  void requestPlayback({ kind: 'track', trackId, title: btn.dataset.trackTitle }).then(o => showPlayNote(o.message))
 })

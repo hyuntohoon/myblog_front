@@ -11,6 +11,7 @@ import Aside from '@components/aside.astro'
 import Playground from '@components/playground.astro'
 import ReviewHero from '@components/review-hero.astro'
 import PartialStars from '@components/partial-stars.astro'
+import { AddToBucketMenu } from '@components/member/pocket/AddToBucketMenu'
 import { getArtistNameMap, resolveArtistLinks } from '@lib/artistNames'
 
 export const prerender = true
@@ -58,6 +59,10 @@ const artistText = post.musicReview?.artists?.join(', ') ?? null
 // byline) when an id isn't a catalog artist or the build can't reach the API.
 const artistLinks = resolveArtistLinks(post.artistIds, await getArtistNameMap())
 const albumTitle = post.musicReview?.title ?? null
+// FEAT-pocket-buckit Step 5b — the hero album is a PUBLIC bucket drop source.
+// This page is prerendered + public, so an anonymous "담기" routes through the
+// AddToBucketMenu logged-out handoff (pb:resume → Cognito → home PocketResume).
+const heroAlbumId = post.albumIds?.[0] ?? null
 const cover = post.albumCover || post.image || post.musicReview?.cover?.src
 const genres = post.musicReview?.genres ?? []
 const genreLabel = genres[0] ?? post.category ?? ''
@@ -162,6 +167,11 @@ const recordLabel = post.musicReview?.label ?? null
                 <div class="lfq-score">
                   <span class="mono-label lfq-score-label">SCORE</span>
                   <PartialStars value={ratingForStars} max={5} size={28} />
+                </div>
+              )}
+              {heroAlbumId && (
+                <div class="lfq-hero-actions">
+                  <AddToBucketMenu client:only="react" item={{ albumId: heroAlbumId, title: albumTitle ?? post.title }} />
                 </div>
               )}
             </div>
@@ -273,7 +283,7 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-article :global(.lfq-tt-row) {
     display: grid;
-    grid-template-columns: 3ch 1fr auto;
+    grid-template-columns: 3ch 1fr auto auto;
     gap: 14px;
     align-items: baseline;
     padding: 10px 0;
@@ -319,6 +329,58 @@ const recordLabel = post.musicReview?.label ?? null
     font-size: 12px;
     color: var(--color-faded);
     font-variant-numeric: tabular-nums;
+  }
+  /* FEAT-pocket-buckit Step 5b — per-track play affordance (dormant until the
+     owner provisions Spotify streaming) + the notice. Subtle, hover-revealed,
+     so the editorial reading page stays calm. */
+  .lfq-article :global(.lfq-tt-play) {
+    align-self: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 24px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-subtle);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.14s, color 0.14s, border-color 0.14s;
+  }
+  .lfq-article :global(.lfq-tt-row:hover .lfq-tt-play),
+  .lfq-article :global(.lfq-tt-play:focus-visible) {
+    opacity: 1;
+  }
+  .lfq-article :global(.lfq-tt-play:hover) {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+  }
+  .lfq-article :global(.lfq-tt-playnote) {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--color-subtle);
+    background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg));
+    border: 1px solid var(--color-border-soft);
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.18s, transform 0.18s;
+    pointer-events: none;
+  }
+  .lfq-article :global(.lfq-tt-playnote.is-on) {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .lfq-hero-actions {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .lfq-article :global(.lfq-tt-empty) {
     font-family: var(--font-mono);
