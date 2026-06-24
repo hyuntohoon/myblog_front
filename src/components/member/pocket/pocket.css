@@ -206,6 +206,17 @@
 .pb-scope .schip[data-mark="ok"], .pb-scope .schip[data-mark="hover"] { box-shadow: 0 0 0 2.5px var(--chip-accent), 0 6px 14px rgba(26,26,26,.12); transform: translateY(-3px); }
 .pb-scope .schip[data-mark="no"] { opacity: .4; filter: grayscale(.7); }
 
+/* Dark-theme fix — light shells whose chip sits directly on the page (F2L
+   transparent, the default) or on a theme-following surface (F6 sticker =
+   color-mix over --color-bg) must use theme-aware text. The base .lname/.lsub
+   hardcode dark ink for the WHITE-pill variants (F1L/F3L/F4L/F5), where it's
+   correct on their own light surface — but on the dark theme that ink is
+   invisible for F2L/F6, so the tray reads as "broken". */
+.pb-scope .ltray-f2l .lname,
+.pb-scope .ltray-f6 .lname { color: var(--color-text); }
+.pb-scope .ltray-f2l .lsub,
+.pb-scope .ltray-f6 .lsub { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
 /* ── settings panel chrome (ported from the configurator) ──── */
 .pb-scope .pb-axis { display: flex; flex-direction: column; gap: 7px; }
 .pb-scope .pb-axis-h { display: flex; align-items: baseline; gap: 8px; }
