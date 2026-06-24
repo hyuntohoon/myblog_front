@@ -7,7 +7,7 @@ import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
-import { addBucketItem, deleteBucketItem, listBuckets } from '@lib/buckets'
+import { addBucketItem, deleteBucketItem, listBuckets, moveBucket } from '@lib/buckets'
 import { normalizeDesign, POCKET_DESIGN_DEFAULTS, readDesign, writeDesign } from '@lib/pocketBuckit/design'
 import { bucketsToLeaves } from '@lib/pocketBuckit/leaf'
 
@@ -15,6 +15,8 @@ interface UndoState {
   label: string
   run: () => Promise<void>
 }
+
+export interface DrawerPos { x: number, y: number }
 
 interface PocketContextValue {
   design: PocketBuckitDesign
@@ -30,8 +32,35 @@ interface PocketContextValue {
   setInspectId: (id: string | null) => void
   bucketById: (id: string) => BoardBucket | undefined
   removeItem: (bucketId: string, itemId: string, albumId: string | null, title: string) => Promise<void>
+  /**
+   * Reorder a TOP-LEVEL bucket in the tray, persisted via PUT /api/buckets/{id}/move
+   * (the bucket `position` column — the existing, real source of truth). Optimistic
+   * local reorder, then the server's authoritative tree; reverts on failure. Nested
+   * (non-root) chips are a no-op (they keep their position; no accidental reparent).
+   */
+  reorderBucket: (draggedId: string, targetId: string, place: 'before' | 'after') => Promise<void>
+  /** Persisted, viewport-clamped position of the movable mini drawer (null = default). */
+  drawerPos: DrawerPos | null
+  setDrawerPos: (p: DrawerPos | null) => void
   undo: UndoState | null
   runUndo: () => void
+}
+
+const DRAWER_KEY = 'pb:drawer'
+
+function readDrawerPos(): DrawerPos | null {
+  if (typeof window === 'undefined')
+    return null
+  try {
+    const raw = localStorage.getItem(DRAWER_KEY)
+    if (!raw)
+      return null
+    const v = JSON.parse(raw) as Partial<DrawerPos>
+    if (v && typeof v.x === 'number' && typeof v.y === 'number' && Number.isFinite(v.x) && Number.isFinite(v.y))
+      return { x: v.x, y: v.y }
+  }
+  catch { /* corrupt → default */ }
+  return null
 }
 
 const PocketContext = createContext<PocketContextValue | null>(null)
@@ -51,12 +80,26 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [inspectId, setInspectId] = useState<string | null>(null)
+  const [drawerPos, setDrawerPosState] = useState<DrawerPos | null>(null)
   const [undo, setUndo] = useState<UndoState | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // hydrate the persisted design on mount (SSR renders the default; client swaps)
+  // hydrate the persisted design + drawer position on mount (SSR renders the
+  // default; client swaps). The drawer position is re-clamped to the live
+  // viewport when the drawer opens (so a stale off-screen coord is corrected).
   useEffect(() => {
     setDesignState(readDesign())
+    setDrawerPosState(readDrawerPos())
+  }, [])
+
+  const setDrawerPos = useCallback((p: DrawerPos | null) => {
+    setDrawerPosState(p)
+    try {
+      if (p)
+        localStorage.setItem(DRAWER_KEY, JSON.stringify(p))
+      else localStorage.removeItem(DRAWER_KEY)
+    }
+    catch { /* quota / SSR — in-memory only */ }
   }, [])
 
   const refresh = useCallback(() => {
@@ -132,6 +175,35 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     })
   }, [refresh, showUndo])
 
+  const reorderBucket = useCallback(async (draggedId: string, targetId: string, place: 'before' | 'after') => {
+    if (draggedId === targetId)
+      return
+    // listBuckets() returns the tree with only roots at the top level. Tray
+    // reorder operates on those roots (the common flat case); a non-root chip
+    // is a no-op so we never accidentally reparent it.
+    const fromIdx = buckets.findIndex(b => b.id === draggedId)
+    if (fromIdx < 0 || buckets.findIndex(b => b.id === targetId) < 0)
+      return
+    const next = [...buckets]
+    const [moved] = next.splice(fromIdx, 1)
+    let insertAt = next.findIndex(b => b.id === targetId)
+    if (place === 'after')
+      insertAt += 1
+    next.splice(insertAt, 0, moved)
+    const newIndex = next.findIndex(b => b.id === draggedId)
+    if (newIndex === fromIdx)
+      return
+    setBuckets(next) // optimistic
+    try {
+      // a root's parent_id is null; keep it at root, new position.
+      const tree = await moveBucket(draggedId, null, newIndex)
+      setBuckets(tree) // authoritative server order
+    }
+    catch {
+      refresh() // revert to the server's truth
+    }
+  }, [buckets, refresh])
+
   const runUndo = useCallback(() => {
     const u = undo
     setUndo(null)
@@ -153,9 +225,12 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     setInspectId,
     bucketById,
     removeItem,
+    reorderBucket,
+    drawerPos,
+    setDrawerPos,
     undo,
     runUndo,
-  }), [design, setDesign, resetDesign, leaves, loading, error, refresh, open, inspectId, bucketById, removeItem, undo, runUndo])
+  }), [design, setDesign, resetDesign, leaves, loading, error, refresh, open, inspectId, bucketById, removeItem, reorderBucket, drawerPos, setDrawerPos, undo, runUndo])
 
   return <PocketContext.Provider value={value}>{children}</PocketContext.Provider>
 }
