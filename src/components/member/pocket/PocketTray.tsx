@@ -382,7 +382,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
           </span>
           {bucket.name}
         </span>
-        <button type="button" className="mono" style={{ fontSize: sc(11), border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-subtle)' }} onClick={() => closeDrawer(bucketId)} aria-label="닫기">닫기 ✕</button>
+        <button type="button" className="mono" style={{ fontSize: sc(11), border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-subtle)' }} onPointerDown={e => e.stopPropagation()} onClick={() => closeDrawer(bucketId)} aria-label="닫기">닫기 ✕</button>
       </div>
       <div className="sans" style={{ fontSize: sc(11), color: 'var(--color-subtle)' }}>
 {bucket.albums.length}
