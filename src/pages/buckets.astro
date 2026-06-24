@@ -1,0 +1,25 @@
+---
+// /buckets — a dedicated, discoverable entry point to the 평론 버킷 management
+// surface. The board genuinely needs the surrounding /profile state (auth guard,
+// the member's reviews for the rating chips, the album-detail slide-over), so
+// rather than duplicate that, this static page redirects to the profile bucket
+// tab. The `?tab=bucket` deeplink (handled in ProfileApp) lands directly on it.
+const target = '/profile/?tab=bucket'
+---
+
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <link rel="canonical" href={target} />
+    <meta name="robots" content="noindex" />
+    <title>버킷 관리 · buckit</title>
+    <script is:inline define:vars={{ target }}>
+      location.replace(target)
+    </script>
+  </head>
+  <body>
+    <p>버킷 관리 페이지로 이동 중… <a href={target}>바로 가기</a></p>
+  </body>
+</html>

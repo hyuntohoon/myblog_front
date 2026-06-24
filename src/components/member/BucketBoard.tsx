@@ -79,6 +79,17 @@ const BUCKET_COLORS: { key: string, label: string, color: string | null }[] = [
   { key: 'violet', label: '바이올렛', color: 'oklch(0.55 0.11 300)' },
 ]
 
+// item_type → Korean label for the per-bucket type-filter chips + the non-album
+// tile badge. 'album' is the default kind; the others are the generalized-
+// membership kinds (FEAT-pocket-buckit Step 5). Mirrors PocketTray's table.
+const ITEM_TYPE_LABEL: Record<string, string> = {
+  album: '앨범',
+  track: '트랙',
+  review: '평론',
+  playback: '재생',
+  snapshot: '스냅샷',
+}
+
 // Read a cached array seed from localStorage (SWR first paint). Returns null on
 // miss / parse error / non-array so callers fall back to the loading state.
 function readSeed<T>(key: string): T | null {
@@ -178,9 +189,9 @@ function findAlbumByAlbumId(buckets: BoardBucket[], albumId: string): BoardAlbum
 // where it looks). The special Spotify-library bucket has no view controls.
 type SortMode = 'manual' | 'newest' | 'oldest' | 'popular'
 type GroupMode = 'none' | 'artist' | 'genre'
-interface BucketView { sort: SortMode, group: GroupMode, genreFilter: string[] }
+interface BucketView { sort: SortMode, group: GroupMode, genreFilter: string[], typeFilter: string[] }
 const VIEW_KEY = 'lf_bucket_views'
-const DEFAULT_BUCKET_VIEW: BucketView = { sort: 'manual', group: 'none', genreFilter: [] }
+const DEFAULT_BUCKET_VIEW: BucketView = { sort: 'manual', group: 'none', genreFilter: [], typeFilter: [] }
 // Group label shown when an album carries no high-confidence genre (OQ4) — it
 // sorts last and is never a filter chip.
 const NO_GENRE = '장르 없음'
@@ -202,7 +213,10 @@ function sanitizeView(p: Partial<BucketView> | undefined): BucketView {
   const genreFilter = Array.isArray(p?.genreFilter) ?
     p!.genreFilter!.filter((g): g is string => typeof g === 'string') :
     []
-  return { sort, group, genreFilter }
+  const typeFilter = Array.isArray(p?.typeFilter) ?
+    p!.typeFilter!.filter((t): t is string => typeof t === 'string') :
+    []
+  return { sort, group, genreFilter, typeFilter }
 }
 
 // The whole per-bucket view map (bucketId → BucketView), seeded from localStorage.
@@ -224,7 +238,7 @@ function readBucketViews(): Record<string, BucketView> {
 }
 
 function isDefaultView(v: BucketView): boolean {
-  return v.sort === 'manual' && v.group === 'none' && v.genreFilter.length === 0
+  return v.sort === 'manual' && v.group === 'none' && v.genreFilter.length === 0 && v.typeFilter.length === 0
 }
 
 // Primary artist for grouping: the first artist_names entry, falling back to the
@@ -328,6 +342,24 @@ function albumGenres(albums: BoardAlbum[]): { label: string, count: number }[] {
   return [...counts.entries()]
     .map(([label, count]) => ({ label, count }))
     .sort((x, y) => y.count - x.count || x.label.localeCompare(y.label, 'ko'))
+}
+
+// Distinct item-types in one bucket's members, with counts, for its type-filter
+// chip row (앨범/트랙/평론/…). Frequency desc; the row only shows when ≥2 types
+// coexist (a single-type bucket needs no filter). FEAT-pocket-buckit multi-type.
+function albumTypes(albums: BoardAlbum[]): { type: string, count: number }[] {
+  const counts = new Map<string, number>()
+  for (const a of albums)
+    counts.set(a.itemType, (counts.get(a.itemType) ?? 0) + 1)
+  return [...counts.entries()]
+    .map(([type, count]) => ({ type, count }))
+    .sort((x, y) => y.count - x.count || x.type.localeCompare(y.type))
+}
+
+// An item passes the type filter when no types are selected, or its itemType is
+// among the selected set (any-match, mirrors passesGenre).
+function passesType(a: BoardAlbum, filter: string[]): boolean {
+  return filter.length === 0 || filter.includes(a.itemType)
 }
 
 // The order the bucket's covers appear under the active view — the FULL set
@@ -482,10 +514,10 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
 }) {
   const [over, setOver] = useState(false)
   const dragging = draggingId === album.itemId
-  // FEAT-pocket-buckit Step 6 — a track membership renders from its TrackBrief
-  // (title/artist via mapItem) with a placeholder cover; it has no album detail
-  // to open and gets no rating/research affordances.
-  const isTrack = album.itemType === 'track'
+  // FEAT-pocket-buckit Step 5/6 — only an 'album' member has a DB album to open +
+  // rating/research affordances. Every non-album kind (track/review/playback/
+  // snapshot) renders as a labeled tile with a placeholder cover and no detail.
+  const isAlbum = album.itemType === 'album'
   const acceptCol = (): boolean => {
     const it = dnd
     // Reorder-insert targets reject copy drags (recent strip) AND library drags —
@@ -538,8 +570,8 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           setDragKind(null)
         }}
 	onClick={() => {
-          // A track member has no album-detail target — clicking it is a no-op.
-          if (isTrack)
+          // A non-album member has no album-detail target — clicking it is a no-op.
+          if (!isAlbum)
             return
           onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId ?? undefined, cover: album.cover, year: album.year, writable: !copySource && !fromLib, bucketId, itemId: album.itemId, note: album.note ?? null, prepTonight: album.prepTonight ?? false })
         }}
@@ -555,8 +587,8 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           {copySource && (
             <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
           )}
-          {isTrack && (
-            <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-bg)', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '2px 5px', borderRadius: 3 }}>트랙</span>
+          {!isAlbum && (
+            <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-bg)', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '2px 5px', borderRadius: 3 }}>{ITEM_TYPE_LABEL[album.itemType] ?? album.itemType}</span>
           )}
           {libRow && <SlibBadges row={libRow} />}
           {!copySource && !libRow && !rated && album.alreadyReviewed && (
@@ -698,6 +730,9 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
     return next
   })
   const bucketGenreList = albumGenres(bucket.albums)
+  // Item-types present in this bucket — drives the type-filter chips (only when
+  // ≥2 kinds coexist; a single-type bucket needs no filter).
+  const bucketTypeList = albumTypes(bucket.albums)
 
   // A within-bucket reorder (cover insert-before). When the view is non-default we
   // bake the current display order into manual `position` and reset the view, so the
@@ -763,8 +798,8 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	key={a.itemId}
 	album={a}
 	bucketId={bucket.id}
-	rated={bucket.isDone && a.itemType !== 'track'}
-	score={bucket.isDone && a.itemType !== 'track' ? (ratings.get(a.albumId ?? '') ?? null) : null}
+	rated={bucket.isDone && a.itemType === 'album'}
+	score={bucket.isDone && a.itemType === 'album' ? (ratings.get(a.albumId ?? '') ?? null) : null}
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
 	fromLib={isLib}
 	onOpen={onOpen}
@@ -773,7 +808,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	setDragKind={setDragKind}
 	onTouchActions={() => openAlbumSheet({ album: a, bucketId: bucket.id, copySource: false, fromLib: isLib, source: isLib ? libState.get(a.albumId ?? '')?.source : undefined })}
 	onInsert={isLib ? undefined : handleInsert}
-	research={(isLib || a.itemType === 'track') ?
+	research={(isLib || a.itemType !== 'album') ?
 		undefined :
 		{
 			mode: bucket.researchMode,
@@ -814,7 +849,7 @@ ops.openResearch(a.albumId, a.title)
 
   // This bucket's albums under its view: genre-filter, then either a flat sorted
   // list (group none) or per-artist / per-genre sections (each sorted within).
-  const filtered = isLib ? [] : bucket.albums.filter(a => passesGenre(a, view.genreFilter))
+  const filtered = isLib ? [] : bucket.albums.filter(a => passesGenre(a, view.genreFilter) && passesType(a, view.typeFilter))
   const flatAlbums = view.group === 'none' ? sortAlbums(filtered, view.sort) : []
   const sections: { label: string, albums: BoardAlbum[] }[] =
     view.group === 'genre' ?
@@ -955,8 +990,25 @@ ops.openResearch(a.albumId, a.title)
           <button type="button" className="lf-iconbtn" title="앨범 추가" onClick={() => ops.requestAdd(bucket.id, bucket.name)}>＋</button>
           <button type="button" className="lf-iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
           {!isLib && (
-            // Touch fallback (coarse pointers only — hidden on desktop, which uses
-            // the draggable header). 이동/중첩 + 삭제 via the bucket action sheet.
+            // Explicit rename — complements the click-the-title gesture so the
+            // action is discoverable, not just an unlabeled title click.
+            <button
+	type="button"
+	className="lf-iconbtn"
+	title="이름 변경"
+	aria-label="이름 변경"
+	onClick={() => {
+                setName(bucket.name)
+                setEditing(true)
+              }}
+            >
+              ✎
+            </button>
+          )}
+          {!isLib && (
+            // The 버킷 동작 menu (이동/중첩 + 삭제) — now visible on every viewport
+            // (was touch-only), so those actions aren't discoverable only via the
+            // drag-to-trash / header-drag gestures. See .bb-bucket-actions CSS.
             <button type="button" className="lf-iconbtn bb-bucket-actions" title="버킷 동작" aria-label="버킷 동작" onClick={() => openBucketSheet(bucket)}>⋯</button>
           )}
         </div>
@@ -1070,6 +1122,24 @@ ops.openResearch(a.albumId, a.title)
               ))}
             </div>
           )}
+          {bucketTypeList.length >= 2 && (
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <span className="lf-meta" style={{ marginRight: 2 }}>종류</span>
+              {bucketTypeList.map(t => (
+                <button
+	key={t.type}
+	type="button"
+	className="lf-chip"
+	aria-pressed={view.typeFilter.includes(t.type)}
+	onClick={() => updateView(v => ({ ...v, typeFilter: v.typeFilter.includes(t.type) ? v.typeFilter.filter(x => x !== t.type) : [...v.typeFilter, t.type] }))}
+	style={view.typeFilter.includes(t.type) ? { background: 'var(--color-text)', color: 'var(--color-bg)', borderColor: 'var(--color-text)' } : undefined}
+                >
+                  {ITEM_TYPE_LABEL[t.type] ?? t.type}
+                  <span style={{ marginLeft: 5, opacity: 0.6 }}>{t.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1102,7 +1172,7 @@ ops.openResearch(a.albumId, a.title)
               <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음</div>
             )}
             {filteredEmpty && (
-              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>이 장르 필터에 해당하는 앨범이 없습니다</div>
+              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>이 필터에 해당하는 항목이 없습니다</div>
             )}
             {addBtn}
           </>

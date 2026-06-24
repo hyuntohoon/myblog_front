@@ -120,6 +120,11 @@ export interface BoardBucket {
   children: BoardBucket[]
 }
 
+// Placeholder display title for the generalized-membership kinds that carry no
+// display payload yet (review/playback/snapshot) — so a non-album/track member
+// renders as a labeled tile instead of '제목 미상'. album/track use their brief.
+const TYPE_TITLE: Record<string, string> = { review: '평론', playback: '재생목록', snapshot: '스냅샷' }
+
 function mapItem(it: ApiItem): BoardAlbum {
   const a = it.album
   const tr = it.track
@@ -137,8 +142,9 @@ function mapItem(it: ApiItem): BoardAlbum {
     reviewTargetId: it.review_target_id ?? null,
     // FEAT-pocket-buckit Step 6: a track member renders from its TrackBrief
     // (title + artist_names) so it never falls back to '제목 미상'. Other non-album
-    // kinds (review/playback/snapshot) have no display payload yet → neutral dash.
-    title: isTrack ? (tr?.title ?? '제목 미상') : (a?.title ?? '제목 미상'),
+    // kinds (review/playback/snapshot) carry no display payload yet → a typed
+    // placeholder ('평론'/'재생목록'/'스냅샷') so the tile is labeled, not blank.
+    title: isTrack ? (tr?.title ?? '제목 미상') : (a?.title ?? TYPE_TITLE[itemType] ?? '제목 미상'),
     artist: isTrack ? ((tr?.artist_names ?? []).join(', ') || '—') : ((a?.artist_names ?? []).join(', ') || '—'),
     // TrackBrief has no cover_url (the cover lives on its album, not resolved
     // here) → a track tile shows the initials placeholder.

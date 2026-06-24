@@ -290,12 +290,12 @@
 }
 .bb-tile:hover .bb-tile-kebab { opacity: 1; }
 .bb-tile-kebab:hover { background: rgba(26, 26, 26, 0.82); }
-/* Touch devices: no hover → keep it visible and a 36px tap target. The per-bucket
-   ⋯ is hidden on desktop (the draggable header is the desktop affordance). */
-.bb-bucket-actions { display: none; }
+/* The per-bucket ⋯ "버킷 동작" menu (이름변경 / 이동·중첩 / 삭제) is always visible —
+   it makes those actions discoverable instead of gesture-only (drag-to-trash /
+   header-drag / title-click), which read as "there's no way to manage buckets". */
+.bb-bucket-actions { display: grid; }
 @media (hover: none), (pointer: coarse) {
 	.bb-tile-kebab { opacity: 1; width: 36px; height: 36px; font-size: 18px; }
-	.bb-bucket-actions { display: grid; }
 }
 
 /* Spotify recent strip — green accent spine to set it apart from buckets. */
