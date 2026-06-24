@@ -260,18 +260,33 @@ function defaultDrawer(w: number, h: number, inspect: PocketBuckitDesign['inspec
   return clampDrawer({ x: 18, y: aboveTray }, w, h) // above / card → near the tray, left
 }
 
-// ── movable mini drawer (quick-inspection + move actions) ─────────────────────
-function InspectSurface({ design }: { design: PocketBuckitDesign }) {
-  const { inspectId, setInspectId, bucketById, removeItem, drawerPos, setDrawerPos } = usePocket()
+// ── viewport cascade default for a freshly-opened drawer ──────────────────────
+// New drawers spawn offset from the inspect-axis default so the stack reads as
+// distinct surfaces; the offset wraps (% 6) so many opens never march off-screen
+// (each result is re-clamped to the viewport anyway).
+function cascadeDefault(w: number, h: number, inspect: PocketBuckitDesign['inspect'], index: number): DrawerPos {
+  const base = defaultDrawer(w, h, inspect)
+  const off = (index % 6) * 26
+  return clampDrawer({ x: base.x + off, y: base.y + off }, w, h)
+}
+
+// ── one movable mini drawer (quick-inspection + move actions) ─────────────────
+// FEAT-pocket-buckit-workspace Step A — several of these are open at once. Each owns
+// its live drag position; the resolved spot persists per-bucket (a reopen restores it,
+// re-clamped to the live viewport). A pointerdown anywhere focuses it (brings it to the
+// front via z). The per-item remove (−) controls appear ONLY in edit mode (request §5 —
+// removal is never implied by a drawer simply being open).
+function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: string, z: number, index: number, design: PocketBuckitDesign, editMode: boolean }) {
+  const { bucketById, removeItem, closeDrawer, focusDrawer, moveDrawer, drawerPosFor } = usePocket()
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ dx: number, dy: number } | null>(null)
   const [pos, setPos] = useState<DrawerPos | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const posRef = useRef<DrawerPos | null>(null)
   posRef.current = pos // mirror so the resize handler reads fresh pos without an impure updater
+  const seed = useRef({ index, inspect: design.inspect }) // captured at mount for the cascade
 
-  const bucket = inspectId ? bucketById(inspectId) : undefined
-  const bucketKey = bucket?.id ?? null
+  const bucket = bucketById(bucketId)
 
   // auto-dismiss the play notice
   useEffect(() => {
@@ -281,39 +296,34 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
     return () => clearTimeout(t)
   }, [notice])
 
-  // on open (or bucket switch): place from the persisted position (re-clamped to
-  // the live viewport so a stale off-screen coord is corrected) or the default.
+  // place on open: the persisted per-bucket position (re-clamped to the live viewport
+  // so a stale off-screen coord is corrected) or a cascade default. Runs once per panel
+  // mount (key={bucketId}); drawerPosFor / moveDrawer are stable provider callbacks.
   useLayoutEffect(() => {
-    if (!bucketKey)
-      return
     const el = panelRef.current
     if (!el)
       return
     const w = el.offsetWidth
     const h = el.offsetHeight
-    const init = drawerPos ? clampDrawer(drawerPos, w, h) : defaultDrawer(w, h, design.inspect)
+    const persisted = drawerPosFor(bucketId)
+    const init = persisted ? clampDrawer(persisted, w, h) : cascadeDefault(w, h, seed.current.inspect, seed.current.index)
     setPos(init)
-    if (!drawerPos || init.x !== drawerPos.x || init.y !== drawerPos.y)
-      setDrawerPos(init)
-    // Intentionally keyed on bucketKey only: re-place on open / bucket switch,
-    // not on every drawerPos change (the drag updates pos locally).
-  }, [bucketKey])
+    moveDrawer(bucketId, init)
+  }, [bucketId, drawerPosFor, moveDrawer])
 
   // keep it on-screen across viewport resizes
   useEffect(() => {
-    if (!bucketKey)
-      return
     const onResize = () => {
       const el = panelRef.current
       if (!el || !posRef.current)
         return
       const c = clampDrawer(posRef.current, el.offsetWidth, el.offsetHeight)
       setPos(c)
-      setDrawerPos(c)
+      moveDrawer(bucketId, c)
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [bucketKey, setDrawerPos])
+  }, [bucketId, moveDrawer])
 
   if (!bucket)
     return null
@@ -337,7 +347,7 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
   }
   const onHeadUp = () => {
     if (dragRef.current && pos)
-      setDrawerPos(pos)
+      moveDrawer(bucketId, pos)
     dragRef.current = null
   }
 
@@ -356,11 +366,13 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
     left: pos?.x ?? 16,
     top: pos?.y ?? 16,
     visibility: pos ? 'visible' : 'hidden',
+    // focus order: each open drawer stacks above the tray; the focused one wins.
+    zIndex: `calc(var(--z-pocket, 70) + 2 + ${z})`,
     '--bucket-accent': accent,
   } as CSSProperties
 
   return (
-    <div ref={panelRef} className={cls} style={style} role="dialog" aria-label={`${bucket.name} 점검`}>
+    <div ref={panelRef} className={`${cls} pb-drawer-in`} style={style} role="dialog" aria-label={`${bucket.name} 점검`} onPointerDownCapture={() => focusDrawer(bucketId)}>
       <div className="pb-dhead" onPointerDown={onHeadDown} onPointerMove={onHeadMove} onPointerUp={onHeadUp}>
         <span className="pb-dhandle">
           <span className="pb-dgrip" aria-hidden="true">
@@ -370,7 +382,7 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
           </span>
           {bucket.name}
         </span>
-        <button type="button" className="mono" style={{ fontSize: sc(11), border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-subtle)' }} onClick={() => setInspectId(null)} aria-label="닫기">닫기 ✕</button>
+        <button type="button" className="mono" style={{ fontSize: sc(11), border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-subtle)' }} onClick={() => closeDrawer(bucketId)} aria-label="닫기">닫기 ✕</button>
       </div>
       <div className="sans" style={{ fontSize: sc(11), color: 'var(--color-subtle)' }}>
 {bucket.albums.length}
@@ -380,7 +392,7 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: sc(7), maxHeight: sc(220), overflowY: 'auto' }}>
         {bucket.albums.slice(0, 8).map(a => (
           <div key={a.itemId} style={{ display: 'flex', alignItems: 'center', gap: sc(9) }}>
-            <button type="button" className="pb-minus" title="버킷에서 제거 (원본은 유지)" onClick={() => void removeItem(bucket.id, a.itemId, a.albumId, a.title)}>−</button>
+            {editMode && <button type="button" className="pb-minus" title="버킷에서 제거 (원본은 유지)" onClick={() => void removeItem(bucket.id, a.itemId, a.albumId, a.title)}>−</button>}
             <Cover label={a.title} size={26} />
             <span className="serif" style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>
             <span className="tgt-meta">{a.itemType === 'album' ? a.artist : (ITEM_TYPE_LABEL[a.itemType] ?? a.itemType)}</span>
@@ -394,6 +406,18 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
       {notice && <div className="pb-playnote" role="status">{notice}</div>}
       <a className="btn" href="/profile" style={{ display: 'block', textAlign: 'center', padding: `${sc(7)} 0`, fontSize: sc(10), marginTop: sc(10), textDecoration: 'none', borderColor: 'color-mix(in srgb, var(--bucket-accent) 40%, var(--color-border))' }}>전체 버킷 페이지 열기 ↗</a>
     </div>
+  )
+}
+
+// ── the open-drawer layer (several movable mini-drawers at once) ───────────────
+function DrawerLayer({ design, editMode }: { design: PocketBuckitDesign, editMode: boolean }) {
+  const { openDrawers } = usePocket()
+  return (
+    <>
+      {openDrawers.map((d, i) => (
+        <DrawerPanel key={d.bucketId} bucketId={d.bucketId} z={d.z} index={i} design={design} editMode={editMode} />
+      ))}
+    </>
   )
 }
 
@@ -418,16 +442,21 @@ function TreeNav({ folders, folder, setFolder, bottom }: { folders: string[], fo
 
 // ── the dispatcher ───────────────────────────────────────────────────────────
 export function PocketTray() {
-  const { design, leaves, open, setOpen, inspectId, setInspectId, undo, runUndo, reorderBucket } = usePocket()
+  const { design, leaves, open, setOpen, openDrawer, isDrawerOpen, closeAllDrawers, editMode, setEditMode, deleteBucket, undo, runUndo, reorderBucket } = usePocket()
   const [folder, setFolder] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  // edit-mode tray bucket-delete: the first × tap arms a per-bucket confirm, the
+  // second deletes (no server undo). Separate from drawer-open + reorder state (§9).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const light = isLightDesign(design)
   const fam = engineFamily(design)
   const sticker = design.shell === 'f6'
-  // manual order only in the UNFILTERED WYSIWYG (position) view — a folder/search
-  // filter narrows the rail, so the index would land relative to hidden roots.
-  const canReorder = design.order === 'pinned' && !folder && !(design.overflow === 'search' && query.trim())
+  // Reorder is an EDIT-MODE action (request §5/§6): outside edit mode a drag never
+  // reorders, so a normal drag (scroll / open) is never hijacked. Still restricted to
+  // the UNFILTERED WYSIWYG (position) view — a folder/search filter narrows the rail,
+  // so the drop index would land relative to hidden roots.
+  const canReorder = editMode && design.order === 'pinned' && !folder && !(design.overflow === 'search' && query.trim())
 
   const folders = useMemo(() => Array.from(new Set(leaves.map(l => l.path[0]).filter(Boolean))), [leaves])
 
@@ -461,12 +490,36 @@ export function PocketTray() {
     railRef.current?.querySelector<HTMLButtonElement>(`[data-chip-id="${id}"] button`)?.focus()
   }, [leaves])
 
+  // edit-mode delete-confirm housekeeping: clear when leaving edit mode, and auto-
+  // disarm an armed confirm after a few seconds so a stray × tap doesn't linger.
+  useEffect(() => {
+    if (!editMode)
+      setConfirmDeleteId(null)
+  }, [editMode])
+  useEffect(() => {
+    if (!confirmDeleteId)
+      return
+    const t = setTimeout(() => setConfirmDeleteId(null), 3000)
+    return () => clearTimeout(t)
+  }, [confirmDeleteId])
+
   const openChip = (id: string) => {
     if (suppressClick.current) { // a drag just ended — its trailing click must not open
       suppressClick.current = false
       return
     }
-    setInspectId(id)
+    setConfirmDeleteId(null)
+    openDrawer(id) // open, or focus + bring-to-front if already open (never a duplicate)
+  }
+  const onDelClick = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (confirmDeleteId === id) {
+      setConfirmDeleteId(null)
+      void deleteBucket(id)
+    }
+    else {
+      setConfirmDeleteId(id)
+    }
   }
   const onChipDown = (e: React.PointerEvent, id: string) => {
     suppressClick.current = false // clear any stale guard (a prior drag may not have emitted a click)
@@ -560,7 +613,9 @@ export function PocketTray() {
 	data-variant={fam === 'f1' || fam === 'f2' ? 'ghost' : 'solid'}
 	onClick={() => {
           setOpen(false)
-          setInspectId(null)
+          closeAllDrawers()
+          setEditMode(false)
+          setConfirmDeleteId(null)
         }}
 	style={light ? { background: 'color-mix(in srgb, #fff 55%, transparent)' } : undefined}
     >
@@ -569,8 +624,32 @@ export function PocketTray() {
     </button>
   )
 
+  // 편집/완료 — the explicit edit/arrange toggle (request §5). Reveals the per-chip ×
+  // delete + drawer item − + drag-reorder; independent of any drawer being open.
+  const toggleEdit = () => {
+    setEditMode(!editMode)
+    setConfirmDeleteId(null)
+  }
+  const editToggle = (
+    <button
+	type="button"
+	className={light ? 'lpill is-static' : 'pkt-ctrl is-static'}
+	data-variant="ghost"
+	data-on={editMode || undefined}
+	aria-pressed={editMode}
+	onClick={toggleEdit}
+	style={light ? { background: editMode ? 'color-mix(in srgb, var(--color-accent) 20%, #fff)' : 'color-mix(in srgb, #fff 55%, transparent)' } : undefined}
+    >
+      <svg width={sc(12)} height={sc(12)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+<path d="M12 20h9" />
+<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+      </svg>
+      {editMode ? '완료' : '편집'}
+    </button>
+  )
+
   const rail = capped.map((leaf) => {
-    const active = inspectId === leaf.id
+    const active = isDrawerOpen(leaf.id) // its drawer is open → accent ring (several at once is fine)
     const isDragging = drag?.id === leaf.id
     const chip = light ?
       (sticker ?
@@ -580,8 +659,21 @@ export function PocketTray() {
     return (
       <Fragment key={leaf.id}>
         {drag?.overId === leaf.id && drag.place === 'before' && <span className="pb-drop-line" />}
-        <span data-chip-id={leaf.id} className={isDragging ? 'pb-chip-drag' : undefined} style={{ display: 'inline-flex', flex: '0 0 auto', alignItems: 'flex-end', touchAction: canReorder ? 'none' : undefined }}>
+        <span data-chip-id={leaf.id} className={isDragging ? 'pb-chip-drag' : undefined} style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', alignItems: 'flex-end', touchAction: canReorder ? 'none' : undefined }}>
           {chip}
+          {editMode && (
+            <button
+	type="button"
+	className="pb-chip-del"
+	data-confirm={confirmDeleteId === leaf.id || undefined}
+	onPointerDown={e => e.stopPropagation()}
+	onClick={e => onDelClick(e, leaf.id)}
+	aria-label={confirmDeleteId === leaf.id ? `${leaf.name} 삭제 확인` : `${leaf.name} 삭제`}
+	title="버킷 삭제 (되돌릴 수 없음)"
+            >
+              {confirmDeleteId === leaf.id ? '삭제?' : '×'}
+            </button>
+          )}
         </span>
         {drag?.overId === leaf.id && drag.place === 'after' && <span className="pb-drop-line" />}
       </Fragment>
@@ -598,7 +690,7 @@ export function PocketTray() {
   )
 
   return (
-    <div className="pb-scope" data-reordering={drag ? 'true' : undefined} data-can-reorder={canReorder ? 'true' : undefined}>
+    <div className="pb-scope" data-edit={editMode ? 'true' : undefined} data-reordering={drag ? 'true' : undefined} data-can-reorder={canReorder ? 'true' : undefined}>
       <span role="status" aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}>{liveMsg}</span>
       {design.treeDepth >= 1 && <TreeNav folders={folders} folder={folder} setFolder={setFolder} bottom={trayBottom} />}
 
@@ -618,7 +710,10 @@ export function PocketTray() {
 {rail}
 {moreChip}
               </div>
-              {close}
+              <div className="pb-chrome">
+{editToggle}
+{close}
+              </div>
             </div>
           ) :
         (
@@ -634,11 +729,14 @@ export function PocketTray() {
 {rail}
 {moreChip}
               </div>
-              <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', padding: `0 ${sc(14)}`, borderLeft: '1px solid var(--color-border-soft)' }}>{close}</div>
+              <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: sc(8), padding: `0 ${sc(14)}`, borderLeft: '1px solid var(--color-border-soft)' }}>
+{editToggle}
+{close}
+              </div>
             </div>
           )}
 
-      <InspectSurface design={design} />
+      <DrawerLayer design={design} editMode={editMode} />
 
       {undo && (
         <div className="undo-rib" style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: `calc(${trayBottom} + ${sc(14)})`, width: 'auto', borderRadius: sc(4), zIndex: 73 }}>

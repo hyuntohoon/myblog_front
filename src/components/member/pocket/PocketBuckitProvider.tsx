@@ -1,13 +1,20 @@
 // FEAT-pocket-buckit Step 1 — the Pocket context: the persisted user-selectable
-// design + the live bucket leaves + runtime tray state (open / inspect / undo).
+// design + the live bucket leaves + runtime tray state.
 // Single instance, mounted once site-wide by PocketBuckit (the island).
+//
+// FEAT-pocket-buckit-workspace Step A — the single quick-inspect drawer became a
+// MULTI-drawer workspace: several bucket mini-drawers open at once, each movable /
+// focusable / closable independently, brought-to-front on re-click, never duplicated.
+// A separate `editMode` (NOT derived from any drawer being open) gates removal +
+// reorder. State kept deliberately separate (request §9): tray leaves, the open-drawer
+// set, per-bucket persisted positions, the focus z-order, and edit mode are distinct.
 import type { ReactNode } from 'react'
 import type { BoardBucket } from '@lib/buckets'
 import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
-import { addBucketItem, deleteBucketItem, listBuckets, moveBucket } from '@lib/buckets'
+import { addBucketItem, deleteBucket as apiDeleteBucket, deleteBucketItem, listBuckets, moveBucket } from '@lib/buckets'
 import { normalizeDesign, POCKET_DESIGN_DEFAULTS, readDesign, writeDesign } from '@lib/pocketBuckit/design'
 import { bucketsToLeaves } from '@lib/pocketBuckit/leaf'
 
@@ -17,6 +24,13 @@ interface UndoState {
 }
 
 export interface DrawerPos { x: number, y: number }
+
+/**
+ * One open mini-drawer. `z` is the focus order (higher = on top); the position
+ *  is NOT stored here — it lives in the persisted per-bucket map so a reopen
+ *  restores it. The drawer component owns the live drag position locally.
+ */
+export interface OpenDrawer { bucketId: string, z: number }
 
 interface PocketContextValue {
   design: PocketBuckitDesign
@@ -28,8 +42,31 @@ interface PocketContextValue {
   refresh: () => void
   open: boolean
   setOpen: (o: boolean) => void
-  inspectId: string | null
-  setInspectId: (id: string | null) => void
+  // ── multi-drawer workspace ──────────────────────────────────────────────────
+  /** The buckets whose mini-drawers are currently open (with their focus z-order). */
+  openDrawers: OpenDrawer[]
+  /**
+   * Open the bucket's drawer, or — if already open — bring it to the front + focus it
+   *  (never a duplicate drawer).
+   */
+  openDrawer: (bucketId: string) => void
+  /** Bring an already-open drawer to the front (focus). */
+  focusDrawer: (bucketId: string) => void
+  /** Close a single drawer; the others stay open + put. */
+  closeDrawer: (bucketId: string) => void
+  /** Close every open drawer (used when the tray collapses). */
+  closeAllDrawers: () => void
+  /** Persist a drawer's viewport-clamped position (per bucket) after a drag/place. */
+  moveDrawer: (bucketId: string, pos: DrawerPos) => void
+  /** The persisted position for a bucket's drawer, or null (→ cascade default). */
+  drawerPosFor: (bucketId: string) => DrawerPos | null
+  /** True when the bucket has an open drawer (drives the tray chip's active ring). */
+  isDrawerOpen: (bucketId: string) => boolean
+  // ── edit / arrange mode (independent of drawer-open) ────────────────────────
+  /** When true the tray reveals removal (× / item −) + enables drag-reorder. */
+  editMode: boolean
+  setEditMode: (b: boolean) => void
+  // ── data ────────────────────────────────────────────────────────────────────
   bucketById: (id: string) => BoardBucket | undefined
   removeItem: (bucketId: string, itemId: string, albumId: string | null, title: string) => Promise<void>
   /**
@@ -39,28 +76,43 @@ interface PocketContextValue {
    * (non-root) chips are a no-op (they keep their position; no accidental reparent).
    */
   reorderBucket: (draggedId: string, targetId: string, place: 'before' | 'after') => Promise<void>
-  /** Persisted, viewport-clamped position of the movable mini drawer (null = default). */
-  drawerPos: DrawerPos | null
-  setDrawerPos: (p: DrawerPos | null) => void
+  /**
+   * Delete a bucket (cascades to descendants + items). Optimistic prune; reverts on
+   *  failure. Edit-mode only, behind an inline 2-tap confirm (no server undo).
+   */
+  deleteBucket: (bucketId: string) => Promise<void>
   undo: UndoState | null
   runUndo: () => void
 }
 
-const DRAWER_KEY = 'pb:drawer'
+// Per-bucket drawer positions: { [bucketId]: {x,y} }. Replaces the single-drawer
+// `pb:drawer` key — now several drawers each remember where they were left.
+const DRAWERS_KEY = 'pb:drawers'
 
-function readDrawerPos(): DrawerPos | null {
+function readDrawerMap(): Record<string, DrawerPos> {
   if (typeof window === 'undefined')
-    return null
+    return {}
   try {
-    const raw = localStorage.getItem(DRAWER_KEY)
+    const raw = localStorage.getItem(DRAWERS_KEY)
     if (!raw)
-      return null
-    const v = JSON.parse(raw) as Partial<DrawerPos>
-    if (v && typeof v.x === 'number' && typeof v.y === 'number' && Number.isFinite(v.x) && Number.isFinite(v.y))
-      return { x: v.x, y: v.y }
+      return {}
+    const v = JSON.parse(raw) as Record<string, Partial<DrawerPos>>
+    const out: Record<string, DrawerPos> = {}
+    for (const [id, p] of Object.entries(v ?? {})) {
+      if (p && typeof p.x === 'number' && typeof p.y === 'number' && Number.isFinite(p.x) && Number.isFinite(p.y))
+        out[id] = { x: p.x, y: p.y }
+    }
+    return out
   }
-  catch { /* corrupt → default */ }
-  return null
+  catch { /* corrupt → empty */ }
+  return {}
+}
+
+// Remove a bucket (and its subtree) from the tree at any depth — optimistic delete.
+function pruneBucket(tree: BoardBucket[], id: string): BoardBucket[] {
+  return tree
+    .filter(b => b.id !== id)
+    .map(b => (b.children.length ? { ...b, children: pruneBucket(b.children, id) } : b))
 }
 
 const PocketContext = createContext<PocketContextValue | null>(null)
@@ -79,27 +131,21 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  const [inspectId, setInspectId] = useState<string | null>(null)
-  const [drawerPos, setDrawerPosState] = useState<DrawerPos | null>(null)
+  const [openDrawers, setOpenDrawers] = useState<OpenDrawer[]>([])
+  const [editMode, setEditMode] = useState(false)
+  const [drawerMap, setDrawerMap] = useState<Record<string, DrawerPos>>({})
+  const drawerMapRef = useRef<Record<string, DrawerPos>>({})
+  drawerMapRef.current = drawerMap // fresh read inside openDrawer without a stale closure
+  const topZ = useRef(0)
   const [undo, setUndo] = useState<UndoState | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // hydrate the persisted design + drawer position on mount (SSR renders the
-  // default; client swaps). The drawer position is re-clamped to the live
-  // viewport when the drawer opens (so a stale off-screen coord is corrected).
+  // hydrate the persisted design + drawer positions on mount (SSR renders the
+  // default; client swaps). Each drawer position is re-clamped to the live viewport
+  // when its drawer opens (so a stale off-screen coord is corrected).
   useEffect(() => {
     setDesignState(readDesign())
-    setDrawerPosState(readDrawerPos())
-  }, [])
-
-  const setDrawerPos = useCallback((p: DrawerPos | null) => {
-    setDrawerPosState(p)
-    try {
-      if (p)
-        localStorage.setItem(DRAWER_KEY, JSON.stringify(p))
-      else localStorage.removeItem(DRAWER_KEY)
-    }
-    catch { /* quota / SSR — in-memory only */ }
+    setDrawerMap(readDrawerMap())
   }, [])
 
   const refresh = useCallback(() => {
@@ -134,6 +180,47 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     setDesignState(POCKET_DESIGN_DEFAULTS)
   }, [])
 
+  // ── multi-drawer actions ──────────────────────────────────────────────────────
+  const openDrawer = useCallback((bucketId: string) => {
+    setOpenDrawers((prev) => {
+      const z = ++topZ.current
+      if (prev.some(d => d.bucketId === bucketId)) // already open → focus (no duplicate)
+        return prev.map(d => (d.bucketId === bucketId ? { ...d, z } : d))
+      return [...prev, { bucketId, z }]
+    })
+  }, [])
+
+  const focusDrawer = useCallback((bucketId: string) => {
+    setOpenDrawers((prev) => {
+      const cur = prev.find(d => d.bucketId === bucketId)
+      if (!cur || cur.z === topZ.current) // already on top → no state churn
+        return prev
+      const z = ++topZ.current
+      return prev.map(d => (d.bucketId === bucketId ? { ...d, z } : d))
+    })
+  }, [])
+
+  const closeDrawer = useCallback((bucketId: string) => {
+    setOpenDrawers(prev => prev.filter(d => d.bucketId !== bucketId))
+  }, [])
+
+  const closeAllDrawers = useCallback(() => setOpenDrawers([]), [])
+
+  const moveDrawer = useCallback((bucketId: string, pos: DrawerPos) => {
+    setDrawerMap((prev) => {
+      const next = { ...prev, [bucketId]: pos }
+      try {
+        localStorage.setItem(DRAWERS_KEY, JSON.stringify(next))
+      }
+      catch { /* quota / SSR — in-memory only */ }
+      return next
+    })
+  }, [])
+
+  const drawerPosFor = useCallback((bucketId: string) => drawerMapRef.current[bucketId] ?? null, [])
+  const openIds = useMemo(() => new Set(openDrawers.map(d => d.bucketId)), [openDrawers])
+  const isDrawerOpen = useCallback((bucketId: string) => openIds.has(bucketId), [openIds])
+
   const leaves = useMemo(
     () => bucketsToLeaves(buckets, { order: design.order, treeDepth: design.treeDepth }),
     [buckets, design.order, design.treeDepth],
@@ -151,6 +238,12 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
 
   const bucketById = useCallback((id: string) => flatBuckets.find(b => b.id === id), [flatBuckets])
 
+  // Drop drawers + edit mode whenever the underlying bucket vanishes (deleted
+  // elsewhere) so a stale id can never render an empty drawer.
+  useEffect(() => {
+    setOpenDrawers(prev => prev.filter(d => flatBuckets.some(b => b.id === d.bucketId)))
+  }, [flatBuckets])
+
   const showUndo = useCallback((u: UndoState) => {
     if (undoTimer.current)
       clearTimeout(undoTimer.current)
@@ -164,8 +257,7 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     showUndo({
       label: `${title} 제거됨 · 실행취소`,
       // Undo re-adds by album_id, which only exists for album members. A
-      // non-album row (forward-compat; none in prod until Step 6) can't be
-      // re-added through the album path, so the removal simply stands.
+      // non-album row can't be re-added through the album path, so the removal stands.
       run: albumId ?
         async () => {
           await addBucketItem(bucketId, albumId)
@@ -178,9 +270,9 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   const reorderBucket = useCallback(async (draggedId: string, targetId: string, place: 'before' | 'after') => {
     if (draggedId === targetId)
       return
-    // listBuckets() returns the tree with only roots at the top level. Tray
-    // reorder operates on those roots (the common flat case); a non-root chip
-    // is a no-op so we never accidentally reparent it.
+    // listBuckets() returns the tree with only roots at the top level. Tray reorder
+    // operates on those roots (the common flat case); a non-root chip is a no-op so we
+    // never accidentally reparent it.
     const fromIdx = buckets.findIndex(b => b.id === draggedId)
     if (fromIdx < 0 || buckets.findIndex(b => b.id === targetId) < 0)
       return
@@ -204,6 +296,19 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     }
   }, [buckets, refresh])
 
+  const deleteBucket = useCallback(async (bucketId: string) => {
+    closeDrawer(bucketId)
+    const snapshot = buckets
+    setBuckets(prev => pruneBucket(prev, bucketId)) // optimistic
+    try {
+      await apiDeleteBucket(bucketId)
+    }
+    catch {
+      setBuckets(snapshot) // restore on failure
+      refresh()
+    }
+  }, [buckets, closeDrawer, refresh])
+
   const runUndo = useCallback(() => {
     const u = undo
     setUndo(null)
@@ -221,16 +326,47 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     refresh,
     open,
     setOpen,
-    inspectId,
-    setInspectId,
+    openDrawers,
+    openDrawer,
+    focusDrawer,
+    closeDrawer,
+    closeAllDrawers,
+    moveDrawer,
+    drawerPosFor,
+    isDrawerOpen,
+    editMode,
+    setEditMode,
     bucketById,
     removeItem,
     reorderBucket,
-    drawerPos,
-    setDrawerPos,
+    deleteBucket,
     undo,
     runUndo,
-  }), [design, setDesign, resetDesign, leaves, loading, error, refresh, open, inspectId, bucketById, removeItem, reorderBucket, drawerPos, setDrawerPos, undo, runUndo])
+  }), [
+    design,
+setDesign,
+resetDesign,
+leaves,
+loading,
+error,
+refresh,
+open,
+    openDrawers,
+openDrawer,
+focusDrawer,
+closeDrawer,
+closeAllDrawers,
+moveDrawer,
+drawerPosFor,
+isDrawerOpen,
+    editMode,
+bucketById,
+removeItem,
+reorderBucket,
+deleteBucket,
+undo,
+runUndo,
+  ])
 
   return <PocketContext.Provider value={value}>{children}</PocketContext.Provider>
 }
