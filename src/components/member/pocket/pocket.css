@@ -21,12 +21,12 @@
   --conv: oklch(0.58 0.13 64);
   --proc: oklch(0.56 0.12 256);
   --font-round: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
-  /* Desktop: a materially stronger Pocket presence (~1.5×). */
-  --pb-scale: 1.5;
+  /* Desktop: a materially stronger Pocket presence (~1.25×). */
+  --pb-scale: 1.25;
 }
 /* Responsive: shrink the scale so the enlarged tray + drawer never
    overflow or hide controls on narrower screens. */
-@media (max-width: 1024px) { .pb-scope { --pb-scale: 1.3; } }
+@media (max-width: 1024px) { .pb-scope { --pb-scale: 1.2; } }
 @media (max-width: 720px)  { .pb-scope { --pb-scale: 1.12; } }
 @media (max-width: 480px)  { .pb-scope { --pb-scale: 1; } }
 
