@@ -11,6 +11,7 @@
 import type { ChartDatum, ChartStyle } from './charts'
 import type { DrillType, Range, Retrospective, StreamAlbumRank, StreamClock, StreamClockCell, StreamItemDetail, StreamMetric, StreamRank } from './analysis.api'
 import { useEffect, useState } from 'react'
+import { AddToBucketMenu } from './pocket/AddToBucketMenu'
 import {
 	getStreamClock,
 	getStreamEraDistribution,
@@ -460,6 +461,13 @@ function ItemDetailSlideover({ target, metric, period, onClose }: { target: { ty
 					<div className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--color-faded)', marginBottom: 6 }}>{`${typeLabel}${period.kind !== 'all' ? ` · ${periodLabel(period)}` : ''}`}</div>
 					<div className="lf-serif" style={{ fontSize: 24, lineHeight: 1.15 }}>{detail?.label ?? target.label}</div>
 					{detail?.artist && <div className="lf-meta" style={{ color: 'var(--color-faded)', marginTop: 4 }}>{detail.artist}</div>}
+					{/* FEAT-pocket-buckit Step 5 — add this album to a bucket (album reference
+					    only; no listening stats copied, per the snapshot vs ordinary-add rule). */}
+					{target.type === 'album' && (
+						<div style={{ marginTop: 14 }}>
+							<AddToBucketMenu item={{ albumId: target.id, title: detail?.label ?? target.label }} />
+						</div>
+					)}
 				</div>
 
 				{err ?

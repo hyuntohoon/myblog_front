@@ -25,8 +25,23 @@ type ApiPublicItem = components['schemas']['Backend_PublicBucketItem']
 export interface BoardAlbum {
   /** review_bucket_items.id — the handle for move/reorder. */
   itemId: string
-  /** DB album id — for the detail slide-over + add-dedup. */
-  albumId: string
+  /**
+   * FEAT-pocket-buckit Step 5: generalized membership kind
+   * ('album'|'track'|'review'|'playback'|'snapshot'). Every prod row is 'album'
+   * today (Step 3 rejects non-album INSERTs with 422; the relax is Step 6), so
+   * non-album rows are forward-compat only — the board/tray must render them
+   * without crashing, but creation stays album-only until Step 6.
+   */
+  itemType: string
+  /**
+   * DB album id — for the detail slide-over + add-dedup. **Null on non-album
+   * members** (the contract relaxed `album_id` to nullable in Step 4). Album-only
+   * operations (drag, copy, undo-re-add) must guard on it being present.
+   */
+  albumId: string | null
+  /** Typed non-album target FKs (forward-compat; null on album rows). */
+  trackId: string | null
+  reviewTargetId: string | null
   title: string
   artist: string
   cover: string | null
@@ -110,7 +125,10 @@ function mapItem(it: ApiItem): BoardAlbum {
   const rel = a?.release_date
   return {
     itemId: it.id,
-    albumId: it.album_id,
+    itemType: it.item_type ?? 'album',
+    albumId: it.album_id ?? null,
+    trackId: it.track_id ?? null,
+    reviewTargetId: it.review_target_id ?? null,
     title: a?.title ?? '제목 미상',
     artist: (a?.artist_names ?? []).join(', ') || '—',
     cover: a?.cover_url ?? null,
@@ -335,11 +353,16 @@ export async function moveBucket(
 
 export interface AddItemOutcome { item: BoardAlbum | null, conflict: boolean }
 
-/** POST /api/buckets/{id}/items — add an album (409 when already in the bucket). */
+/**
+ * POST /api/buckets/{id}/items — add an album (409 when already in the bucket).
+ * FEAT-pocket-buckit: `item_type` is sent explicitly as 'album'. Creation is
+ * album-only in v1 — the backend (Step 3) rejects non-album INSERTs with 422
+ * until the Step-6 relax, so no other `item_type` is wired here yet.
+ */
 export async function addBucketItem(bucketId: string, albumId: string): Promise<AddItemOutcome> {
   const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items`, {
     method: 'POST',
-    body: JSON.stringify({ album_id: albumId }),
+    body: JSON.stringify({ album_id: albumId, item_type: 'album' }),
   })
   if (res && res.status === 409)
     return { item: null, conflict: true }
