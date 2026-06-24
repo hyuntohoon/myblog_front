@@ -1010,7 +1010,7 @@ export interface components {
         /** AddBucketItemRequest */
         Backend_AddBucketItemRequest: {
             /** Album Id */
-            album_id: string;
+            album_id?: string | null;
             /**
              * Item Type
              * @default album
@@ -1019,6 +1019,11 @@ export interface components {
             item_type: "album" | "track" | "review" | "playback" | "snapshot";
             /** Note */
             note?: string | null;
+            /** Review Target Id */
+            review_target_id?: string | null;
+            snapshot?: components["schemas"]["Backend_SnapshotCaptureRequest"] | null;
+            /** Track Id */
+            track_id?: string | null;
         };
         /** AddToListenRequest */
         Backend_AddToListenRequest: {
@@ -1119,6 +1124,7 @@ export interface components {
             review_target_id?: string | null;
             /** Status */
             status: string;
+            track?: components["schemas"]["Backend_TrackBrief"] | null;
             /** Track Id */
             track_id?: string | null;
         };
@@ -1690,6 +1696,49 @@ export interface components {
             /** Sections */
             sections: components["schemas"]["Backend_SectionItem"][];
         };
+        /**
+         * SnapshotCaptureRequest
+         * @description FEAT-pocket-buckit Step 6 (OQ7) — the frozen capture for a snapshot-kind membership.
+         *     The caller (an analysis/period drop) sends the contemporaneous values it is displaying;
+         *     the server APPEND-ONLY INSERTs them into bucket_item_snapshots (never an UPDATE — a
+         *     refresh is a new row). `frozen` is the verbatim payload; the typed header columns drive
+         *     later querying. captured_at + schema_version are server-stamped.
+         */
+        Backend_SnapshotCaptureRequest: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Frozen */
+            frozen: {
+                [key: string]: unknown;
+            };
+            /** Kind */
+            kind: string;
+            /** Metric */
+            metric?: string | null;
+            /** Range From */
+            range_from?: string | null;
+            /** Range To */
+            range_to?: string | null;
+            /** Source Album Ids */
+            source_album_ids?: string[];
+            /** Total */
+            total?: number | null;
+            /**
+             * Unclassified
+             * @default 0
+             */
+            unclassified: number;
+            /** Unit */
+            unit?: string | null;
+            /**
+             * Unresolved
+             * @default 0
+             */
+            unresolved: number;
+        };
         /** SpotifyConnectionResponse */
         Backend_SpotifyConnectionResponse: {
             /**
@@ -1958,6 +2007,24 @@ export interface components {
         Backend_ToListenResponse: {
             /** Items */
             items?: components["schemas"]["Backend_ToListenItemResponse"][];
+        };
+        /**
+         * TrackBrief
+         * @description FEAT-pocket-buckit Step 6: minimal track display for a track/playback membership row,
+         *     so the front can render the track without a second resolve. The cover lives on the album
+         *     (album_id is provided → the front reuses its album-cover path).
+         */
+        Backend_TrackBrief: {
+            /** Album Id */
+            album_id?: string | null;
+            /** Artist Names */
+            artist_names?: string[];
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
         };
         /** UnclassifiedBreakdown */
         Backend_UnclassifiedBreakdown: {
@@ -2674,7 +2741,7 @@ export interface operations {
                     "application/json": components["schemas"]["Backend_BucketItemResponse"];
                 };
             };
-            /** @description Album already in this bucket */
+            /** @description Item already in this bucket */
             409: {
                 headers: {
                     [name: string]: unknown;

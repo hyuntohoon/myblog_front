@@ -9,6 +9,7 @@
 // result is cached at MODULE scope so a StrictMode double-mount (or any remount)
 // reuses it instead of the throwaway first mount eating the intent. TTL-bounded in
 // intent.ts (a stale intent is dropped).
+import type { AddTarget } from '@components/member/pocket/AddToBucketMenu'
 import type { PocketIntent } from '@lib/pocketBuckit/intent'
 import { useState } from 'react'
 import { AddToBucketMenu } from '@components/member/pocket/AddToBucketMenu'
@@ -31,11 +32,21 @@ export default function PocketResume() {
   if (!intent)
     return null
 
+  // Reconstruct the add target from the drained intent — a track resumes a track
+  // add, an album resumes an album add (drain guarantees the matching id exists).
+  const target: AddTarget | null = intent.itemType === 'track' && intent.trackId ?
+    { itemType: 'track', trackId: intent.trackId, title: intent.title } :
+    intent.albumId ?
+      { itemType: 'album', albumId: intent.albumId, title: intent.title } :
+      null
+  if (!target)
+    return null
+
   // No trigger of its own (render → null); autoOpen drives the picker, and the
   // sheet + toast (body portals) are the whole surface.
   return (
     <AddToBucketMenu
-	item={{ albumId: intent.albumId, title: intent.title }}
+	item={target}
 	autoOpen
 	render={() => null}
     />

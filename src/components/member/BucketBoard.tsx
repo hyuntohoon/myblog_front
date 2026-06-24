@@ -54,6 +54,12 @@ const RECENT_ID = '__recent__'
 // `review_buckets.kind` value of the single special Spotify-library bucket — it
 // is filtered out of the normal crate tree and rendered as its own section.
 const SLIB_KIND = 'spotify_library'
+// `review_buckets.kind` of the system "들을 것" queue. FEAT-pocket-buckit Step 6
+// (V31) folded the old `album_to_listen_items` table into this kind, so the front
+// no longer infers the to-listen bucket from its NAME (the /들을|예정/ heuristic in
+// crMeta below) — `kind` is the canonical, rename-proof signal. The name regex is
+// kept only as a fallback for user-named buckets that predate the system bucket.
+const TOLISTEN_KIND = 'to_listen'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
 // Last-seen 최근 들은 앨범 strip, cached so it paints instantly on the next mount
@@ -341,6 +347,9 @@ function displayOrder(albums: BoardAlbum[], view: BucketView): string[] {
 // from the bucket name so the default seed buckets read sensibly; renamed
 // buckets simply fall back to the neutral "버킷" tag.
 function crMeta(b: BoardBucket): { tag: string, urgent: boolean } {
+  // Canonical: the system to-listen bucket is tagged by kind, not its name.
+  if (b.kind === TOLISTEN_KIND)
+    return { tag: '청취 예정', urgent: false }
   if (b.isDone || /완료/.test(b.name))
     return { tag: '평론 완료', urgent: false }
   if (/급한|마감/.test(b.name))
@@ -472,6 +481,10 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
 }) {
   const [over, setOver] = useState(false)
   const dragging = draggingId === album.itemId
+  // FEAT-pocket-buckit Step 6 — a track membership renders from its TrackBrief
+  // (title/artist via mapItem) with a placeholder cover; it has no album detail
+  // to open and gets no rating/research affordances.
+  const isTrack = album.itemType === 'track'
   const acceptCol = (): boolean => {
     const it = dnd
     // Reorder-insert targets reject copy drags (recent strip) AND library drags —
@@ -523,7 +536,12 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           setDraggingId(null)
           setDragKind(null)
         }}
-	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId ?? undefined, cover: album.cover, year: album.year, writable: !copySource && !fromLib, bucketId, itemId: album.itemId, note: album.note ?? null, prepTonight: album.prepTonight ?? false })}
+	onClick={() => {
+          // A track member has no album-detail target — clicking it is a no-op.
+          if (isTrack)
+            return
+          onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId ?? undefined, cover: album.cover, year: album.year, writable: !copySource && !fromLib, bucketId, itemId: album.itemId, note: album.note ?? null, prepTonight: album.prepTonight ?? false })
+        }}
 	// Warm the album-detail cache on intent (hover / tap-start) so the modal
 	// opens on an edge hit instead of a ~1s miss (see lib/albumDetail.ts).
 	onPointerEnter={() => prefetchAlbumDetail(album.albumId)}
@@ -535,6 +553,9 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           <AlbumArt url={album.cover} label={album.title} />
           {copySource && (
             <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
+          )}
+          {isTrack && (
+            <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-bg)', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '2px 5px', borderRadius: 3 }}>트랙</span>
           )}
           {libRow && <SlibBadges row={libRow} />}
           {!copySource && !libRow && !rated && album.alreadyReviewed && (
@@ -716,6 +737,13 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
     setDropTarget(null)
     if (!it)
       return
+    // The sync-owned Spotify-library bucket holds only albums. A track member
+    // (item_type='track' → album_id NULL) has nothing to reconcile against Spotify,
+    // so reject the drop rather than leave a null-album row in the library bucket.
+    if (isLib && it.kind === 'album' && !it.albumId) {
+      dnd = null
+      return
+    }
     // COPY when: dropping INTO the library bucket (req 1), or the dragged item is a
     // copy source (recent strip) or a library item dropped elsewhere (req 5).
     // Otherwise a normal move/reorder.
@@ -734,8 +762,8 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	key={a.itemId}
 	album={a}
 	bucketId={bucket.id}
-	rated={bucket.isDone}
-	score={bucket.isDone ? (ratings.get(a.albumId ?? '') ?? null) : null}
+	rated={bucket.isDone && a.itemType !== 'track'}
+	score={bucket.isDone && a.itemType !== 'track' ? (ratings.get(a.albumId ?? '') ?? null) : null}
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
 	fromLib={isLib}
 	onOpen={onOpen}
@@ -744,7 +772,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	setDragKind={setDragKind}
 	onTouchActions={() => openAlbumSheet({ album: a, bucketId: bucket.id, copySource: false, fromLib: isLib, source: isLib ? libState.get(a.albumId ?? '')?.source : undefined })}
 	onInsert={isLib ? undefined : handleInsert}
-	research={isLib ?
+	research={(isLib || a.itemType === 'track') ?
 		undefined :
 		{
 			mode: bucket.researchMode,

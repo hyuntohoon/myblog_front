@@ -7,6 +7,12 @@
 // completes the add after auth. The server reads the owner from the verified JWT
 // `sub`, never from this blob. Mirrors the design.ts persistence pattern (SSR
 // guard + corrupt → silent drop). Browser-only module (uses Date.now()).
+//
+// FEAT-pocket-buckit Step 6 — generalized to carry a TRACK as well as an album
+// (the Step-6 relax made `item_type='track'` writable). The intent is a tagged
+// union over `itemType`: an album intent carries `albumId`, a track intent carries
+// `trackId`; the unused id is null. The resume re-opens the SAME AddToBucketMenu
+// for whichever kind was stashed.
 
 export const POCKET_INTENT_KEY = 'pb:resume'
 
@@ -16,14 +22,12 @@ const TTL_MS = 30 * 60 * 1000 // 30 min
 export interface PocketIntent {
   /** epoch ms at capture — the TTL gate. */
   ts: number
-  /**
-   * What to add. v1 is album-only: creation stays album-only until the Step-6
-   * relax (the backend rejects non-album INSERTs with 422), so the handoff only
-   * ever carries an album.
-   */
-  itemType: 'album'
-  /** DB album id to add after sign-in. */
-  albumId: string
+  /** Which membership kind to add after sign-in. */
+  itemType: 'album' | 'track'
+  /** DB album id (album intents); null for track intents. */
+  albumId: string | null
+  /** DB track id (track intents); null for album intents. */
+  trackId: string | null
   /** display title, for the resume confirmation surface. */
   title: string
   /**
@@ -34,12 +38,25 @@ export interface PocketIntent {
   bucketId: string | null
 }
 
+/** The caller-supplied intent (a tagged union — exactly one target id per kind). */
+export type PocketIntentInput =
+	| { itemType: 'album', albumId: string, title: string, bucketId: string | null } |
+	{ itemType: 'track', trackId: string, title: string, bucketId: string | null }
+
 /** Stash a pending add. Overwrites any previous intent (last write wins). */
-export function writePocketIntent(intent: Omit<PocketIntent, 'ts'>): void {
+export function writePocketIntent(input: PocketIntentInput): void {
   if (typeof localStorage === 'undefined')
     return
+  const intent: PocketIntent = {
+    ts: Date.now(),
+    itemType: input.itemType,
+    albumId: input.itemType === 'album' ? input.albumId : null,
+    trackId: input.itemType === 'track' ? input.trackId : null,
+    title: input.title,
+    bucketId: input.bucketId,
+  }
   try {
-    localStorage.setItem(POCKET_INTENT_KEY, JSON.stringify({ ...intent, ts: Date.now() }))
+    localStorage.setItem(POCKET_INTENT_KEY, JSON.stringify(intent))
   }
   catch { /* quota / disabled storage — the handoff just won't resume */ }
 }
@@ -68,17 +85,18 @@ export function drainPocketIntent(): PocketIntent | null {
   catch { /* ignore */ }
   try {
     const v = JSON.parse(raw) as Partial<PocketIntent>
-    if (!v || v.itemType !== 'album' || typeof v.albumId !== 'string' || typeof v.ts !== 'number')
+    if (!v || typeof v.ts !== 'number' || Date.now() - v.ts > TTL_MS)
       return null
-    if (Date.now() - v.ts > TTL_MS)
-      return null
-    return {
-      ts: v.ts,
-      itemType: 'album',
-      albumId: v.albumId,
-      title: typeof v.title === 'string' ? v.title : '앨범',
-      bucketId: typeof v.bucketId === 'string' ? v.bucketId : null,
+    const title = typeof v.title === 'string' ? v.title : '항목'
+    const bucketId = typeof v.bucketId === 'string' ? v.bucketId : null
+    if (v.itemType === 'track' && typeof v.trackId === 'string') {
+      return { ts: v.ts, itemType: 'track', albumId: null, trackId: v.trackId, title: title || '트랙', bucketId }
     }
+    // Default/album path (covers legacy blobs written before Step 6 with no itemType).
+    if (typeof v.albumId === 'string') {
+      return { ts: v.ts, itemType: 'album', albumId: v.albumId, trackId: null, title: title || '앨범', bucketId }
+    }
+    return null
   }
   catch {
     return null
