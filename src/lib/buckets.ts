@@ -122,15 +122,26 @@ export interface BoardBucket {
 
 function mapItem(it: ApiItem): BoardAlbum {
   const a = it.album
+  const tr = it.track
+  const itemType = it.item_type ?? 'album'
+  const isTrack = itemType === 'track'
   const rel = a?.release_date
   return {
     itemId: it.id,
-    itemType: it.item_type ?? 'album',
+    itemType,
+    // Album-only ops (drag-copy, undo-re-add, restore, dedup) guard on albumId
+    // being present, so a track row keeps it null even though its TrackBrief
+    // carries the parent album_id — those paths must NOT treat a track as an album.
     albumId: it.album_id ?? null,
     trackId: it.track_id ?? null,
     reviewTargetId: it.review_target_id ?? null,
-    title: a?.title ?? '제목 미상',
-    artist: (a?.artist_names ?? []).join(', ') || '—',
+    // FEAT-pocket-buckit Step 6: a track member renders from its TrackBrief
+    // (title + artist_names) so it never falls back to '제목 미상'. Other non-album
+    // kinds (review/playback/snapshot) have no display payload yet → neutral dash.
+    title: isTrack ? (tr?.title ?? '제목 미상') : (a?.title ?? '제목 미상'),
+    artist: isTrack ? ((tr?.artist_names ?? []).join(', ') || '—') : ((a?.artist_names ?? []).join(', ') || '—'),
+    // TrackBrief has no cover_url (the cover lives on its album, not resolved
+    // here) → a track tile shows the initials placeholder.
     cover: a?.cover_url ?? null,
     year: rel ? Number(String(rel).slice(0, 4)) || null : null,
     alreadyReviewed: it.already_reviewed ?? false,
@@ -354,19 +365,29 @@ export async function moveBucket(
 export interface AddItemOutcome { item: BoardAlbum | null, conflict: boolean }
 
 /**
- * POST /api/buckets/{id}/items — add an album (409 when already in the bucket).
- * FEAT-pocket-buckit: `item_type` is sent explicitly as 'album'. Creation is
- * album-only in v1 — the backend (Step 3) rejects non-album INSERTs with 422
- * until the Step-6 relax, so no other `item_type` is wired here yet.
+ * POST /api/buckets/{id}/items — the shared add path. `item_type` is sent
+ * explicitly; a per-kind 409 ('이미 담겨 있어요') maps to `conflict` (the backend's
+ * partial-uniques reject a dup album/track/review). FEAT-pocket-buckit Step 6
+ * relaxed the backend to accept non-album writes; album + track are wired here.
  */
-export async function addBucketItem(bucketId: string, albumId: string): Promise<AddItemOutcome> {
+async function postBucketItem(bucketId: string, body: Record<string, unknown>): Promise<AddItemOutcome> {
   const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items`, {
     method: 'POST',
-    body: JSON.stringify({ album_id: albumId, item_type: 'album' }),
+    body: JSON.stringify(body),
   })
   if (res && res.status === 409)
     return { item: null, conflict: true }
   return { item: mapItem(await asJson<ApiItem>(res)), conflict: false }
+}
+
+/** POST an album membership (item_type='album'); 409 on a dup album in the bucket. */
+export async function addBucketItem(bucketId: string, albumId: string): Promise<AddItemOutcome> {
+  return postBucketItem(bucketId, { album_id: albumId, item_type: 'album' })
+}
+
+/** POST a track membership (item_type='track'); 409 on a dup track in the bucket. */
+export async function addBucketTrack(bucketId: string, trackId: string): Promise<AddItemOutcome> {
+  return postBucketItem(bucketId, { track_id: trackId, item_type: 'track' })
 }
 
 /** DELETE /api/buckets/{bucketId}/items/{itemId} — remove a single album (204). */

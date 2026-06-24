@@ -65,12 +65,18 @@ function buildTracklistHtml(tracks: Track[]): string {
       const playBtn = id ?
         `<button type="button" class="lfq-tt-play" data-track-id="${escapeHtml(id)}" data-track-title="${title}" aria-label="${title || '트랙'} 재생" title="재생 (Spotify Premium)">▶</button>` :
         '<span></span>'
+      // FEAT-pocket-buckit Step 6 — per-track "담기" (track-as-bucket-member). Adds
+      // item_type='track' via the ReviewTrackAdder island (event bridge below).
+      const addBtn = id ?
+        `<button type="button" class="lfq-tt-add" data-add-track-id="${escapeHtml(id)}" data-add-track-title="${title}" aria-label="${title || '트랙'} 버킷에 담기" title="버킷에 담기">＋</button>` :
+        '<span></span>'
       return `
         <li class="lfq-tt-row${isPick ? ' is-pick' : ''}">
           <span class="lfq-tt-no">${num}</span>
           <span class="lfq-tt-title">${title}${featNames(t.feat_artist_names)}${isPick ? ' <span class="lfq-tt-star" aria-label="추천 트랙">★</span>' : ''}</span>
           <span class="lfq-tt-dur">${dur}</span>
           ${playBtn}
+          ${addBtn}
         </li>
       `
     })
@@ -122,4 +128,18 @@ root?.addEventListener('click', (e) => {
   if (!trackId)
     return
   void requestPlayback({ kind: 'track', trackId, title: btn.dataset.trackTitle }).then(o => showPlayNote(o.message))
+})
+
+// FEAT-pocket-buckit Step 6 — per-track "담기" → hand off to the ReviewTrackAdder
+// island, which owns the AddToBucketMenu (picker + the logged-out pb:resume → Cognito
+// handoff). Vanilla DOM here can't mount React, so this is an event bridge (same
+// shape as `album:detail`). Event name kept in sync with ReviewTrackAdder.PB_ADD_TRACK_EVENT.
+root?.addEventListener('click', (e) => {
+  const btn = (e.target as Element | null)?.closest<HTMLButtonElement>('.lfq-tt-add')
+  if (!btn)
+    return
+  const trackId = btn.dataset.addTrackId
+  if (!trackId)
+    return
+  window.dispatchEvent(new CustomEvent('pb:add-track', { detail: { trackId, title: btn.dataset.addTrackTitle } }))
 })

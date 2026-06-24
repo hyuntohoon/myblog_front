@@ -12,6 +12,7 @@ import Playground from '@components/playground.astro'
 import ReviewHero from '@components/review-hero.astro'
 import PartialStars from '@components/partial-stars.astro'
 import { AddToBucketMenu } from '@components/member/pocket/AddToBucketMenu'
+import ReviewTrackAdder from '@components/member/pocket/ReviewTrackAdder'
 import { getArtistNameMap, resolveArtistLinks } from '@lib/artistNames'
 
 export const prerender = true
@@ -202,6 +203,9 @@ const recordLabel = post.musicReview?.label ?? null
                 <span class="lfq-pick-legend">★ 추천 트랙</span>
               </header>
               <div id="albumDetail"></div>
+              {/* FEAT-pocket-buckit Step 6 — bridges the vanilla tracklist's per-track
+                  "담기" buttons to the shared AddToBucketMenu (track-as-bucket-member). */}
+              <ReviewTrackAdder client:only="react" />
             </section>
           )}
         </div>
@@ -283,7 +287,7 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-article :global(.lfq-tt-row) {
     display: grid;
-    grid-template-columns: 3ch 1fr auto auto;
+    grid-template-columns: 3ch 1fr auto auto auto;
     gap: 14px;
     align-items: baseline;
     padding: 10px 0;
@@ -333,7 +337,8 @@ const recordLabel = post.musicReview?.label ?? null
   /* FEAT-pocket-buckit Step 5b — per-track play affordance (dormant until the
      owner provisions Spotify streaming) + the notice. Subtle, hover-revealed,
      so the editorial reading page stays calm. */
-  .lfq-article :global(.lfq-tt-play) {
+  .lfq-article :global(.lfq-tt-play),
+  .lfq-article :global(.lfq-tt-add) {
     align-self: center;
     width: 24px;
     height: 24px;
@@ -349,13 +354,23 @@ const recordLabel = post.musicReview?.label ?? null
     opacity: 0;
     transition: opacity 0.14s, color 0.14s, border-color 0.14s;
   }
+  .lfq-article :global(.lfq-tt-add) { font-size: 13px; }
   .lfq-article :global(.lfq-tt-row:hover .lfq-tt-play),
-  .lfq-article :global(.lfq-tt-play:focus-visible) {
+  .lfq-article :global(.lfq-tt-row:hover .lfq-tt-add),
+  .lfq-article :global(.lfq-tt-play:focus-visible),
+  .lfq-article :global(.lfq-tt-add:focus-visible) {
     opacity: 1;
   }
-  .lfq-article :global(.lfq-tt-play:hover) {
+  .lfq-article :global(.lfq-tt-play:hover),
+  .lfq-article :global(.lfq-tt-add:hover) {
     color: var(--color-accent);
     border-color: var(--color-accent);
+  }
+  /* Touch (no hover): the per-track actions can't hide behind hover — keep the
+     non-drag "담기" path (WCAG 2.5.7) and play reachable on coarse pointers. */
+  @media (hover: none) {
+    .lfq-article :global(.lfq-tt-play),
+    .lfq-article :global(.lfq-tt-add) { opacity: 1; }
   }
   .lfq-article :global(.lfq-tt-playnote) {
     margin-top: 12px;
