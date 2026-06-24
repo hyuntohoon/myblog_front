@@ -14,9 +14,13 @@ import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
-import { addBucketItem, deleteBucket as apiDeleteBucket, deleteBucketItem, listBuckets, moveBucket } from '@lib/buckets'
+import { addBucketItem, deleteBucket as apiDeleteBucket, deleteBucketItem, moveBucket } from '@lib/buckets'
+import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { normalizeDesign, POCKET_DESIGN_DEFAULTS, readDesign, writeDesign } from '@lib/pocketBuckit/design'
 import { bucketsToLeaves } from '@lib/pocketBuckit/leaf'
+
+// Stable empty tree so a null cache doesn't churn the leaves/flatBuckets memos.
+const EMPTY_BUCKETS: BoardBucket[] = []
 
 interface UndoState {
   label: string
@@ -127,9 +131,13 @@ export function usePocket(): PocketContextValue {
 
 export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   const [design, setDesignState] = useState<PocketBuckitDesign>(POCKET_DESIGN_DEFAULTS)
-  const [buckets, setBuckets] = useState<BoardBucket[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // The bucket tree is no longer local state — it lives in the shared, user-scoped,
+  // sessionStorage-backed bucketStore so the tray, /profile board, and library share one
+  // source and a same-tab navigation reuses the cache instead of refetching.
+  const store = useBucketStore()
+  const buckets = store.tree ?? EMPTY_BUCKETS
+  const loading = store.loading
+  const error = store.error
   const [open, setOpen] = useState(false)
   const [openDrawers, setOpenDrawers] = useState<OpenDrawer[]>([])
   const [editMode, setEditMode] = useState(false)
@@ -149,23 +157,17 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refresh = useCallback(() => {
-    if (!isLoggedIn()) {
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    listBuckets()
-      .then((bs) => {
-        setBuckets(bs)
-        setError(null)
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'load failed'))
-      .finally(() => setLoading(false))
+    if (isLoggedIn())
+      void bucketStore.ensureFresh(true)
   }, [])
 
+  // SWR: paint from the shared cache instantly (it survives a same-tab navigation), and
+  // revalidate only when stale — no full-tree refetch on every page nav. Skipped when
+  // logged out (the tray is hidden anyway).
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    if (isLoggedIn())
+      void bucketStore.ensureFresh()
+  }, [])
 
   const setDesign = useCallback((patch: Partial<PocketBuckitDesign>) => {
     setDesignState((prev) => {
@@ -253,7 +255,7 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
 
   const removeItem = useCallback(async (bucketId: string, itemId: string, albumId: string | null, title: string) => {
     await deleteBucketItem(bucketId, itemId)
-    refresh()
+    void bucketStore.ensureFresh(true)
     showUndo({
       label: `${title} 제거됨 · 실행취소`,
       // Undo re-adds by album_id, which only exists for album members. A
@@ -261,22 +263,23 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
       run: albumId ?
         async () => {
           await addBucketItem(bucketId, albumId)
-          refresh()
+          void bucketStore.ensureFresh(true)
         } :
         async () => {},
     })
-  }, [refresh, showUndo])
+  }, [showUndo])
 
   const reorderBucket = useCallback(async (draggedId: string, targetId: string, place: 'before' | 'after') => {
     if (draggedId === targetId)
       return
-    // listBuckets() returns the tree with only roots at the top level. Tray reorder
-    // operates on those roots (the common flat case); a non-root chip is a no-op so we
-    // never accidentally reparent it.
-    const fromIdx = buckets.findIndex(b => b.id === draggedId)
-    if (fromIdx < 0 || buckets.findIndex(b => b.id === targetId) < 0)
+    // The shared store's tree has only roots at the top level. Tray reorder operates on
+    // those roots (the common flat case); a non-root chip is a no-op so we never
+    // accidentally reparent it. Read the LIVE tree, not a render closure.
+    const cur = bucketStore.getTree()
+    const fromIdx = cur.findIndex(b => b.id === draggedId)
+    if (fromIdx < 0 || cur.findIndex(b => b.id === targetId) < 0)
       return
-    const next = [...buckets]
+    const next = [...cur]
     const [moved] = next.splice(fromIdx, 1)
     let insertAt = next.findIndex(b => b.id === targetId)
     if (place === 'after')
@@ -285,29 +288,29 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     const newIndex = next.findIndex(b => b.id === draggedId)
     if (newIndex === fromIdx)
       return
-    setBuckets(next) // optimistic
+    bucketStore.setTree(next) // optimistic — every island sees it
     try {
       // a root's parent_id is null; keep it at root, new position.
       const tree = await moveBucket(draggedId, null, newIndex)
-      setBuckets(tree) // authoritative server order
+      bucketStore.setTree(tree) // authoritative server order
     }
     catch {
-      refresh() // revert to the server's truth
+      void bucketStore.ensureFresh(true) // revert to the server's truth
     }
-  }, [buckets, refresh])
+  }, [])
 
   const deleteBucket = useCallback(async (bucketId: string) => {
     closeDrawer(bucketId)
-    const snapshot = buckets
-    setBuckets(prev => pruneBucket(prev, bucketId)) // optimistic
+    const snapshot = bucketStore.getTree()
+    bucketStore.setTree(pruneBucket(snapshot, bucketId)) // optimistic — every island
     try {
       await apiDeleteBucket(bucketId)
     }
     catch {
-      setBuckets(snapshot) // restore on failure
-      refresh()
+      bucketStore.setTree(snapshot) // restore on failure
+      void bucketStore.ensureFresh(true)
     }
-  }, [buckets, closeDrawer, refresh])
+  }, [closeDrawer])
 
   const runUndo = useCallback(() => {
     const u = undo
