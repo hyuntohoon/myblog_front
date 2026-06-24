@@ -21,6 +21,26 @@ const TABS = [
   { id: 'stats', label: '분석 버킷' },
   { id: 'integration', label: '연동' },
 ]
+const TAB_IDS = TABS.map(t => t.id)
+
+/**
+ * Initial tab from the URL (`?tab=<id>` or `#<id>`), so the dedicated `/buckets`
+ * route (→ `/profile/?tab=bucket`) and any deep link land directly on the right
+ * tab. Falls back to 'overview' on a miss / unknown id. Client-only island, so
+ * `window` is available at first render.
+ */
+function initialTab(): string {
+  if (typeof window === 'undefined')
+    return 'overview'
+  try {
+    const q = new URLSearchParams(window.location.search).get('tab')
+    const want = q || window.location.hash.replace(/^#/, '')
+    if (want && TAB_IDS.includes(want))
+      return want
+  }
+  catch { /* ignore */ }
+  return 'overview'
+}
 
 /* ── view preferences (layout + density), persisted to localStorage ──────── */
 type Layout = 'sidebar' | 'stacked' | 'dashboard'
@@ -267,13 +287,22 @@ function TabPanel({ active, children }: { active: boolean, children: ReactNode }
 }
 
 export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], profile: MemberProfile }) {
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(initialTab)
   // Tabs visited at least once. Each is mounted lazily on first visit and then
   // kept mounted (hidden, not unmounted) so a re-visit never refetches. The
   // functional updater keeps rapid clicks from clobbering the set.
-  const [visited, setVisited] = useState<Set<string>>(() => new Set(['overview']))
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([initialTab()]))
   const selectTab = (id: string) => {
     setTab(id)
+    // Keep the URL in sync so the tab is shareable / reload-stable (matches the
+    // /buckets deeplink). replaceState — no history spam on tab clicks.
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.set('tab', id)
+      url.hash = ''
+      window.history.replaceState(null, '', url)
+    }
+    catch { /* ignore */ }
     setVisited((v) => {
       if (v.has(id))
         return v
