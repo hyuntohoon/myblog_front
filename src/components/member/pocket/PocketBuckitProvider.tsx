@@ -29,7 +29,7 @@ interface PocketContextValue {
   inspectId: string | null
   setInspectId: (id: string | null) => void
   bucketById: (id: string) => BoardBucket | undefined
-  removeItem: (bucketId: string, itemId: string, albumId: string, title: string) => Promise<void>
+  removeItem: (bucketId: string, itemId: string, albumId: string | null, title: string) => Promise<void>
   undo: UndoState | null
   runUndo: () => void
 }
@@ -115,15 +115,20 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     undoTimer.current = setTimeout(() => setUndo(null), 6000)
   }, [])
 
-  const removeItem = useCallback(async (bucketId: string, itemId: string, albumId: string, title: string) => {
+  const removeItem = useCallback(async (bucketId: string, itemId: string, albumId: string | null, title: string) => {
     await deleteBucketItem(bucketId, itemId)
     refresh()
     showUndo({
       label: `${title} 제거됨 · 실행취소`,
-      run: async () => {
-        await addBucketItem(bucketId, albumId)
-        refresh()
-      },
+      // Undo re-adds by album_id, which only exists for album members. A
+      // non-album row (forward-compat; none in prod until Step 6) can't be
+      // re-added through the album path, so the removal simply stands.
+      run: albumId ?
+        async () => {
+          await addBucketItem(bucketId, albumId)
+          refresh()
+        } :
+        async () => {},
     })
   }, [refresh, showUndo])
 

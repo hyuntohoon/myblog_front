@@ -15,6 +15,16 @@ function accentFor(leaf: PocketLeaf): string {
   return leaf.color || 'var(--color-accent)'
 }
 
+// FEAT-pocket-buckit Step 5 — a member's kind label, for safely rendering a
+// non-album row in quick-inspect (none exist in prod until Step 6; this is the
+// forward-compat fallback so a generalized row never renders blank).
+const ITEM_TYPE_LABEL: Record<string, string> = {
+  track: '트랙',
+  review: '평론',
+  playback: '재생',
+  snapshot: '스냅샷',
+}
+
 function Cover({ label, size }: { label: string, size: number }) {
   return (
     <div className="cover" style={{ width: size, height: size, borderRadius: 3 }}>
@@ -221,7 +231,7 @@ function InspectSurface({ design }: { design: PocketBuckitDesign }) {
             <button type="button" className="pb-minus" title="버킷에서 제거 (원본은 유지)" onClick={() => void removeItem(bucket.id, a.itemId, a.albumId, a.title)}>−</button>
             <Cover label={a.title} size={26} />
             <span className="serif" style={{ fontSize: 12.5, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>
-            <span className="tgt-meta">{a.artist}</span>
+            <span className="tgt-meta">{a.itemType === 'album' ? a.artist : (ITEM_TYPE_LABEL[a.itemType] ?? a.itemType)}</span>
           </div>
         ))}
         {bucket.albums.length === 0 && <span className="sans" style={{ fontSize: 11, color: 'var(--color-faded)' }}>비어 있음 — 드롭 영역으로 유지</span>}

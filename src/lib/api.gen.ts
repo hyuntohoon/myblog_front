@@ -824,6 +824,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/playback/spotify-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spotify Token */
+        get: operations["spotify_token_api_playback_spotify_token_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/posts": {
         parameters: {
             query?: never;
@@ -994,6 +1011,12 @@ export interface components {
         Backend_AddBucketItemRequest: {
             /** Album Id */
             album_id: string;
+            /**
+             * Item Type
+             * @default album
+             * @enum {string}
+             */
+            item_type: "album" | "track" | "review" | "playback" | "snapshot";
             /** Note */
             note?: string | null;
         };
@@ -1057,9 +1080,9 @@ export interface components {
         };
         /** BucketItemResponse */
         Backend_BucketItemResponse: {
-            album: components["schemas"]["Backend_AlbumBrief"];
+            album?: components["schemas"]["Backend_AlbumBrief"] | null;
             /** Album Id */
-            album_id: string;
+            album_id?: string | null;
             /**
              * Already Reviewed
              * @default false
@@ -1067,6 +1090,11 @@ export interface components {
             already_reviewed: boolean;
             /** Id */
             id: string;
+            /**
+             * Item Type
+             * @default album
+             */
+            item_type: string;
             /** Note */
             note?: string | null;
             /** Position */
@@ -1087,8 +1115,12 @@ export interface components {
             research_selected: boolean;
             /** Research Status */
             research_status?: string | null;
+            /** Review Target Id */
+            review_target_id?: string | null;
             /** Status */
             status: string;
+            /** Track Id */
+            track_id?: string | null;
         };
         /** BucketResponse */
         Backend_BucketResponse: {
@@ -1713,6 +1745,18 @@ export interface components {
         Backend_SpotifyLibrarySyncResponse: {
             /** Status */
             status: string;
+        };
+        /** SpotifyStreamingTokenResponse */
+        Backend_SpotifyStreamingTokenResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Expires In */
+            expires_in: number;
+            /**
+             * Token Type
+             * @default Bearer
+             */
+            token_type: string;
         };
         /** StreamAlbumRankItem */
         Backend_StreamAlbumRankItem: {
@@ -3902,6 +3946,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spotify_token_api_playback_spotify_token_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_SpotifyStreamingTokenResponse"];
                 };
             };
         };

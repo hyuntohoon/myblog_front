@@ -44,7 +44,7 @@ import { AlbumArt, SectionTitle } from './ui'
 // still be moved to the trash (only when source==='myblog_added' — a 기존/preexisting
 // album is never deletable). `albumId` is carried on every album drag so a drop INTO
 // the library bucket can copy by album id without a tree lookup.
-interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string, fromLib?: boolean, source?: string }
+interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string | null, fromLib?: boolean, source?: string }
 // Module-level drag payload (native DnD can't carry live object refs reliably).
 let dnd: DndItem | null = null
 type DragKind = 'album' | 'bucket' | null
@@ -523,7 +523,7 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           setDraggingId(null)
           setDragKind(null)
         }}
-	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId, cover: album.cover, year: album.year, writable: !copySource && !fromLib, bucketId, itemId: album.itemId, note: album.note ?? null, prepTonight: album.prepTonight ?? false })}
+	onClick={() => onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId ?? undefined, cover: album.cover, year: album.year, writable: !copySource && !fromLib, bucketId, itemId: album.itemId, note: album.note ?? null, prepTonight: album.prepTonight ?? false })}
 	// Warm the album-detail cache on intent (hover / tap-start) so the modal
 	// opens on an edge hit instead of a ~1s miss (see lib/albumDetail.ts).
 	onPointerEnter={() => prefetchAlbumDetail(album.albumId)}
@@ -735,14 +735,14 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	album={a}
 	bucketId={bucket.id}
 	rated={bucket.isDone}
-	score={bucket.isDone ? (ratings.get(a.albumId) ?? null) : null}
-	libRow={isLib ? (libState.get(a.albumId) ?? null) : null}
+	score={bucket.isDone ? (ratings.get(a.albumId ?? '') ?? null) : null}
+	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
 	fromLib={isLib}
 	onOpen={onOpen}
 	draggingId={draggingId}
 	setDraggingId={setDraggingId}
 	setDragKind={setDragKind}
-	onTouchActions={() => openAlbumSheet({ album: a, bucketId: bucket.id, copySource: false, fromLib: isLib, source: isLib ? libState.get(a.albumId)?.source : undefined })}
+	onTouchActions={() => openAlbumSheet({ album: a, bucketId: bucket.id, copySource: false, fromLib: isLib, source: isLib ? libState.get(a.albumId ?? '')?.source : undefined })}
 	onInsert={isLib ? undefined : handleInsert}
 	research={isLib ?
 		undefined :
@@ -750,8 +750,11 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 			mode: bucket.researchMode,
 			selected: a.researchSelected,
 			// live batched status ⊕ bucket-payload seed — no per-cover GET.
-			status: researchStatus[a.albumId] ?? a.researchStatus ?? null,
-			onOpen: () => ops.openResearch(a.albumId, a.title),
+			status: researchStatus[a.albumId ?? ''] ?? a.researchStatus ?? null,
+			onOpen: () => {
+ if (a.albumId)
+ops.openResearch(a.albumId, a.title)
+},
 			onToggleSelected: (next: boolean) => ops.setItemSelected(bucket.id, a.itemId, next),
 		}}
     />
@@ -767,8 +770,8 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
   )
   // Library bucket: split covers into "내가 넣은" (myblog_added → pushed to Spotify) and
   // "기존" (preexisting in the Library, non-deletable) with a boundary between the two.
-  const libMine = isLib ? bucket.albums.filter(a => (libState.get(a.albumId)?.source ?? 'myblog_added') !== 'preexisting') : []
-  const libExisting = isLib ? bucket.albums.filter(a => libState.get(a.albumId)?.source === 'preexisting') : []
+  const libMine = isLib ? bucket.albums.filter(a => (libState.get(a.albumId ?? '')?.source ?? 'myblog_added') !== 'preexisting') : []
+  const libExisting = isLib ? bucket.albums.filter(a => libState.get(a.albumId ?? '')?.source === 'preexisting') : []
   const slibLabel = (divider: boolean): React.CSSProperties => ({
     gridColumn: '1 / -1',
     fontSize: 10,
@@ -1519,7 +1522,10 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   // mount and throttled the Lambda → 503s ("조사 안 됨" until refresh).
   const researchAlbumIds = useMemo(() => {
     const ids: string[] = []
-    visit(normalTree, b => b.albums.forEach(a => ids.push(a.albumId)))
+    visit(normalTree, b => b.albums.forEach((a) => {
+ if (a.albumId)
+ids.push(a.albumId)
+}))
     return ids
   }, [normalTree])
   // Pause the 4s research-status self-poll while this tab is hidden (ProfileApp
@@ -1548,7 +1554,10 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
           return
         const mapped: BoardAlbum[] = r.items.map(it => ({
           itemId: `recent:${it.album_id}`,
+          itemType: 'album',
           albumId: it.album_id,
+          trackId: null,
+          reviewTargetId: null,
           title: it.album?.title ?? '제목 미상',
           artist: (it.album?.artist_names ?? []).join(', ') || '—',
           cover: it.album?.cover_url ?? null,
@@ -1676,7 +1685,10 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
         if (dst && !dst.albums.some(a => a.albumId === albumId)) {
           dst.albums.push({
             itemId: tempId,
+            itemType: 'album',
             albumId,
+            trackId: null,
+            reviewTargetId: null,
             title: src?.title ?? '…',
             artist: src?.artist ?? '',
             cover: src?.cover ?? null,
@@ -1923,7 +1935,12 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
       setTrash(prev => prev.filter(x => x.tid !== tid))
       return
     }
-    api.addBucketItem(target, entry.album.albumId)
+    const restoreId = entry.album.albumId
+    if (!restoreId) {
+      setTrash(prev => prev.filter(x => x.tid !== tid))
+      return
+    }
+    api.addBucketItem(target, restoreId)
       .then(({ item }) => {
         if (item) {
           setTree((prev) => {
@@ -2113,7 +2130,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
       {addingTo && (
         <AddAlbumModal
 	bucketName={addingTo.name}
-	existingAlbumIds={new Set((tree && findBucket(tree, addingTo.id)?.albums.map(a => a.albumId)) ?? [])}
+	existingAlbumIds={new Set((tree && findBucket(tree, addingTo.id)?.albums.map(a => a.albumId).filter((id): id is string => id != null)) ?? [])}
 	onAdd={onAddAlbum}
 	onClose={() => setAddingTo(null)}
         />
@@ -2192,7 +2209,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
                   setPicker({
                     title: '버킷에 추가',
                     onPick: (to) => {
-                      if (to)
+                      if (to && s.album.albumId)
                         ops.copyAlbum(s.album.albumId, to)
                       setPicker(null)
                     },

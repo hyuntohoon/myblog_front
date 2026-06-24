@@ -1,6 +1,7 @@
 ---
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import EditorialHome from '@components/home/EditorialHome'
+import PocketResume from '@components/member/pocket/PocketResume'
 import Seo from '@components/seo.astro'
 import Layout from '@layouts/layout.astro'
 import { allGenres, buildReviewCards } from '@lib/reviews'
@@ -59,4 +60,7 @@ const draftCount = entries.filter(e => e.data.draft).length
   <SkipNavContent>
     <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} />
   </SkipNavContent>
+  {/* FEAT-pocket-buckit Step 5 — completes a logged-out "add to bucket" after the
+      Cognito callback redirects here. Renders nothing unless a fresh intent exists. */}
+  <PocketResume client:only="react" />
 </Layout>

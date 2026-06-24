@@ -30,8 +30,11 @@ export interface PocketLeaf {
   pinned?: boolean
   ordered?: boolean
   processing?: boolean
-  /** the up-to-3 most-recent album covers/titles, for quick-inspect. */
-  recent: { itemId: string, albumId: string, title: string, cover: string | null }[]
+  /**
+   * the up-to-3 most-recent member covers/titles, for quick-inspect.
+   * `albumId` is null for non-album members (Step 5 generalization).
+   */
+  recent: { itemId: string, itemType: string, albumId: string | null, title: string, cover: string | null }[]
 }
 
 /**
@@ -80,7 +83,7 @@ function toLeaf(b: BoardBucket, path: string[]): PocketLeaf {
     kind: b.kind,
     pinned: path.length === 1,
     processing: b.researchMode !== 'off',
-    recent: b.albums.slice(0, 3).map(a => ({ itemId: a.itemId, albumId: a.albumId, title: a.title, cover: a.cover })),
+    recent: b.albums.slice(0, 3).map(a => ({ itemId: a.itemId, itemType: a.itemType, albumId: a.albumId, title: a.title, cover: a.cover })),
   }
 }
 
