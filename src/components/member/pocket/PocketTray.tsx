@@ -616,6 +616,10 @@ export function PocketTray() {
           closeAllDrawers()
           setEditMode(false)
           setConfirmDeleteId(null)
+          // Marker clear is driven by PocketBuckitInner's useEffect([open]) on the
+          // open→false transition (it re-emits pb:closed), so EVERY close path —
+          // this 닫기 button AND the /profile board's 🪣 toggle — clears the board's
+          // transient NEW drag markers. No manual dispatch needed here.
         }}
 	style={light ? { background: 'color-mix(in srgb, #fff 55%, transparent)' } : undefined}
     >

@@ -183,7 +183,7 @@ function RowMenu({ row, onOpen, onPromote }: {
 						}}
 						style={{ ...itemStyle, color: catalogued ? 'var(--color-accent)' : 'var(--color-text)', opacity: catalogued ? 1 : 0.4, cursor: catalogued ? 'pointer' : 'not-allowed' }}
 					>
-						평론 버킷에 담기
+						My Buckit에 담기
 					</button>
 					<a
 						href="/write"
@@ -509,7 +509,7 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 			const { conflict } = await addBucketItem(bucketId, row.albumId)
 			flash(conflict ?
 				`‘${row.albumName}’ 은(는) 이미 이 버킷에 있어요.` :
-				`‘${row.albumName}’ 을(를) 평론 버킷에 담았어요.`)
+				`‘${row.albumName}’ 을(를) My Buckit에 담았어요.`)
 		}
 		catch {
 			flash('버킷에 담지 못했어요. 잠시 후 다시 시도해 주세요.')
@@ -617,7 +617,7 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 
 			{promoting && bucketTree && (
 				<BucketPickerSheet
-					title="평론 버킷에 담기"
+					title="My Buckit에 담기"
 					tree={bucketTree}
 					onPick={onPickBucket}
 					onClose={() => setPromoting(null)}

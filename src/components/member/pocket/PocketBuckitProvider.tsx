@@ -8,7 +8,7 @@
 // A separate `editMode` (NOT derived from any drawer being open) gates removal +
 // reorder. State kept deliberately separate (request §9): tray leaves, the open-drawer
 // set, per-bucket persisted positions, the focus z-order, and edit mode are distinct.
-import type { ReactNode } from 'react'
+import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import type { BoardBucket } from '@lib/buckets'
 import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
@@ -45,7 +45,9 @@ interface PocketContextValue {
   error: string | null
   refresh: () => void
   open: boolean
-  setOpen: (o: boolean) => void
+  // The raw useState dispatcher — accepts a boolean OR a functional updater
+  // (v => !v) so cross-island toggles flip without a stale read.
+  setOpen: Dispatch<SetStateAction<boolean>>
   // ── multi-drawer workspace ──────────────────────────────────────────────────
   /** The buckets whose mini-drawers are currently open (with their focus z-order). */
   openDrawers: OpenDrawer[]

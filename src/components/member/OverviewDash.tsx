@@ -182,7 +182,7 @@ const WIDGET_TITLES: Record<string, string> = {
   'recent-albums': '최근 들은 앨범',
   'recent-tracks': '최근 재생 트랙',
   'listened-albums': '들은 앨범 (누적)',
-  'bucket': '평론 버킷',
+  'bucket': 'My Buckit',
   'latest-reviews': '최근 평론',
 }
 const ALL_WIDGETS = Object.keys(WIDGET_TITLES)

@@ -1,16 +1,46 @@
 // FEAT-pocket-buckit Step 1 — the site-wide island. Mounted once in layout.astro
 // (client:only). Owner-only in v1 (the bucket read needs a Cognito JWT); anonymous
 // visitors get nothing until the Step-5 public-page sign-in handoff lands.
-import { useState } from 'react'
+import type { PbOpenStateDetail } from '@lib/pocketBuckit/events'
+import { useEffect, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
+import { PB_CLOSED_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { PocketBuckitProvider, usePocket } from './PocketBuckitProvider'
 import { PocketDesignSettings } from './PocketDesignSettings'
 import { PocketTray } from './PocketTray'
 import './pocket.css'
 
 function PocketBuckitInner() {
-  const { open } = usePocket()
+  const { open, setOpen } = usePocket()
   const [settings, setSettings] = useState(false)
+  // Cross-island toggle bridge: the /profile My Buckit board (a separate React
+  // root) dispatches `pb:toggle` from its toolbar button; flip the in-memory tray
+  // `open` here, where usePocket() is inside the provider. setOpen is pure state —
+  // no fetch — so the toggle never hits the network. Mirrors the pb:add-track
+  // window-event convention (the two islands share no context).
+  useEffect(() => {
+    const onToggle = () => setOpen(v => !v)
+    window.addEventListener(PB_TOGGLE_EVENT, onToggle)
+    return () => window.removeEventListener(PB_TOGGLE_EVENT, onToggle)
+  }, [setOpen])
+  // Broadcast `open` back to the /profile board on EVERY transition. The board
+  // can't read this island's `open`, so it mirrors `detail.open` for the 🪣 Pocket
+  // toggle's aria-expanded. Driving this from useEffect([open]) — not the tray's
+  // 닫기 click — means EVERY close path is observed: the 닫기 button AND the board
+  // toggle flipping open→false. On a close transition we also re-emit pb:closed so
+  // the board clears its transient NEW drag markers regardless of which control
+  // closed the tray (the 닫기 button's own pb:closed becomes idempotent). The
+  // first run (mount) is `open === false` with no prior true, so it emits the
+  // open-state (false) but the close-marker clear is a harmless no-op.
+  const prevOpen = useRef(open)
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent<PbOpenStateDetail>(PB_OPEN_STATE_EVENT, { detail: { open } }),
+    )
+    if (prevOpen.current && !open)
+      window.dispatchEvent(new CustomEvent(PB_CLOSED_EVENT))
+    prevOpen.current = open
+  }, [open])
   return (
     <div className="pb-scope">
       <PocketTray />

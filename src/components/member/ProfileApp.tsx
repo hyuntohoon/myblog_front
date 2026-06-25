@@ -17,7 +17,7 @@ import { Avatar, Stat } from './ui'
 const TABS = [
   { id: 'overview', label: '개요' },
   { id: 'reviews', label: '평론' },
-  { id: 'bucket', label: '평론 버킷' },
+  { id: 'bucket', label: 'My Buckit' },
   { id: 'stats', label: '분석 버킷' },
   { id: 'integration', label: '연동' },
 ]
