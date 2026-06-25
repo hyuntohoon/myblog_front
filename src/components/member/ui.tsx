@@ -186,7 +186,7 @@ export function BucketShortcut({ count, onGo }: { count: number, onGo: () => voi
       <span style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 18, flex: 1 }}>
         <span style={{ flex: 1 }}>
           <span className="lf-kicker" style={{ color: 'var(--color-accent)', display: 'block', marginBottom: 6 }}>평론 대기열</span>
-          <span className="lf-serif" style={{ fontSize: 21, fontWeight: 500, display: 'block' }}>평론 버킷으로 이동</span>
+          <span className="lf-serif" style={{ fontSize: 21, fontWeight: 500, display: 'block' }}>My Buckit으로 이동</span>
           <span className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)' }}>
 아직 평론을 쓰지 않은 앨범
 {count}

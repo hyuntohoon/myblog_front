@@ -58,7 +58,7 @@ export default function CollectionView() {
 
   const collections = data.filter(c => c.albums.length > 0)
   if (collections.length === 0)
-    return <Notice title="아직 공개된 컬렉션이 없습니다" sub="저자가 공개로 설정한 평론 버킷이 여기에 모입니다." />
+    return <Notice title="아직 공개된 컬렉션이 없습니다" sub="저자가 공개로 설정한 My Buckit이 여기에 모입니다." />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 44 }}>

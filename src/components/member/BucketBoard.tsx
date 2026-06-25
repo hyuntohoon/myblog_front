@@ -20,11 +20,13 @@
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
+import type { PbOpenStateDetail } from '@lib/pocketBuckit/events'
 import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
+import { PB_CLOSED_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
@@ -476,13 +478,19 @@ function CoverResearchBadge({ status, active, onOpen }: { status: ResearchStatus
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions }: {
+function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
   album: BoardAlbum
   bucketId: string
   rated: boolean
   score: number | null
   onOpen: (t: DetailTarget) => void
   copySource?: boolean
+  /**
+   * FEAT-my-buckit — a transient 'NEW' dot: this item just entered the bucket via
+   * a genuine drag (copy-in / cross-bucket move-in). In-memory, self-clears in 8s
+   * or on tray collapse. Copy sources (recent strip) / library chips pass none.
+   */
+  isNew?: boolean
   /**
    * This chip lives in the spotify_library bucket: it drags as a COPY (drop into
    * another bucket copies it, leaving the library row intact) yet keeps its itemId
@@ -584,6 +592,12 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
       >
         <div style={{ position: 'relative' }}>
           <AlbumArt url={album.cover} label={album.title} />
+          {isNew && (
+            <span
+	aria-label="새로 추가됨"
+	style={{ position: 'absolute', top: -4, right: -4, width: 10, height: 10, borderRadius: '50%', background: 'var(--color-accent)', boxShadow: '0 0 0 2px var(--color-bg)' }}
+            />
+          )}
           {copySource && (
             <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
           )}
@@ -696,6 +710,8 @@ interface SharedProps {
   // are no-ops on the drag path (desktop keeps using DnD).
   openAlbumSheet: (a: AlbumSheet) => void
   openBucketSheet: (b: BoardBucket) => void
+  // FEAT-my-buckit — itemIds with a live transient 'NEW' dot (just drag-added).
+  newItemIds: Set<string>
 }
 
 // A pending album action sheet — carries enough to drive the exact ops the drop
@@ -704,8 +720,8 @@ interface AlbumSheet { album: BoardAlbum, bucketId: string, copySource: boolean,
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
@@ -802,6 +818,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	score={bucket.isDone && a.itemType === 'album' ? (ratings.get(a.albumId ?? '') ?? null) : null}
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
 	fromLib={isLib}
+	isNew={newItemIds.has(a.itemId)}
 	onOpen={onOpen}
 	draggingId={draggingId}
 	setDraggingId={setDraggingId}
@@ -1564,6 +1581,63 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     return []
   })
   const [trashOpen, setTrashOpen] = useState(false)
+  // FEAT-my-buckit — a transient 'NEW' dot on items that just entered a bucket via
+  // a genuine drag (copy-in or cross-bucket move-in; NOT a same-bucket reorder).
+  // In-memory only — no backend, no localStorage. Each id self-clears after 8s, or
+  // ALL clear when the Pocket tray collapses (whichever first), via the pb:closed
+  // window event from the tray island (the board can't read the tray's open state
+  // cross-island). Functional setState throughout; timers cleared on unmount.
+  const [newItemIds, setNewItemIds] = useState<Set<string>>(() => new Set())
+  const newTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const markNew = useCallback((id: string) => {
+    setNewItemIds((prev) => {
+      const n = new Set(prev)
+      n.add(id)
+      return n
+    })
+    const prevT = newTimers.current.get(id)
+    if (prevT)
+      clearTimeout(prevT)
+    const t = setTimeout(() => {
+      setNewItemIds((prev) => {
+        if (!prev.has(id))
+          return prev
+        const n = new Set(prev)
+        n.delete(id)
+        return n
+      })
+      newTimers.current.delete(id)
+    }, 8000)
+    newTimers.current.set(id, t)
+  }, [])
+  // Clear every marker + timer on tray collapse and on unmount.
+  useEffect(() => {
+    const timers = newTimers.current
+    const onClosed = () => {
+      setNewItemIds(new Set())
+      timers.forEach(clearTimeout)
+      timers.clear()
+    }
+    window.addEventListener(PB_CLOSED_EVENT, onClosed)
+    return () => {
+      window.removeEventListener(PB_CLOSED_EVENT, onClosed)
+      timers.forEach(clearTimeout)
+      timers.clear()
+    }
+  }, [])
+  // Mirror the Pocket tray's open state for the 🪣 Pocket toggle's aria-expanded.
+  // The tray lives in a separate island (layout.astro) so the board can't read its
+  // `open` directly; PocketBuckitInner broadcasts pb:open-state on every transition.
+  const [pocketOpen, setPocketOpen] = useState(false)
+  useEffect(() => {
+    const onOpenState = (e: Event) => {
+      const detail = (e as CustomEvent<PbOpenStateDetail>).detail
+      if (detail)
+        setPocketOpen(detail.open)
+    }
+    window.addEventListener(PB_OPEN_STATE_EVENT, onOpenState)
+    return () => window.removeEventListener(PB_OPEN_STATE_EVENT, onOpenState)
+  }, [])
   const [pendingBucketDelete, setPendingBucketDelete] = useState<{ id: string, name: string } | null>(null)
   // Touch fallback (coarse pointers): the single open album / bucket action
   // sheet, and a pending bucket-picker spawned from a sheet (carries the chosen
@@ -1816,12 +1890,16 @@ ids.push(a.albumId)
             const i = dst.albums.findIndex(a => a.itemId === tempId)
             if (i < 0)
               return t
-            if (conflict || !item)
+            if (conflict || !item) {
               dst.albums.splice(i, 1) // already present elsewhere / no row → drop the temp
-            else
+            }
+            else {
               dst.albums[i] = item // promote temp → canonical (real itemId)
+            }
             return t
           })
+          if (!conflict && item)
+            markNew(item.itemId) // tag the FINAL server id; hoisted out of the updater (keep setState updaters pure)
         })
         .catch(() => void refresh())
     },
@@ -1854,6 +1932,10 @@ ids.push(a.albumId)
       else
         dst.albums.splice(bi, 0, moved)
       setTree(t)
+      // Tag ONLY a genuine cross-bucket move-in. Same-bucket (fromBucketId ===
+      // toBucketId) is the reorder path and must NOT get a NEW dot.
+      if (fromBucketId !== toBucketId)
+        markNew(itemId)
       const payload = fromBucketId === toBucketId ?
         [{ id: toBucketId, item_ids: dst.albums.map(a => a.itemId) }] :
         [{ id: fromBucketId, item_ids: src.albums.map(a => a.itemId) }, { id: toBucketId, item_ids: dst.albums.map(a => a.itemId) }]
@@ -2096,7 +2178,7 @@ ids.push(a.albumId)
   if (error && tree == null) {
     return (
       <div>
-        <SectionTitle title="평론 버킷" />
+        <SectionTitle title="My Buckit" />
         <div className="lf-panel" style={{ padding: 32, textAlign: 'center' }}>
           <span className="lf-meta">버킷을 불러오지 못했습니다</span>
         </div>
@@ -2106,15 +2188,25 @@ ids.push(a.albumId)
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
 
   return (
     <div>
       <SectionTitle
 	kicker={tree == null ? '불러오는 중…' : `${normalTree.length}개 버킷`}
-	title="평론 버킷"
+	title="My Buckit"
 	right={(
           <div style={{ display: 'flex', gap: 8 }}>
+            <button
+	type="button"
+	className="lf-btn"
+	aria-label="Pocket Buckit 열기/닫기"
+	aria-expanded={pocketOpen}
+	title="Pocket Buckit 열기/닫기"
+	onClick={() => window.dispatchEvent(new CustomEvent(PB_TOGGLE_EVENT))}
+            >
+              🪣 Pocket
+            </button>
             <button type="button" className="lf-btn" onClick={() => setTrashOpen(true)}>
               🗑 휴지통
               {trash.length ? ` · ${trash.length}` : ''}
