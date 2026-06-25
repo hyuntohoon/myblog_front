@@ -824,6 +824,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/playback/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve Playback Uri
+         * @description Map a catalog DB id → a Spotify URI (spotify:album|track:<spotify_id>) for the Web
+         *     Playback SDK (FEAT-spotify-streaming-playback Step 2). Unlike /spotify-token this is
+         *     edge_guard-only — NO Cognito JWT, NO dedicated infra/apigateway.tf route: spotify_id is
+         *     a public identifier and the catalog is otherwise edge_guard-only (unified search, bucket
+         *     reads), so there is nothing to JWT-gate. rule #9 holds: a direct catalog DB read, never a
+         *     synchronous Spotify content call. Bad type → 422 (Literal); unknown/empty id → 404.
+         */
+        get: operations["resolve_playback_uri_api_playback_resolve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/playback/spotify-token": {
         parameters: {
             query?: never;
@@ -1410,6 +1435,11 @@ export interface components {
             track_name?: string | null;
             /** Year */
             year: number;
+        };
+        /** PlaybackResolveResponse */
+        Backend_PlaybackResolveResponse: {
+            /** Uri */
+            uri: string;
         };
         /** PostDetailResponse */
         Backend_PostDetailResponse: {
@@ -4013,6 +4043,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_playback_uri_api_playback_resolve_get: {
+        parameters: {
+            query: {
+                type: "album" | "track";
+                id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PlaybackResolveResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };

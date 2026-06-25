@@ -4,8 +4,8 @@
 //   - v1 streaming token is SINGLE-OWNER, SERVER-MINTED. The browser asks the
 //     backend (`GET /api/playback/spotify-token`, Cognito-JWT) for a short-lived
 //     access token minted from the owner's `streaming_refresh_token` in the
-//     `myblog/spotify` secret. The route is 503-DORMANT until the owner
-//     provisions that key, so only the dormant path is reachable today.
+//     `myblog/spotify` secret. (Provisioned 2026-06-25 — the route now returns 200;
+//     the live play path below is active for the owner on a Premium session.)
 //   - The SDK script + the token mint are LAZY: they fire ONLY inside an explicit
 //     `requestPlayback()` call (a real play action). Importing this module, the
 //     tray mount, an anonymous visitor, and a public review page must NEVER pull
@@ -21,9 +21,11 @@ import type { components } from '@lib/api.gen'
 import { getAuthHeader, isLoggedIn } from '@lib/auth'
 
 type SpotifyStreamingTokenResponse = components['schemas']['Backend_SpotifyStreamingTokenResponse']
+type PlaybackResolveResponse = components['schemas']['Backend_PlaybackResolveResponse']
 
 const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string | undefined
 const TOKEN_PATH = '/api/playback/spotify-token'
+const RESOLVE_PATH = '/api/playback/resolve'
 const SDK_SRC = 'https://sdk.scdn.co/spotify-player.js'
 
 // ── provider-neutral identity ────────────────────────────────────────────────
@@ -174,9 +176,12 @@ async function ensureConnectedDevice(token: string): Promise<string> {
     const p = new Spotify.Player({
       name: 'Buckit',
       volume: 0.8,
-      // TODO(live path): the player closes over this token; when the live path is
-      // provisioned, re-mint via getStreamingToken() here so it survives expires_in.
-      getOAuthToken: cb => cb(token),
+      // The SDK calls this on connect AND whenever it needs a fresh token (near expiry /
+      // on 401), so re-mint via getStreamingToken() — which caches with a 5s skew, so
+      // steady-state calls are cheap — to survive a session longer than expires_in
+      // (~3600s, OQ3). On a re-mint failure, best-effort hand back the initial token (if it
+      // has itself expired the SDK call still fails, but that's no worse than not answering).
+      getOAuthToken: cb => void getStreamingToken().then(r => cb(r.ok ? r.token : token)),
     })
     p.addListener('ready', ({ device_id }) => {
       if (device_id) {
@@ -185,24 +190,35 @@ async function ensureConnectedDevice(token: string): Promise<string> {
         resolve(device_id)
       }
     })
-    p.addListener('initialization_error', ({ message }) => reject(new Error(message ?? 'init error')))
-    p.addListener('authentication_error', ({ message }) => reject(new Error(message ?? 'auth error')))
-    p.addListener('account_error', ({ message }) => reject(new Error(message ?? 'account error')))
+    p.addListener('initialization_error', () => reject(new Error('init_error')))
+    p.addListener('authentication_error', () => reject(new Error('auth_error')))
+    p.addListener('account_error', () => reject(new Error('account_error')))
     void p.connect()
   })
 }
 
 /**
- * SEAM — resolve a provider-neutral target to a Spotify URI at play time.
+ * SEAM — resolve a provider-neutral target to a Spotify URI at play time
+ * (FEAT-spotify-streaming-playback Step 2/3).
  *
- * NOT yet implementable: the bucket-item / tracklist shapes surface `albumId` /
- * `trackId` (DB ids) but NO Spotify URI or ISRC, so there is no provider id to
- * play. A real implementation needs a backend/Spotify-search resolve step that
- * does not exist yet. Kept explicit (rather than faked) so the dependency is
- * visible; reached only after a live token, so it never fires in the dormant v1.
+ * Both ▶ sites pass only a DB id, so this calls the backend resolve endpoint
+ * (`GET /api/playback/resolve?type=&id=` → `{ uri }`), which reads the catalog's stored
+ * `spotify_id` (a direct DB read, no Spotify search). It is an edge_guard-only endpoint
+ * (CloudFront injects x-origin-verify); a plain fetch — NOT `apiFetch` — so a play click
+ * never triggers the 401→`goLogin` redirect (matches `getStreamingToken`).
  */
-async function resolveProviderUri(_target: PlaybackTarget): Promise<string> {
-  throw new Error('provider-uri-resolution-not-implemented')
+async function resolveProviderUri(target: PlaybackTarget): Promise<string> {
+  if (!BASE)
+    throw new Error('resolve-no-base')
+  const id = target.kind === 'album' ? target.albumId : target.trackId
+  const url = `${BASE}${RESOLVE_PATH}?type=${target.kind}&id=${encodeURIComponent(id)}`
+  const res = await fetch(url, { headers: { ...getAuthHeader() } })
+  if (!res.ok)
+    throw new Error(`resolve-failed-${res.status}`)
+  const body = (await res.json()) as PlaybackResolveResponse
+  if (!body?.uri)
+    throw new Error('resolve-empty')
+  return body.uri
 }
 
 const STATUS_MESSAGE: Record<Exclude<StreamingStatus, 'ready'>, string> = {
@@ -228,31 +244,52 @@ export async function requestPlayback(target: PlaybackTarget): Promise<PlaybackO
   if (!tok.ok)
     return { status: tok.status, message: messageFor(tok.status) }
 
-  // Live-token path (future-ready; unreachable until the owner provisions the
-  // `streaming_refresh_token`). Lazy SDK load + device connect happen only here.
+  // Live-token path. Lazy SDK load + device connect happen only here (post Step 1 the
+  // token route returns 200, so this is now reachable for the owner on a Premium session).
   let device: string
   try {
     device = await ensureConnectedDevice(tok.token)
   }
-  catch {
-    return { status: 'unsupported', message: messageFor('unsupported') }
+  catch (e) {
+    // Only account_error (non-Premium — the Web Playback SDK requires Premium) maps to
+    // 'unsupported' (the Premium message). auth_error (bad token), init_error (device init),
+    // and an SDK-script load failure are transient/unknown → 'error', so a Premium user on a
+    // flaky network is never wrongly told they need a Premium account. Both distinct from
+    // dormant (the 503 provisioning state, short-circuited above).
+    const reason = e instanceof Error ? e.message : ''
+    const status: Exclude<StreamingStatus, 'ready'> = reason === 'account_error' ? 'unsupported' : 'error'
+    return { status, message: messageFor(status) }
   }
 
+  let uri: string
   try {
-    const uri = await resolveProviderUri(target)
-    await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${encodeURIComponent(device)}`, {
+    uri = await resolveProviderUri(target)
+  }
+  catch {
+    // No resolvable Spotify id for this item (resolve 404) or the resolve call failed —
+    // distinct from dormant (a provisioning state, already short-circuited above).
+    return { status: 'unsupported', message: '이 항목은 Spotify에서 재생할 수 없어요.' }
+  }
+
+  let playRes: Response
+  try {
+    playRes = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${encodeURIComponent(device)}`, {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${tok.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(target.kind === 'track' ? { uris: [uri] } : { context_uri: uri }),
     })
-    return { status: 'ready', message: '재생을 시작했어요.' }
   }
   catch {
-    // Live token, but the provider-URI resolve seam (resolveProviderUri) isn't
-    // built yet — no Spotify URI/ISRC is surfaced on items. Distinct wording from
-    // the 503 dormant so a future PROVISIONED run isn't misread as a token bug.
-    return { status: 'dormant', message: '재생 연결을 준비 중이에요. (트랙 식별 기능은 다음 단계)' }
+    return { status: 'error', message: messageFor('error') }
   }
+  // 403/404 from the play call = restriction or the track is unavailable in the account's
+  // market (OQ5) — surface a clear notice rather than a false 'started'.
+  if (!playRes.ok) {
+    if (playRes.status === 403 || playRes.status === 404)
+      return { status: 'unsupported', message: '이 트랙은 현재 계정/지역에서 재생할 수 없어요.' }
+    return { status: 'error', message: messageFor('error') }
+  }
+  return { status: 'ready', message: '재생을 시작했어요.' }
 }
 
 /** Tear down the connected player + clear the in-memory token/device caches. */
