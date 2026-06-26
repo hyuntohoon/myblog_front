@@ -19,7 +19,10 @@ import { listBuckets } from '@lib/buckets'
 const KEY_PREFIX = 'pb:cache:buckets:'
 // SWR window: within this, a navigation reuses the cache with no network call; past it
 // the next read revalidates in the background (the stale tree still paints immediately).
-const DEFAULT_STALE_MS = 30_000
+// 5 min (was 30s): normal MPA browsing reused the sessionStorage tree instead of
+// refetching the full bucket tree (the heaviest DB read) on nearly every navigation,
+// which kept Neon's auto-suspending compute awake. Tray content is not latency-sensitive.
+const DEFAULT_STALE_MS = 300_000
 
 interface CacheBlob { tree: BoardBucket[], fetchedAt: number }
 
