@@ -20,13 +20,13 @@
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import type { PbDndStartDetail, PbOpenStateDetail } from '@lib/pocketBuckit/events'
+import type { PbBoardDndStartDetail, PbBoardDropDetail, PbDndStartDetail, PbOpenStateDetail } from '@lib/pocketBuckit/events'
 import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
-import { PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
+import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_BOARD_DROP_EVENT, PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
@@ -606,11 +606,27 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
           e.dataTransfer.effectAllowed = copySource ? 'copy' : (fromLib ? 'copyMove' : 'move')
           setDraggingId(album.itemId)
           setDragKind('album')
+          // FEAT-pocket-buckit-viewers Track A — REVERSE of Step 6: hand this board
+          // member's drag to the Pocket island (separate React root) so a Pocket target
+          // (tray chip / open drawer) can preview the drop via the General/Artist accept
+          // gate. The board keeps the live `dnd`; on drop the Pocket target fires
+          // PB_BOARD_DROP back here and routeAlbumDrop runs the actual add/expand.
+          if (dnd) {
+            window.dispatchEvent(new CustomEvent<PbBoardDndStartDetail>(PB_BOARD_DND_START_EVENT, {
+              detail: {
+                srcItemType: dnd.srcItemType ?? 'album',
+                albumId: dnd.albumId ?? null,
+                trackId: dnd.trackId ?? null,
+                artistId: dnd.artistId ?? null,
+              },
+            }))
+          }
         }}
 	onDragEnd={() => {
           dnd = null
           setDraggingId(null)
           setDragKind(null)
+          window.dispatchEvent(new CustomEvent(PB_BOARD_DND_END_EVENT))
         }}
 	onClick={() => {
           // FEAT-my-buckit-artist: an artist member navigates to its /artist/[id]
@@ -767,6 +783,50 @@ interface AlbumSheet { album: BoardAlbum, bucketId: string, copySource: boolean,
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
+// FEAT-pocket-buckit-viewers Track A — route a member/bucket drop onto a target bucket
+// using the board's ops. The SINGLE source of drop semantics: the BucketCard onDrop AND
+// the reverse-DnD PB_BOARD_DROP listener both call it, so a board member dropped on a
+// Pocket target (tray chip / open drawer) behaves IDENTICALLY to dropping it on the board
+// card — General add/move, Artist source-expansion (album/track → credited artists), the
+// Spotify-library copy/guard, and bucket-into-bucket — all reused verbatim, no fork.
+function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: Ops): void {
+  const isLib = target.kind === SLIB_KIND
+  // The sync-owned library bucket holds only albums — a track/null-album row has nothing
+  // to reconcile against Spotify, so reject it.
+  if (isLib && it.kind === 'album' && !it.albumId)
+    return
+  // Artist bucket: an artist member moves/adds in; an album/track SOURCE expands into its
+  // credited artists (the source row itself is never stored). A non-artist-bearing source
+  // no-ops (it is rejected at drag-over upstream, so it never reaches here in practice).
+  if (target.type === 'artist' && it.kind === 'album') {
+    if (it.srcItemType === 'artist') {
+      if (it.itemId && it.fromBucketId && it.fromBucketId !== target.id)
+        ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
+    }
+    else if (it.albumId) {
+      ops.expandSource(target.id, { albumId: it.albumId })
+    }
+    else if (it.trackId) {
+      ops.expandSource(target.id, { trackId: it.trackId })
+    }
+    return
+  }
+  // COPY when dropping into the library bucket, or the source is a copy/library item;
+  // otherwise a normal move/add. Bucket-into-bucket guarded against self / cycle.
+  const copyIn = isLib || it.copy || it.fromLib
+  if (it.kind === 'album' && copyIn && it.albumId) {
+    ops.copyAlbum(it.albumId, target.id)
+  }
+  else if (it.kind === 'album' && it.itemId && it.fromBucketId) {
+    ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
+  }
+  else if (it.kind === 'bucket' && it.bucketId && it.bucketId !== target.id) {
+    const src = findBucket(ops.tree, it.bucketId)
+    if (!(src && subtreeHas(src, target.id)))
+      ops.moveBucketInto(it.bucketId, target.id)
+  }
+}
+
 function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
   const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
   const [editing, setEditing] = useState(false)
@@ -845,41 +905,10 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
     setDropTarget(null)
     if (!it)
       return
-    // The sync-owned Spotify-library bucket holds only albums. A track member
-    // (item_type='track' → album_id NULL) has nothing to reconcile against Spotify,
-    // so reject the drop rather than leave a null-album row in the library bucket.
-    if (isLib && it.kind === 'album' && !it.albumId) {
-      dnd = null
-      return
-    }
-    // FEAT-my-buckit-artist: an Artist bucket routes the drop by source — an artist
-    // member moves/adds in; an album/track SOURCE expands into its credited artists
-    // (the source row itself is never stored). A non-artist-bearing source was
-    // already rejected at drag-over (canAcceptAlbumDrag).
-    if (bucket.type === 'artist' && it.kind === 'album') {
-      if (it.srcItemType === 'artist') {
-        if (it.itemId && it.fromBucketId && it.fromBucketId !== bucket.id)
-          ops.insertAlbum(it.itemId, it.fromBucketId, bucket.id, null)
-      }
-      else if (it.albumId) {
-        ops.expandSource(bucket.id, { albumId: it.albumId })
-      }
-      else if (it.trackId) {
-        ops.expandSource(bucket.id, { trackId: it.trackId })
-      }
-      dnd = null
-      return
-    }
-    // COPY when: dropping INTO the library bucket (req 1), or the dragged item is a
-    // copy source (recent strip) or a library item dropped elsewhere (req 5).
-    // Otherwise a normal move/reorder.
-    const copyIn = isLib || it.copy || it.fromLib
-    if (it.kind === 'album' && copyIn && it.albumId)
-      ops.copyAlbum(it.albumId, bucket.id)
-    else if (it.kind === 'album' && it.itemId && it.fromBucketId)
-      ops.insertAlbum(it.itemId, it.fromBucketId, bucket.id, null)
-    else if (it.kind === 'bucket' && it.bucketId && canAcceptBucket())
-      ops.moveBucketInto(it.bucketId, bucket.id)
+    // Route via the shared helper so the board card and the reverse-DnD PB_BOARD_DROP
+    // listener apply IDENTICAL semantics (library copy/guard, Artist source-expansion,
+    // General add/move, bucket-into-bucket). drag-over already gated acceptance.
+    routeAlbumDrop(bucket, it, ops)
     dnd = null
   }
 
@@ -1679,6 +1708,8 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   // cross-island). Functional setState throughout; timers cleared on unmount.
   const [newItemIds, setNewItemIds] = useState<Set<string>>(() => new Set())
   const newTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  // FEAT-pocket-buckit-viewers Track A — latest ops/tree for the reverse-DnD listener.
+  const opsRef = useRef<Ops | null>(null)
   const markNew = useCallback((id: string) => {
     setNewItemIds((prev) => {
       const n = new Set(prev)
@@ -1751,6 +1782,27 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
       window.removeEventListener(PB_DND_START_EVENT, onDndStart)
       window.removeEventListener(PB_DND_END_EVENT, onDndEnd)
     }
+  }, [])
+  // FEAT-pocket-buckit-viewers Track A — REVERSE of Step 6: a board member dropped on a
+  // Pocket target (tray chip / open drawer). The Pocket island can't run the board's
+  // ops, so it hands the chosen target bucket back here; the board still holds the live
+  // `dnd` (HTML5 `dragend` fires AFTER `drop`), so routeAlbumDrop applies the exact
+  // add/move/expand semantics of a board-card drop. opsRef keeps the latest tree+ops
+  // without re-subscribing the listener each render.
+  useEffect(() => {
+    const onBoardDrop = (e: Event) => {
+      const d = (e as CustomEvent<PbBoardDropDetail>).detail
+      const it = dnd
+      const ops = opsRef.current
+      if (!d || !it || !ops)
+        return
+      const target = findBucket(ops.tree, d.targetBucketId)
+      if (target)
+        routeAlbumDrop(target, it, ops)
+      dnd = null
+    }
+    window.addEventListener(PB_BOARD_DROP_EVENT, onBoardDrop)
+    return () => window.removeEventListener(PB_BOARD_DROP_EVENT, onBoardDrop)
   }, [])
   const [pendingBucketDelete, setPendingBucketDelete] = useState<{ id: string, name: string } | null>(null)
   // Touch fallback (coarse pointers): the single open album / bucket action
@@ -2223,6 +2275,9 @@ ids.push(a.albumId)
       setResearchTarget({ albumId, title })
     },
   }
+  // Keep the reverse-DnD (PB_BOARD_DROP) listener reading the LIVE tree + ops without
+  // re-subscribing every render (ops is a fresh object per render).
+  opsRef.current = ops
 
   // Drop an album on the trash dock: optimistic splice + DELETE, then stash a
   // recoverable entry. Restore re-adds it via the normal item route.

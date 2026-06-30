@@ -334,3 +334,16 @@
   .pb-scope .tgt:hover, .pb-scope .lchip:hover, .pb-scope .schip:hover,
   .pb-scope .ltray-f2l .lchip:hover { transform: none; }
 }
+
+/* FEAT-pocket-buckit-viewers Track A — reverse-DnD drop affordance on a tray chip.
+   `data-droppable` = a board member is in flight and this bucket accepts it (dashed hint);
+   `data-drophot` = it is the hovered drop target (solid ring). --chip-accent set inline. */
+.pb-scope [data-chip-id][data-droppable] {
+  outline: 1.5px dashed color-mix(in srgb, var(--chip-accent, var(--color-accent)) 55%, transparent);
+  outline-offset: 3px; border-radius: 7px;
+}
+.pb-scope [data-chip-id][data-drophot] {
+  outline: 2px solid var(--chip-accent, var(--color-accent));
+  outline-offset: 3px; border-radius: 7px;
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--chip-accent, var(--color-accent)) 18%, transparent);
+}

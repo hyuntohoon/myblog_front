@@ -27,6 +27,12 @@ export interface PocketLeaf {
   n: number
   color: string | null
   kind: string
+  /**
+   * FEAT-pocket-buckit-viewers Track A — the bucket TYPE ('general' | 'artist'), carried
+   * so a tray chip can run the reverse-DnD accept-gate (an Artist chip rejects a non-artist
+   * source) without a tree lookup. Mirrors `BoardBucket.type`.
+   */
+  type: string
   pinned?: boolean
   ordered?: boolean
   processing?: boolean
@@ -81,6 +87,7 @@ function toLeaf(b: BoardBucket, path: string[]): PocketLeaf {
     n: b.albums.length,
     color: b.color,
     kind: b.kind,
+    type: b.type,
     pinned: path.length === 1,
     processing: b.researchMode !== 'off',
     recent: b.albums.slice(0, 3).map(a => ({ itemId: a.itemId, itemType: a.itemType, albumId: a.albumId, title: a.title, cover: a.cover })),

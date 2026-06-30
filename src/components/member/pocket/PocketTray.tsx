@@ -10,13 +10,15 @@
 import type { CSSProperties } from 'react'
 import type { BoardAlbum } from '@lib/buckets'
 import type { DrawerPos } from './PocketBuckitProvider'
+import type { PbBoardDropDetail } from '@lib/pocketBuckit/events'
 import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import type { PlaybackTarget } from '@lib/spotifyPlayback'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
+import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
-import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
+import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { requestPlayback } from '@lib/spotifyPlayback'
 import { usePocket } from './PocketBuckitProvider'
 
@@ -26,6 +28,13 @@ const sc = (n: number) => `calc(${n}px * ${SCALE})`
 
 function accentFor(leaf: PocketLeaf): string {
   return leaf.color || 'var(--color-accent)'
+}
+
+// FEAT-pocket-buckit-viewers Track A — a board member was dropped on a Pocket target.
+// The Pocket island can't run the board's ops, so hand the target bucket back to the board
+// (which still holds the live `dnd`); its PB_BOARD_DROP listener runs the real add/expand.
+function fireBoardDrop(targetBucketId: string): void {
+  window.dispatchEvent(new CustomEvent<PbBoardDropDetail>(PB_BOARD_DROP_EVENT, { detail: { targetBucketId } }))
 }
 
 // FEAT-pocket-buckit Step 5 — a member's kind label, for safely rendering a
@@ -283,6 +292,9 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
   const dragRef = useRef<{ dx: number, dy: number } | null>(null)
   const [pos, setPos] = useState<DrawerPos | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // FEAT-pocket-buckit-viewers Track A — reverse-DnD drop highlight (a board member
+  // hovering this drawer). The accept-gate mirrors the board's General/Artist rule.
+  const [dropHot, setDropHot] = useState(false)
   const posRef = useRef<DrawerPos | null>(null)
   posRef.current = pos // mirror so the resize handler reads fresh pos without an impure updater
   const seed = useRef({ index, inspect: design.inspect }) // captured at mount for the cascade
@@ -370,10 +382,38 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
     // focus order: each open drawer stacks above the tray; the focused one wins.
     zIndex: `calc(var(--z-pocket, 70) + 2 + ${z})`,
     '--bucket-accent': accent,
+    ...(dropHot ? { outline: '2px solid var(--bucket-accent)', outlineOffset: sc(2), boxShadow: '0 0 0 6px color-mix(in srgb, var(--bucket-accent) 16%, transparent)' } : null),
   } as CSSProperties
 
   return (
-    <div ref={panelRef} className={`${cls} pb-drawer-in`} style={style} role="dialog" aria-label={`${bucket.name} 점검`} onPointerDownCapture={() => focusDrawer(bucketId)}>
+    <div
+	ref={panelRef}
+	className={`${cls} pb-drawer-in`}
+	style={style}
+	role="dialog"
+	aria-label={`${bucket.name} 점검`}
+	onPointerDownCapture={() => focusDrawer(bucketId)}
+	// FEAT-pocket-buckit-viewers Track A — accept a board member dropped on this drawer
+	// (a Pocket drop target). Gate mirrors the board's General/Artist rule; the board
+	// runs the real add/expand via fireBoardDrop → PB_BOARD_DROP.
+	onDragOver={(e) => {
+        if (!boardDragAccepts(bucket.type))
+          return
+        e.preventDefault()
+        setDropHot(true)
+      }}
+	onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node))
+          setDropHot(false)
+      }}
+	onDrop={(e) => {
+        if (!boardDragAccepts(bucket.type))
+          return
+        e.preventDefault()
+        setDropHot(false)
+        fireBoardDrop(bucket.id)
+      }}
+    >
       <div className="pb-dhead" onPointerDown={onHeadDown} onPointerMove={onHeadMove} onPointerUp={onHeadUp}>
         <span className="pb-dhandle">
           <span className="pb-dgrip" aria-hidden="true">
@@ -504,6 +544,10 @@ export function PocketTray() {
   const pendingFocus = useRef<string | null>(null)
   const [drag, setDrag] = useState<{ id: string, overId: string | null, place: 'before' | 'after' } | null>(null)
   const [liveMsg, setLiveMsg] = useState('')
+  // FEAT-pocket-buckit-viewers Track A — reverse DnD: the live board drag (so chips can hint
+  // droppability) + which chip a board member is hovering (the drop highlight).
+  const boardDrag = useBoardDnd()
+  const [dropOverId, setDropOverId] = useState<string | null>(null)
 
   // a11y: after a keyboard reorder, return focus to the moved chip once it re-renders.
   useEffect(() => {
@@ -679,6 +723,10 @@ export function PocketTray() {
   const rail = capped.map((leaf) => {
     const active = isDrawerOpen(leaf.id) // its drawer is open → accent ring (several at once is fine)
     const isDragging = drag?.id === leaf.id
+    // reverse DnD: this chip can receive the in-flight board member (dashed hint), and is
+    // currently the hovered drop target (solid highlight).
+    const droppable = !!boardDrag && boardDragAccepts(leaf.type)
+    const dropHot = dropOverId === leaf.id
     const chip = light ?
       (sticker ?
           <StickerChip leaf={leaf} active={active} onOpen={() => openChip(leaf.id)} bind={bindFor(leaf)} /> :
@@ -687,7 +735,32 @@ export function PocketTray() {
     return (
       <Fragment key={leaf.id}>
         {drag?.overId === leaf.id && drag.place === 'before' && <span className="pb-drop-line" />}
-        <span data-chip-id={leaf.id} className={isDragging ? 'pb-chip-drag' : undefined} style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', alignItems: 'flex-end', touchAction: canReorder ? 'none' : undefined }}>
+        <span
+	data-chip-id={leaf.id}
+	data-droppable={droppable || undefined}
+	data-drophot={dropHot || undefined}
+	className={isDragging ? 'pb-chip-drag' : undefined}
+	style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', alignItems: 'flex-end', touchAction: canReorder ? 'none' : undefined, '--chip-accent': accentFor(leaf) } as CSSProperties}
+	// FEAT-pocket-buckit-viewers Track A — a tray chip is a reverse-DnD drop target. Gate
+	// mirrors the board's General/Artist rule; the board runs the real add/expand.
+	onDragOver={(e) => {
+            if (!boardDragAccepts(leaf.type))
+              return
+            e.preventDefault()
+            setDropOverId(leaf.id)
+          }}
+	onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node))
+              setDropOverId(prev => (prev === leaf.id ? null : prev))
+          }}
+	onDrop={(e) => {
+            if (!boardDragAccepts(leaf.type))
+              return
+            e.preventDefault()
+            setDropOverId(null)
+            fireBoardDrop(leaf.id)
+          }}
+        >
           {chip}
           {editMode && (
             <button
