@@ -188,13 +188,15 @@ export function useResearch(albumId: string | null, opts: { auto?: boolean } = {
 			return
 		let n = 0
 		const iv = setInterval(() => {
+			if (document.hidden)
+				return // pause polling while the tab is backgrounded (no DB hit)
 			n += 1
-			if (n > 150) {
+			if (n > 30) { // ~10 min safety wall at 20s — a row wedged in 'running' can't poll forever
 				clearInterval(iv)
 				return
 			}
 			void load(albumId, true)
-		}, 4000)
+		}, 20000)
 		return () => clearInterval(iv)
 	}, [albumId, status])
 
@@ -227,6 +229,10 @@ export function useResearchStatusMap(albumIds: string[]): Record<string, Researc
 		let alive = true
 		let timer: ReturnType<typeof setTimeout> | null = null
 		const tick = async () => {
+			if (document.hidden) { // pause board polling while backgrounded; re-check in 20s (no DB hit)
+				timer = setTimeout(() => void tick(), 20000)
+				return
+			}
 			let m: Record<string, ResearchStatus> | null = null
 			try {
 				m = await fetchResearchStatusBatch(ids)
@@ -241,7 +247,7 @@ export function useResearchStatusMap(albumIds: string[]): Record<string, Researc
 			// Keep polling (one request) only while the poller is still working a row.
 			const busy = m ? Object.values(m).some(s => s === 'queued' || s === 'running') : false
 			if (busy)
-				timer = setTimeout(() => void tick(), 4000)
+				timer = setTimeout(() => void tick(), 20000)
 		}
 		void tick()
 		return () => {
