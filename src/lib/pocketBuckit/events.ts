@@ -50,3 +50,43 @@ export interface PbDndStartDetail {
   artistId: string | null
   srcItemType: string
 }
+
+/**
+ * Board → tray (FEAT-pocket-buckit-viewers Track A — the REVERSE of Step 6: a board
+ * My Buckit member dragged onto a Pocket target). The mirror of {@link PB_DND_START_EVENT}:
+ * here the board's `AlbumChip` is the drag source and the Pocket island (tray chips +
+ * open drawers) is the drop target. The board already populates its own module-level
+ * `dnd` on `dragstart`; this event hands the SAME payload to the Pocket island so a
+ * Pocket drop target can preview the drop (apply the General/Artist accept-gate for
+ * highlighting) — the Pocket island can't read the board's `dnd`. The actual mutation
+ * is NOT done here: on drop the Pocket target fires {@link PB_BOARD_DROP_EVENT} back to
+ * the board, which runs its existing `ops.*` routing against the board's live `dnd`, so
+ * membership / General / Artist / source-expansion semantics stay the board's verbatim.
+ */
+export const PB_BOARD_DND_START_EVENT = 'pb:board-dnd-start'
+
+/** Board → tray: the board-originated drag ended (drop or cancel) — clear the Pocket mirror. */
+export const PB_BOARD_DND_END_EVENT = 'pb:board-dnd-end'
+
+/** detail shape for {@link PB_BOARD_DND_START_EVENT} — mirrors the board's `DndItem`. */
+export interface PbBoardDndStartDetail {
+  /** the source member's item type ('album' | 'track' | 'artist' | …) — drives the accept-gate. */
+  srcItemType: string
+  albumId: string | null
+  trackId: string | null
+  artistId: string | null
+}
+
+/**
+ * Tray → board (FEAT-pocket-buckit-viewers Track A): a board-originated drag was dropped
+ * on a Pocket target. The board (still holding the live `dnd` — `dragend` fires AFTER
+ * `drop`) runs its existing bucket-drop routing for `detail.targetBucketId` via the
+ * shared `dropOnBucket`, so the add/move/expand is identical to dropping on a board card.
+ */
+export const PB_BOARD_DROP_EVENT = 'pb:board-drop'
+
+/** detail shape for {@link PB_BOARD_DROP_EVENT}. */
+export interface PbBoardDropDetail {
+  /** the Pocket bucket the member was dropped on. */
+  targetBucketId: string
+}
