@@ -42,6 +42,7 @@ function fireBoardDrop(targetBucketId: string): void {
 // forward-compat fallback so a generalized row never renders blank).
 const ITEM_TYPE_LABEL: Record<string, string> = {
   track: '트랙',
+  artist: '아티스트',
   review: '평론',
   playback: '재생',
   snapshot: '스냅샷',
@@ -57,13 +58,46 @@ function playbackTargetFor(a: BoardAlbum): PlaybackTarget | null {
   return null
 }
 
-function Cover({ label, size }: { label: string, size: number }) {
+// FEAT-pocket-buckit-viewers Track B — `url` + `square` added for the Card Viewer
+// (board-style square cover). The site-wide global `.cover`/`.cover img` rules size the
+// image, so this stays self-contained off-/profile (no member.css dependency). List-mode
+// callers omit both and are unchanged.
+function Cover({ label, size, url, square }: { label: string, size: number, url?: string | null, square?: boolean }) {
+  const dim: CSSProperties = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: sc(size), height: sc(size) }
   return (
-    <div className="cover" style={{ width: sc(size), height: sc(size), borderRadius: sc(3) }}>
-      <span className="cover-ph" style={{ fontSize: sc(Math.max(11, size * 0.34)) }}>
-        {(label || '?').slice(0, 2)}
-      </span>
+    <div className="cover" style={{ ...dim, borderRadius: sc(3) }}>
+      {url ?
+        <img src={url} alt={label} loading="lazy" decoding="async" /> :
+        (
+            <span className="cover-ph" style={{ fontSize: sc(Math.max(11, size * 0.34)) }}>
+              {(label || '?').slice(0, 2)}
+            </span>
+          )}
     </div>
+  )
+}
+
+// FEAT-pocket-buckit-viewers Track B — the per-drawer viewer-toggle glyphs (list ⇄ card).
+function ListGlyph() {
+  return (
+    <svg width={sc(13)} height={sc(13)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <line x1="8" y1="6" x2="20" y2="6" />
+      <line x1="8" y1="12" x2="20" y2="12" />
+      <line x1="8" y1="18" x2="20" y2="18" />
+      <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="4" cy="18" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+function CardGlyph() {
+  return (
+    <svg width={sc(13)} height={sc(13)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="4" width="7" height="7" rx="1" />
+      <rect x="13" y="4" width="7" height="7" rx="1" />
+      <rect x="4" y="13" width="7" height="7" rx="1" />
+      <rect x="13" y="13" width="7" height="7" rx="1" />
+    </svg>
   )
 }
 
@@ -292,6 +326,10 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
   const dragRef = useRef<{ dx: number, dy: number } | null>(null)
   const [pos, setPos] = useState<DrawerPos | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // FEAT-pocket-buckit-viewers Track B — per-drawer (ephemeral) viewer toggle:
+  // 'list' = today's mini-drawer rows, 'card' = board-style square-cover member grid.
+  // Local to this panel instance (key={bucketId}), so two open drawers toggle apart.
+  const [viewMode, setViewMode] = useState<'list' | 'card'>('list')
   // FEAT-pocket-buckit-viewers Track A — reverse-DnD drop highlight (a board member
   // hovering this drawer). The accept-gate mirrors the board's General/Artist rule.
   const [dropHot, setDropHot] = useState(false)
@@ -374,6 +412,28 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
     void requestPlayback(target).then(o => setNotice(o.message))
   }
 
+  // FEAT-my-buckit-artist Step 6 / viewers Track B — a member is draggable onto a
+  // visible board bucket (Pocket→board). Shared by the list rows AND the Card Viewer
+  // tiles so the drag-out works in either viewer; the payload mirrors the board's
+  // AlbumChip DndItem so the board reuses its routing (move/expand) verbatim.
+  const dragBind = (a: BoardAlbum) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      e.dataTransfer.effectAllowed = 'move'
+      window.dispatchEvent(new CustomEvent(PB_DND_START_EVENT, {
+        detail: {
+          itemId: a.itemId,
+          fromBucketId: bucket.id,
+          albumId: a.albumId ?? null,
+          trackId: a.trackId ?? null,
+          artistId: a.artistId ?? null,
+          srcItemType: a.itemType,
+        },
+      }))
+    },
+    onDragEnd: () => window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT)),
+  })
+
   const cls = design.inspect === 'card' ? 'pb-inspect pb-inspect-card' : 'pb-inspect'
   const style: CSSProperties = {
     left: pos?.x ?? 16,
@@ -423,13 +483,77 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
           </span>
           {bucket.name}
         </span>
-        <button type="button" className="mono" style={{ fontSize: sc(11), border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-subtle)' }} onPointerDown={e => e.stopPropagation()} onClick={() => closeDrawer(bucketId)} aria-label="닫기">닫기 ✕</button>
+        <span style={{ display: 'flex', alignItems: 'center', gap: sc(6), flex: '0 0 auto' }} onPointerDown={e => e.stopPropagation()}>
+          {/* FEAT-pocket-buckit-viewers Track B — per-drawer Current ⇄ Card viewer toggle */}
+          <button
+	type="button"
+	className="pb-viewtoggle"
+	data-on={viewMode === 'card' || undefined}
+	onPointerDown={e => e.stopPropagation()}
+	onClick={() => setViewMode(m => (m === 'list' ? 'card' : 'list'))}
+	aria-pressed={viewMode === 'card'}
+	aria-label={viewMode === 'list' ? '카드 보기로 전환' : '목록 보기로 전환'}
+	title={viewMode === 'list' ? '카드 보기' : '목록 보기'}
+          >
+            {viewMode === 'list' ? <CardGlyph /> : <ListGlyph />}
+          </button>
+          <button type="button" className="mono" style={{ fontSize: sc(11), border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-subtle)' }} onPointerDown={e => e.stopPropagation()} onClick={() => closeDrawer(bucketId)} aria-label="닫기">닫기 ✕</button>
+        </span>
       </div>
       <div className="sans" style={{ fontSize: sc(11), color: 'var(--color-subtle)' }}>
 {bucket.albums.length}
 개 · 담기 · 최근 추가순
       </div>
       <div className="rule" style={{ margin: `${sc(10)} 0`, height: 1, background: 'color-mix(in srgb, var(--bucket-accent) 20%, var(--color-border))' }} />
+      {viewMode === 'card' ?
+        (
+        // FEAT-pocket-buckit-viewers Track B — Card Viewer: the same members as a board-style
+        // square-cover grid (album=cover, artist=square photo + 아티스트 badge). Reads the same
+        // provider `bucket.albums` as the list → any change (board, reverse DnD, edit −) repaints
+        // here too. No slice cap (open-Q 1 default); the scroll area holds a large bucket.
+        <div className="pb-cardgrid">
+          {bucket.albums.map((a) => {
+            const isArtist = a.itemType === 'artist'
+            const isAlbum = a.itemType === 'album'
+            const typeLabel = ITEM_TYPE_LABEL[a.itemType] ?? a.itemType
+            return (
+              <div
+	key={a.itemId}
+	className="pb-card"
+	data-artist={isArtist || undefined}
+	{...dragBind(a)}
+                // an artist member navigates to its /artist/[id] hub (mirrors the board);
+                // album/other members have no in-island detail surface → click is a no-op.
+	onClick={isArtist && a.artistId ? () => window.location.assign(`/artist/${a.artistId}`) : undefined}
+	title={isAlbum ? `${a.title} — ${a.artist}` : a.title}
+              >
+                <div style={{ position: 'relative' }}>
+                  <Cover label={a.title} url={a.cover} square size={56} />
+                  {!isAlbum && <span className="pb-card-badge">{typeLabel}</span>}
+                  {editMode && (
+                    <button
+	type="button"
+	className="pb-minus pb-card-minus"
+	title="버킷에서 제거 (원본은 유지)"
+	onPointerDown={e => e.stopPropagation()}
+	onClick={(e) => {
+                        e.stopPropagation()
+                        void removeItem(bucket.id, a.itemId, a.albumId, a.title)
+                      }}
+                    >
+                      −
+                    </button>
+                  )}
+                </div>
+                <div className="pb-card-title">{a.title}</div>
+                <div className="pb-card-meta">{isAlbum ? a.artist : typeLabel}</div>
+              </div>
+            )
+          })}
+          {bucket.albums.length === 0 && <span className="sans" style={{ fontSize: sc(11), color: 'var(--color-faded)' }}>비어 있음 — 드롭 영역으로 유지</span>}
+        </div>
+        ) :
+        (
       <div style={{ display: 'flex', flexDirection: 'column', gap: sc(7), maxHeight: sc(220), overflowY: 'auto' }}>
         {bucket.albums.slice(0, 8).map(a => (
           <div
@@ -465,8 +589,9 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
             </button>
           </div>
         ))}
-        {bucket.albums.length === 0 && <span className="sans" style={{ fontSize: sc(11), color: 'var(--color-faded)' }}>비어 있음 — 드롭 영역으로 유지</span>}
+          {bucket.albums.length === 0 && <span className="sans" style={{ fontSize: sc(11), color: 'var(--color-faded)' }}>비어 있음 — 드롭 영역으로 유지</span>}
       </div>
+      )}
       {notice && <div className="pb-playnote" role="status">{notice}</div>}
       <a className="btn" href="/profile" style={{ display: 'block', textAlign: 'center', padding: `${sc(7)} 0`, fontSize: sc(10), marginTop: sc(10), textDecoration: 'none', borderColor: 'color-mix(in srgb, var(--bucket-accent) 40%, var(--color-border))' }}>전체 버킷 페이지 열기 ↗</a>
     </div>
