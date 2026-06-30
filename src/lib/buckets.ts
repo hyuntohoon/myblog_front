@@ -14,6 +14,8 @@ const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 type ApiBucket = components['schemas']['Backend_BucketResponse']
 type ApiBucketsResponse = components['schemas']['Backend_BucketsResponse']
 type ApiItem = components['schemas']['Backend_BucketItemResponse']
+type ApiArtistExpansion = components['schemas']['Backend_ArtistExpansionResponse']
+type ApiArtistBrief = components['schemas']['Backend_ArtistBrief']
 type ApiPublicBucketsResponse = components['schemas']['Backend_PublicBucketsResponse']
 type ApiPublicBucket = components['schemas']['Backend_PublicBucket']
 type ApiPublicItem = components['schemas']['Backend_PublicBucketItem']
@@ -42,6 +44,12 @@ export interface BoardAlbum {
   /** Typed non-album target FKs (forward-compat; null on album rows). */
   trackId: string | null
   reviewTargetId: string | null
+  /**
+   * FEAT-my-buckit-artist: the credited artist for an `itemType==='artist'`
+   * member (`review_bucket_items.artist_id` → `artists.id`), null on every
+   * other kind. Drives the click-through to `/artist/[id]`.
+   */
+  artistId: string | null
   title: string
   artist: string
   cover: string | null
@@ -105,6 +113,13 @@ export interface BoardBucket {
    */
   kind: string
   /**
+   * FEAT-my-buckit-artist: the fixed bucket TYPE — 'general' (today's polymorphic
+   * crate, default) or 'artist' (accepts artist members only). Orthogonal to
+   * `kind` (system/role). System buckets are always 'general'. Set once at create,
+   * immutable in v1.
+   */
+  type: string
+  /**
    * FEAT-public-bucket-multiuser Scope A: opt-in public visibility. When true a
    * `kind==='review'` bucket is exposed by GET /api/buckets/public + the read-only
    * /collection viewer. Defaults false (private); the spotify_library bucket is
@@ -128,8 +143,10 @@ const TYPE_TITLE: Record<string, string> = { review: '평론', playback: '재생
 function mapItem(it: ApiItem): BoardAlbum {
   const a = it.album
   const tr = it.track
+  const ar = it.artist
   const itemType = it.item_type ?? 'album'
   const isTrack = itemType === 'track'
+  const isArtist = itemType === 'artist'
   const rel = a?.release_date
   return {
     itemId: it.id,
@@ -140,15 +157,20 @@ function mapItem(it: ApiItem): BoardAlbum {
     albumId: it.album_id ?? null,
     trackId: it.track_id ?? null,
     reviewTargetId: it.review_target_id ?? null,
+    artistId: it.artist_id ?? null,
     // FEAT-pocket-buckit Step 6: a track member renders from its TrackBrief
-    // (title + artist_names) so it never falls back to '제목 미상'. Other non-album
-    // kinds (review/playback/snapshot) carry no display payload yet → a typed
-    // placeholder ('평론'/'재생목록'/'스냅샷') so the tile is labeled, not blank.
-    title: isTrack ? (tr?.title ?? '제목 미상') : (a?.title ?? TYPE_TITLE[itemType] ?? '제목 미상'),
-    artist: isTrack ? ((tr?.artist_names ?? []).join(', ') || '—') : ((a?.artist_names ?? []).join(', ') || '—'),
+    // (title + artist_names) so it never falls back to '제목 미상'. An artist member
+    // (FEAT-my-buckit-artist) renders its ArtistBrief name. Other non-album kinds
+    // (review/playback/snapshot) carry no display payload yet → a typed placeholder
+    // ('평론'/'재생목록'/'스냅샷') so the tile is labeled, not blank.
+    title: isArtist ? (ar?.name ?? '아티스트') : isTrack ? (tr?.title ?? '제목 미상') : (a?.title ?? TYPE_TITLE[itemType] ?? '제목 미상'),
+    // An artist tile has no secondary line (the name is the title); a track shows
+    // its artists; an album shows its artists.
+    artist: isArtist ? '' : isTrack ? ((tr?.artist_names ?? []).join(', ') || '—') : ((a?.artist_names ?? []).join(', ') || '—'),
     // TrackBrief has no cover_url (the cover lives on its album, not resolved
-    // here) → a track tile shows the initials placeholder.
-    cover: a?.cover_url ?? null,
+    // here) → a track tile shows the initials placeholder. An artist tile uses
+    // its photo_url.
+    cover: isArtist ? (ar?.photo_url ?? null) : (a?.cover_url ?? null),
     year: rel ? Number(String(rel).slice(0, 4)) || null : null,
     alreadyReviewed: it.already_reviewed ?? false,
     researchSelected: it.research_selected ?? false,
@@ -172,6 +194,7 @@ function mapBucket(b: ApiBucket): BoardBucket {
     color: b.color ?? null,
     isDone: b.is_done ?? false,
     kind,
+    type: b.type ?? 'general',
     isPublic: b.is_public ?? false,
     researchMode: b.research_mode ?? 'off',
     albums: (b.items ?? []).map(mapItem),
@@ -260,11 +283,15 @@ export async function listPublicBuckets(): Promise<PublicCollection[]> {
   return (data.buckets ?? []).map(mapPublicBucket)
 }
 
-/** POST /api/buckets — create a root bucket (sub-buckets are created then moved). */
-export async function createBucket(name: string): Promise<BoardBucket> {
+/**
+ * POST /api/buckets — create a root bucket (sub-buckets are created then moved).
+ * FEAT-my-buckit-artist: `type` ('general' | 'artist') is fixed at create and
+ * immutable afterwards; system buckets are forced 'general' server-side.
+ */
+export async function createBucket(name: string, type: 'general' | 'artist' = 'general'): Promise<BoardBucket> {
   const res = await apiFetch(`${BASE}/api/buckets`, {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, type }),
   })
   return mapBucket(await asJson<ApiBucket>(res))
 }
@@ -394,6 +421,54 @@ export async function addBucketItem(bucketId: string, albumId: string): Promise<
 /** POST a track membership (item_type='track'); 409 on a dup track in the bucket. */
 export async function addBucketTrack(bucketId: string, trackId: string): Promise<AddItemOutcome> {
   return postBucketItem(bucketId, { track_id: trackId, item_type: 'track' })
+}
+
+/**
+ * FEAT-my-buckit-artist: POST a direct artist membership (item_type='artist',
+ * artist_id). 409 ('이미 담겨 있어요') on a duplicate artist in the bucket (the
+ * partial-unique uq_review_bucket_items_artist). Returns the new member row.
+ */
+export async function addBucketArtist(bucketId: string, artistId: string): Promise<AddItemOutcome> {
+  return postBucketItem(bucketId, { artist_id: artistId, item_type: 'artist' })
+}
+
+/** One credited artist as added/skipped by a source-expansion. */
+export interface ArtistBriefView { id: string, name: string, photoUrl: string | null }
+
+/** The result of expanding a featuring track / compilation album into its artists. */
+export interface ExpansionOutcome { added: ArtistBriefView[], skipped: ArtistBriefView[] }
+
+function mapArtistBrief(a: ApiArtistBrief): ArtistBriefView {
+  return { id: a.id, name: a.name, photoUrl: a.photo_url ?? null }
+}
+
+/**
+ * FEAT-my-buckit-artist: drop a featuring track / compilation album on an Artist
+ * bucket → the backend expands the source into its credited artists (Various
+ * Artists excluded), inserting each not-already-present one and skipping dups.
+ * The source row itself is never stored. Returns the added/skipped artist briefs
+ * for the toast; the caller refreshes the tree to render the new members.
+ *
+ * The add endpoint returns a Union — a `source_*` artist add yields an
+ * ArtistExpansionResponse rather than a single BucketItemResponse.
+ */
+export async function expandSourceArtists(
+  bucketId: string,
+  source: { albumId: string } | { trackId: string },
+): Promise<ExpansionOutcome> {
+  const body = 'albumId' in source ?
+    { item_type: 'artist', source_album_id: source.albumId } :
+    { item_type: 'artist', source_track_id: source.trackId }
+  const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  const data = await asJson<ApiArtistExpansion>(res)
+  const exp = data.expansion ?? {}
+  return {
+    added: (exp.added ?? []).map(mapArtistBrief),
+    skipped: (exp.skipped ?? []).map(mapArtistBrief),
+  }
 }
 
 /** DELETE /api/buckets/{bucketId}/items/{itemId} — remove a single album (204). */

@@ -35,6 +35,7 @@ import ResearchNote from './ResearchNote'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
+import AddArtistModal from './AddArtistModal'
 import { getSpotifyLibraryState, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
 import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
 import { AlbumArt, SectionTitle } from './ui'
@@ -47,7 +48,7 @@ import { AlbumArt, SectionTitle } from './ui'
 // still be moved to the trash (only when source==='myblog_added' — a 기존/preexisting
 // album is never deletable). `albumId` is carried on every album drag so a drop INTO
 // the library bucket can copy by album id without a tree lookup.
-interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string | null, fromLib?: boolean, source?: string }
+interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string | null, fromLib?: boolean, source?: string, trackId?: string | null, artistId?: string | null, srcItemType?: string }
 // Module-level drag payload (native DnD can't carry live object refs reliably).
 let dnd: DndItem | null = null
 type DragKind = 'album' | 'bucket' | null
@@ -87,6 +88,7 @@ const BUCKET_COLORS: { key: string, label: string, color: string | null }[] = [
 const ITEM_TYPE_LABEL: Record<string, string> = {
   album: '앨범',
   track: '트랙',
+  artist: '아티스트',
   review: '평론',
   playback: '재생',
   snapshot: '스냅샷',
@@ -107,8 +109,25 @@ function readSeed<T>(key: string): T | null {
   return null
 }
 
+// FEAT-my-buckit-artist Step 4: a row in the ＋버킷 create-type menu (General/Artist).
+const CREATE_MENU_ROW: React.CSSProperties = { display: 'block', width: '100%', textAlign: 'left', padding: '9px 11px', background: 'none', border: 'none', borderRadius: 6, cursor: 'pointer', color: 'var(--color-text)', fontSize: 13.5 }
+
 // ── tree helpers ────────────────────────────────────────────────────────────
 const clone = (t: BoardBucket[]): BoardBucket[] => JSON.parse(JSON.stringify(t))
+// FEAT-my-buckit-artist: the board-level type filter. Keeps any bucket of the
+// selected type PLUS every ancestor on the path to a match (so a nested match is
+// never flattened — the path stays visible). 'all' returns the tree untouched.
+function pruneByType(buckets: BoardBucket[], type: 'all' | 'general' | 'artist'): BoardBucket[] {
+  if (type === 'all')
+    return buckets
+  const out: BoardBucket[] = []
+  for (const b of buckets) {
+    const children = pruneByType(b.children, type)
+    if (b.type === type || children.length > 0)
+      out.push({ ...b, children })
+  }
+  return out
+}
 function visit(buckets: BoardBucket[], fn: (b: BoardBucket) => void) {
   for (const b of buckets) {
     fn(b)
@@ -478,9 +497,15 @@ function CoverResearchBadge({ status, active, onOpen }: { status: ResearchStatus
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
+function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
   album: BoardAlbum
   bucketId: string
+  /**
+   * FEAT-my-buckit-artist: the parent bucket's TYPE ('general' | 'artist').
+   * An Artist bucket's per-cover insert target only accepts an artist→artist
+   * reorder; a foreign album/track bubbles up to the bucket-level expansion drop.
+   */
+  bucketType?: string
   rated: boolean
   score: number | null
   onOpen: (t: DetailTarget) => void
@@ -526,11 +551,19 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
   // rating/research affordances. Every non-album kind (track/review/playback/
   // snapshot) renders as a labeled tile with a placeholder cover and no detail.
   const isAlbum = album.itemType === 'album'
+  const isArtist = album.itemType === 'artist'
   const acceptCol = (): boolean => {
     const it = dnd
     // Reorder-insert targets reject copy drags (recent strip) AND library drags —
     // a fromLib item must bubble to the bucket's onDrop so it COPIES instead of moving.
-    return !!it && it.kind === 'album' && !it.copy && !it.fromLib && !!it.itemId && it.itemId !== album.itemId
+    if (!it || it.kind !== 'album' || it.copy || it.fromLib || !it.itemId || it.itemId === album.itemId)
+      return false
+    // FEAT-my-buckit-artist: inside an Artist bucket only an artist→artist reorder
+    // inserts here; a foreign album/track must bubble to the bucket-level drop so it
+    // EXPANDS into credited artists rather than landing as a raw member.
+    if (bucketType === 'artist' && it.srcItemType !== 'artist')
+      return false
+    return true
   }
   return (
     <div
@@ -563,11 +596,13 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
 	draggable
 	onDragStart={(e) => {
           if (copySource)
-            dnd = { kind: 'album', copy: true, albumId: album.albumId, fromBucketId: bucketId }
+            dnd = { kind: 'album', copy: true, albumId: album.albumId, fromBucketId: bucketId, srcItemType: 'album' }
           else if (fromLib)
-            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId, fromLib: true, source: libRow?.source }
+            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId, fromLib: true, source: libRow?.source, srcItemType: 'album' }
           else
-            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId }
+            // srcItemType/trackId/artistId let an Artist-bucket drop route a source
+            // (album/track → expand into credited artists) vs an artist member (move).
+            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId, trackId: album.trackId, artistId: album.artistId, srcItemType: album.itemType }
           e.dataTransfer.effectAllowed = copySource ? 'copy' : (fromLib ? 'copyMove' : 'move')
           setDraggingId(album.itemId)
           setDragKind('album')
@@ -578,6 +613,14 @@ function AlbumChip({ album, bucketId, rated, score, onOpen, copySource, fromLib,
           setDragKind(null)
         }}
 	onClick={() => {
+          // FEAT-my-buckit-artist: an artist member navigates to its /artist/[id]
+          // hub (the canonical detail surface, not a modal). A drag never fires a
+          // click (HTML5 DnD), so no suppressClick guard is needed.
+          if (isArtist) {
+            if (album.artistId)
+              window.location.assign(`/artist/${album.artistId}`)
+            return
+          }
           // A non-album member has no album-detail target — clicking it is a no-op.
           if (!isAlbum)
             return
@@ -666,12 +709,16 @@ interface Ops {
   // Reposition a bucket among `parentId`'s children, before `beforeId` (null =
   // append). parentId null = top level. Drives reorder + un-nest (gap drops).
   moveBucketTo: (bucketId: string, parentId: string | null, beforeId: string | null) => void
-  addBucket: (parentId: string | null) => void
+  // FEAT-my-buckit-artist: `type` ('general' | 'artist') is fixed at create.
+  addBucket: (parentId: string | null, type?: 'general' | 'artist') => void
   rename: (id: string, name: string) => void
   setColor: (id: string, color: string | null) => void
   // FEAT-public-bucket-multiuser Scope A — opt the bucket in/out of public visibility.
   setIsPublic: (id: string, isPublic: boolean) => void
-  requestAdd: (bucketId: string, bucketName: string) => void
+  requestAdd: (bucketId: string, bucketName: string, bucketType: string) => void
+  // FEAT-my-buckit-artist: expand a featuring track / compilation album source into
+  // its credited artists on an Artist bucket (the source row is never stored).
+  expandSource: (bucketId: string, source: { albumId: string } | { trackId: string }) => void
   // FEAT-album-research-notes
   setResearchMode: (bucketId: string, mode: 'off' | 'all' | 'selected') => void
   setItemSelected: (bucketId: string, itemId: string, selected: boolean) => void
@@ -772,11 +819,20 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
     const src = it.bucketId ? findBucket(ops.tree, it.bucketId) : null
     return !(src && subtreeHas(src, bucket.id))
   }
+  // FEAT-my-buckit-artist: an Artist bucket accepts only an artist member (move)
+  // or an album/track SOURCE that expands into its credited artists. A source
+  // bearing no artist (review/playback/snapshot tile) is rejected at drag-over —
+  // no glow, no optimistic insert. General buckets accept all (today's behavior).
+  const canAcceptAlbumDrag = (it: DndItem): boolean => {
+    if (bucket.type !== 'artist')
+      return true
+    return it.srcItemType === 'artist' || !!it.albumId || !!it.trackId
+  }
   const onDragOver = (e: React.DragEvent) => {
     const it = dnd
     if (!it)
       return
-    if (it.kind === 'album' || (it.kind === 'bucket' && canAcceptBucket())) {
+    if ((it.kind === 'album' && canAcceptAlbumDrag(it)) || (it.kind === 'bucket' && canAcceptBucket())) {
       e.preventDefault()
       e.stopPropagation()
       setDropTarget(bucket.id)
@@ -793,6 +849,24 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
     // (item_type='track' → album_id NULL) has nothing to reconcile against Spotify,
     // so reject the drop rather than leave a null-album row in the library bucket.
     if (isLib && it.kind === 'album' && !it.albumId) {
+      dnd = null
+      return
+    }
+    // FEAT-my-buckit-artist: an Artist bucket routes the drop by source — an artist
+    // member moves/adds in; an album/track SOURCE expands into its credited artists
+    // (the source row itself is never stored). A non-artist-bearing source was
+    // already rejected at drag-over (canAcceptAlbumDrag).
+    if (bucket.type === 'artist' && it.kind === 'album') {
+      if (it.srcItemType === 'artist') {
+        if (it.itemId && it.fromBucketId && it.fromBucketId !== bucket.id)
+          ops.insertAlbum(it.itemId, it.fromBucketId, bucket.id, null)
+      }
+      else if (it.albumId) {
+        ops.expandSource(bucket.id, { albumId: it.albumId })
+      }
+      else if (it.trackId) {
+        ops.expandSource(bucket.id, { trackId: it.trackId })
+      }
       dnd = null
       return
     }
@@ -814,6 +888,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	key={a.itemId}
 	album={a}
 	bucketId={bucket.id}
+	bucketType={bucket.type}
 	rated={bucket.isDone && a.itemType === 'album'}
 	score={bucket.isDone && a.itemType === 'album' ? (ratings.get(a.albumId ?? '') ?? null) : null}
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
@@ -843,7 +918,7 @@ ops.openResearch(a.albumId, a.title)
   const addBtn = (
     <button
 	type="button"
-	onClick={() => ops.requestAdd(bucket.id, bucket.name)}
+	onClick={() => ops.requestAdd(bucket.id, bucket.name, bucket.type)}
 	style={{ aspectRatio: '1 / 1', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-faded)', background: 'none', border: '1px dashed var(--color-border)', borderRadius: 4, cursor: 'pointer' }}
     >
       ＋ 추가
@@ -1004,7 +1079,7 @@ ops.openResearch(a.albumId, a.title)
               🌐
             </button>
           )}
-          <button type="button" className="lf-iconbtn" title="앨범 추가" onClick={() => ops.requestAdd(bucket.id, bucket.name)}>＋</button>
+          <button type="button" className="lf-iconbtn" title={bucket.type === 'artist' ? '아티스트 추가' : '앨범 추가'} onClick={() => ops.requestAdd(bucket.id, bucket.name, bucket.type)}>＋</button>
           <button type="button" className="lf-iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
           {!isLib && (
             // Explicit rename — complements the click-the-title gesture so the
@@ -1494,7 +1569,22 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   }, [])
   const [recent, setRecent] = useState<BoardAlbum[] | null>(() => readSeed<BoardAlbum[]>(RECENT_KEY))
   const [error, setError] = useState(false)
-  const [addingTo, setAddingTo] = useState<{ id: string, name: string } | null>(null)
+  const [addingTo, setAddingTo] = useState<{ id: string, name: string, type: string } | null>(null)
+  // FEAT-my-buckit-artist: a transient board-level toast for the source-expansion
+  // feedback ("참여 아티스트 N명 담음 · M명 중복"). Auto-clears after a few seconds.
+  const [flash, setFlash] = useState<string | null>(null)
+  useEffect(() => {
+    if (!flash)
+      return
+    const t = setTimeout(() => setFlash(null), 4000)
+    return () => clearTimeout(t)
+  }, [flash])
+  // FEAT-my-buckit-artist Step 4: the board-level type filter ('all'|'general'|
+  // 'artist') and the ＋버킷 create-type menu (General / Artist).
+  const [boardType, setBoardType] = useState<'all' | 'general' | 'artist'>('all')
+  const [createMenuOpen, setCreateMenuOpen] = useState(false)
+  const createMenuRef = useRef<HTMLDivElement>(null)
+  useDismissable(createMenuOpen, () => setCreateMenuOpen(false), createMenuRef)
 
   // FEAT-spotify-library-sync — the special bucket's sync state (banners + the
   // per-album source/state map) and whether a manual sync is in flight.
@@ -1742,6 +1832,7 @@ ids.push(a.albumId)
           albumId: it.album_id,
           trackId: null,
           reviewTargetId: null,
+          artistId: null,
           title: it.album?.title ?? '제목 미상',
           artist: (it.album?.artist_names ?? []).join(', ') || '—',
           cover: it.album?.cover_url ?? null,
@@ -1868,6 +1959,7 @@ ids.push(a.albumId)
             albumId,
             trackId: null,
             reviewTargetId: null,
+            artistId: null,
             title: src?.title ?? '…',
             artist: src?.artist ?? '',
             cover: src?.cover ?? null,
@@ -1997,11 +2089,11 @@ ids.push(a.albumId)
       api.moveBucket(bucketId, parentId, position)
         .catch(() => void refresh())
     },
-    addBucket(parentId) {
+    addBucket(parentId, type = 'general') {
       if (tree == null)
         return
       const position = parentId ? (findBucket(tree, parentId)?.children.length ?? 0) : tree.length
-      api.createBucket('새 버킷')
+      api.createBucket(type === 'artist' ? '새 아티스트 버킷' : '새 버킷', type)
         .then((created) => {
           if (parentId == null) {
             setTree(prev => [...(prev ?? []), created])
@@ -2057,8 +2149,25 @@ ids.push(a.albumId)
       setTree(t)
       api.setBucketIsPublic(id, isPublic).catch(() => void refresh())
     },
-    requestAdd(bucketId, bucketName) {
-      setAddingTo({ id: bucketId, name: bucketName })
+    requestAdd(bucketId, bucketName, bucketType) {
+      setAddingTo({ id: bucketId, name: bucketName, type: bucketType })
+    },
+    expandSource(bucketId, source) {
+      api.expandSourceArtists(bucketId, source)
+        .then((out) => {
+          const added = out.added.length
+          const skipped = out.skipped.length
+          if (added === 0 && skipped === 0)
+            setFlash('참여 아티스트가 없어요')
+          else if (added === 0)
+            setFlash(`이미 담긴 아티스트예요 · ${skipped}명 중복`)
+          else
+            setFlash(`참여 아티스트 ${added}명 담음${skipped ? ` · ${skipped}명 중복 건너뜀` : ''}`)
+          // New membership rows aren't echoed individually — reload to render them.
+          if (added > 0)
+            void refresh()
+        })
+        .catch(() => setFlash('아티스트 확장에 실패했어요'))
     },
     // FEAT-album-research-notes — set the bucket's auto-research scope.
     // Optimistic; the backend auto-enqueues note-less (checked) items on the
@@ -2175,6 +2284,35 @@ ids.push(a.albumId)
     }
   }
 
+  // FEAT-my-buckit-artist: add a single artist (from the search modal) to an Artist
+  // bucket. Mirrors onAddAlbum — optimistic push of the returned member row, 409 →
+  // conflict ('이미 담겨 있어요').
+  async function onAddArtist(artist: { id: string, name: string }): Promise<AddOutcome> {
+    if (!addingTo)
+      return { status: 'error', message: '버킷을 찾을 수 없습니다' }
+    try {
+      const { item, conflict } = await api.addBucketArtist(addingTo.id, artist.id)
+      if (conflict)
+        return { status: 'conflict' }
+      if (item && tree != null) {
+        const t = clone(tree)
+        findBucket(t, addingTo.id)?.albums.push(item)
+        setTree(t)
+      }
+      return { status: 'added', alreadyReviewed: false }
+    }
+    catch {
+      return { status: 'error', message: '담기 실패' }
+    }
+  }
+
+  // FEAT-my-buckit-artist Step 4: close the create menu then create a root bucket
+  // of the chosen type.
+  function createBucketOfType(type: 'general' | 'artist') {
+    setCreateMenuOpen(false)
+    ops.addBucket(null, type)
+  }
+
   if (error && tree == null) {
     return (
       <div>
@@ -2189,6 +2327,8 @@ ids.push(a.albumId)
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
   const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
+  // FEAT-my-buckit-artist Step 4: the tree narrowed by the board-level type filter.
+  const visibleTree = pruneByType(normalTree, boardType)
 
   return (
     <div>
@@ -2211,10 +2351,37 @@ ids.push(a.albumId)
               🗑 휴지통
               {trash.length ? ` · ${trash.length}` : ''}
             </button>
-            <button type="button" className="lf-btn lf-btn-solid" disabled={tree == null} onClick={() => ops.addBucket(null)}>＋ 버킷</button>
+            <div ref={createMenuRef} style={{ position: 'relative' }}>
+              <button type="button" className="lf-btn lf-btn-solid" disabled={tree == null} aria-haspopup="menu" aria-expanded={createMenuOpen} onClick={() => setCreateMenuOpen(o => !o)}>＋ 버킷</button>
+              {createMenuOpen && (
+                <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, minWidth: 168, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: '0 8px 26px rgba(26,26,26,.18)', padding: 5 }}>
+                  <button type="button" role="menuitem" className="lf-menu-row" style={CREATE_MENU_ROW} onClick={() => createBucketOfType('general')}>＋ General 버킷</button>
+                  <button type="button" role="menuitem" className="lf-menu-row" style={CREATE_MENU_ROW} onClick={() => createBucketOfType('artist')}>＋ Artist 버킷 · 아티스트 전용</button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       />
+      {/* FEAT-my-buckit-artist Step 4: board-level type filter. Narrows the tree to
+          buckets of the chosen type (ancestors preserved); 전체 shows everything,
+          incl. system buckets. */}
+      {tree != null && normalTree.length > 0 && (
+        <div role="group" aria-label="버킷 종류 필터" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 16px' }}>
+          {([['all', '전체'], ['general', 'General'], ['artist', 'Artist']] as const).map(([v, l]) => (
+            <button
+	key={v}
+	type="button"
+	className="lf-chip"
+	aria-pressed={boardType === v}
+	onClick={() => setBoardType(v)}
+	style={boardType === v ? { background: 'var(--color-text)', color: 'var(--color-bg)', borderColor: 'var(--color-text)' } : undefined}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
       {recent != null && recent.length > 0 && (
         <div
 	className="lf-panel crate-spotify"
@@ -2301,8 +2468,13 @@ ids.push(a.albumId)
         </div>
       )}
 
-      {tree != null && normalTree.length > 0 && (
-        <BucketList items={normalTree} parentId={null} depth={0} shared={shared} />
+      {tree != null && normalTree.length > 0 && visibleTree.length > 0 && (
+        <BucketList items={visibleTree} parentId={null} depth={0} shared={shared} />
+      )}
+      {tree != null && normalTree.length > 0 && visibleTree.length === 0 && (
+        <div className="lf-panel" style={{ padding: 32, textAlign: 'center' }}>
+          <span className="lf-meta">{boardType === 'artist' ? 'Artist 버킷이 없어요' : '해당 종류의 버킷이 없어요'}</span>
+        </div>
       )}
 
       {/* trash dock — a single center-bottom card, mounted only while dragging an
@@ -2324,7 +2496,15 @@ ids.push(a.albumId)
         document.body,
       )}
 
-      {addingTo && (
+      {addingTo && addingTo.type === 'artist' && (
+        <AddArtistModal
+	bucketName={addingTo.name}
+	existingArtistIds={new Set((tree && findBucket(tree, addingTo.id)?.albums.map(a => a.artistId).filter((id): id is string => id != null)) ?? [])}
+	onAdd={onAddArtist}
+	onClose={() => setAddingTo(null)}
+        />
+      )}
+      {addingTo && addingTo.type !== 'artist' && (
         <AddAlbumModal
 	bucketName={addingTo.name}
 	existingAlbumIds={new Set((tree && findBucket(tree, addingTo.id)?.albums.map(a => a.albumId).filter((id): id is string => id != null)) ?? [])}
@@ -2495,6 +2675,14 @@ ids.push(a.albumId)
 	onPick={picker.onPick}
 	onClose={() => setPicker(null)}
         />
+      )}
+
+      {/* FEAT-my-buckit-artist: source-expansion feedback toast (참여 아티스트 N명…). */}
+      {flash && typeof document !== 'undefined' && createPortal(
+        <div role="status" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 101, background: 'var(--color-text)', color: 'var(--color-bg)', borderRadius: 6, padding: '10px 16px', fontSize: 13, boxShadow: '0 6px 22px rgba(26,26,26,.28)' }}>
+          {flash}
+        </div>,
+        document.body,
       )}
     </div>
   )
