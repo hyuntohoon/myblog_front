@@ -1036,17 +1036,23 @@ export interface components {
         Backend_AddBucketItemRequest: {
             /** Album Id */
             album_id?: string | null;
+            /** Artist Id */
+            artist_id?: string | null;
             /**
              * Item Type
              * @default album
              * @enum {string}
              */
-            item_type: "album" | "track" | "review" | "playback" | "snapshot";
+            item_type: "album" | "track" | "review" | "playback" | "snapshot" | "artist";
             /** Note */
             note?: string | null;
             /** Review Target Id */
             review_target_id?: string | null;
             snapshot?: components["schemas"]["Backend_SnapshotCaptureRequest"] | null;
+            /** Source Album Id */
+            source_album_id?: string | null;
+            /** Source Track Id */
+            source_track_id?: string | null;
             /** Track Id */
             track_id?: string | null;
         };
@@ -1108,6 +1114,52 @@ export interface components {
             /** Tokens Out */
             tokens_out?: number | null;
         };
+        /**
+         * ArtistBrief
+         * @description FEAT-my-buckit-artist (V32): minimal artist display for an artist-kind membership row
+         *     (Artist Buckit member) and for the expansion added/skipped lists. Member click-through
+         *     targets the existing /artist/[id] page (no new detail modal).
+         */
+        Backend_ArtistBrief: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Photo Url */
+            photo_url?: string | null;
+        };
+        /**
+         * ArtistExpansionResponse
+         * @description FEAT-my-buckit-artist (V32): the add-item response for a source_* artist expansion (a
+         *     featuring track / compilation album expanded into its credited artists). This is a DISTINCT
+         *     shape from BucketItemResponse — there is no single membership row to echo, only the
+         *     added/skipped lists — so BucketItemResponse stays strict (id/position/status required) and
+         *     POST /items returns a Union of the two. The front discriminates on the presence of
+         *     `expansion` (only this shape carries it).
+         */
+        Backend_ArtistExpansionResponse: {
+            expansion: components["schemas"]["Backend_BucketItemExpansion"];
+            /**
+             * Item Type
+             * @default artist
+             * @constant
+             */
+            item_type: "artist";
+        };
+        /**
+         * BucketItemExpansion
+         * @description FEAT-my-buckit-artist (V32): the result of a source_* artist add — a featuring track /
+         *     compilation album expanded into its credited artists (Various Artists excluded). Present
+         *     ONLY on the add response for a source_* artist add; the source row itself is never stored.
+         *     `added` = artists newly inserted this call; `skipped` = credited artists already present
+         *     in the bucket (dedup), so the front can toast "N 담음 · M 중복 건너뜀".
+         */
+        Backend_BucketItemExpansion: {
+            /** Added */
+            added?: components["schemas"]["Backend_ArtistBrief"][];
+            /** Skipped */
+            skipped?: components["schemas"]["Backend_ArtistBrief"][];
+        };
         /** BucketItemResponse */
         Backend_BucketItemResponse: {
             album?: components["schemas"]["Backend_AlbumBrief"] | null;
@@ -1118,6 +1170,9 @@ export interface components {
              * @default false
              */
             already_reviewed: boolean;
+            artist?: components["schemas"]["Backend_ArtistBrief"] | null;
+            /** Artist Id */
+            artist_id?: string | null;
             /** Id */
             id: string;
             /**
@@ -1184,6 +1239,11 @@ export interface components {
              * @default off
              */
             research_mode: string;
+            /**
+             * Type
+             * @default general
+             */
+            type: string;
         };
         /** BucketsResponse */
         Backend_BucketsResponse: {
@@ -1214,6 +1274,12 @@ export interface components {
             color?: string | null;
             /** Name */
             name: string;
+            /**
+             * Type
+             * @default general
+             * @enum {string}
+             */
+            type: "general" | "artist";
         };
         /** CreateGenreRequest */
         Backend_CreateGenreRequest: {
@@ -2768,7 +2834,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Backend_BucketItemResponse"];
+                    "application/json": components["schemas"]["Backend_BucketItemResponse"] | components["schemas"]["Backend_ArtistExpansionResponse"];
                 };
             };
             /** @description Item already in this bucket */
