@@ -175,6 +175,34 @@
   background: color-mix(in srgb, var(--color-accent) 8%, var(--color-bg)); border: 1px solid var(--color-border-soft);
   color: var(--color-subtle); }
 
+/* ── FEAT-pocket-buckit-viewers Track B — per-drawer Card Viewer ───────────────
+   The bucket window toggles list ⇄ a board-style square-cover member grid. All tile
+   styles are self-supplied here (member.css is /profile-only — the site-wide drawer
+   must not depend on it); only the site-wide global `.cover`/`.cover img` is reused. */
+.pb-scope .pb-viewtoggle { flex: 0 0 auto; display: inline-grid; place-items: center;
+  width: calc(24px * var(--pb-scale)); height: calc(24px * var(--pb-scale)); border-radius: calc(6px * var(--pb-scale));
+  border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-subtle); cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s; }
+.pb-scope .pb-viewtoggle:hover { color: var(--bucket-accent, var(--color-accent)); border-color: var(--bucket-accent, var(--color-accent)); }
+.pb-scope .pb-viewtoggle[data-on] { color: #fff; background: var(--bucket-accent, var(--color-accent));
+  border-color: var(--bucket-accent, var(--color-accent)); }
+.pb-scope .pb-cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(100px * var(--pb-scale)), 1fr));
+  gap: calc(12px * var(--pb-scale)); max-height: calc(300px * var(--pb-scale)); overflow-y: auto; overscroll-behavior: contain; }
+.pb-scope .pb-card { position: relative; display: flex; flex-direction: column; gap: calc(6px * var(--pb-scale));
+  text-align: left; cursor: grab; min-width: 0; }
+.pb-scope .pb-card[data-artist] { cursor: pointer; }
+.pb-scope .pb-card .cover { width: 100%; aspect-ratio: 1 / 1; border-radius: calc(3px * var(--pb-scale)); }
+.pb-scope .pb-card-title { font-family: var(--font-serif); font-style: italic; font-weight: 500;
+  font-size: calc(12.5px * var(--pb-scale)); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-scope .pb-card-meta { font-family: var(--font-mono); font-size: calc(9.5px * var(--pb-scale)); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--color-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-scope .pb-card-badge { position: absolute; left: calc(6px * var(--pb-scale)); top: calc(6px * var(--pb-scale));
+  font-family: var(--font-mono); font-size: calc(9px * var(--pb-scale)); letter-spacing: .06em; line-height: 1;
+  color: var(--color-bg); background: color-mix(in srgb, var(--color-text) 78%, transparent);
+  padding: calc(2px * var(--pb-scale)) calc(5px * var(--pb-scale)); border-radius: 3px; }
+.pb-scope .pb-card-minus { position: absolute; right: calc(6px * var(--pb-scale)); top: calc(6px * var(--pb-scale)); z-index: 2;
+  box-shadow: 0 1px 4px rgba(26,26,26,.3); }
+
 /* ── drawer open animation (connected-to-tray, not modal) ─────────────────────
    Quick opacity + subtle scale + small lift; no bounce / long / heavy modal feel
    (request §2). Owns the open anim now that .pb-inspect no longer carries pbRise. */
