@@ -20,13 +20,13 @@
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import type { PbOpenStateDetail } from '@lib/pocketBuckit/events'
+import type { PbDndStartDetail, PbOpenStateDetail } from '@lib/pocketBuckit/events'
 import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
-import { PB_CLOSED_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
+import { PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
@@ -1727,6 +1727,30 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     }
     window.addEventListener(PB_OPEN_STATE_EVENT, onOpenState)
     return () => window.removeEventListener(PB_OPEN_STATE_EVENT, onOpenState)
+  }, [])
+  // FEAT-my-buckit-artist Step 6 — Pocket-open DnD into visible buckets. A drag
+  // started on a tray drawer item (separate island) hands its payload over via a
+  // synchronous window event so the board's module-level `dnd` is populated before
+  // the first board `dragover` reads it. The payload mirrors AlbumChip's member-drag
+  // shape, so canAcceptAlbumDrag / acceptCol / the bucket onDrop routing (move into a
+  // General bucket, expand-source into an Artist bucket) are all reused unchanged.
+  // `dragend` (drop OR cancel) always fires → `dnd` is cleared even on a missed drop.
+  useEffect(() => {
+    const onDndStart = (e: Event) => {
+      const d = (e as CustomEvent<PbDndStartDetail>).detail
+      if (d) {
+        dnd = { kind: 'album', itemId: d.itemId, fromBucketId: d.fromBucketId, albumId: d.albumId, trackId: d.trackId, artistId: d.artistId, srcItemType: d.srcItemType }
+      }
+    }
+    const onDndEnd = () => {
+      dnd = null
+    }
+    window.addEventListener(PB_DND_START_EVENT, onDndStart)
+    window.addEventListener(PB_DND_END_EVENT, onDndEnd)
+    return () => {
+      window.removeEventListener(PB_DND_START_EVENT, onDndStart)
+      window.removeEventListener(PB_DND_END_EVENT, onDndEnd)
+    }
   }, [])
   const [pendingBucketDelete, setPendingBucketDelete] = useState<{ id: string, name: string } | null>(null)
   // Touch fallback (coarse pointers): the single open album / bucket action

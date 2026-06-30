@@ -24,3 +24,29 @@ export const PB_OPEN_STATE_EVENT = 'pb:open-state'
 export interface PbOpenStateDetail {
   open: boolean
 }
+
+/**
+ * Tray → board (FEAT-my-buckit-artist Step 6 — Pocket-open DnD into visible buckets):
+ * a native HTML5 drag started on a tray drawer item. The board's drop routing reads
+ * its module-level `dnd` payload (never `dataTransfer` — which is also unreadable
+ * during `dragover`, where the artist-only gate runs), and that var is local to the
+ * board island. So the tray hands the payload over via this synchronous window event:
+ * `dragstart` fires before any board `dragover`, so the board's listener has populated
+ * `dnd` in time. {@link PB_DND_END_EVENT} (on `dragend`, success OR cancel) clears it.
+ * The payload mirrors the board's own member-drag `DndItem` (BucketBoard `AlbumChip`
+ * onDragStart) so the existing `canAcceptAlbumDrag` / `ops.*` routing is reused verbatim.
+ */
+export const PB_DND_START_EVENT = 'pb:dnd-start'
+
+/** Tray → board: the tray-originated drag ended (drop or cancel) — clear the board `dnd`. */
+export const PB_DND_END_EVENT = 'pb:dnd-end'
+
+/** detail shape for {@link PB_DND_START_EVENT} — a tray drawer item being dragged. */
+export interface PbDndStartDetail {
+  itemId: string
+  fromBucketId: string
+  albumId: string | null
+  trackId: string | null
+  artistId: string | null
+  srcItemType: string
+}

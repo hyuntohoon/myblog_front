@@ -16,6 +16,7 @@ import type { PlaybackTarget } from '@lib/spotifyPlayback'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
+import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { requestPlayback } from '@lib/spotifyPlayback'
 import { usePocket } from './PocketBuckitProvider'
 
@@ -391,7 +392,30 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
       <div className="rule" style={{ margin: `${sc(10)} 0`, height: 1, background: 'color-mix(in srgb, var(--bucket-accent) 20%, var(--color-border))' }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: sc(7), maxHeight: sc(220), overflowY: 'auto' }}>
         {bucket.albums.slice(0, 8).map(a => (
-          <div key={a.itemId} style={{ display: 'flex', alignItems: 'center', gap: sc(9) }}>
+          <div
+	key={a.itemId}
+            // FEAT-my-buckit-artist Step 6 — drag this tray item onto a visible board
+            // bucket. The payload mirrors the board's AlbumChip member-drag DndItem so
+            // the board reuses its existing routing (move into General, expand-source
+            // into Artist). The board (separate island) can't read this island's drag
+            // state, so the payload is handed over via a synchronous window event.
+	draggable
+	onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'move'
+              window.dispatchEvent(new CustomEvent(PB_DND_START_EVENT, {
+                detail: {
+                  itemId: a.itemId,
+                  fromBucketId: bucket.id,
+                  albumId: a.albumId ?? null,
+                  trackId: a.trackId ?? null,
+                  artistId: a.artistId ?? null,
+                  srcItemType: a.itemType,
+                },
+              }))
+            }}
+	onDragEnd={() => window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT))}
+	style={{ display: 'flex', alignItems: 'center', gap: sc(9), cursor: 'grab' }}
+          >
             {editMode && <button type="button" className="pb-minus" title="버킷에서 제거 (원본은 유지)" onClick={() => void removeItem(bucket.id, a.itemId, a.albumId, a.title)}>−</button>}
             <Cover label={a.title} size={26} />
             <span className="serif" style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>
