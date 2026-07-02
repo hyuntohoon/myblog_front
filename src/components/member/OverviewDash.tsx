@@ -8,7 +8,7 @@
 // <body>) moves. On drop the new arrangement commits. Layout persists to
 // localStorage. Ported from overview.jsx (kept pointer-based, NOT @dnd-kit).
 import type { CSSProperties, ReactNode } from 'react'
-import type { NpStyle } from './NowPlaying'
+import type { NpStyle, OnOpenLyrics } from './NowPlaying'
 import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/member'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -43,6 +43,7 @@ interface DashCtx {
   setNpStyle: (s: NpStyle) => void
   goBucket: () => void
   reviews: MemberReview[]
+  onOpenLyrics?: OnOpenLyrics
 }
 
 interface HandleProps { onPointerDown?: (e: React.PointerEvent) => void, style: CSSProperties }
@@ -423,7 +424,7 @@ function ListenedAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Det
 
 function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
   switch (id) {
-    case 'nowplaying': return <NowPlaying variant={ctx.npStyle} />
+    case 'nowplaying': return <NowPlaying variant={ctx.npStyle} onOpenLyrics={ctx.onOpenLyrics} />
     case 'recent-albums': return <RecentAlbumsWidget view={ctx.views['recent-albums']} onOpen={ctx.onOpen} />
     case 'recent-tracks': return <RecentTracksWidget view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
     case 'listened-albums': return <ListenedAlbumsWidget view={ctx.views['listened-albums']} onOpen={ctx.onOpen} />
@@ -624,7 +625,7 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
 /* ── dashboard ───────────────────────────────────────────── */
 const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['listened-albums'], ['bucket']]
 
-export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[] }) {
+export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, onOpenLyrics }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[], onOpenLyrics?: OnOpenLyrics }) {
   const [rows, setRows] = useState<string[][]>(() => {
     try {
       const s = JSON.parse(localStorage.getItem(OV_ROWS_KEY) || 'null')
@@ -675,7 +676,7 @@ export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews }:
     document.addEventListener('pointerdown', onDown, true)
     return () => document.removeEventListener('pointerdown', onDown, true)
   }, [addOpen])
-  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, goBucket, reviews }
+  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, goBucket, reviews, onOpenLyrics }
   const flat = rows.flat()
   const remove = (id: string) => setRows(prev => prev.map(r => r.filter(x => x !== id)).filter(r => r.length))
   const add = (id: string) => {

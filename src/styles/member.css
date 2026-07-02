@@ -956,6 +956,17 @@
 .lyv-btn:hover { color: var(--color-text); border-color: var(--color-text); }
 .lyv-btn:disabled { opacity: 0.3; cursor: default; }
 .lyv-btn:disabled:hover { color: var(--color-subtle); border-color: var(--color-border); }
+.lyv-head-actions { display: flex; align-items: center; gap: 8px; }
+.lyv-btn.is-refreshing { animation: lyv-spin 0.9s linear infinite; }
+@keyframes lyv-spin { to { transform: rotate(360deg); } }
+
+/* refresh outcome line ("재생 중 아님" / read failed) — informative, not modal */
+.lyv-note {
+	padding: 0 16px 6px;
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	color: var(--color-faded);
+}
 
 /* body = fade masks over the recessed lines at both edges */
 .lyv-body { position: relative; flex: 1; min-height: 0; }
@@ -1070,4 +1081,5 @@
 @media (prefers-reduced-motion: reduce) {
 	.lyv-panel { animation: none; }
 	.lyv-line { transition: none; }
+	.lyv-btn.is-refreshing { animation: none; }
 }
