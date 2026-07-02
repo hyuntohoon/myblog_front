@@ -3,7 +3,7 @@
 // other surfaces are sample (see lib/member.ts). Ported from app.jsx (the dev
 // "tweaks panel" + prototype TopNav are dropped; the site header is the nav).
 import type { ReactNode } from 'react'
-import type { NpStyle } from './NowPlaying'
+import type { LyricsOpenTarget, NpStyle } from './NowPlaying'
 import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
 import { AlbumDetail } from './AlbumDetail'
@@ -314,23 +314,26 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   }
   const [npStyle, setNpStyle] = useState<NpStyle>('banner')
   const [detail, setDetail] = useState<DetailTarget | null>(null)
-  // FEAT-lyrics-viewer Step 2 — isolated debug entry (`?lyrics=<spotify_track_id>`
-  // on the authed /profile route). The real dynamic entry (now-playing tap,
-  // active-playback-only) lands in Step 3; until then the viewer is reachable
-  // only through this owner/debug param. Closing strips the param so a reload
-  // doesn't reopen it.
-  const [lyricsDebugId, setLyricsDebugId] = useState<string | null>(() => {
+  // FEAT-lyrics-viewer overlay state (ProfileApp owns overlay mounts — component
+  // map). Two entries share one mount:
+  //  - Step 3 dynamic entry: NowPlaying's 가사 tap → live track id + one-shot
+  //    position, refresh enabled (`live: true`).
+  //  - Step 2 debug entry: `?lyrics=<spotify_track_id>` — no playback binding, no
+  //    refresh. Closing strips the param so a reload doesn't reopen it.
+  const [lyrics, setLyrics] = useState<{ trackId: string, progressMs: number | null, live: boolean } | null>(() => {
     if (typeof window === 'undefined')
       return null
     try {
-      return new URLSearchParams(window.location.search).get('lyrics')
+      const id = new URLSearchParams(window.location.search).get('lyrics')
+      return id ? { trackId: id, progressMs: null, live: false } : null
     }
     catch {
       return null
     }
   })
+  const openLyrics = (t: LyricsOpenTarget) => setLyrics({ trackId: t.trackId, progressMs: t.progressMs, live: true })
   const closeLyrics = () => {
-    setLyricsDebugId(null)
+    setLyrics(null)
     try {
       const url = new URL(window.location.href)
       url.searchParams.delete('lyrics')
@@ -388,7 +391,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   // React from unmounting a tab on switch, so its fetched data + UI state persist.
   // BucketBoard's research poll is gated on `active` so it goes quiet when hidden.
   const panels: { id: string, node: ReactNode }[] = [
-    { id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => selectTab('bucket')} reviews={reviews} /> },
+    { id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => selectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} /> },
     { id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> },
     { id: 'bucket', node: <BucketBoard onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
     { id: 'stats', node: <StatsTab onOpen={openDetail} /> },
@@ -442,7 +445,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       )}
 
       {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} />}
-      {lyricsDebugId && <LyricsViewer key={lyricsDebugId} spotifyTrackId={lyricsDebugId} onClose={closeLyrics} />}
+      {lyrics && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} canRefresh={lyrics.live} onClose={closeLyrics} />}
     </div>
   )
 }

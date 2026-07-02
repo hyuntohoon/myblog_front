@@ -6,16 +6,24 @@
 // de-emphasized, the rest recessed. Navigation is MANUAL ONLY — prev/next
 // controls, vertical swipe/drag, direct tap-to-focus (+ arrow keys / wheel as
 // control equivalents). No playback-time progression of any kind (RFC
-// non-goal); `start_ms` is ignored until Step 3's one-shot initial focus.
+// non-goal).
+//
+// Step 3 additions: `start_ms` now seeds a ONE-SHOT initial focus from the
+// playback position handed in by the dynamic entry (`initialProgressMs`), and a
+// manual refresh control (`canRefresh`, dynamic entry only) re-reads the live
+// playback moment — track change swaps segments, position-only change
+// re-initializes the focus once, stopped playback shows "재생 중 아님" rather
+// than substituting a recent track. Focus never advances on its own.
 //
 // The viewer does no LRC parsing and never falls back to raw text: rows the
 // normalization model hasn't made consumable arrive as availability !== 'ok'
 // and render an availability-aware empty state.
 import type { KeyboardEvent, PointerEvent, WheelEvent } from 'react'
-import type { LyricsResponse } from './lyrics.api'
+import type { LyricsResponse, LyricsSegment } from './lyrics.api'
 import { useEffect, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { getLyrics } from './lyrics.api'
+import { readLivePlayback } from './playback.api'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
 const DRAG_STEP = 56
@@ -36,7 +44,32 @@ function prefersReducedMotion(): boolean {
   }
 }
 
-export function LyricsViewer({ spotifyTrackId, onClose }: { spotifyTrackId: string, onClose: () => void }) {
+/**
+ * The segment a playback moment maps to: the last segment whose `start_ms` is
+ * at or before `ms` (synced rows only — plain rows carry no timestamps and are
+ * never position-initialized).
+ */
+function focusIndexForMs(segs: LyricsSegment[], ms: number): number {
+  let idx = 0
+  for (let i = 0; i < segs.length; i++) {
+    const start = segs[i].start_ms
+    if (start != null && start <= ms)
+      idx = i
+  }
+  return idx
+}
+
+export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefresh = false, onClose }: {
+  spotifyTrackId: string
+  /** One-shot playback position from the dynamic entry; seeds the initial focus, never advances it. */
+  initialProgressMs?: number | null
+  /** Show the manual-refresh control (dynamic entry only — the debug entry has no playback binding). */
+  canRefresh?: boolean
+  onClose: () => void
+}) {
+  // Track id is internal state (seeded from the prop) so a manual refresh can
+  // swap tracks in place; the caller's key still remounts on a fresh open.
+  const [trackId, setTrackId] = useState(spotifyTrackId)
   const [phase, setPhase] = useState<Phase>({ k: 'loading' })
   const [focus, setFocus] = useState(0)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -49,17 +82,27 @@ export function LyricsViewer({ spotifyTrackId, onClose }: { spotifyTrackId: stri
     []
   const n = segs.length
 
-  // Load (and reload on retry). Track-id changes remount via the caller's key,
-  // but guard against a stale response landing after unmount anyway.
+  // One-shot initial-focus position: consumed exactly once by the next load
+  // (open with position, or a refresh that swapped tracks), then cleared.
+  const pendingFocusMs = useRef<number | null>(initialProgressMs)
+
+  // Load (and reload on retry / refresh track swap). Guard against a stale
+  // response landing after unmount or after the track changed again.
   const [loadSeq, setLoadSeq] = useState(0)
   useEffect(() => {
     let stale = false
     setPhase({ k: 'loading' })
     setFocus(0)
-    getLyrics(spotifyTrackId)
+    segRefs.current = []
+    getLyrics(trackId)
       .then((data) => {
-        if (!stale)
-          setPhase({ k: 'ready', data })
+        if (stale)
+          return
+        setPhase({ k: 'ready', data })
+        const ms = pendingFocusMs.current
+        pendingFocusMs.current = null
+        if (ms != null && data.availability === 'ok' && data.trackable && data.segments?.length)
+          setFocus(focusIndexForMs(data.segments, ms))
       })
       .catch(() => {
         if (!stale)
@@ -68,7 +111,41 @@ export function LyricsViewer({ spotifyTrackId, onClose }: { spotifyTrackId: stri
     return () => {
       stale = true
     }
-  }, [spotifyTrackId, loadSeq])
+  }, [trackId, loadSeq])
+
+  // Manual refresh (dynamic entry only): ONE live playback read per tap.
+  // Track changed → swap segments (+ one-shot focus at the new position);
+  // same track → re-initialize the focus once at the current position;
+  // stopped → say so — never substitute a recent track (RFC).
+  const [refreshing, setRefreshing] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const refresh = async () => {
+    if (refreshing)
+      return
+    setRefreshing(true)
+    try {
+      const r = await readLivePlayback()
+      if (r.state === 'playing') {
+        setNotice(null)
+        if (r.trackId !== trackId) {
+          pendingFocusMs.current = r.progressMs
+          setTrackId(r.trackId)
+        }
+        else if (r.progressMs != null && phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.trackable && n > 0) {
+          setFocus(focusIndexForMs(segs, r.progressMs))
+        }
+      }
+      else if (r.state === 'idle') {
+        setNotice('지금 재생 중인 곡이 없어요')
+      }
+      else {
+        setNotice('재생 상태를 확인하지 못했어요')
+      }
+    }
+    finally {
+      setRefreshing(false)
+    }
+  }
 
   const step = (delta: number) => {
     setFocus(f => Math.max(0, Math.min(n - 1, f + delta)))
@@ -190,8 +267,25 @@ export function LyricsViewer({ spotifyTrackId, onClose }: { spotifyTrackId: stri
               ` · ${phase.data.source_kind}` :
               ''}
           </span>
-          <button type="button" className="lyv-btn" onClick={onClose} aria-label="닫기">✕</button>
+          <div className="lyv-head-actions">
+            {canRefresh && (
+              <button
+	type="button"
+	className={refreshing ? 'lyv-btn is-refreshing' : 'lyv-btn'}
+	onClick={() => {
+                  void refresh()
+                }}
+	disabled={refreshing || phase.k === 'loading'}
+	aria-label="현재 재생 새로고침"
+              >
+                ↻
+              </button>
+            )}
+            <button type="button" className="lyv-btn" onClick={onClose} aria-label="닫기">✕</button>
+          </div>
         </div>
+
+        {notice && <div className="lyv-note lf-mono" role="status">{notice}</div>}
 
         {phase.k === 'loading' && <div className="lyv-status lf-mono">불러오는 중…</div>}
 
