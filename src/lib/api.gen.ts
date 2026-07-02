@@ -654,6 +654,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lyrics/{spotify_track_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics
+         * @description Normalized lyric segments for one catalog track (authenticated users only).
+         *
+         *     Unknown spotify_track_id → 404 (no catalog track). A known track without viewable
+         *     lyrics is NOT a 404 — it returns availability "no_lyrics" / "unavailable" so the
+         *     viewer can render the correct empty state.
+         */
+        get: operations["get_lyrics_api_lyrics__spotify_track_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/batch": {
         parameters: {
             query?: never;
@@ -1446,6 +1470,37 @@ export interface components {
              * @default 0
              */
             total: number;
+        };
+        /** LyricsResponse */
+        Backend_LyricsResponse: {
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "ok" | "no_lyrics" | "unavailable";
+            /**
+             * Normalizer Version
+             * @default 1
+             */
+            normalizer_version: number;
+            /** Segments */
+            segments?: components["schemas"]["Backend_LyricsSegment"][];
+            /** Source Kind */
+            source_kind?: ("synced" | "plain") | null;
+            /**
+             * Trackable
+             * @default false
+             */
+            trackable: boolean;
+        };
+        /** LyricsSegment */
+        Backend_LyricsSegment: {
+            /** I */
+            i: number;
+            /** Start Ms */
+            start_ms?: number | null;
+            /** Text */
+            text: string;
         };
         /** MetricsBatchRequest */
         Backend_MetricsBatchRequest: {
@@ -3772,6 +3827,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_lyrics_api_lyrics__spotify_track_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotify_track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_LyricsResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
