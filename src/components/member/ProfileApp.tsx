@@ -8,6 +8,7 @@ import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
 import { AlbumDetail } from './AlbumDetail'
 import { BucketBoard } from './BucketBoard'
+import { LyricsViewer } from './lyrics/LyricsViewer'
 import { OverviewDash } from './OverviewDash'
 import { ReviewsTab } from './ReviewsTab'
 import { SpotifyIntegrationTab } from './SpotifyIntegrationTab'
@@ -313,6 +314,30 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   }
   const [npStyle, setNpStyle] = useState<NpStyle>('banner')
   const [detail, setDetail] = useState<DetailTarget | null>(null)
+  // FEAT-lyrics-viewer Step 2 — isolated debug entry (`?lyrics=<spotify_track_id>`
+  // on the authed /profile route). The real dynamic entry (now-playing tap,
+  // active-playback-only) lands in Step 3; until then the viewer is reachable
+  // only through this owner/debug param. Closing strips the param so a reload
+  // doesn't reopen it.
+  const [lyricsDebugId, setLyricsDebugId] = useState<string | null>(() => {
+    if (typeof window === 'undefined')
+      return null
+    try {
+      return new URLSearchParams(window.location.search).get('lyrics')
+    }
+    catch {
+      return null
+    }
+  })
+  const closeLyrics = () => {
+    setLyricsDebugId(null)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('lyrics')
+      window.history.replaceState(null, '', url)
+    }
+    catch { /* ignore */ }
+  }
   const [layout, setLayout] = useState<Layout>(() => readPref(LAYOUT_KEY, LAYOUT_OPTS.map(o => o.v), 'sidebar'))
   const [density, setDensity] = useState<Density>(() => readPref(DENSITY_KEY, DENSITY_OPTS.map(o => o.v), 'regular'))
   // Latest in-session memo edits (note / prepTonight) keyed by bucket-item id.
@@ -417,6 +442,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       )}
 
       {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} />}
+      {lyricsDebugId && <LyricsViewer key={lyricsDebugId} spotifyTrackId={lyricsDebugId} onClose={closeLyrics} />}
     </div>
   )
 }
