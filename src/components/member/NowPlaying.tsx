@@ -54,7 +54,7 @@ function SyncNote({ iso }: { iso?: string | null }) {
   const s = fmtSince(iso)
   if (!s)
     return null
-  return <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{`동기화 ${s}`}</span>
+  return <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{`동기화 ${s}`}</span>
 }
 
 /**
@@ -68,7 +68,7 @@ function SyncControl({ iso, onSync, syncing }: { iso?: string | null, onSync?: (
       {onSync && (
         <button
 	type="button"
-	className="lf-btn lf-mono"
+	className="btn mono"
 	onClick={onSync}
 	disabled={syncing}
 	aria-label="지금 재생 상태 동기화"
@@ -239,13 +239,13 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
     }
   }
   if (state === 'gone')
-    return <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>재생 중 아님</span>
+    return <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>재생 중 아님</span>
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-      {state === 'failed' && <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>확인 실패</span>}
+      {state === 'failed' && <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>확인 실패</span>}
       <button
 	type="button"
-	className="lf-btn lf-mono"
+	className="btn mono"
 	onClick={() => {
           void click()
         }}
@@ -263,18 +263,18 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
 
 function IdleBox({ compact = false, iso, latest, onSync, syncing }: { compact?: boolean, iso?: string | null, latest?: RecentTrackItem | null, onSync?: () => void, syncing?: boolean }) {
   return (
-    <div className="lf-panel" style={{ padding: compact ? 16 : 22, display: 'flex', alignItems: 'center', gap: 14 }}>
+    <div className="panel" style={{ padding: compact ? 16 : 22, display: 'flex', alignItems: 'center', gap: 14 }}>
       <Equalizer playing={false} h={14} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="lf-kicker" style={{ color: 'var(--color-faded)', marginBottom: 4 }}>{latest ? '최근 재생' : 'NOW PLAYING'}</div>
+        <div className="kicker" style={{ color: 'var(--color-faded)', marginBottom: 4 }}>{latest ? '최근 재생' : 'NOW PLAYING'}</div>
         {latest ?
           (
               <>
-                <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.track_name}</div>
-                <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.artist_name}</div>
+                <div className="serif italic" style={{ fontSize: compact ? 16 : 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.track_name}</div>
+                <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.artist_name}</div>
               </>
             ) :
-          <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>}
+          <div className="serif italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>}
       </div>
       <SyncControl iso={iso} onSync={onSync} syncing={syncing} />
     </div>
@@ -291,23 +291,23 @@ function NowPlayingFull({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
   const idle = state === 'ready' && !liveSnapshot(np)
   const latest = useLatestPlayed(idle)
   if (state === 'loading')
-    return <div className="lf-panel" style={{ padding: 18 }}><span className="lf-meta">불러오는 중…</span></div>
+    return <div className="panel" style={{ padding: 18 }}><span className="meta">불러오는 중…</span></div>
   if (!np || !np.is_playing || !np.track)
     return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} />
   return (
-    <div className="lf-panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
+    <div className="panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
       <NpCover url={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={88} radius={4} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
           <Equalizer playing h={12} />
-          <span className="lf-kicker" style={{ color: 'var(--color-accent)' }}>NOW PLAYING</span>
+          <span className="kicker" style={{ color: 'var(--color-accent)' }}>NOW PLAYING</span>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
             {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
             <SyncControl iso={np.updated_at} onSync={onSync} syncing={syncing} />
           </span>
         </div>
-        <div className="lf-serif lf-italic" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
-        <div className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3 }}>
+        <div className="serif italic" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
+        <div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3 }}>
           {[np.artist, np.album].filter(Boolean).join(' — ')}
         </div>
       </div>
@@ -333,23 +333,23 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
   const live = liveSnapshot(np)
   const latest = useLatestPlayed(state === 'ready' && !live)
   return (
-    <div className="lf-panel" style={{ overflow: 'hidden' }}>
+    <div className="panel" style={{ overflow: 'hidden' }}>
       {state === 'loading' ?
-        <div style={{ padding: 16 }}><span className="lf-meta">불러오는 중…</span></div> :
+        <div style={{ padding: 16 }}><span className="meta">불러오는 중…</span></div> :
         live ?
           (
               <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
                 <NpCover url={live.album_cover_url} label={live.album ?? live.track ?? '?'} size={50} radius={3} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="lf-kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div className="kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
                     ● 재생 중
                     <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
                       <SyncControl iso={live.updated_at} onSync={onSync} syncing={syncing} />
                     </span>
                   </div>
-                  <div className="lf-serif lf-italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
-                  <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>{live.artist}</div>
+                  <div className="serif italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
+                  <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>{live.artist}</div>
                 </div>
                 <Equalizer playing h={16} />
               </div>
@@ -357,17 +357,17 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
           <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} /></div>}
 
       <div style={{ padding: '10px 8px 8px' }}>
-        <div className="lf-meta" style={{ padding: '0 8px 8px' }}>최근 들은 앨범</div>
-        {recent == null && <div className="lf-meta" style={{ padding: '4px 8px' }}>불러오는 중…</div>}
-        {recent != null && recent.length === 0 && <div className="lf-meta" style={{ padding: '4px 8px' }}>기록이 없습니다</div>}
+        <div className="meta" style={{ padding: '0 8px 8px' }}>최근 들은 앨범</div>
+        {recent == null && <div className="meta" style={{ padding: '4px 8px' }}>불러오는 중…</div>}
+        {recent != null && recent.length === 0 && <div className="meta" style={{ padding: '4px 8px' }}>기록이 없습니다</div>}
         {(recent ?? []).slice(0, 6).map((it, i) => (
           <div key={it.album_id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
             <NpCover url={it.album?.cover_url} label={it.album?.title ?? '?'} size={32} radius={2} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.album?.title}</div>
-              <div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it.album?.artist_names ?? []).join(', ')}</div>
+              <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.album?.title}</div>
+              <div className="sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it.album?.artist_names ?? []).join(', ')}</div>
             </div>
-            <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>{fmtSince(it.last_played_at)}</span>
+            <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>{fmtSince(it.last_played_at)}</span>
           </div>
         ))}
       </div>
@@ -386,17 +386,17 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
   const latest = useLatestPlayed(state === 'ready' && !live)
   if (state === 'loading') {
     return (
-      <div className="lf-panel" style={{ padding: 24, borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: 0, borderRight: 0, borderRadius: 0 }}>
-        <span className="lf-meta">불러오는 중…</span>
+      <div className="panel" style={{ padding: 24, borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: 0, borderRight: 0, borderRadius: 0 }}>
+        <span className="meta">불러오는 중…</span>
       </div>
     )
   }
   return (
-    <div className="lf-panel" style={{ padding: 0, overflow: 'hidden', borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'var(--color-bg)' }}>
+    <div className="panel" style={{ padding: 0, overflow: 'hidden', borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'var(--color-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, padding: 24 }}>
         <NpCover url={live ? live.album_cover_url : (latest?.album?.cover_url ?? null)} label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={116} radius={4} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="lf-kicker" style={{ marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div className="kicker" style={{ marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
             <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
               {live && onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
@@ -407,8 +407,8 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
           {live ?
             (
                 <>
-                  <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
-                  <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
+                  <div className="serif italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
+                  <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
                     {[live.artist, live.album].filter(Boolean).join(' — ')}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 30, marginBottom: 14 }}>
@@ -431,14 +431,14 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
             latest ?
               (
                   <>
-                    <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.track_name}</div>
-                    <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
+                    <div className="serif italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.track_name}</div>
+                    <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
                       {[latest.artist_name, latest.album_name].filter(Boolean).join(' — ')}
                     </div>
                   </>
                 ) :
               (
-                  <div className="lf-serif lf-italic" style={{ fontSize: 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
+                  <div className="serif italic" style={{ fontSize: 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
                     재생 중 아님
                   </div>
                 )}

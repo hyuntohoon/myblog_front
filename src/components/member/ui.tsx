@@ -3,15 +3,15 @@
 import type { CSSProperties, ReactNode } from 'react'
 
 export function SampleBadge({ label = '샘플' }: { label?: string }) {
-  return <span className="lf-sample" title="샘플 데이터 — 백엔드 연동 예정">{label}</span>
+  return <span className="sample" title="샘플 데이터 — 백엔드 연동 예정">{label}</span>
 }
 
 export function Cover({ label, size = 56, radius = 3, square = false }: { label: string, size?: number, radius?: number, square?: boolean }) {
   const dim: CSSProperties = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }
   const fs = square ? 'clamp(20px, 4vw, 40px)' : Math.max(12, size * 0.34)
   return (
-    <div className="lf-cover" style={{ ...dim, borderRadius: radius }}>
-      <span className="lf-cover-ph" style={{ fontSize: fs }}>{(label || '?').slice(0, 2).toUpperCase()}</span>
+    <div className="cover" style={{ ...dim, borderRadius: radius }}>
+      <span className="cover-ph" style={{ fontSize: fs }}>{(label || '?').slice(0, 2).toUpperCase()}</span>
     </div>
   )
 }
@@ -41,16 +41,16 @@ export function fmtTime(sec: number): string {
 /** Partial-fill stars from a 0–5 score. */
 export function Stars({ score, size = 16 }: { score: number | null, size?: number }) {
   if (score == null)
-    return <span className="lf-unrated">미평가</span>
+    return <span className="unrated">미평가</span>
   return (
     <span
-	className="lf-stars"
+	className="stars"
 	role="img"
 	aria-label={`별점 ${score.toFixed(1)} / 5`}
 	style={{ '--star-size': `${size}px`, '--star-pct': `${(score / 5) * 100}%` } as CSSProperties}
     >
-      <span className="lf-stars-bg" aria-hidden="true">★★★★★</span>
-      <span className="lf-stars-fg" aria-hidden="true">★★★★★</span>
+      <span className="stars-bg" aria-hidden="true">★★★★★</span>
+      <span className="stars-fg" aria-hidden="true">★★★★★</span>
     </span>
   )
 }
@@ -58,9 +58,9 @@ export function Stars({ score, size = 16 }: { score: number | null, size?: numbe
 /** Numeric score in mono, /5. */
 export function ScoreNum({ score, size = 13 }: { score: number | null, size?: number }) {
   if (score == null)
-    return <span className="lf-mono" style={{ color: 'var(--color-faded)', fontSize: size }}>—</span>
+    return <span className="mono" style={{ color: 'var(--color-faded)', fontSize: size }}>—</span>
   return (
-    <span className="lf-mono" style={{ fontSize: size, fontWeight: 600, color: 'var(--color-text)', letterSpacing: '-.01em' }}>
+    <span className="mono" style={{ fontSize: size, fontWeight: 600, color: 'var(--color-text)', letterSpacing: '-.01em' }}>
       {score.toFixed(1)}
       <span style={{ color: 'var(--color-faded)', fontWeight: 400 }}>/5</span>
     </span>
@@ -71,8 +71,8 @@ export function ScoreNum({ score, size = 13 }: { score: number | null, size?: nu
 export function Stat({ value, label, accent = false }: { value: ReactNode, label: string, accent?: boolean }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span className="lf-serif" style={{ fontSize: 30, fontWeight: 500, lineHeight: 0.95, letterSpacing: '-.02em', color: accent ? 'var(--color-accent)' : 'var(--color-text)' }}>{value}</span>
-      <span className="lf-meta">{label}</span>
+      <span className="serif" style={{ fontSize: 30, fontWeight: 500, lineHeight: 0.95, letterSpacing: '-.02em', color: accent ? 'var(--color-accent)' : 'var(--color-text)' }}>{value}</span>
+      <span className="meta">{label}</span>
     </div>
   )
 }
@@ -82,8 +82,8 @@ export function SectionTitle({ kicker, title, right, size = 28 }: { kicker?: Rea
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', borderBottom: '1px solid var(--color-text)', paddingBottom: 12, marginBottom: 22 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', flexShrink: 0 }}>
-        <h2 className="lf-serif" style={{ fontSize: size, fontWeight: 500, letterSpacing: '-.01em', color: 'var(--color-text)', whiteSpace: 'nowrap', margin: 0 }}>{title}</h2>
-        {kicker && <span className="lf-meta">{kicker}</span>}
+        <h2 className="serif" style={{ fontSize: size, fontWeight: 500, letterSpacing: '-.01em', color: 'var(--color-text)', whiteSpace: 'nowrap', margin: 0 }}>{title}</h2>
+        {kicker && <span className="meta">{kicker}</span>}
       </div>
       {right}
     </div>
@@ -136,7 +136,7 @@ export function Avatar({ size = 76, name = 'L', square = true }: { size?: number
         overflow: 'hidden',
       }}
     >
-      <span className="lf-serif lf-italic" style={{ fontSize: size * 0.42, fontWeight: 600, color: 'var(--color-text)', letterSpacing: '-.03em' }}>
+      <span className="serif italic" style={{ fontSize: size * 0.42, fontWeight: 600, color: 'var(--color-text)', letterSpacing: '-.03em' }}>
         {name.slice(0, 1)}
       </span>
     </div>
@@ -152,7 +152,7 @@ export function Seg({ value, options, onChange }: { value: string, options: { v:
 	key={o.v}
 	type="button"
 	onClick={() => onChange(o.v)}
-	className="lf-mono"
+	className="mono"
 	style={{
             border: 'none',
             borderLeft: i ? '1px solid var(--color-border)' : 'none',
@@ -179,21 +179,21 @@ export function BucketShortcut({ count, onGo }: { count: number, onGo: () => voi
     <button
 	type="button"
 	onClick={onGo}
-	className="lf-panel"
+	className="panel"
 	style={{ width: '100%', textAlign: 'left', padding: 0, display: 'flex', alignItems: 'stretch', cursor: 'pointer', overflow: 'hidden', background: 'var(--color-paper)' }}
     >
       <span style={{ width: 4, background: 'var(--color-accent)', flex: '0 0 auto' }} />
       <span style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 18, flex: 1 }}>
         <span style={{ flex: 1 }}>
-          <span className="lf-kicker" style={{ color: 'var(--color-accent)', display: 'block', marginBottom: 6 }}>평론 대기열</span>
-          <span className="lf-serif" style={{ fontSize: 21, fontWeight: 500, display: 'block' }}>My Buckit으로 이동</span>
-          <span className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)' }}>
+          <span className="kicker" style={{ color: 'var(--color-accent)', display: 'block', marginBottom: 6 }}>평론 대기열</span>
+          <span className="serif" style={{ fontSize: 21, fontWeight: 500, display: 'block' }}>My Buckit으로 이동</span>
+          <span className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)' }}>
 아직 평론을 쓰지 않은 앨범
 {count}
 장이 대기 중
           </span>
         </span>
-        <span className="lf-serif" style={{ fontSize: 40, fontWeight: 500, color: 'var(--color-accent)', lineHeight: 1 }}>{count}</span>
+        <span className="serif" style={{ fontSize: 40, fontWeight: 500, color: 'var(--color-accent)', lineHeight: 1 }}>{count}</span>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" strokeWidth="1.6" strokeLinecap="round"><path d="M9 6l6 6-6 6" /></svg>
       </span>
     </button>

@@ -161,12 +161,12 @@ function RowMenu({ row, onOpen, onPromote }: {
 	}
 	return (
 		<div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
-			<button type="button" className="lf-iconbtn" title="동작" aria-label="동작" onClick={() => setOpen(o => !o)} style={{ fontSize: 16, letterSpacing: '1px' }}>⋯</button>
+			<button type="button" className="iconbtn" title="동작" aria-label="동작" onClick={() => setOpen(o => !o)} style={{ fontSize: 16, letterSpacing: '1px' }}>⋯</button>
 			{open && (
-				<div className="lf-panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 5px)', zIndex: 40, padding: 5, minWidth: 184, background: 'var(--color-bg)', boxShadow: '0 16px 36px -14px rgba(0,0,0,.45)' }}>
+				<div className="panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 5px)', zIndex: 40, padding: 5, minWidth: 184, background: 'var(--color-bg)', boxShadow: '0 16px 36px -14px rgba(0,0,0,.45)' }}>
 					<button
 						type="button"
-						className="lf-mono"
+						className="mono"
 						disabled={!catalogued}
 						title={catalogued ? undefined : '카탈로그 미등록 — 분류하기 먼저'}
 						onClick={() => {
@@ -179,7 +179,7 @@ function RowMenu({ row, onOpen, onPromote }: {
 					</button>
 					<button
 						type="button"
-						className="lf-mono"
+						className="mono"
 						disabled={!catalogued}
 						title={catalogued ? undefined : '카탈로그 미등록 — 분류하기 먼저'}
 						onClick={() => {
@@ -192,7 +192,7 @@ function RowMenu({ row, onOpen, onPromote }: {
 					</button>
 					<a
 						href="/write"
-						className="lf-mono"
+						className="mono"
 						style={{ ...itemStyle, color: 'var(--color-text)', textDecoration: 'none' }}
 					>
 						평론 쓰기 →
@@ -234,7 +234,7 @@ function SortHead({ col, label, sort, sortDir, onSort, className }: {
 		<button
 			type="button"
 			onClick={() => onSort(col)}
-			className={`lf-mono${className ? ` ${className}` : ''}`}
+			className={`mono${className ? ` ${className}` : ''}`}
 			title="클릭하여 정렬"
 			style={{ display: 'inline-flex', alignItems: 'center', gap: 5, width: '100%', padding: 0, background: 'none', border: 'none', cursor: 'pointer', justifyContent: 'flex-start', color: active ? 'var(--color-text)' : 'var(--color-faded)', fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase' }}
 		>
@@ -247,7 +247,7 @@ function SortHead({ col, label, sort, sortDir, onSort, className }: {
 function TableHead({ cols, withLyrics, sort, sortDir, onSort }: { cols: string, withLyrics: boolean, sort: SortKey, sortDir: SortDir, onSort: (c: SortKey) => void }) {
 	return (
 		<div style={{ display: 'grid', gridTemplateColumns: cols, gap: 14, alignItems: 'center', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 0, background: 'var(--color-bg)', zIndex: 5 }}>
-			<span className="lf-mono" style={{ color: 'var(--color-faded)', fontSize: 10.5, textAlign: 'center' }}>#</span>
+			<span className="mono" style={{ color: 'var(--color-faded)', fontSize: 10.5, textAlign: 'center' }}>#</span>
 			<SortHead col="title" label="제목" sort={sort} sortDir={sortDir} onSort={onSort} />
 			<SortHead col="album" label="앨범" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-album" />
 			<SortHead col="recent" label="추가한 날짜" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-date" />
@@ -281,9 +281,9 @@ function Row({ row, n, cols, onOpen, onPromote, onLyrics }: {
 			sub={row.artist}
 			cells={(
 				<>
-					<span className="lf-sans lk-col-album" style={{ fontSize: 12.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.albumName}</span>
-					<span className="lf-mono lk-col-date" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{row.likedAt}</span>
-					<span className="lf-mono lk-col-length" style={{ fontSize: 11, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{row.durationLabel}</span>
+					<span className="sans lk-col-album" style={{ fontSize: 12.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.albumName}</span>
+					<span className="mono lk-col-date" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{row.likedAt}</span>
+					<span className="mono lk-col-length" style={{ fontSize: 11, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{row.durationLabel}</span>
 				</>
 			)}
 			actions={{
@@ -304,17 +304,17 @@ function Card({ row, onOpen, onPromote }: {
 }) {
 	const catalogued = row.albumId != null
 	return (
-		<div className="lf-panel" style={{ padding: 13, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+		<div className="panel" style={{ padding: 13, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column', gap: 10 }}>
 			<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} style={{ position: 'relative', padding: 0, border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', lineHeight: 0 }}>
 				<LkCover label={row.albumName} cover={row.cover} square />
 			</button>
 			<div style={{ minWidth: 0 }}>
-				<div className="lf-serif" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.track}</div>
-				<div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{row.artist}</div>
+				<div className="serif" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.track}</div>
+				<div className="sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{row.artist}</div>
 			</div>
 			<div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid var(--color-border-soft)', paddingTop: 9 }}>
-				<span className="lf-chip" style={{ pointerEvents: 'none', padding: '3px 7px', fontSize: 9.5 }}>{row.genre}</span>
-				<span className="lf-mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{row.likedAt.slice(5)}</span>
+				<span className="chip" style={{ pointerEvents: 'none', padding: '3px 7px', fontSize: 9.5 }}>{row.genre}</span>
+				<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{row.likedAt.slice(5)}</span>
 				<span style={{ marginLeft: 'auto' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>
 			</div>
 		</div>
@@ -336,7 +336,7 @@ function Pill({ on, children, onClick }: { on: boolean, children: React.ReactNod
 		<button
 			type="button"
 			onClick={onClick}
-			className="lf-sans"
+			className="sans"
 			style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', cursor: 'pointer', padding: '7px 14px', borderRadius: 999, fontSize: 12.5, fontWeight: 500, transition: 'background .14s, border-color .14s, color .14s', border: `1px solid ${on ? 'var(--color-text)' : 'var(--color-border)'}`, background: on ? 'var(--color-text)' : 'var(--color-paper)', color: on ? 'var(--color-bg)' : 'var(--color-text)' }}
 		>
 			{children}
@@ -348,7 +348,7 @@ function Pill({ on, children, onClick }: { on: boolean, children: React.ReactNod
 function Toast({ msg }: { msg: string }) {
 	return createPortal(
 		<div className="lf-rise" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 200, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 8, background: 'var(--color-text)', color: 'var(--color-bg)', boxShadow: '0 16px 40px rgba(0,0,0,.3)', maxWidth: '90vw' }}>
-			<span className="lf-sans" style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg}</span>
+			<span className="sans" style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg}</span>
 		</div>,
 		document.body,
 	)
@@ -530,7 +530,7 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 
 	if (rows == null) {
 		return (
-			<div className="lf-meta" style={{ textAlign: 'center', padding: '64px 0', color: 'var(--color-faded)' }}>좋아요한 트랙을 불러오는 중…</div>
+			<div className="meta" style={{ textAlign: 'center', padding: '64px 0', color: 'var(--color-faded)' }}>좋아요한 트랙을 불러오는 중…</div>
 		)
 	}
 
@@ -538,7 +538,7 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 		<div style={{ paddingBottom: 56 }}>
 
 			{loadError && (
-				<div className="lf-meta" style={{ marginBottom: 14, color: 'var(--color-accent)' }}>일부 데이터를 불러오지 못했어요.</div>
+				<div className="meta" style={{ marginBottom: 14, color: 'var(--color-accent)' }}>일부 데이터를 불러오지 못했어요.</div>
 			)}
 
 			{/* analysis — above search */}
@@ -553,7 +553,7 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 
 			{/* classify */}
 			<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-				<span className="lf-meta">분류</span>
+				<span className="meta">분류</span>
 				<Seg value={classifyBy} onChange={v => setClassifyBy(v as ClassifyBy)} options={CLASSIFY_OPTS} />
 			</div>
 
@@ -570,13 +570,13 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 			{/* search · sort · view */}
 			<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
 				<div style={{ position: 'relative', flex: '1 1 200px', minWidth: 160 }}>
-					<span className="lf-serif" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'var(--color-faded)', pointerEvents: 'none' }}>⌕</span>
+					<span className="serif" style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 16, color: 'var(--color-faded)', pointerEvents: 'none' }}>⌕</span>
 					<input
 						value={q}
 						onChange={e => setQ(e.target.value)}
 						placeholder="곡·아티스트·앨범 검색…"
 						aria-label="곡·아티스트·앨범 검색"
-						className="lf-sans"
+						className="sans"
 						style={{ width: '100%', padding: '9px 12px 9px 32px', border: '1px solid var(--color-border)', borderRadius: 999, background: 'var(--color-bg)', color: 'var(--color-text)', fontSize: 13.5, outline: 'none' }}
 					/>
 				</div>
@@ -586,19 +586,19 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 
 			{anyFilter && (
 				<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-					<span className="lf-meta">
+					<span className="meta">
 						{sorted.length.toLocaleString()}
 						곡 일치
 					</span>
-					<button type="button" className="lf-chip" onClick={resetFilters} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 40%, var(--color-border))', color: 'var(--color-accent)' }}>필터 초기화 ✕</button>
+					<button type="button" className="chip" onClick={resetFilters} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 40%, var(--color-border))', color: 'var(--color-accent)' }}>필터 초기화 ✕</button>
 				</div>
 			)}
 
 			{/* list / cards */}
 			{sorted.length === 0 ?
 				(
-					<div className="lf-panel" style={{ padding: 48, textAlign: 'center' }}>
-						<span className="lf-meta">{anyFilter ? '조건에 맞는 좋아요가 없습니다' : '아직 좋아요한 트랙이 없어요.'}</span>
+					<div className="panel" style={{ padding: 48, textAlign: 'center' }}>
+						<span className="meta">{anyFilter ? '조건에 맞는 좋아요가 없습니다' : '아직 좋아요한 트랙이 없어요.'}</span>
 					</div>
 				) :
 				view === 'card' ?
@@ -608,14 +608,14 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 							</div>
 						) :
 						(
-							<div className="lf-panel" style={{ padding: '0 8px 8px' }}>
+							<div className="panel" style={{ padding: '0 8px 8px' }}>
 								<TableHead cols={cols} withLyrics={onOpenLyrics != null} sort={sort} sortDir={sortDir} onSort={onSortHead} />
 								{grouped ?
 									groups.map(grp => (
 										<div key={grp.key}>
 											<div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '16px 12px 6px' }}>
-												<span className="lf-serif lf-italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap' }}>{grp.key}</span>
-												<span className="lf-meta" style={{ whiteSpace: 'nowrap' }}>
+												<span className="serif italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap' }}>{grp.key}</span>
+												<span className="meta" style={{ whiteSpace: 'nowrap' }}>
 													{grp.items.length}
 													곡
 												</span>
@@ -636,7 +636,7 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 				/>
 			)}
 			{promoting && bucketTree == null && (
-				<div className="lf-meta" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 200, padding: '10px 14px', borderRadius: 8, background: 'var(--color-text)', color: 'var(--color-bg)' }}>버킷 목록 불러오는 중…</div>
+				<div className="meta" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 200, padding: '10px 14px', borderRadius: 8, background: 'var(--color-text)', color: 'var(--color-bg)' }}>버킷 목록 불러오는 중…</div>
 			)}
 
 			{toast && <Toast msg={toast} />}

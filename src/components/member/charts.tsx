@@ -60,8 +60,8 @@ function ChartBar({ items, unit = '', onSelect }: { items: Normalized[], unit?: 
       {items.map((it, i) => (
         <div key={it.name} {...selectable(onSelect, it)}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 }}>
-            <span className="lf-sans" style={{ fontSize: 13, fontWeight: 500, color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.name}</span>
-            <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>
+            <span className="sans" style={{ fontSize: 13, fontWeight: 500, color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.name}</span>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>
 {it.value}
 {unit}
 {' '}
@@ -93,11 +93,11 @@ function ChartDonut({ items, onSelect }: { items: Normalized[], onSelect?: Chart
         <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: `conic-gradient(${stops})` }} />
         <div style={{ position: 'absolute', inset: 32, borderRadius: '50%', background: 'var(--color-bg)', display: 'grid', placeItems: 'center', textAlign: 'center', boxShadow: 'inset 0 0 0 1px var(--color-border-soft)' }}>
           <div>
-            <div className="lf-serif" style={{ fontSize: 30, fontWeight: 500, color: 'var(--color-accent)', lineHeight: 1 }}>
+            <div className="serif" style={{ fontSize: 30, fontWeight: 500, color: 'var(--color-accent)', lineHeight: 1 }}>
 {top.pct.toFixed(0)}
 %
             </div>
-            <div className="lf-meta" style={{ marginTop: 4 }}>{top.name}</div>
+            <div className="meta" style={{ marginTop: 4 }}>{top.name}</div>
           </div>
         </div>
       </div>
@@ -105,8 +105,8 @@ function ChartDonut({ items, onSelect }: { items: Normalized[], onSelect?: Chart
         {items.map((it, i) => (
           <div key={it.name} {...selectable(onSelect, it)} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ width: 9, height: 9, background: colorFor(i).bg, flex: '0 0 auto' }} />
-            <span className="lf-sans" style={{ fontSize: 12.5, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</span>
-            <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--color-faded)' }}>
+            <span className="sans" style={{ fontSize: 12.5, color: 'var(--color-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</span>
+            <span className="mono" style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--color-faded)' }}>
 {it.pct.toFixed(0)}
 %
             </span>
@@ -145,8 +145,8 @@ function ChartTreemap({ items, unit = '', onSelect }: { items: Normalized[], uni
 	{...selectable(onSelect, it)}
 	style={{ flex: it.value, minWidth: 0, borderRadius: 3, padding: 11, background: c.bg, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', overflow: 'hidden' }}
               >
-                <span className="lf-sans" style={{ fontSize: 12.5, fontWeight: 600, color: c.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</span>
-                <span className="lf-mono" style={{ fontSize: 11, fontWeight: 600, color: c.fg, opacity: 0.85 }}>
+                <span className="sans" style={{ fontSize: 12.5, fontWeight: 600, color: c.fg, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</span>
+                <span className="mono" style={{ fontSize: 11, fontWeight: 600, color: c.fg, opacity: 0.85 }}>
 {it.value}
 {unit}
                 </span>
@@ -168,12 +168,12 @@ function ChartTag({ items, onSelect }: { items: Normalized[], onSelect?: ChartSe
       {items.map((it, i) => (
         <span
 	key={it.name}
-	className="lf-serif lf-italic"
+	className="serif italic"
 	{...selectable(onSelect, it)}
 	style={{ fontSize: size(it.value), fontWeight: 500, lineHeight: 1.1, letterSpacing: '-.01em', color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)', opacity: i === 0 ? 1 : Math.max(0.45, 1 - i * 0.08) }}
         >
           {it.name}
-          <sup className="lf-mono" style={{ fontSize: 10, color: 'var(--color-faded)', marginLeft: 3, fontStyle: 'normal' }}>{it.value}</sup>
+          <sup className="mono" style={{ fontSize: 10, color: 'var(--color-faded)', marginLeft: 3, fontStyle: 'normal' }}>{it.value}</sup>
         </span>
       ))}
     </div>
@@ -186,16 +186,16 @@ function ChartList({ items, unit = '', onSelect }: { items: Normalized[], unit?:
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {items.map((it, i) => (
         <div key={it.name} {...selectable(onSelect, it)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0', borderBottom: i < items.length - 1 ? '1px solid var(--color-border-soft)' : 'none' }}>
-          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 22 }}>{String(i + 1).padStart(2, '0')}</span>
-          <span className="lf-serif lf-italic" style={{ fontSize: 15, fontWeight: 500, flex: '0 0 auto', minWidth: 0, color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.name}</span>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 22 }}>{String(i + 1).padStart(2, '0')}</span>
+          <span className="serif italic" style={{ fontSize: 15, fontWeight: 500, flex: '0 0 auto', minWidth: 0, color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.name}</span>
           <div style={{ flex: 1, height: 3, background: 'var(--color-border-soft)', margin: '0 8px', overflow: 'hidden' }}>
             <div style={{ width: `${(it.value / max) * 100}%`, height: '100%', background: colorFor(i).bg }} />
           </div>
-          <span className="lf-mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)' }}>
+          <span className="mono" style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)' }}>
 {it.value}
 {unit}
           </span>
-          <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 36, textAlign: 'right' }}>
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 36, textAlign: 'right' }}>
 {it.pct.toFixed(0)}
 %
           </span>

@@ -47,9 +47,9 @@ function toChartItems(dist: Distribution | null): DistItem[] {
 /** A bordered chart panel shell (matches the prototype's LkPanel). */
 function Panel({ title, right, children }: { title: string, right?: React.ReactNode, children: React.ReactNode }) {
 	return (
-		<div className="lf-panel" style={{ padding: 18, display: 'flex', flexDirection: 'column' }}>
+		<div className="panel" style={{ padding: 18, display: 'flex', flexDirection: 'column' }}>
 			<div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
-				<span className="lf-mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' }}>{title}</span>
+				<span className="mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' }}>{title}</span>
 				{right && <span style={{ marginLeft: 'auto' }}>{right}</span>}
 			</div>
 			<div style={{ flex: 1 }}>{children}</div>
@@ -80,7 +80,7 @@ function SourceNote({ dist }: { dist: Distribution | null }) {
 	const synced = fmtDate(dist?.last_synced_at)
 	const n = dist ? dist.total.toLocaleString() : '—'
 	return (
-		<div className="lf-meta" style={{ marginBottom: 14, lineHeight: 1.5 }}>
+		<div className="meta" style={{ marginBottom: 14, lineHeight: 1.5 }}>
 			<strong style={{ color: 'var(--color-text)' }}>좋아요</strong>
 			{` — 내가 담은 곡(의도). 전체 ${n}곡${synced ? ` · 동기화 ${synced}` : ''}`}
 		</div>
@@ -96,7 +96,7 @@ function addedMs(row: LikedRowVM): number {
 function LikedFlow({ rows }: { rows: LikedRowVM[] }) {
 	const dates = rows.map(addedMs).filter(t => !Number.isNaN(t))
 	if (!dates.length)
-		return <div className="lf-meta">데이터 없음</div>
+		return <div className="meta">데이터 없음</div>
 	const wk = 7 * 864e5
 	const start = new Date(Math.min(...dates))
 	start.setHours(0, 0, 0, 0)
@@ -116,15 +116,15 @@ function LikedFlow({ rows }: { rows: LikedRowVM[] }) {
 			<div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 92 }}>
 				{buckets.map((b, i) => (
 					<div key={b.start.getTime()} title={`${fmt(b.start)} 주 · ${b.count}곡`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
-						<span className="lf-mono" style={{ fontSize: 9, color: 'var(--color-faded)' }}>{b.count || ''}</span>
+						<span className="mono" style={{ fontSize: 9, color: 'var(--color-faded)' }}>{b.count || ''}</span>
 						<div style={{ width: '100%', maxWidth: 26, height: `${(b.count / maxC) * 100}%`, minHeight: b.count ? 4 : 0, background: i === last ? 'var(--color-accent)' : 'var(--color-text)', opacity: i === last ? 1 : 0.34 }} />
 					</div>
 				))}
 			</div>
 			<div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, borderTop: '1px solid var(--color-border-soft)', paddingTop: 8 }}>
-				<span className="lf-meta">{fmt(buckets[0].start)}</span>
-				<span className="lf-meta">주 단위 · 좋아요 수</span>
-				<span className="lf-meta">{fmt(buckets[last].start)}</span>
+				<span className="meta">{fmt(buckets[0].start)}</span>
+				<span className="meta">주 단위 · 좋아요 수</span>
+				<span className="meta">{fmt(buckets[last].start)}</span>
 			</div>
 		</div>
 	)
@@ -141,17 +141,17 @@ function DecadeMini({ rows }: { rows: LikedRowVM[] }) {
 		.map(([name, count]) => ({ name, count }))
 		.sort((a, b) => b.name.localeCompare(a.name))
 	if (!data.length)
-		return <div className="lf-meta">연대 정보 없음</div>
+		return <div className="meta">연대 정보 없음</div>
 	const max = Math.max(1, ...data.map(d => d.count))
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
 			{data.map((d, i) => (
 				<div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-					<span className="lf-serif lf-italic" style={{ fontSize: 14, width: 64, flex: '0 0 auto', color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{d.name}</span>
+					<span className="serif italic" style={{ fontSize: 14, width: 64, flex: '0 0 auto', color: i === 0 ? 'var(--color-accent)' : 'var(--color-text)' }}>{d.name}</span>
 					<div style={{ flex: 1, height: 4, background: 'var(--color-border-soft)', overflow: 'hidden' }}>
 						<div style={{ width: `${(d.count / max) * 100}%`, height: '100%', background: i === 0 ? 'var(--color-accent)' : 'var(--color-text)', opacity: i === 0 ? 1 : 0.4 }} />
 					</div>
-					<span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 26, textAlign: 'right' }}>{d.count}</span>
+					<span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 26, textAlign: 'right' }}>{d.count}</span>
 				</div>
 			))}
 		</div>
@@ -201,8 +201,8 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
 
 	return (
 		<div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-			<div className="lf-panel" style={{ padding: '14px 18px', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-				<div className="lf-meta" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+			<div className="panel" style={{ padding: '14px 18px', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+				<div className="meta" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
 					<span>
 						<strong style={{ color: 'var(--color-text)' }}>
 							미분류
@@ -228,11 +228,11 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
 						</span>
 					)}
 				</div>
-				<button type="button" className="lf-btn lf-btn-solid" disabled={classifying} onClick={onClassify} style={{ opacity: classifying ? 0.6 : 1 }}>
+				<button type="button" className="btn btn-solid" disabled={classifying} onClick={onClassify} style={{ opacity: classifying ? 0.6 : 1 }}>
 					{classifying ? '요청 중…' : '분류하기'}
 				</button>
 			</div>
-			{classifyMsg && <div className="lf-meta" style={{ color: 'var(--color-subtle)' }}>{classifyMsg}</div>}
+			{classifyMsg && <div className="meta" style={{ color: 'var(--color-subtle)' }}>{classifyMsg}</div>}
 		</div>
 	)
 }
@@ -278,11 +278,11 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 
 	// Population basis, surfaced as panel captions so the server-whole charts and
 	// the client-side (loaded-only) widgets can't be read against the same N.
-	const serverBasis = <span className="lf-meta" style={{ color: 'var(--color-faded)' }}>전체 집계</span>
+	const serverBasis = <span className="meta" style={{ color: 'var(--color-faded)' }}>전체 집계</span>
 	const artistBasis = artistAll.length > artistItems.length ?
-		<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`상위 ${artistItems.length} · 전체 ${artistAll.length.toLocaleString()}`}</span> :
+		<span className="meta" style={{ color: 'var(--color-faded)' }}>{`상위 ${artistItems.length} · 전체 ${artistAll.length.toLocaleString()}`}</span> :
 		serverBasis
-	const viewBasis = <span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`좋아요 ${rows.length.toLocaleString()}곡`}</span>
+	const viewBasis = <span className="meta" style={{ color: 'var(--color-faded)' }}>{`좋아요 ${rows.length.toLocaleString()}곡`}</span>
 	const likedTotal = dists['liked:genre']?.total ?? 0
 	const overCeiling = likedTotal > loadedCount
 
@@ -301,20 +301,20 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 			<div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
 				<Panel title="장르 분포" right={serverBasis}>
 					{error ?
-						<div className="lf-meta">불러오지 못했어요.</div> :
+						<div className="meta">불러오지 못했어요.</div> :
 						!loaded ?
-								<div className="lf-meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div> :
+								<div className="meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div> :
 								genreItems.length === 0 ?
-										<div className="lf-meta">표시할 장르가 없어요.</div> :
+										<div className="meta">표시할 장르가 없어요.</div> :
 										<DistChart style={chartStyle} items={genreItems} unit={unit} />}
 				</Panel>
 				<Panel title="아티스트 분포" right={artistBasis}>
 					{error ?
-						<div className="lf-meta">불러오지 못했어요.</div> :
+						<div className="meta">불러오지 못했어요.</div> :
 						!loaded ?
-								<div className="lf-meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div> :
+								<div className="meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div> :
 								artistItems.length === 0 ?
-										<div className="lf-meta">표시할 아티스트가 없어요.</div> :
+										<div className="meta">표시할 아티스트가 없어요.</div> :
 										<DistChart style={chartStyle} items={artistItems} unit={unit} />}
 				</Panel>
 			</div>
@@ -324,7 +324,7 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 				<Panel title="연대 분포" right={viewBasis}><DecadeMini rows={rows} /></Panel>
 			</div>
 
-			<div className="lf-meta" style={{ marginTop: 10, color: 'var(--color-faded)' }}>
+			<div className="meta" style={{ marginTop: 10, color: 'var(--color-faded)' }}>
 				{`‘좋아요 흐름·연대’는 화면에 적재된 좋아요만 집계해요${overCeiling ? ` — 전체 ${likedTotal.toLocaleString()}곡 중 ${loadedCount.toLocaleString()}곡 적재` : ''}.`}
 			</div>
 

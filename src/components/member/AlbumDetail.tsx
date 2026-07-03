@@ -48,7 +48,7 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
 
   return (
     <div
-	className="lf-scrim"
+	className="scrim"
 	style={{ justifyContent: 'center', alignItems: 'center', padding: 24 }}
 	onClick={onClose}
 	role="presentation"
@@ -62,7 +62,7 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
 	aria-label="앨범 상세"
 	style={{ position: 'relative', width: '100%', maxWidth: 600, maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 34px 80px rgba(0,0,0,.42)', padding: '30px 30px 26px' }}
       >
-        <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
+        <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
         {album.albumId ? <RealBody album={album} mode={mode} published={published} onOpenLyrics={onOpenLyrics} /> : <MinimalBody album={album} />}
       </div>
     </div>
@@ -121,11 +121,11 @@ function RealBody({ album, mode, published, onOpenLyrics }: { album: DetailTarge
       />
 
       {state === 'loading' ?
-        <div className="lf-meta" style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>불러오는 중…</div> :
+        <div className="meta" style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>불러오는 중…</div> :
         (state === 'error' || !data) ?
           (
             <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-              <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{album.year ? `${album.year}년 발매` : '상세 정보를 불러오지 못했습니다'}</div>
+              <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{album.year ? `${album.year}년 발매` : '상세 정보를 불러오지 못했습니다'}</div>
             </div>
           ) :
           mode === 'edit' ?
@@ -141,11 +141,11 @@ function Header({ cover, title, artist, meta, kicker }: { cover?: string | null,
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', paddingRight: 28 }}>
       <div style={{ width: 110, flex: '0 0 auto' }}><AlbumArt url={cover} label={title} size={110} /></div>
       <div style={{ minWidth: 0, flex: 1, paddingTop: 2 }}>
-        <div className="lf-kicker" style={{ marginBottom: 5 }}>{kicker}</div>
-        <h2 className="lf-serif lf-italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.14, margin: 0 }}>{title}</h2>
-        {artist && <div className="lf-sans" style={{ fontSize: 13, color: 'var(--color-subtle)', marginTop: 6 }}>{artist}</div>}
+        <div className="kicker" style={{ marginBottom: 5 }}>{kicker}</div>
+        <h2 className="serif italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.14, margin: 0 }}>{title}</h2>
+        {artist && <div className="sans" style={{ fontSize: 13, color: 'var(--color-subtle)', marginTop: 6 }}>{artist}</div>}
         {meta.length > 0 && (
-          <div className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '0.04em', color: 'var(--color-faded)', marginTop: 10, lineHeight: 1.5 }}>{meta.join(' · ')}</div>
+          <div className="mono" style={{ fontSize: 10.5, letterSpacing: '0.04em', color: 'var(--color-faded)', marginTop: 10, lineHeight: 1.5 }}>{meta.join(' · ')}</div>
         )}
       </div>
     </div>
@@ -161,7 +161,7 @@ function Tracklist({ tracks, onOpenLyrics }: { tracks: MusicTrack[], onOpenLyric
     return null
   return (
     <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-      <div className="lf-meta" style={{ marginBottom: 10 }}>트랙리스트</div>
+      <div className="meta" style={{ marginBottom: 10 }}>트랙리스트</div>
       <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {tracks.map((t) => {
           const sid = t.spotify_id
@@ -172,10 +172,10 @@ function Tracklist({ tracks, onOpenLyrics }: { tracks: MusicTrack[], onOpenLyric
 	no={t.track_no ?? '·'}
 	title={t.title}
 	titleSuffix={t.feat_artist_names.length > 0 ?
-                <span className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-faded)' }}>{` feat. ${t.feat_artist_names.join(', ')}`}</span> :
+                <span className="sans" style={{ fontSize: 11.5, color: 'var(--color-faded)' }}>{` feat. ${t.feat_artist_names.join(', ')}`}</span> :
                 undefined}
 	cells={t.duration_sec != null ?
-                <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
+                <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
                 undefined}
 	actions={onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid) } : {}}
 	style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border-soft)' }}
@@ -193,7 +193,7 @@ function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtis
     <>
       {artists.length > 0 && (
         <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-          <div className="lf-meta" style={{ marginBottom: 12 }}>아티스트</div>
+          <div className="meta" style={{ marginBottom: 12 }}>아티스트</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {artists.map(ar => (
               <div key={ar.id} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -202,11 +202,11 @@ function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtis
                   {/* ARCH-entity-interaction-contract Step 3 — name links to the
                       artist hub (the canonical artist detail surface, mirroring
                       the tray/board artist-member click). */}
-                  <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     <a className="lf-artist-link" href={artistHref(ar.id)} title="아티스트 허브">{ar.name}</a>
                   </div>
                   {ar.genres.length > 0 && (
-                    <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-faded)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{ar.genres.join(' · ')}</div>
+                    <div className="mono" style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-faded)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{ar.genres.join(' · ')}</div>
                   )}
                 </div>
               </div>
@@ -218,7 +218,7 @@ function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtis
         <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} /> :
         (
           <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-            <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{year ? `${year}년 발매` : '발매 정보 없음'}</div>
+            <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{year ? `${year}년 발매` : '발매 정보 없음'}</div>
           </div>
         )}
     </>
@@ -230,11 +230,11 @@ function EditBody({ published, tracks, onOpenLyrics }: { published?: MemberRevie
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 20, padding: '12px 14px', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-paper)' }}>
-        <span className="lf-meta" style={{ color: 'var(--color-accent)' }}>이미 발행된 평론</span>
+        <span className="meta" style={{ color: 'var(--color-accent)' }}>이미 발행된 평론</span>
         {published?.rating != null && <Stars score={published.rating} size={14} />}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {published?.slug && <a href={reviewHref(published.slug)} className="lf-chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
-          {published?.postId && <a href={`/write?id=${published.postId}`} className="lf-chip" style={{ textDecoration: 'none' }}>수정</a>}
+          {published?.slug && <a href={reviewHref(published.slug)} className="chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
+          {published?.postId && <a href={`/write?id=${published.postId}`} className="chip" style={{ textDecoration: 'none' }}>수정</a>}
         </div>
       </div>
       <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} />
@@ -360,7 +360,7 @@ function SaveStateDot({ phase }: { phase: SavePhase }) {
   const dot = phase === 'error' ? 'var(--color-accent)' : phase === 'saving' ? 'var(--color-faded)' : 'var(--color-subtle)'
   return (
     <span
-	className="lf-mono"
+	className="mono"
 	aria-live="polite"
 	style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10.5, letterSpacing: '.08em', color: phase === 'error' ? 'var(--color-accent)' : 'var(--color-faded)', opacity: phase === 'idle' ? 0 : 1, transition: 'opacity .3s' }}
     >
@@ -410,7 +410,7 @@ function GrowEmptyHint({ show }: { show: boolean }) {
   if (!show)
     return null
   return (
-    <div className="lf-serif lf-italic" style={{ fontSize: 13, color: 'var(--color-faded)', lineHeight: 1.5, padding: '9px 0 2px', animation: 'memo-rise .3s both' }}>
+    <div className="serif italic" style={{ fontSize: 13, color: 'var(--color-faded)', lineHeight: 1.5, padding: '9px 0 2px', animation: 'memo-rise .3s both' }}>
       아직 키울 게 없어요. 한 줄만 던져두면 돼요.
     </div>
   )
@@ -484,7 +484,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
 
   return (
     <div
-	className="lf-scrim"
+	className="scrim"
 	style={{ justifyContent: 'center', alignItems: 'center', padding: 24 }}
 	onClick={onClose}
 	role="presentation"
@@ -503,7 +503,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
         </button>
 
         <div className="memo-lg-bar">
-          <span className="lf-kicker">버킷 · 앨범 메모</span>
+          <span className="kicker">버킷 · 앨범 메모</span>
           <div style={{ marginLeft: 'auto' }}>
             <Seg value={size} options={MEMO_SIZES} onChange={changeSize} />
           </div>
@@ -513,11 +513,11 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
           {/* left — album identity (the subject of the memo, not an aside) */}
           <div className="memo-info">
             <div className="memo-cover-wrap"><AlbumArt url={a?.cover_url ?? album.cover} label={album.album} size={220} /></div>
-            <div className="lf-kicker" style={{ marginBottom: 7 }}>앨범</div>
-            <h2 id="memo-dialog-title" className="lf-serif lf-italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.12, letterSpacing: '-.01em', margin: 0 }}>{album.album}</h2>
-            {album.artist && <div className="lf-sans" style={{ fontSize: 14, color: 'var(--color-subtle)', marginTop: 5 }}>{album.artist}</div>}
-            {meta.length > 0 && <div className="lf-mono" style={{ fontSize: 11, letterSpacing: '.04em', color: 'var(--color-faded)', marginTop: 8, lineHeight: 1.5 }}>{meta.join(' · ')}</div>}
-            <div style={{ marginTop: 12 }}><span className="lf-unrated">미평가</span></div>
+            <div className="kicker" style={{ marginBottom: 7 }}>앨범</div>
+            <h2 id="memo-dialog-title" className="serif italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.12, letterSpacing: '-.01em', margin: 0 }}>{album.album}</h2>
+            {album.artist && <div className="sans" style={{ fontSize: 14, color: 'var(--color-subtle)', marginTop: 5 }}>{album.artist}</div>}
+            {meta.length > 0 && <div className="mono" style={{ fontSize: 11, letterSpacing: '.04em', color: 'var(--color-faded)', marginTop: 8, lineHeight: 1.5 }}>{meta.join(' · ')}</div>}
+            <div style={{ marginTop: 12 }}><span className="unrated">미평가</span></div>
             {tags.length > 0 && (
               <div className="memo-tags" style={{ marginTop: 14 }}>
                 {tags.map(t => <span key={t} className="memo-tag">{t}</span>)}
@@ -526,7 +526,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
             {data && data.tracks.length > 0 && (
               <>
                 <div style={{ margin: '16px 0 9px', borderTop: '1px solid var(--color-border-soft)' }} />
-                <div className="lf-meta" style={{ letterSpacing: '.12em' }}>{`트랙리스트 · ${data.tracks.length}곡`}</div>
+                <div className="meta" style={{ letterSpacing: '.12em' }}>{`트랙리스트 · ${data.tracks.length}곡`}</div>
                 <div className="memo-tracks">
                   {data.tracks.map(t => (
                     <div key={t.id} className="memo-trow">
@@ -543,8 +543,8 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
           {/* right — the memo (쓰레기통) */}
           <section className="memo-main">
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
-              <span className="lf-kicker">버킷 · 메모</span>
-              <span className="lf-serif lf-italic" style={{ fontSize: 12.5, color: 'var(--color-faded)' }}>떠오른 대로 던져두는 곳</span>
+              <span className="kicker">버킷 · 메모</span>
+              <span className="serif italic" style={{ fontSize: 12.5, color: 'var(--color-faded)' }}>떠오른 대로 던져두는 곳</span>
             </div>
             <MemoBody value={text} onChange={onText} autoFocus minHeight={300} />
             <GrowEmptyHint show={grow && empty} />
@@ -570,8 +570,8 @@ function MinimalBody({ album }: { album: DetailTarget }) {
       <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
         {album.rating != null ?
           <Stars score={album.rating} size={18} /> :
-          <span className="lf-unrated">미평가</span>}
-        <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginTop: 10, lineHeight: 1.7 }}>
+          <span className="unrated">미평가</span>}
+        <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginTop: 10, lineHeight: 1.7 }}>
           {[album.track ? `수록: ${album.album}` : null, album.genre || null, album.year ? `${album.year}년` : null].filter(Boolean).join(' · ') || '추가 정보 없음'}
         </div>
       </div>

@@ -76,11 +76,11 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 		<>
 			{cover}
 			<span style={{ minWidth: 0, flex: 1 }}>
-				<span className="lf-serif" style={{ display: 'block', fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text)' }}>
+				<span className="serif" style={{ display: 'block', fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text)' }}>
 					{title}
 					{titleSuffix}
 				</span>
-				{sub && <span className="lf-sans" style={{ display: 'block', fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{sub}</span>}
+				{sub && <span className="sans" style={{ display: 'block', fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{sub}</span>}
 			</span>
 		</>
 	)
@@ -103,13 +103,13 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 
 	return (
 		<Tag className={className} style={{ ...layout, ...style }}>
-			{no != null && <span className="lf-mono" style={{ fontSize: 11.5, color: 'var(--color-faded)', textAlign: gridTemplate ? 'center' : 'right', fontVariantNumeric: 'tabular-nums', flex: gridTemplate ? undefined : '0 0 auto', width: gridTemplate ? undefined : 22 }}>{no}</span>}
+			{no != null && <span className="mono" style={{ fontSize: 11.5, color: 'var(--color-faded)', textAlign: gridTemplate ? 'center' : 'right', fontVariantNumeric: 'tabular-nums', flex: gridTemplate ? undefined : '0 0 auto', width: gridTemplate ? undefined : 22 }}>{no}</span>}
 			{identity}
 			{cells}
 			{actions.lyrics && (
 				<button
 					type="button"
-					className="lf-btn lf-mono"
+					className="btn mono"
 					onClick={actions.lyrics}
 					aria-label={`${title} 가사 보기`}
 					style={{ padding: '3px 9px', fontSize: 10.5, letterSpacing: '.06em', borderRadius: 3, whiteSpace: 'nowrap', flex: '0 0 auto', justifySelf: gridTemplate ? 'end' : undefined }}

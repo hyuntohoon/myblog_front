@@ -54,10 +54,10 @@ function relTime(iso: string | null): string | null {
 
 function Powers() {
   return (
-    <ul className="lf-sans" style={{ margin: '4px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <ul className="sans" style={{ margin: '4px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
       {['개요 · 최근 들은 앨범', '개요 · 지금 재생 중'].map(p => (
         <li key={p} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13.5, color: 'var(--color-subtle)' }}>
-          <span className="lf-mono" style={{ color: 'var(--color-accent)' }}>→</span>
+          <span className="mono" style={{ color: 'var(--color-accent)' }}>→</span>
           {p}
         </li>
       ))}
@@ -97,19 +97,19 @@ export function SpotifyIntegrationTab() {
     <div style={{ maxWidth: 560 }}>
       <SectionTitle kicker="SPOTIFY" title="연동" />
 
-      {status == null && !err && <div className="lf-meta" style={{ padding: '8px 0' }}>상태 확인 중…</div>}
-      {err && <div className="lf-panel" style={{ padding: 24, textAlign: 'center' }}><span className="lf-meta">상태 로드 실패</span></div>}
+      {status == null && !err && <div className="meta" style={{ padding: '8px 0' }}>상태 확인 중…</div>}
+      {err && <div className="panel" style={{ padding: 24, textAlign: 'center' }}><span className="meta">상태 로드 실패</span></div>}
 
       {status != null && (
-        <div className="lf-panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div className="panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <StatusDot tone={COPY[status].tone} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="lf-serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.1 }}>
+              <div className="serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.1 }}>
                 {COPY[status].title}
               </div>
               {stamp && (
-                <div className="lf-mono" style={{ fontSize: 11, letterSpacing: '0.04em', color: 'var(--color-faded)', marginTop: 3 }}>
+                <div className="mono" style={{ fontSize: 11, letterSpacing: '0.04em', color: 'var(--color-faded)', marginTop: 3 }}>
                   {`${COPY[status].stampLabel} · ${stamp}`}
                 </div>
               )}
@@ -117,15 +117,15 @@ export function SpotifyIntegrationTab() {
           </div>
 
           <div style={{ borderTop: '1px solid var(--color-border-soft)', paddingTop: 16 }}>
-            <div className="lf-kicker" style={{ marginBottom: 8 }}>기능</div>
+            <div className="kicker" style={{ marginBottom: 8 }}>기능</div>
             <Powers />
           </div>
 
           <div style={{ borderTop: '1px solid var(--color-border-soft)', paddingTop: 16 }}>
-            <div className="lf-kicker" style={{ marginBottom: 8 }}>권한 범위 (읽기 전용)</div>
+            <div className="kicker" style={{ marginBottom: 8 }}>권한 범위 (읽기 전용)</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {SCOPES.map(s => (
-                <code key={s} className="lf-mono lf-chip" style={{ fontSize: 11, cursor: 'default' }}>{s}</code>
+                <code key={s} className="mono chip" style={{ fontSize: 11, cursor: 'default' }}>{s}</code>
               ))}
             </div>
           </div>
