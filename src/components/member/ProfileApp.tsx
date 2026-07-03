@@ -108,25 +108,25 @@ function StatRow({ s }: { s: MemberProfile['stats'] }) {
 function ProfileSidebar({ u }: { u: MemberProfile }) {
   return (
     <aside style={{ position: 'sticky', top: 20, alignSelf: 'start', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="lf-panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Avatar size={80} name={u.name} />
         <div>
-          <h1 className="lf-serif" style={{ fontSize: 30, fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, margin: 0 }}>{u.name}</h1>
-          <div className="lf-mono" style={{ fontSize: 12, color: 'var(--color-subtle)', marginTop: 5 }}>
+          <h1 className="serif" style={{ fontSize: 30, fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, margin: 0 }}>{u.name}</h1>
+          <div className="mono" style={{ fontSize: 12, color: 'var(--color-subtle)', marginTop: 5 }}>
 @
 {u.handle}
           </div>
         </div>
-        <div className="lf-meta" style={{ display: 'flex', gap: 14 }}>
+        <div className="meta" style={{ display: 'flex', gap: 14 }}>
 <span>{u.location}</span>
 <span>
 SINCE
 {u.joined}
 </span>
         </div>
-        <a href="/write" className="lf-btn lf-btn-solid" style={{ textDecoration: 'none' }}>새 평론 쓰기</a>
+        <a href="/write" className="btn btn-solid" style={{ textDecoration: 'none' }}>새 평론 쓰기</a>
       </div>
-      <div className="lf-panel" style={{ padding: 22 }}><StatGrid s={u.stats} /></div>
+      <div className="panel" style={{ padding: 22 }}><StatGrid s={u.stats} /></div>
     </aside>
   )
 }
@@ -138,9 +138,9 @@ function ProfileHero({ u }: { u: MemberProfile }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
         <Avatar size={88} name={u.name} />
         <div style={{ flex: 1, minWidth: 240 }}>
-          <h1 className="lf-serif" style={{ fontSize: 'clamp(34px, 6vw, 52px)', fontWeight: 500, letterSpacing: '-.025em', lineHeight: 1, margin: 0 }}>{u.name}</h1>
+          <h1 className="serif" style={{ fontSize: 'clamp(34px, 6vw, 52px)', fontWeight: 500, letterSpacing: '-.025em', lineHeight: 1, margin: 0 }}>{u.name}</h1>
         </div>
-        <a href="/write" className="lf-btn lf-btn-solid" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>새 평론 쓰기</a>
+        <a href="/write" className="btn btn-solid" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>새 평론 쓰기</a>
       </div>
       <StatRow s={u.stats} />
     </header>
@@ -150,11 +150,11 @@ function ProfileHero({ u }: { u: MemberProfile }) {
 /** Dashboard layout header: a single compact bar above full-width content. */
 function ProfileBar({ u }: { u: MemberProfile }) {
   return (
-    <header className="lf-panel" style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '16px 20px', marginBottom: 28, flexWrap: 'wrap' }}>
+    <header className="panel" style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '16px 20px', marginBottom: 28, flexWrap: 'wrap' }}>
       <Avatar size={48} name={u.name} />
       <div style={{ minWidth: 130 }}>
-        <h1 className="lf-serif" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1.05, margin: 0 }}>{u.name}</h1>
-        <div className="lf-mono" style={{ fontSize: 11, color: 'var(--color-subtle)', marginTop: 3 }}>
+        <h1 className="serif" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1.05, margin: 0 }}>{u.name}</h1>
+        <div className="mono" style={{ fontSize: 11, color: 'var(--color-subtle)', marginTop: 3 }}>
           @
           {u.handle}
         </div>
@@ -162,7 +162,7 @@ function ProfileBar({ u }: { u: MemberProfile }) {
       <div style={{ flex: 1, display: 'flex', justifyContent: 'center', minWidth: 200 }}>
         <StatRow s={u.stats} />
       </div>
-      <a href="/write" className="lf-btn lf-btn-solid" style={{ textDecoration: 'none' }}>새 평론 쓰기</a>
+      <a href="/write" className="btn btn-solid" style={{ textDecoration: 'none' }}>새 평론 쓰기</a>
     </header>
   )
 }
@@ -171,14 +171,14 @@ function ProfileBar({ u }: { u: MemberProfile }) {
 function MenuGroup<T extends string>({ label, value, options, onChange }: { label: string, value: T, options: { v: T, label: string }[], onChange: (v: T) => void }) {
   return (
     <div>
-      <div className="lf-kicker" style={{ marginBottom: 8 }}>{label}</div>
+      <div className="kicker" style={{ marginBottom: 8 }}>{label}</div>
       <div className="lf-menu-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
         {options.map(o => (
           <button
 	key={o.v}
 	type="button"
 	onClick={() => onChange(o.v)}
-	className="lf-mono"
+	className="mono"
 	aria-pressed={value === o.v}
 	style={{
               border: '1px solid var(--color-border)',
@@ -223,7 +223,7 @@ function SettingsMenu({ layout, setLayout, density, setDensity }: { layout: Layo
   }, [open])
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button type="button" onClick={() => setOpen(o => !o)} aria-label="보기 설정" aria-expanded={open} className="lf-btn" style={{ padding: '7px 9px', borderRadius: 3 }}>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-label="보기 설정" aria-expanded={open} className="btn" style={{ padding: '7px 9px', borderRadius: 3 }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -231,7 +231,7 @@ function SettingsMenu({ layout, setLayout, density, setDensity }: { layout: Layo
       </button>
       {open && (
         <div
-	className="lf-panel"
+	className="panel"
 	role="menu"
 	style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 'var(--z-nav)', width: 224, padding: 14, display: 'flex', flexDirection: 'column', gap: 16, boxShadow: '0 10px 30px rgba(10, 9, 8, 0.16)' }}
         >
@@ -253,7 +253,7 @@ function ThemeToggle() {
     catch { /* ignore */ }
   }, [theme])
   return (
-    <button type="button" onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))} aria-label="테마 전환" className="lf-btn" style={{ padding: '7px 9px', borderRadius: 3 }}>
+    <button type="button" onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))} aria-label="테마 전환" className="btn" style={{ padding: '7px 9px', borderRadius: 3 }}>
       {theme === 'dark' ?
 (
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -375,7 +375,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   }, [density])
 
   const tabNav = (
-    <div className="lf-mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginBottom: 26, overflowX: 'auto' }}>
+    <div className="mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginBottom: 26, overflowX: 'auto' }}>
       {TABS.map(tb => (
         <button
 	key={tb.id}
@@ -421,7 +421,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   return (
     <div className="member-root" data-density={density}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-        <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-subtle)' }}>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--color-subtle)' }}>
 @
 {profile.handle}
         </span>

@@ -433,7 +433,7 @@ function CrStatus({ b }: { b: BoardBucket }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
       <span style={{ width: 6, height: 6, borderRadius: 6, background: ink, flex: '0 0 auto' }} />
-      <span className="lf-meta" style={{ color: ink, letterSpacing: '0.1em' }}>{m.tag}</span>
+      <span className="meta" style={{ color: ink, letterSpacing: '0.1em' }}>{m.tag}</span>
     </span>
   )
 }
@@ -459,7 +459,7 @@ function slibStateColor(state: string): string {
 function SlibBadges({ row }: { row: SpotifyLibraryAlbumState }) {
   return (
     <>
-      <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>
+      <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>
         {slibSourceLabel(row.source)}
       </span>
       <span
@@ -659,20 +659,20 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
             />
           )}
           {copySource && (
-            <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
+            <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
           )}
           {!isAlbum && (
-            <span className="lf-mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-bg)', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '2px 5px', borderRadius: 3 }}>{ITEM_TYPE_LABEL[album.itemType] ?? album.itemType}</span>
+            <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-bg)', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '2px 5px', borderRadius: 3 }}>{ITEM_TYPE_LABEL[album.itemType] ?? album.itemType}</span>
           )}
           {libRow && <SlibBadges row={libRow} />}
           {!copySource && !libRow && !rated && album.alreadyReviewed && (
-            <span className="lf-mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
+            <span className="mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
           )}
           {rated && score != null && (
-            <span className="lf-mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-bg)', background: 'var(--color-text)', padding: '2px 6px', borderRadius: 3 }}>{score.toFixed(1)}</span>
+            <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-bg)', background: 'var(--color-text)', padding: '2px 6px', borderRadius: 3 }}>{score.toFixed(1)}</span>
           )}
           {rated && score == null && (
-            <span className="lf-mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
+            <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
           )}
           {research && (
             <CoverResearchBadge status={research.status} active={research.mode !== 'off'} onOpen={research.onOpen} />
@@ -705,8 +705,8 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
           )}
         </div>
         <div style={{ marginTop: 7 }}>
-          <div className="lf-serif lf-italic" style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
-          <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{album.artist}</div>
+          <div className="serif italic" style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
+          <div className="mono" style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{album.artist}</div>
         </div>
       </div>
     </div>
@@ -1021,7 +1021,7 @@ ops.openResearch(a.albumId, a.title)
 	style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12, cursor: editing ? 'default' : 'grab' }}
       >
         <span
-	className="lf-mono"
+	className="mono"
 	style={{ color: 'var(--color-faded)', fontSize: 16, lineHeight: 1, userSelect: 'none', flex: '0 0 auto' }}
         >
           ⠿
@@ -1046,7 +1046,7 @@ ops.openResearch(a.albumId, a.title)
                     setEditing(false)
                   }
                 }}
-	className="lf-serif"
+	className="serif"
 	style={{ fontSize: 17, fontWeight: 500, color: 'var(--color-text)', background: 'var(--color-bg)', border: '1px solid var(--color-accent)', borderRadius: 4, padding: '1px 7px', minWidth: 120 }}
               />
             ) :
@@ -1057,7 +1057,7 @@ ops.openResearch(a.albumId, a.title)
                   setName(bucket.name)
                   setEditing(true)
                 }}
-	className="lf-serif"
+	className="serif"
 	style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', color: bucket.color || (m.urgent ? 'var(--color-accent)' : 'var(--color-text)'), background: 'none', border: 'none', padding: 0, cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
 	title="클릭하여 이름 변경"
               >
@@ -1065,18 +1065,18 @@ ops.openResearch(a.albumId, a.title)
               </button>
             )}
         <span style={{ marginLeft: 2 }}><CrStatus b={bucket} /></span>
-        <span className="lf-mono" style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--color-faded)', whiteSpace: 'nowrap' }}>
+        <span className="mono" style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--color-faded)', whiteSpace: 'nowrap' }}>
           {countAlbums(bucket)}
           장
         </span>
         <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <button type="button" className="lf-iconbtn" title="버킷 색상" onClick={() => setColoring(v => !v)} style={{ padding: 0 }}>
+          <button type="button" className="iconbtn" title="버킷 색상" onClick={() => setColoring(v => !v)} style={{ padding: 0 }}>
             <span style={{ width: 13, height: 13, borderRadius: 13, background: accent, border: '1px solid var(--color-border)', display: 'block' }} />
           </button>
           {!isLib && (
             <button
 	type="button"
-	className="lf-iconbtn"
+	className="iconbtn"
 	title="정렬 · 그룹 · 장르 필터"
 	aria-pressed={viewActive}
 	onClick={() => setViewing(v => !v)}
@@ -1088,7 +1088,7 @@ ops.openResearch(a.albumId, a.title)
           {!isLib && (
             <button
 	type="button"
-	className="lf-iconbtn"
+	className="iconbtn"
 	title="자동 조사 설정"
 	aria-pressed={bucket.researchMode !== 'off'}
 	onClick={() => setResearching(v => !v)}
@@ -1100,7 +1100,7 @@ ops.openResearch(a.albumId, a.title)
           {!isLib && (
             <button
 	type="button"
-	className="lf-iconbtn"
+	className="iconbtn"
 	title={bucket.isPublic ? '공개됨 — 공개 설정' : '비공개 — 공개 설정'}
 	aria-pressed={bucket.isPublic}
 	onClick={() => setPublicizing(v => !v)}
@@ -1109,14 +1109,14 @@ ops.openResearch(a.albumId, a.title)
               🌐
             </button>
           )}
-          <button type="button" className="lf-iconbtn" title={bucket.type === 'artist' ? '아티스트 추가' : '앨범 추가'} onClick={() => ops.requestAdd(bucket.id, bucket.name, bucket.type)}>＋</button>
-          <button type="button" className="lf-iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
+          <button type="button" className="iconbtn" title={bucket.type === 'artist' ? '아티스트 추가' : '앨범 추가'} onClick={() => ops.requestAdd(bucket.id, bucket.name, bucket.type)}>＋</button>
+          <button type="button" className="iconbtn" title="하위 버킷 추가" onClick={() => ops.addBucket(bucket.id)}>⊞</button>
           {!isLib && (
             // Explicit rename — complements the click-the-title gesture so the
             // action is discoverable, not just an unlabeled title click.
             <button
 	type="button"
-	className="lf-iconbtn"
+	className="iconbtn"
 	title="이름 변경"
 	aria-label="이름 변경"
 	onClick={() => {
@@ -1131,7 +1131,7 @@ ops.openResearch(a.albumId, a.title)
             // The 버킷 동작 menu (이동/중첩 + 삭제) — now visible on every viewport
             // (was touch-only), so those actions aren't discoverable only via the
             // drag-to-trash / header-drag gestures. See .bb-bucket-actions CSS.
-            <button type="button" className="lf-iconbtn bb-bucket-actions" title="버킷 동작" aria-label="버킷 동작" onClick={() => openBucketSheet(bucket)}>⋯</button>
+            <button type="button" className="iconbtn bb-bucket-actions" title="버킷 동작" aria-label="버킷 동작" onClick={() => openBucketSheet(bucket)}>⋯</button>
           )}
         </div>
       </div>
@@ -1139,7 +1139,7 @@ ops.openResearch(a.albumId, a.title)
       {/* color picker */}
       {coloring && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <span className="lf-meta">색상</span>
+          <span className="meta">색상</span>
           <div style={{ display: 'flex', gap: 7 }}>
             {BUCKET_COLORS.map((c) => {
               const selected = c.color == null ? !bucket.color : bucket.color === c.color
@@ -1164,7 +1164,7 @@ ops.openResearch(a.albumId, a.title)
       {/* auto-research scope (off / 전체 / 선택) */}
       {researching && !isLib && (
         <div className="rsh-mode-row">
-          <span className="lf-meta">자동 조사</span>
+          <span className="meta">자동 조사</span>
           <div className="rsh-seg" role="group" aria-label="자동 조사 범위">
             {(['off', 'all', 'selected'] as const).map(val => (
               <button
@@ -1189,7 +1189,7 @@ ops.openResearch(a.albumId, a.title)
       {/* public visibility (비공개 / 공개) — FEAT-public-bucket-multiuser A3 */}
       {publicizing && !isLib && (
         <div className="rsh-mode-row">
-          <span className="lf-meta">공개</span>
+          <span className="meta">공개</span>
           <div className="rsh-seg" role="group" aria-label="버킷 공개 여부">
             <button type="button" className="rsh-seg-btn" aria-pressed={!bucket.isPublic} onClick={() => ops.setIsPublic(bucket.id, false)}>비공개</button>
             <button type="button" className="rsh-seg-btn" aria-pressed={bucket.isPublic} onClick={() => ops.setIsPublic(bucket.id, true)}>공개</button>
@@ -1207,7 +1207,7 @@ ops.openResearch(a.albumId, a.title)
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, padding: '10px 12px', background: 'color-mix(in srgb, var(--color-paper) 60%, var(--color-bg))', border: '1px solid var(--color-border-soft)', borderRadius: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="lf-meta">정렬</span>
+              <span className="meta">정렬</span>
               <div className="rsh-seg" role="group" aria-label="정렬">
                 {SORT_OPTS.map(o => (
                   <button key={o.v} type="button" className="rsh-seg-btn" aria-pressed={view.sort === o.v} onClick={() => updateView(v => ({ ...v, sort: o.v }))}>{o.l}</button>
@@ -1215,7 +1215,7 @@ ops.openResearch(a.albumId, a.title)
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="lf-meta">그룹</span>
+              <span className="meta">그룹</span>
               <div className="rsh-seg" role="group" aria-label="그룹">
                 {GROUP_OPTS.map(o => (
                   <button key={o.v} type="button" className="rsh-seg-btn" aria-pressed={view.group === o.v} onClick={() => updateView(v => ({ ...v, group: o.v }))}>{o.l}</button>
@@ -1223,17 +1223,17 @@ ops.openResearch(a.albumId, a.title)
               </div>
             </div>
             {viewActive && (
-              <button type="button" className="lf-chip" onClick={resetView} style={{ color: 'var(--color-accent)', borderColor: 'var(--color-border-soft)' }}>초기화</button>
+              <button type="button" className="chip" onClick={resetView} style={{ color: 'var(--color-accent)', borderColor: 'var(--color-border-soft)' }}>초기화</button>
             )}
           </div>
           {bucketGenreList.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <span className="lf-meta" style={{ marginRight: 2 }}>장르</span>
+              <span className="meta" style={{ marginRight: 2 }}>장르</span>
               {bucketGenreList.map(g => (
                 <button
 	key={g.label}
 	type="button"
-	className="lf-chip"
+	className="chip"
 	aria-pressed={view.genreFilter.includes(g.label)}
 	onClick={() => updateView(v => ({ ...v, genreFilter: v.genreFilter.includes(g.label) ? v.genreFilter.filter(x => x !== g.label) : [...v.genreFilter, g.label] }))}
 	style={view.genreFilter.includes(g.label) ? { background: 'var(--color-text)', color: 'var(--color-bg)', borderColor: 'var(--color-text)' } : undefined}
@@ -1246,12 +1246,12 @@ ops.openResearch(a.albumId, a.title)
           )}
           {bucketTypeList.length >= 2 && (
             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <span className="lf-meta" style={{ marginRight: 2 }}>종류</span>
+              <span className="meta" style={{ marginRight: 2 }}>종류</span>
               {bucketTypeList.map(t => (
                 <button
 	key={t.type}
 	type="button"
-	className="lf-chip"
+	className="chip"
 	aria-pressed={view.typeFilter.includes(t.type)}
 	onClick={() => updateView(v => ({ ...v, typeFilter: v.typeFilter.includes(t.type) ? v.typeFilter.filter(x => x !== t.type) : [...v.typeFilter, t.type] }))}
 	style={view.typeFilter.includes(t.type) ? { background: 'var(--color-text)', color: 'var(--color-bg)', borderColor: 'var(--color-text)' } : undefined}
@@ -1270,13 +1270,13 @@ ops.openResearch(a.albumId, a.title)
         {isLib ?
 (
           <>
-            <div className="lf-mono" style={slibLabel(false)}>내가 넣은 · Spotify에 추가</div>
+            <div className="mono" style={slibLabel(false)}>내가 넣은 · Spotify에 추가</div>
             {libMine.map(renderChip)}
             {addBtn}
-            <div className="lf-mono" style={slibLabel(true)}>기존 · Spotify 라이브러리 (삭제 불가)</div>
+            <div className="mono" style={slibLabel(true)}>기존 · Spotify 라이브러리 (삭제 불가)</div>
             {libExisting.length > 0 ?
               libExisting.map(renderChip) :
-              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>없음</div>}
+              <div className="mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>없음</div>}
           </>
         ) :
 (
@@ -1284,17 +1284,17 @@ ops.openResearch(a.albumId, a.title)
             {view.group === 'none' ?
               flatAlbums.map(renderChip) :
               sections.flatMap(s => [
-                <div key={`sec-${s.label}`} className="lf-mono" style={sectionLabelStyle}>
+                <div key={`sec-${s.label}`} className="mono" style={sectionLabelStyle}>
                   {s.label}
                   <span style={{ marginLeft: 6, color: 'var(--color-faded)' }}>{s.albums.length}</span>
                 </div>,
                 ...s.albums.map(renderChip),
               ])}
             {bucket.albums.length === 0 && bucket.children.length === 0 && (
-              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음</div>
+              <div className="mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 4, padding: 18, textAlign: 'center', letterSpacing: '0.04em' }}>비어 있음</div>
             )}
             {filteredEmpty && (
-              <div className="lf-mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>이 필터에 해당하는 항목이 없습니다</div>
+              <div className="mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>이 필터에 해당하는 항목이 없습니다</div>
             )}
             {addBtn}
           </>
@@ -1375,9 +1375,9 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
       <div className="crate-trash-card" data-hot={hot ? 'true' : 'false'}>
         <span className="crate-trash-ring"><CrTrashIcon s={28} /></span>
         <div>
-          <div className="lf-serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.2, color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>휴지통</div>
+          <div className="serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.2, color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>휴지통</div>
           {trashCount > 0 && (
-            <div className="lf-mono" style={{ marginTop: 7, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, letterSpacing: '0.06em', whiteSpace: 'nowrap', color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>
+            <div className="mono" style={{ marginTop: 7, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, letterSpacing: '0.06em', whiteSpace: 'nowrap', color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>
               <span style={{ width: 5, height: 5, borderRadius: 5, background: 'currentColor' }} />
               보관
               {' '}
@@ -1492,18 +1492,18 @@ function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: T
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
   return (
-    <div className="lf-scrim" onClick={onClose} role="presentation">
-      <aside className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="휴지통">
-        <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
-        <div className="lf-kicker" style={{ marginBottom: 6 }}>휴지통</div>
-        <h2 className="lf-serif" style={{ fontSize: 24, fontWeight: 500 }}>
+    <div className="scrim" onClick={onClose} role="presentation">
+      <aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="휴지통">
+        <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
+        <div className="kicker" style={{ marginBottom: 6 }}>휴지통</div>
+        <h2 className="serif" style={{ fontSize: 24, fontWeight: 500 }}>
           {trash.length}
           개 항목
         </h2>
-        <p className="lf-serif lf-italic" style={{ color: 'var(--color-subtle)', fontSize: 14, marginTop: 6, marginBottom: 22 }}>버킷에서 뺀 앨범이 보관됩니다. 원래 버킷으로 복원하거나 완전히 비울 수 있어요.</p>
+        <p className="serif italic" style={{ color: 'var(--color-subtle)', fontSize: 14, marginTop: 6, marginBottom: 22 }}>버킷에서 뺀 앨범이 보관됩니다. 원래 버킷으로 복원하거나 완전히 비울 수 있어요.</p>
 
         {trash.length === 0 && (
-          <div className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 6, padding: 28, textAlign: 'center' }}>휴지통이 비어 있습니다</div>
+          <div className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 6, padding: 28, textAlign: 'center' }}>휴지통이 비어 있습니다</div>
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1511,20 +1511,20 @@ function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: T
             <div key={t.tid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--color-paper)', border: '1px solid var(--color-border-soft)', borderRadius: 6 }}>
               <div style={{ flex: '0 0 42px', width: 42 }}><AlbumArt url={t.album.cover} label={t.album.title} size={42} /></div>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.album.title}</div>
-                <div className="lf-meta" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.album.title}</div>
+                <div className="meta" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {t.album.artist}
                   {t.fromName ? ` · ${t.fromName}에서` : ''}
                 </div>
               </div>
-              <button type="button" className="lf-chip" onClick={() => onRestore(t.tid)}>복원</button>
-              <button type="button" className="lf-iconbtn danger" title="완전 삭제" onClick={() => onPurge(t.tid)}>✕</button>
+              <button type="button" className="chip" onClick={() => onRestore(t.tid)}>복원</button>
+              <button type="button" className="iconbtn danger" title="완전 삭제" onClick={() => onPurge(t.tid)}>✕</button>
             </div>
           ))}
         </div>
 
         {trash.length > 0 && (
-          <button type="button" className="lf-btn" onClick={onEmpty} style={{ width: '100%', marginTop: 18, color: 'var(--color-accent)', borderColor: 'var(--color-accent)' }}>휴지통 비우기</button>
+          <button type="button" className="btn" onClick={onEmpty} style={{ width: '100%', marginTop: 18, color: 'var(--color-accent)', borderColor: 'var(--color-accent)' }}>휴지통 비우기</button>
         )}
       </aside>
     </div>
@@ -1551,10 +1551,10 @@ function ActionSheet({ title, subtitle, actions, onClose }: { title: string, sub
       <div className="bps-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         <div className="bps-head">
           <div style={{ minWidth: 0 }}>
-            <div className="lf-serif" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
-            {subtitle && <div className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-subtle)', letterSpacing: '0.04em', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>}
+            <div className="serif" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+            {subtitle && <div className="mono" style={{ fontSize: 10.5, color: 'var(--color-subtle)', letterSpacing: '0.04em', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>}
           </div>
-          <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기">✕</button>
+          <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기">✕</button>
         </div>
         <div className="bps-list">
           {actions.map(a => (
@@ -1565,7 +1565,7 @@ function ActionSheet({ title, subtitle, actions, onClose }: { title: string, sub
 	onClick={a.onClick}
 	style={a.danger ? { color: 'var(--color-accent)' } : undefined}
             >
-              <span className="lf-serif">{a.label}</span>
+              <span className="serif">{a.label}</span>
             </button>
           ))}
         </div>
@@ -2397,8 +2397,8 @@ ids.push(a.albumId)
     return (
       <div>
         <SectionTitle title="My Buckit" />
-        <div className="lf-panel" style={{ padding: 32, textAlign: 'center' }}>
-          <span className="lf-meta">버킷을 불러오지 못했습니다</span>
+        <div className="panel" style={{ padding: 32, textAlign: 'center' }}>
+          <span className="meta">버킷을 불러오지 못했습니다</span>
         </div>
       </div>
     )
@@ -2419,7 +2419,7 @@ ids.push(a.albumId)
           <div style={{ display: 'flex', gap: 8 }}>
             <button
 	type="button"
-	className="lf-btn"
+	className="btn"
 	aria-label="Pocket Buckit 열기/닫기"
 	aria-expanded={pocketOpen}
 	title="Pocket Buckit 열기/닫기"
@@ -2427,12 +2427,12 @@ ids.push(a.albumId)
             >
               🪣 Pocket
             </button>
-            <button type="button" className="lf-btn" onClick={() => setTrashOpen(true)}>
+            <button type="button" className="btn" onClick={() => setTrashOpen(true)}>
               🗑 휴지통
               {trash.length ? ` · ${trash.length}` : ''}
             </button>
             <div ref={createMenuRef} style={{ position: 'relative' }}>
-              <button type="button" className="lf-btn lf-btn-solid" disabled={tree == null} aria-haspopup="menu" aria-expanded={createMenuOpen} onClick={() => setCreateMenuOpen(o => !o)}>＋ 버킷</button>
+              <button type="button" className="btn btn-solid" disabled={tree == null} aria-haspopup="menu" aria-expanded={createMenuOpen} onClick={() => setCreateMenuOpen(o => !o)}>＋ 버킷</button>
               {createMenuOpen && (
                 <div role="menu" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, minWidth: 168, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: '0 8px 26px rgba(26,26,26,.18)', padding: 5 }}>
                   <button type="button" role="menuitem" className="lf-menu-row" style={CREATE_MENU_ROW} onClick={() => createBucketOfType('general')}>＋ General 버킷</button>
@@ -2452,7 +2452,7 @@ ids.push(a.albumId)
             <button
 	key={v}
 	type="button"
-	className="lf-chip"
+	className="chip"
 	aria-pressed={boardType === v}
 	onClick={() => setBoardType(v)}
 	style={boardType === v ? { background: 'var(--color-text)', color: 'var(--color-bg)', borderColor: 'var(--color-text)' } : undefined}
@@ -2464,12 +2464,12 @@ ids.push(a.albumId)
       )}
       {recent != null && recent.length > 0 && (
         <div
-	className="lf-panel crate-spotify"
+	className="panel crate-spotify"
 	style={{ padding: 0, marginBottom: 22 }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderBottom: '1px solid var(--color-border-soft)' }}>
-            <span className="lf-serif" style={{ fontSize: 16, fontWeight: 500, whiteSpace: 'nowrap' }}>최근 들은 앨범</span>
-            <span className="lf-meta" style={{ color: 'var(--color-spotify)' }}>SPOTIFY 연동</span>
+            <span className="serif" style={{ fontSize: 16, fontWeight: 500, whiteSpace: 'nowrap' }}>최근 들은 앨범</span>
+            <span className="meta" style={{ color: 'var(--color-spotify)' }}>SPOTIFY 연동</span>
           </div>
           <div style={{ display: 'flex', gap: 14, padding: 14, overflowX: 'auto', alignItems: 'flex-start' }}>
             {recent.map(a => (
@@ -2487,13 +2487,13 @@ ids.push(a.albumId)
           only (copyAlbum / trash via the shared ops) — NO synchronous Spotify
           call; the 동기화 button enqueues the worker reconcile (rule #9). */}
       {tree != null && (
-        <div className="lf-panel crate-spotify" style={{ padding: 0, marginBottom: 22 }}>
+        <div className="panel crate-spotify" style={{ padding: 0, marginBottom: 22 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderBottom: '1px solid var(--color-border-soft)' }}>
-            <span className="lf-serif" style={{ fontSize: 16, fontWeight: 500, whiteSpace: 'nowrap' }}>Spotify 라이브러리</span>
-            <span className="lf-meta" style={{ color: 'var(--color-spotify)' }}>SPOTIFY 동기화</span>
+            <span className="serif" style={{ fontSize: 16, fontWeight: 500, whiteSpace: 'nowrap' }}>Spotify 라이브러리</span>
+            <span className="meta" style={{ color: 'var(--color-spotify)' }}>SPOTIFY 동기화</span>
             <button
 	type="button"
-	className="lf-btn"
+	className="btn"
 	disabled={syncing}
 	onClick={() => void runLibrarySync()}
 	style={{ marginLeft: 'auto' }}
@@ -2503,12 +2503,12 @@ ids.push(a.albumId)
           </div>
 
           {libState?.needs_reauth && (
-            <div className="lf-mono" style={{ padding: '9px 14px', fontSize: 11.5, letterSpacing: '0.03em', color: '#fff', background: 'var(--color-accent)' }}>
+            <div className="mono" style={{ padding: '9px 14px', fontSize: 11.5, letterSpacing: '0.03em', color: '#fff', background: 'var(--color-accent)' }}>
               Spotify 재인증 필요
             </div>
           )}
           {libState != null && libState.writes_enabled === false && (
-            <div className="lf-mono" style={{ padding: '9px 14px', fontSize: 11.5, letterSpacing: '0.03em', color: 'oklch(0.42 0.10 70)', background: 'oklch(0.95 0.04 80)', borderBottom: '1px solid var(--color-border-soft)' }}>
+            <div className="mono" style={{ padding: '9px 14px', fontSize: 11.5, letterSpacing: '0.03em', color: 'oklch(0.42 0.10 70)', background: 'oklch(0.95 0.04 80)', borderBottom: '1px solid var(--color-border-soft)' }}>
               검토 모드: Spotify에 실제 반영 안 됨
             </div>
           )}
@@ -2519,7 +2519,7 @@ ids.push(a.albumId)
                 <BucketList items={[libBucket]} parentId={null} depth={0} shared={shared} />
               ) :
               (
-                <div className="lf-mono" style={{ fontSize: 11.5, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 6, padding: 24, textAlign: 'center', letterSpacing: '0.04em' }}>
+                <div className="mono" style={{ fontSize: 11.5, color: 'var(--color-faded)', border: '1px dashed var(--color-border)', borderRadius: 6, padding: 24, textAlign: 'center', letterSpacing: '0.04em' }}>
                   동기화를 누르면 Spotify 라이브러리의 앨범을 불러옵니다
                 </div>
               )}
@@ -2530,7 +2530,7 @@ ids.push(a.albumId)
       {tree == null && (
         <div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중" style={{ gap: 18 }}>
           {[0, 1].map(s => (
-            <div key={s} className="lf-panel" style={{ padding: 16 }}>
+            <div key={s} className="panel" style={{ padding: 16 }}>
               <div className="lf-skeleton" style={{ height: 18, width: 160, marginBottom: 14 }} />
               <div style={{ display: 'flex', gap: 12 }}>
                 {Array.from({ length: 5 }, (_, i) => (
@@ -2543,8 +2543,8 @@ ids.push(a.albumId)
       )}
 
       {tree != null && normalTree.length === 0 && (
-        <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}>
-          <span className="lf-meta">버킷 없음</span>
+        <div className="panel" style={{ padding: 40, textAlign: 'center' }}>
+          <span className="meta">버킷 없음</span>
         </div>
       )}
 
@@ -2552,8 +2552,8 @@ ids.push(a.albumId)
         <BucketList items={visibleTree} parentId={null} depth={0} shared={shared} />
       )}
       {tree != null && normalTree.length > 0 && visibleTree.length === 0 && (
-        <div className="lf-panel" style={{ padding: 32, textAlign: 'center' }}>
-          <span className="lf-meta">{boardType === 'artist' ? 'Artist 버킷이 없어요' : '해당 종류의 버킷이 없어요'}</span>
+        <div className="panel" style={{ padding: 32, textAlign: 'center' }}>
+          <span className="meta">{boardType === 'artist' ? 'Artist 버킷이 없어요' : '해당 종류의 버킷이 없어요'}</span>
         </div>
       )}
 
@@ -2614,14 +2614,14 @@ ids.push(a.albumId)
               <button type="button" className="qb-modal-close" onClick={() => setPendingBucketDelete(null)} aria-label="닫기">✕</button>
             </header>
             <div style={{ padding: 'var(--space-4) var(--space-5) var(--space-5)' }}>
-              <p className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.65, margin: 0 }}>
-                <span className="lf-serif lf-italic" style={{ color: 'var(--color-text)' }}>{pendingBucketDelete.name || '이 버킷'}</span>
+              <p className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.65, margin: 0 }}>
+                <span className="serif italic" style={{ color: 'var(--color-text)' }}>{pendingBucketDelete.name || '이 버킷'}</span>
                 {' '}
                 과(와) 그 하위 버킷·담긴 앨범이 함께 삭제됩니다. 평론 기록에는 영향을 주지 않습니다.
               </p>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 20 }}>
-                <button type="button" className="lf-btn" onClick={() => setPendingBucketDelete(null)}>취소</button>
-                <button type="button" className="lf-btn lf-btn-solid" onClick={confirmBucketDelete}>삭제</button>
+                <button type="button" className="btn" onClick={() => setPendingBucketDelete(null)}>취소</button>
+                <button type="button" className="btn btn-solid" onClick={confirmBucketDelete}>삭제</button>
               </div>
             </div>
           </div>

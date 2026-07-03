@@ -56,8 +56,8 @@ function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKe
         {items.map(a => (
           <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
             <AlbumArt url={a.cover} label={a.album} />
-            <div className="lf-serif lf-italic" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
-            <div className="lf-mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
+            <div className="serif italic" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
+            <div className="mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
           </button>
         ))}
       </div>
@@ -67,13 +67,13 @@ function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKe
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
         {items.map(a => (
-          <button key={a.id} type="button" onClick={() => onOpen(a)} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
+          <button key={a.id} type="button" onClick={() => onOpen(a)} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
             <div style={{ width: 56, flex: '0 0 auto' }}><AlbumArt url={a.cover} label={a.album} size={56} /></div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="lf-meta" style={{ marginBottom: 3 }}>{a.when}</div>
-              <div className="lf-serif lf-italic" style={{ fontSize: 16, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
-              <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.artist}</div>
-              <div style={{ marginTop: 5 }}>{a.rating != null ? <Stars score={a.rating} size={12} /> : <span className="lf-meta" style={{ fontSize: 9 }}>미평가</span>}</div>
+              <div className="meta" style={{ marginBottom: 3 }}>{a.when}</div>
+              <div className="serif italic" style={{ fontSize: 16, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
+              <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.artist}</div>
+              <div style={{ marginTop: 5 }}>{a.rating != null ? <Stars score={a.rating} size={12} /> : <span className="meta" style={{ fontSize: 9 }}>미평가</span>}</div>
             </div>
           </button>
         ))}
@@ -86,11 +86,11 @@ function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKe
         <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
           <div style={{ width: 38, flex: '0 0 auto' }}><AlbumArt url={a.cover} label={a.album} size={38} /></div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="lf-serif lf-italic" style={{ fontSize: 15, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
-            <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
+            <div className="serif italic" style={{ fontSize: 15, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
+            <div className="mono" style={{ fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
           </div>
           {a.rating != null && <Stars score={a.rating} size={12} />}
-          <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 44, textAlign: 'right' }}>{a.when}</span>
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 44, textAlign: 'right' }}>{a.when}</span>
         </button>
       ))}
     </div>
@@ -105,8 +105,8 @@ function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKe
         {items.map(t => (
           <button key={t.id} type="button" onClick={() => open(t)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
             <AlbumArt url={t.cover} label={t.album} />
-            <div className="lf-serif" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
-            <div className="lf-mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{t.artist}</div>
+            <div className="serif" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
+            <div className="mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{t.artist}</div>
           </button>
         ))}
       </div>
@@ -116,18 +116,18 @@ function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKe
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
         {items.map(t => (
-          <button key={t.id} type="button" onClick={() => open(t)} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
+          <button key={t.id} type="button" onClick={() => open(t)} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
             <div style={{ width: 50, flex: '0 0 auto' }}><AlbumArt url={t.cover} label={t.album} size={50} /></div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="lf-serif" style={{ fontSize: 15, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
-              <div className="lf-sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div className="serif" style={{ fontSize: 15, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
+              <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
 {t.artist}
 {' '}
 ·
 {' '}
 {t.album}
               </div>
-              <div className="lf-meta" style={{ marginTop: 4 }}>
+              <div className="meta" style={{ marginTop: 4 }}>
 {t.when}
 {' '}
 ·
@@ -144,14 +144,14 @@ function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKe
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {items.map((t, i) => (
         <button key={t.id} type="button" onClick={() => open(t)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
-          <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 20 }}>{String(i + 1).padStart(2, '0')}</span>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 20 }}>{String(i + 1).padStart(2, '0')}</span>
           <div style={{ width: 34, flex: '0 0 auto' }}><AlbumArt url={t.cover} label={t.album} size={34} /></div>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="lf-serif" style={{ fontSize: 14.5, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
-            <div className="lf-sans" style={{ fontSize: 11, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{t.artist}</div>
+            <div className="serif" style={{ fontSize: 14.5, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
+            <div className="sans" style={{ fontSize: 11, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{t.artist}</div>
           </div>
-          <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>{t.len}</span>
-          <span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 46, textAlign: 'right' }}>{t.when}</span>
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>{t.len}</span>
+          <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 46, textAlign: 'right' }}>{t.when}</span>
         </button>
       ))}
     </div>
@@ -167,7 +167,7 @@ function ViewToggle({ value, onChange }: { value: ViewKey, onChange: (v: ViewKey
 	key={o.v}
 	type="button"
 	onClick={() => onChange(o.v)}
-	className="lf-mono"
+	className="mono"
 	style={{ border: 'none', borderLeft: i ? '1px solid var(--color-border)' : 'none', padding: '5px 9px', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', cursor: 'pointer', background: value === o.v ? 'var(--color-text)' : 'transparent', color: value === o.v ? 'var(--color-bg)' : 'var(--color-text)' }}
         >
           {o.label}
@@ -190,17 +190,17 @@ const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
 
 function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
   return (
-    <button type="button" onClick={() => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating })} className="lf-panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
+    <button type="button" onClick={() => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating })} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
       <div style={{ width: 44, flex: '0 0 auto' }}><AlbumArt url={r.cover} label={r.album} size={44} /></div>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="lf-meta">
+        <div className="meta">
 {r.type}
 {' '}
 ·
 {' '}
 {new Date(r.date).getFullYear()}
         </div>
-        <div className="lf-serif lf-italic" style={{ fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.album}</div>
+        <div className="serif italic" style={{ fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.album}</div>
       </div>
       {r.rating != null && <Stars score={r.rating} size={12} />}
     </button>
@@ -226,11 +226,11 @@ function RecentAlbumsModal({ items, onOpen, onClose }: { items: SampleAlbum[], o
     onOpen(t)
   }
   return createPortal(
-    <div className="lf-scrim" onClick={onClose} role="presentation">
-      <aside className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 들은 앨범 전체">
-        <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
-        <div className="lf-kicker" style={{ marginBottom: 4 }}>최근 들은 앨범</div>
-        <div className="lf-meta" style={{ marginBottom: 18 }}>
+    <div className="scrim" onClick={onClose} role="presentation">
+      <aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 들은 앨범 전체">
+        <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
+        <div className="kicker" style={{ marginBottom: 4 }}>최근 들은 앨범</div>
+        <div className="meta" style={{ marginBottom: 18 }}>
           {items.length}
           장
         </div>
@@ -273,7 +273,7 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
 )
 }
   if (items.length === 0)
-    return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
+    return <div className="meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   const shown = items.slice(0, RECENT_ALBUMS_LIMIT)
   const hidden = items.length - shown.length
   return (
@@ -283,7 +283,7 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
         <button
 	type="button"
 	onClick={() => setShowAll(true)}
-	className="lf-mono"
+	className="mono"
 	style={{ marginTop: 12, width: '100%', padding: '8px 0', background: 'none', border: '1px solid var(--color-border-soft)', borderRadius: 3, color: 'var(--color-subtle)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', cursor: 'pointer' }}
         >
           {`더 보기 (+${hidden})`}
@@ -313,11 +313,11 @@ function RecentTracksModal({ items, view, onOpen, onClose }: { items: SampleTrac
     onOpen(t)
   }
   return createPortal(
-    <div className="lf-scrim" onClick={onClose} role="presentation">
-      <aside className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 재생 트랙 전체">
-        <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
-        <div className="lf-kicker" style={{ marginBottom: 4 }}>최근 재생 트랙</div>
-        <div className="lf-meta" style={{ marginBottom: 18 }}>
+    <div className="scrim" onClick={onClose} role="presentation">
+      <aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 재생 트랙 전체">
+        <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
+        <div className="kicker" style={{ marginBottom: 4 }}>최근 재생 트랙</div>
+        <div className="meta" style={{ marginBottom: 18 }}>
           {items.length}
           곡
         </div>
@@ -362,7 +362,7 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
 )
 }
   if (items.length === 0)
-    return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
+    return <div className="meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   const shown = items.slice(0, RECENT_TRACKS_LIMIT)
   const hidden = items.length - shown.length
   return (
@@ -372,7 +372,7 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
         <button
 	type="button"
 	onClick={() => setShowAll(true)}
-	className="lf-mono"
+	className="mono"
 	style={{ marginTop: 12, width: '100%', padding: '8px 0', background: 'none', border: '1px solid var(--color-border-soft)', borderRadius: 3, color: 'var(--color-subtle)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', cursor: 'pointer' }}
         >
           {`더 보기 (+${hidden})`}
@@ -418,7 +418,7 @@ function ListenedAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Det
 )
 }
   if (items.length === 0)
-    return <div className="lf-meta" style={{ padding: '6px 2px' }}>기록 없음</div>
+    return <div className="meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   return <AlbumColl items={items} view={view} onOpen={onOpen} />
 }
 
@@ -605,16 +605,16 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
   const hasView = id === 'recent-albums' || id === 'recent-tracks' || id === 'listened-albums'
   return (
     <div
-	className="lf-panel"
+	className="panel"
 	style={{ padding: 18, transition: 'box-shadow .18s, border-color .18s', boxShadow: dragging ? '0 22px 50px -16px rgba(0,0,0,.45)' : undefined, borderColor: dragging ? 'color-mix(in srgb, var(--color-accent) 55%, var(--color-border))' : undefined }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, borderBottom: '1px solid var(--color-text)', paddingBottom: 10 }}>
-        <span {...handleProps} className="lf-drag-handle lf-mono" style={{ ...handleProps.style, color: dragging ? 'var(--color-accent)' : 'var(--color-faded)', fontSize: 15, lineHeight: 1, userSelect: 'none' }} title="드래그하여 순서 변경">⠿</span>
-        <span className="lf-mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{WIDGET_TITLES[id]}</span>
+        <span {...handleProps} className="lf-drag-handle mono" style={{ ...handleProps.style, color: dragging ? 'var(--color-accent)' : 'var(--color-faded)', fontSize: 15, lineHeight: 1, userSelect: 'none' }} title="드래그하여 순서 변경">⠿</span>
+        <span className="mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{WIDGET_TITLES[id]}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {id === 'nowplaying' && <Seg value={ctx.npStyle} onChange={v => ctx.setNpStyle(v as NpStyle)} options={[{ v: 'banner', label: '배너' }, { v: 'full', label: '플레이어' }, { v: 'list', label: '리스트' }]} />}
           {hasView && <ViewToggle value={ctx.views[id]} onChange={v => ctx.setView(id, v)} />}
-          <button type="button" className="lf-iconbtn danger" title="컴포넌트 제거" onClick={() => onRemove(id)}>✕</button>
+          <button type="button" className="iconbtn danger" title="컴포넌트 제거" onClick={() => onRemove(id)}>✕</button>
         </div>
       </div>
       <WidgetBody id={id} ctx={ctx} />
@@ -692,11 +692,11 @@ export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, o
 	title="개요"
 	right={(
           <div style={{ position: 'relative' }}>
-            <button ref={addTriggerRef} type="button" className="lf-btn" onClick={() => setAddOpen(o => !o)} disabled={!available.length} aria-haspopup="menu" aria-expanded={addOpen}>＋ 컴포넌트 추가</button>
+            <button ref={addTriggerRef} type="button" className="btn" onClick={() => setAddOpen(o => !o)} disabled={!available.length} aria-haspopup="menu" aria-expanded={addOpen}>＋ 컴포넌트 추가</button>
             {addOpen && available.length > 0 && (
-              <div ref={addMenuRef} role="menu" className="lf-panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, padding: 6, minWidth: 180, background: 'var(--color-bg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.4)' }}>
+              <div ref={addMenuRef} role="menu" className="panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, padding: 6, minWidth: 180, background: 'var(--color-bg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.4)' }}>
                 {available.map(w => (
-                  <button key={w} type="button" role="menuitem" onClick={() => add(w)} className="lf-mono" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', background: 'none', border: 'none', color: 'var(--color-text)', cursor: 'pointer', borderRadius: 3 }}>
+                  <button key={w} type="button" role="menuitem" onClick={() => add(w)} className="mono" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', background: 'none', border: 'none', color: 'var(--color-text)', cursor: 'pointer', borderRadius: 3 }}>
 ＋
 {WIDGET_TITLES[w]}
                   </button>
@@ -707,7 +707,7 @@ export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, o
         )}
       />
       {flat.length === 0 ?
-        <div className="lf-panel" style={{ padding: 40, textAlign: 'center' }}><span className="lf-meta">컴포넌트 없음</span></div> :
+        <div className="panel" style={{ padding: 40, textAlign: 'center' }}><span className="meta">컴포넌트 없음</span></div> :
         <RowsBoard rows={rows} setRows={setRows} render={(id, handleProps, dragging) => <Widget id={id} ctx={ctx} onRemove={remove} handleProps={handleProps} dragging={dragging} />} />}
     </div>
   )

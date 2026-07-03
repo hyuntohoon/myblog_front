@@ -258,10 +258,10 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
     '아직 연결된 가사가 없어요'
 
   return (
-    <div className="lf-scrim lyv-scrim" role="dialog" aria-modal="true" aria-label="가사 뷰어">
+    <div className="scrim lyv-scrim" role="dialog" aria-modal="true" aria-label="가사 뷰어">
       <div ref={panelRef} className="lyv-panel" onKeyDown={onKeyDown}>
         <div className="lyv-head">
-          <span className="lyv-eyebrow lf-mono">
+          <span className="lyv-eyebrow mono">
             Lyrics
             {phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.source_kind ?
               ` · ${phase.data.source_kind}` :
@@ -285,14 +285,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
           </div>
         </div>
 
-        {notice && <div className="lyv-note lf-mono" role="status">{notice}</div>}
+        {notice && <div className="lyv-note mono" role="status">{notice}</div>}
 
-        {phase.k === 'loading' && <div className="lyv-status lf-mono">불러오는 중…</div>}
+        {phase.k === 'loading' && <div className="lyv-status mono">불러오는 중…</div>}
 
         {phase.k === 'error' && (
           <div className="lyv-status">
             <p>가사를 불러오지 못했어요</p>
-            <button type="button" className="lyv-retry lf-mono" onClick={() => setLoadSeq(s => s + 1)}>다시 시도</button>
+            <button type="button" className="lyv-retry mono" onClick={() => setLoadSeq(s => s + 1)}>다시 시도</button>
           </div>
         )}
 
@@ -333,7 +333,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
             </div>
             <div className="lyv-rail">
               <button type="button" className="lyv-btn" onClick={() => step(-1)} disabled={focus === 0} aria-label="이전 구절">↑</button>
-              <span className="lyv-count lf-mono" aria-live="polite">
+              <span className="lyv-count mono" aria-live="polite">
                 <span className="lyv-count-cur">{String(focus + 1).padStart(pad, '0')}</span>
                 {' / '}
                 {n}

@@ -1,0 +1,138 @@
+/* ============================================================
+   Member widgets — 크레이트 갤러리 bucket tiles, trash dock,
+   chart-leaf drill affordance. Member-only; global.css carries the
+   editorial primitives (.panel/.chip/.btn/.stars/.cover ...).
+   ============================================================ */
+
+/* FEAT-analysis-explore — a drillable chart leaf (track/artist/album → detail slide-over).
+   Only present when the chart is given an onSelect, so the 좋아요 charts are unaffected. */
+[data-chart-click] { cursor: pointer; border-radius: 3px; outline: none; transition: opacity 0.15s; }
+[data-chart-click]:hover { opacity: 0.62; }
+[data-chart-click]:focus-visible { outline: 1.5px solid var(--color-accent); outline-offset: 2px; opacity: 0.62; }
+@media (prefers-reduced-motion: reduce) { [data-chart-click] { transition: none; } }
+
+/* ── bucket album cover-tile (크레이트 갤러리) ──────────────
+   Fills its grid cell (covers laid out in a wrap grid) or the fixed-width
+   wrapper in the 최근 들은 앨범 strip. Hover lifts the cover. */
+.bb-tile {
+	position: relative;
+	width: 100%;
+	background: none;
+	border: none;
+	padding: 0;
+	text-align: left;
+	cursor: pointer;
+}
+.bb-tile > div:first-child {
+	transition: transform 0.15s, box-shadow 0.15s;
+	border-radius: 4px;
+}
+.bb-tile:hover > div:first-child {
+	transform: translateY(-3px);
+	box-shadow: 0 6px 18px rgba(26, 26, 26, 0.16);
+}
+
+/* ── touch fallback — per-cover ⋯ action button (크레이트 갤러리) ────────────
+   HTML5 drag-and-drop never fires on touch, so each cover gets a ⋯ button that
+   opens the album action sheet. Hover-revealed on desktop (drag still primary),
+   always-on + larger on coarse pointers. */
+.bb-tile-kebab {
+	position: absolute;
+	bottom: 6px;
+	right: 6px;
+	width: 26px;
+	height: 26px;
+	display: grid;
+	place-items: center;
+	font-size: var(--text-md);
+	line-height: 1;
+	color: var(--color-bg);
+	background: rgba(26, 26, 26, 0.62);
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.12s, background 0.12s;
+}
+.bb-tile:hover .bb-tile-kebab { opacity: 1; }
+.bb-tile-kebab:hover { background: rgba(26, 26, 26, 0.82); }
+/* The per-bucket ⋯ "버킷 동작" menu (이름변경 / 이동·중첩 / 삭제) is always visible —
+   it makes those actions discoverable instead of gesture-only (drag-to-trash /
+   header-drag / title-click), which read as "there's no way to manage buckets". */
+.bb-bucket-actions { display: grid; }
+@media (hover: none), (pointer: coarse) {
+	.bb-tile-kebab { opacity: 1; width: 36px; height: 36px; font-size: var(--text-lg); }
+}
+
+/* Spotify recent strip — green accent spine to set it apart from buckets. */
+.crate-spotify {
+	border-left: 3px solid var(--color-spotify);
+	background: color-mix(in srgb, var(--color-spotify) 5%, var(--color-paper));
+}
+
+/* ── trash dock (mounted only while dragging) ─────────────
+   A single solid card pinned to the bottom-center of the viewport (portaled to
+   <body>). No backdrop / blur — the buckets behind it stay crisp so you can keep
+   dropping onto them. Replaces the old full-height side rails (휴지통 + 최상위로
+   빼기): un-nesting now happens by dragging a bucket into a top-level gap, so the
+   dock only hosts deletion. The wrapper is non-interactive (pointer-events:none)
+   except the card itself, so it never blocks drops onto buckets underneath it. */
+.crate-trash-dock {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 24px;
+	z-index: var(--z-panel);
+	display: flex;
+	justify-content: center;
+	pointer-events: none;
+}
+.crate-trash-card {
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	min-width: 320px;
+	max-width: 92vw;
+	padding: 18px 26px 18px 20px;
+	border-radius: 16px;
+	background: var(--color-paper);
+	border: 1.5px solid var(--color-border);
+	box-shadow: 0 16px 44px rgba(26, 26, 26, 0.22);
+	transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+	animation: crate-dock-in 0.2s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.crate-trash-card[data-hot='true'] {
+	background: color-mix(in srgb, var(--color-accent) 13%, var(--color-paper));
+	border-color: var(--color-accent);
+	box-shadow:
+		0 0 0 5px color-mix(in srgb, var(--color-accent) 14%, transparent),
+		0 16px 44px rgba(200, 51, 43, 0.2);
+}
+.crate-trash-ring {
+	width: 60px;
+	height: 60px;
+	border-radius: 60px;
+	flex: 0 0 auto;
+	display: grid;
+	place-items: center;
+	color: var(--color-subtle);
+	background: color-mix(in srgb, var(--color-text) 4%, transparent);
+	border: 1.5px solid var(--color-border);
+	transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.crate-trash-card[data-hot='true'] .crate-trash-ring {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+	background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+@keyframes crate-dock-in {
+	from { opacity: 0; transform: translateY(16px); }
+	to { opacity: 1; transform: none; }
+}
+@media (max-width: 560px) {
+	.crate-trash-card { min-width: 0; width: 92vw; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.crate-trash-card { animation: none; }
+}

@@ -55,17 +55,17 @@ export function BucketPickerSheet({ title, tree, skip, allowRoot, onPick, onClos
     <div className="bps-scrim" onClick={onClose} role="presentation">
       <div className="bps-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         <div className="bps-head">
-          <span className="lf-serif" style={{ fontSize: 17, fontWeight: 500 }}>{title}</span>
-          <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기">✕</button>
+          <span className="serif" style={{ fontSize: 17, fontWeight: 500 }}>{title}</span>
+          <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기">✕</button>
         </div>
         <div className="bps-list">
           {allowRoot && (
             <button type="button" className="bps-item" onClick={() => onPick(null)}>
-              <span className="lf-serif">최상위로</span>
+              <span className="serif">최상위로</span>
             </button>
           )}
           {entries.length === 0 && !allowRoot && (
-            <div className="lf-mono bps-empty">버킷 없음</div>
+            <div className="mono bps-empty">버킷 없음</div>
           )}
           {entries.map(e => (
             <button
@@ -75,8 +75,8 @@ export function BucketPickerSheet({ title, tree, skip, allowRoot, onPick, onClos
 	style={{ paddingLeft: 16 + e.depth * 18 }}
 	onClick={() => onPick(e.id)}
             >
-              {e.depth > 0 && <span className="lf-mono bps-indent">└</span>}
-              <span className="lf-serif" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</span>
+              {e.depth > 0 && <span className="mono bps-indent">└</span>}
+              <span className="serif" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</span>
             </button>
           ))}
         </div>

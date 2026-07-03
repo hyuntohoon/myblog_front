@@ -12,8 +12,8 @@ import { AlbumArt, SectionTitle } from '@components/member/ui'
 function Notice({ title, sub }: { title: string, sub?: string }) {
   return (
     <div style={{ textAlign: 'center', padding: '64px 16px' }}>
-      <p className="lf-serif" style={{ fontSize: 20, color: 'var(--color-text)', margin: 0 }}>{title}</p>
-      {sub && <p className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginTop: 8 }}>{sub}</p>}
+      <p className="serif" style={{ fontSize: 20, color: 'var(--color-text)', margin: 0 }}>{title}</p>
+      {sub && <p className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginTop: 8 }}>{sub}</p>}
     </div>
   )
 }
@@ -66,7 +66,7 @@ export default function CollectionView() {
         <section key={c.id}>
           <SectionTitle
 	title={c.name}
-	right={<span className="lf-mono" style={{ fontSize: 12, color: 'var(--color-faded)' }}>{`${c.albums.length}장`}</span>}
+	right={<span className="mono" style={{ fontSize: 12, color: 'var(--color-faded)' }}>{`${c.albums.length}장`}</span>}
           />
           <div style={{ display: 'grid', gap: '16px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
             {c.albums.map(a => (
@@ -74,12 +74,12 @@ export default function CollectionView() {
                 <AlbumArt url={a.cover} label={a.title} />
                 <figcaption style={{ marginTop: 7 }}>
                   <div
-	className="lf-serif"
+	className="serif"
 	style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--color-text)', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
                   >
                     {a.title}
                   </div>
-                  <div className="lf-meta" style={{ marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div className="meta" style={{ marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {a.year ? `${a.artist} · ${a.year}` : a.artist}
                   </div>
                 </figcaption>

@@ -102,9 +102,9 @@ const selectStyle: React.CSSProperties = {
 /** A bordered chart panel shell — matches LikedAnalysis's Panel (one visual system). */
 function Panel({ title, right, children }: { title: string, right?: React.ReactNode, children: React.ReactNode }) {
 	return (
-		<div className="lf-panel" style={{ padding: 18, display: 'flex', flexDirection: 'column' }}>
+		<div className="panel" style={{ padding: 18, display: 'flex', flexDirection: 'column' }}>
 			<div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
-				<span className="lf-mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' }}>{title}</span>
+				<span className="mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' }}>{title}</span>
 				{right && <span style={{ marginLeft: 'auto' }}>{right}</span>}
 			</div>
 			<div style={{ flex: 1 }}>{children}</div>
@@ -163,16 +163,16 @@ function LifetimeHero({ totals, period }: { totals: StreamRank, period: Period }
 		(live > 0 ? ` · 라이브 ${live.toLocaleString()}회 포함` : '') :
 		(horizon ? ` · ${horizon}까지 임포트${live > 0 ? ` · 이후 ${live.toLocaleString()}회 라이브` : ''}` : '')
 	return (
-		<div className="lf-panel" style={{ padding: '22px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '6px 28px', marginBottom: 16 }}>
+		<div className="panel" style={{ padding: '22px 20px', display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '6px 28px', marginBottom: 16 }}>
 			<div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-				<span className="lf-serif" style={{ fontSize: 38, lineHeight: 1, color: 'var(--color-accent)' }}>{`${estimated ? '≈' : ''}${(totals.total_ms / 3.6e6).toFixed(0)}`}</span>
-				<span className="lf-mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>{estimated ? '시간 청취 (추정)' : '시간 청취'}</span>
+				<span className="serif" style={{ fontSize: 38, lineHeight: 1, color: 'var(--color-accent)' }}>{`${estimated ? '≈' : ''}${(totals.total_ms / 3.6e6).toFixed(0)}`}</span>
+				<span className="mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>{estimated ? '시간 청취 (추정)' : '시간 청취'}</span>
 			</div>
 			<div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-				<span className="lf-serif" style={{ fontSize: 38, lineHeight: 1 }}>{totals.total_streams.toLocaleString()}</span>
-				<span className="lf-mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>회 재생</span>
+				<span className="serif" style={{ fontSize: 38, lineHeight: 1 }}>{totals.total_streams.toLocaleString()}</span>
+				<span className="mono" style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>회 재생</span>
 			</div>
-			<span className="lf-meta" style={{ marginLeft: 'auto', color: 'var(--color-faded)' }}>{`${scope}${tail}`}</span>
+			<span className="meta" style={{ marginLeft: 'auto', color: 'var(--color-faded)' }}>{`${scope}${tail}`}</span>
 		</div>
 	)
 }
@@ -181,7 +181,7 @@ function LifetimeHero({ totals, period }: { totals: StreamRank, period: Period }
 function AlbumList({ items, metric, onSelect }: { items: StreamAlbumRank['items'], metric: StreamMetric, onSelect?: (a: { id: string, title: string }) => void }) {
 	const list = items ?? []
 	if (!list.length)
-		return <div className="lf-meta">표시할 앨범이 없어요.</div>
+		return <div className="meta">표시할 앨범이 없어요.</div>
 	const fmtVal = (v: number) => (metric === 'time' ? fmtDur(v) : `${v.toLocaleString()}회`)
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -203,15 +203,15 @@ function AlbumList({ items, metric, onSelect }: { items: StreamAlbumRank['items'
 					{}
 				return (
 					<div key={it.album.id} {...drill} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-						<span className="lf-mono" style={{ fontSize: 11, width: 18, flex: '0 0 auto', textAlign: 'right', color: i === 0 ? 'var(--color-accent)' : 'var(--color-faded)' }}>{i + 1}</span>
+						<span className="mono" style={{ fontSize: 11, width: 18, flex: '0 0 auto', textAlign: 'right', color: i === 0 ? 'var(--color-accent)' : 'var(--color-faded)' }}>{i + 1}</span>
 						{it.album.cover_url ?
 							<img src={it.album.cover_url} alt="" width={40} height={40} style={{ flex: '0 0 auto', objectFit: 'cover', borderRadius: 2 }} /> :
 							<div style={{ width: 40, height: 40, flex: '0 0 auto', background: 'var(--color-border-soft)' }} />}
 						<div style={{ minWidth: 0, flex: 1 }}>
 							<div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.album.title}</div>
-							<div className="lf-meta" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-faded)' }}>{(it.album.artist_names ?? []).join(', ')}</div>
+							<div className="meta" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-faded)' }}>{(it.album.artist_names ?? []).join(', ')}</div>
 						</div>
-						<span className="lf-mono" style={{ fontSize: 11, flex: '0 0 auto', color: 'var(--color-subtle)' }}>{fmtVal(it.value)}</span>
+						<span className="mono" style={{ fontSize: 11, flex: '0 0 auto', color: 'var(--color-subtle)' }}>{fmtVal(it.value)}</span>
 					</div>
 				)
 			})}
@@ -223,7 +223,7 @@ function AlbumList({ items, metric, onSelect }: { items: StreamAlbumRank['items'
 function EraHistogram({ era, metric }: { era: StreamRank, metric: StreamMetric }) {
 	const items = era.items ?? []
 	if (!items.length)
-		return <div className="lf-meta">연대 정보 없어요.</div>
+		return <div className="meta">연대 정보 없어요.</div>
 	const max = Math.max(1, ...items.map(it => it.value))
 	const top = items.reduce((a, b) => (b.value > a.value ? b : a), items[0])
 	const fmtVal = (v: number) => (metric === 'time' ? fmtDur(v) : `${v.toLocaleString()}회`)
@@ -233,11 +233,11 @@ function EraHistogram({ era, metric }: { era: StreamRank, metric: StreamMetric }
 				const hot = it.label === top.label
 				return (
 					<div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-						<span className="lf-serif lf-italic" style={{ fontSize: 14, width: 64, flex: '0 0 auto', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.label}</span>
+						<span className="serif italic" style={{ fontSize: 14, width: 64, flex: '0 0 auto', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>{it.label}</span>
 						<div style={{ flex: 1, height: 4, background: 'var(--color-border-soft)', overflow: 'hidden' }}>
 							<div style={{ width: `${(it.value / max) * 100}%`, height: '100%', background: hot ? 'var(--color-accent)' : 'var(--color-text)', opacity: hot ? 1 : 0.4 }} />
 						</div>
-						<span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', minWidth: 48, textAlign: 'right' }}>{fmtVal(it.value)}</span>
+						<span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', minWidth: 48, textAlign: 'right' }}>{fmtVal(it.value)}</span>
 					</div>
 				)
 			})}
@@ -255,20 +255,20 @@ function RetroPanel({ retro, metric }: { retro: Retrospective, metric: StreamMet
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 			<div>
-				<div className="lf-meta" style={{ marginBottom: 10, color: 'var(--color-faded)' }}>연도별</div>
+				<div className="meta" style={{ marginBottom: 10, color: 'var(--color-faded)' }}>연도별</div>
 				{years.length === 0 ?
-					<div className="lf-meta">기록 없어요.</div> :
+					<div className="meta">기록 없어요.</div> :
 					(
 							<div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
 								{years.map((y) => {
 									const hot = val(y) === max
 									return (
 										<div key={y.year} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-											<span className="lf-mono" style={{ fontSize: 12, width: 42, flex: '0 0 auto', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>{y.year}</span>
+											<span className="mono" style={{ fontSize: 12, width: 42, flex: '0 0 auto', color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>{y.year}</span>
 											<div style={{ flex: 1, height: 4, background: 'var(--color-border-soft)', overflow: 'hidden' }}>
 												<div style={{ width: `${(val(y) / max) * 100}%`, height: '100%', background: hot ? 'var(--color-accent)' : 'var(--color-text)', opacity: hot ? 1 : 0.4 }} />
 											</div>
-											<span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', minWidth: 48, textAlign: 'right' }}>{fmtVal(val(y))}</span>
+											<span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', minWidth: 48, textAlign: 'right' }}>{fmtVal(val(y))}</span>
 										</div>
 									)
 								})}
@@ -276,19 +276,19 @@ function RetroPanel({ retro, metric }: { retro: Retrospective, metric: StreamMet
 						)}
 			</div>
 			<div>
-				<div className="lf-meta" style={{ marginBottom: 10, color: 'var(--color-faded)' }}>{`오늘 이날 (${retro.today_kst})`}</div>
+				<div className="meta" style={{ marginBottom: 10, color: 'var(--color-faded)' }}>{`오늘 이날 (${retro.today_kst})`}</div>
 				{otd.length === 0 ?
-					<div className="lf-meta">예전 오늘 들은 기록이 아직 없어요.</div> :
+					<div className="meta">예전 오늘 들은 기록이 아직 없어요.</div> :
 					(
 							<div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 								{otd.map((it, i) => (
 									<div key={`${it.year}-${it.track_name}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-										<span className="lf-serif lf-italic" style={{ fontSize: 13, width: 42, flex: '0 0 auto', color: 'var(--color-accent)' }}>{it.year}</span>
+										<span className="serif italic" style={{ fontSize: 13, width: 42, flex: '0 0 auto', color: 'var(--color-accent)' }}>{it.year}</span>
 										<div style={{ minWidth: 0, flex: 1 }}>
 											<span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{it.track_name ?? '(알 수 없음)'}</span>
-											<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{it.artist_name ?? ''}</span>
+											<span className="meta" style={{ color: 'var(--color-faded)' }}>{it.artist_name ?? ''}</span>
 										</div>
-										<span className="lf-mono" style={{ fontSize: 11, flex: '0 0 auto', color: 'var(--color-subtle)' }}>{`${it.plays}회`}</span>
+										<span className="mono" style={{ fontSize: 11, flex: '0 0 auto', color: 'var(--color-subtle)' }}>{`${it.plays}회`}</span>
 									</div>
 								))}
 							</div>
@@ -307,7 +307,7 @@ function GateNote({ shown, total, label, metric }: { shown: number, total: numbe
 		return null
 	const fmt = metric === 'time' ? fmtDur : (v: number) => `${v.toLocaleString()}회`
 	return (
-		<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`${label} ${fmt(shown)} / 전체 ${fmt(total)}`}</span>
+		<span className="meta" style={{ color: 'var(--color-faded)' }}>{`${label} ${fmt(shown)} / 전체 ${fmt(total)}`}</span>
 	)
 }
 
@@ -327,10 +327,10 @@ const CLOCK_WEEKDAYS: { d: number, l: string }[] = [
 
 function ClockPanel({ clock, metric }: { clock: StreamClock | null, metric: StreamMetric }) {
 	if (!clock)
-		return <div className="lf-meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div>
+		return <div className="meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div>
 	const cells = clock.cells ?? []
 	if (!cells.length)
-		return <div className="lf-meta">표시할 기록이 없어요.</div>
+		return <div className="meta">표시할 기록이 없어요.</div>
 	const val = (c: StreamClockCell) => (metric === 'time' ? c.ms_played : c.plays)
 	const grid = new Map<string, number>()
 	let max = 1
@@ -349,7 +349,7 @@ function ClockPanel({ clock, metric }: { clock: StreamClock | null, metric: Stre
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
 			{CLOCK_WEEKDAYS.map(w => (
 				<div key={w.d} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-					<span className="lf-mono" style={{ fontSize: 10, width: 16, flex: '0 0 auto', color: 'var(--color-faded)' }}>{w.l}</span>
+					<span className="mono" style={{ fontSize: 10, width: 16, flex: '0 0 auto', color: 'var(--color-faded)' }}>{w.l}</span>
 					<div style={{ display: 'flex', gap: 2, flex: 1 }}>
 						{Array.from({ length: 24 }, (_, h) => {
 							const v = grid.get(`${w.d}-${h}`) ?? 0
@@ -367,24 +367,24 @@ function ClockPanel({ clock, metric }: { clock: StreamClock | null, metric: Stre
 			))}
 			<div style={{ display: 'flex', gap: 2, paddingLeft: 22 }}>
 				{Array.from({ length: 24 }, (_, h) => (
-					<span key={h} className="lf-mono" style={{ flex: 1, textAlign: 'center', fontSize: 8.5, color: 'var(--color-faded)' }}>{h % 6 === 0 ? h : ''}</span>
+					<span key={h} className="mono" style={{ flex: 1, textAlign: 'center', fontSize: 8.5, color: 'var(--color-faded)' }}>{h % 6 === 0 ? h : ''}</span>
 				))}
 			</div>
-			{peak && <div className="lf-meta" style={{ marginTop: 4, color: 'var(--color-faded)' }}>{`가장 많이 들은 시간 · ${peakLabel}`}</div>}
+			{peak && <div className="meta" style={{ marginTop: 4, color: 'var(--color-faded)' }}>{`가장 많이 들은 시간 · ${peakLabel}`}</div>}
 		</div>
 	)
 }
 
 // ── item drill-down slide-over (FEAT-analysis-explore) ──────────────────────────────
-// Private (owner-only) per-entity detail — reuses the OverviewDash lf-scrim/lf-slideover
+// Private (owner-only) per-entity detail — reuses the OverviewDash scrim/slideover
 // pattern (the public /artist/[id] route has no per-user listening data). Honours the active
 // metric + period.
 
 function Stat({ value, unit, accent }: { value: string, unit: string, accent?: boolean }) {
 	return (
 		<div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
-			<span className="lf-serif" style={{ fontSize: 28, lineHeight: 1, color: accent ? 'var(--color-accent)' : 'var(--color-text)' }}>{value}</span>
-			<span className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>{unit}</span>
+			<span className="serif" style={{ fontSize: 28, lineHeight: 1, color: accent ? 'var(--color-accent)' : 'var(--color-text)' }}>{value}</span>
+			<span className="mono" style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-faded)' }}>{unit}</span>
 		</div>
 	)
 }
@@ -397,11 +397,11 @@ function MiniYears({ years, metric }: { years: NonNullable<StreamItemDetail['per
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
 			{years.map(y => (
 				<div key={y.year} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-					<span className="lf-mono" style={{ fontSize: 11, width: 42, flex: '0 0 auto', color: 'var(--color-text)' }}>{y.year}</span>
+					<span className="mono" style={{ fontSize: 11, width: 42, flex: '0 0 auto', color: 'var(--color-text)' }}>{y.year}</span>
 					<div style={{ flex: 1, height: 4, background: 'var(--color-border-soft)', overflow: 'hidden' }}>
 						<div style={{ width: `${(val(y) / max) * 100}%`, height: '100%', background: 'var(--color-accent)' }} />
 					</div>
-					<span className="lf-mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', minWidth: 44, textAlign: 'right' }}>{fmtVal(val(y))}</span>
+					<span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', minWidth: 44, textAlign: 'right' }}>{fmtVal(val(y))}</span>
 				</div>
 			))}
 		</div>
@@ -414,9 +414,9 @@ function MiniTrackList({ items, metric }: { items: NonNullable<StreamItemDetail[
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
 			{items.map((t, i) => (
 				<div key={t.spotify_track_uri ?? `${t.label}-${i}`} style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-					<span className="lf-mono" style={{ fontSize: 11, width: 18, flex: '0 0 auto', textAlign: 'right', color: i === 0 ? 'var(--color-accent)' : 'var(--color-faded)' }}>{i + 1}</span>
+					<span className="mono" style={{ fontSize: 11, width: 18, flex: '0 0 auto', textAlign: 'right', color: i === 0 ? 'var(--color-accent)' : 'var(--color-faded)' }}>{i + 1}</span>
 					<span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.label}</span>
-					<span className="lf-mono" style={{ fontSize: 10.5, flex: '0 0 auto', color: 'var(--color-subtle)' }}>{fmtVal(t.value)}</span>
+					<span className="mono" style={{ fontSize: 10.5, flex: '0 0 auto', color: 'var(--color-subtle)' }}>{fmtVal(t.value)}</span>
 				</div>
 			))}
 		</div>
@@ -453,14 +453,14 @@ function ItemDetailSlideover({ target, metric, period, onClose }: { target: { ty
 	const span = detail ? [fmtDate(detail.first_listen), fmtDate(detail.last_listen)].filter(Boolean).join(' – ') : ''
 
 	return (
-		<div className="lf-scrim" onClick={onClose} role="presentation">
-			<aside className="lf-slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${target.label} 청취 상세`}>
-				<button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
+		<div className="scrim" onClick={onClose} role="presentation">
+			<aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${target.label} 청취 상세`}>
+				<button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
 
 				<div style={{ marginBottom: 18, paddingRight: 36 }}>
-					<div className="lf-mono" style={{ fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--color-faded)', marginBottom: 6 }}>{`${typeLabel}${period.kind !== 'all' ? ` · ${periodLabel(period)}` : ''}`}</div>
-					<div className="lf-serif" style={{ fontSize: 24, lineHeight: 1.15 }}>{detail?.label ?? target.label}</div>
-					{detail?.artist && <div className="lf-meta" style={{ color: 'var(--color-faded)', marginTop: 4 }}>{detail.artist}</div>}
+					<div className="mono" style={{ fontSize: 10.5, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--color-faded)', marginBottom: 6 }}>{`${typeLabel}${period.kind !== 'all' ? ` · ${periodLabel(period)}` : ''}`}</div>
+					<div className="serif" style={{ fontSize: 24, lineHeight: 1.15 }}>{detail?.label ?? target.label}</div>
+					{detail?.artist && <div className="meta" style={{ color: 'var(--color-faded)', marginTop: 4 }}>{detail.artist}</div>}
 					{/* FEAT-pocket-buckit Step 5 — add this album to a bucket (album reference
 					    only; no listening stats copied, per the snapshot vs ordinary-add rule). */}
 					{target.type === 'album' && (
@@ -471,33 +471,33 @@ function ItemDetailSlideover({ target, metric, period, onClose }: { target: { ty
 				</div>
 
 				{err ?
-					<div className="lf-meta">불러오지 못했어요.</div> :
+					<div className="meta">불러오지 못했어요.</div> :
 					!detail ?
-							<div className="lf-meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div> :
+							<div className="meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div> :
 							detail.count === 0 ?
-									<div className="lf-meta">이 기간에는 재생 기록이 없어요.</div> :
+									<div className="meta">이 기간에는 재생 기록이 없어요.</div> :
 									(
 											<div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 												<div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 24px', alignItems: 'baseline' }}>
 													<Stat value={detail.count.toLocaleString()} unit="회 재생" accent />
 													<Stat value={`${estimated ? '≈' : ''}${fmtDur(detail.time_ms)}`} unit={estimated ? '청취 (추정)' : '청취'} />
 												</div>
-												{span && <div className="lf-meta" style={{ color: 'var(--color-faded)' }}>{span}</div>}
+												{span && <div className="meta" style={{ color: 'var(--color-faded)' }}>{span}</div>}
 												{detail.per_year && detail.per_year.length > 0 && (
 													<div>
-														<div className="lf-meta" style={{ marginBottom: 8, color: 'var(--color-faded)' }}>연도별</div>
+														<div className="meta" style={{ marginBottom: 8, color: 'var(--color-faded)' }}>연도별</div>
 														<MiniYears years={detail.per_year} metric={metric} />
 													</div>
 												)}
 												{detail.top_tracks && detail.top_tracks.length > 0 && (
 													<div>
-														<div className="lf-meta" style={{ marginBottom: 8, color: 'var(--color-faded)' }}>대표 트랙</div>
+														<div className="meta" style={{ marginBottom: 8, color: 'var(--color-faded)' }}>대표 트랙</div>
 														<MiniTrackList items={detail.top_tracks} metric={metric} />
 													</div>
 												)}
 												{detail.top_albums && detail.top_albums.length > 0 && (
 													<div>
-														<div className="lf-meta" style={{ marginBottom: 8, color: 'var(--color-faded)' }}>대표 앨범</div>
+														<div className="meta" style={{ marginBottom: 8, color: 'var(--color-faded)' }}>대표 앨범</div>
 														<AlbumList items={detail.top_albums} metric={metric} />
 													</div>
 												)}
@@ -571,15 +571,15 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 	}, [metric, period])
 
 	if (error)
-		return <div className="lf-meta" style={{ marginBottom: 26 }}>불러오지 못했어요. 잠시 후 다시 시도해 주세요.</div>
+		return <div className="meta" style={{ marginBottom: 26 }}>불러오지 못했어요. 잠시 후 다시 시도해 주세요.</div>
 	if (!data)
-		return <div className="lf-meta" style={{ marginBottom: 26, color: 'var(--color-faded)' }}>불러오는 중…</div>
+		return <div className="meta" style={{ marginBottom: 26, color: 'var(--color-faded)' }}>불러오는 중…</div>
 
 	// Genuinely no import (lifetime is empty) → point at the action, not a blank panel.
 	if (period.kind === 'all' && data.tracks.total_streams === 0) {
 		return (
-			<div className="lf-panel" style={{ padding: 22, marginBottom: 26 }}>
-				<div className="lf-meta" style={{ lineHeight: 1.6 }}>
+			<div className="panel" style={{ padding: 22, marginBottom: 26 }}>
+				<div className="meta" style={{ lineHeight: 1.6 }}>
 					아직 임포트한 스트리밍 기록이 없어요. Spotify에서 받은 확장 스트리밍 기록(GDPR)을 임포트하면 평생 재생·청취 시간 분석이 여기 표시됩니다.
 				</div>
 			</div>
@@ -610,7 +610,7 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 				<Seg value={presetValue} onChange={v => setPeriod({ kind: v } as Period)} options={PERIOD_PRESETS} />
 				{pastYears.length > 0 && (
 					<select
-						className="lf-mono"
+						className="mono"
 						aria-label="연도 선택"
 						style={selectStyle}
 						value={period.kind === 'year' ? String(period.year) : ''}
@@ -622,7 +622,7 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 				)}
 				{dataDecades.length > 1 && (
 					<select
-						className="lf-mono"
+						className="mono"
 						aria-label="시대 선택"
 						style={selectStyle}
 						value={period.kind === 'decade' ? String(period.decade) : ''}
@@ -632,12 +632,12 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 						{dataDecades.map(d => <option key={d} value={d}>{`${d}년대`}</option>)}
 					</select>
 				)}
-				<span className="lf-meta" style={{ marginLeft: 'auto', color: 'var(--color-faded)' }}>{`${periodLabel(period)}${loading ? ' · 갱신 중…' : ''}`}</span>
+				<span className="meta" style={{ marginLeft: 'auto', color: 'var(--color-faded)' }}>{`${periodLabel(period)}${loading ? ' · 갱신 중…' : ''}`}</span>
 			</div>
 
 			<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
 				<Seg value={metric} onChange={v => setMetric(v as StreamMetric)} options={METRICS} />
-				<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>
+				<span className="meta" style={{ color: 'var(--color-faded)' }}>
 					{metric === 'time' ? '오래 들은 순' : '많이 들은 순'}
 					{!loading && metric === 'time' && live > 0 ? ' · 라이브 시간 추정' : ''}
 				</span>
@@ -645,8 +645,8 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 
 			{empty ?
 				(
-						<div className="lf-panel" style={{ padding: 22 }}>
-							<div className="lf-meta" style={{ lineHeight: 1.6 }}>{`‘${periodLabel(period)}’ 기간에는 청취 기록이 없어요. 다른 기간을 선택해 보세요.`}</div>
+						<div className="panel" style={{ padding: 22 }}>
+							<div className="meta" style={{ lineHeight: 1.6 }}>{`‘${periodLabel(period)}’ 기간에는 청취 기록이 없어요. 다른 기간을 선택해 보세요.`}</div>
 						</div>
 					) :
 				(
@@ -654,11 +654,11 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 							<LifetimeHero totals={totals} period={period} />
 
 							<div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
-								<Panel title="트랙" right={<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`상위 ${trackItems.length}`}</span>}>
-									{trackItems.length === 0 ? <div className="lf-meta">표시할 트랙이 없어요.</div> : <DistChart style={chartStyle} items={trackItems} unit={unit} onSelect={it => setDrill({ type: 'track', id: it.id ?? it.name, label: it.name })} />}
+								<Panel title="트랙" right={<span className="meta" style={{ color: 'var(--color-faded)' }}>{`상위 ${trackItems.length}`}</span>}>
+									{trackItems.length === 0 ? <div className="meta">표시할 트랙이 없어요.</div> : <DistChart style={chartStyle} items={trackItems} unit={unit} onSelect={it => setDrill({ type: 'track', id: it.id ?? it.name, label: it.name })} />}
 								</Panel>
-								<Panel title="아티스트" right={<span className="lf-meta" style={{ color: 'var(--color-faded)' }}>{`상위 ${artistItems.length}`}</span>}>
-									{artistItems.length === 0 ? <div className="lf-meta">표시할 아티스트가 없어요.</div> : <DistChart style={chartStyle} items={artistItems} unit={unit} onSelect={it => setDrill({ type: 'artist', id: it.id ?? it.name, label: it.name })} />}
+								<Panel title="아티스트" right={<span className="meta" style={{ color: 'var(--color-faded)' }}>{`상위 ${artistItems.length}`}</span>}>
+									{artistItems.length === 0 ? <div className="meta">표시할 아티스트가 없어요.</div> : <DistChart style={chartStyle} items={artistItems} unit={unit} onSelect={it => setDrill({ type: 'artist', id: it.id ?? it.name, label: it.name })} />}
 								</Panel>
 							</div>
 
@@ -667,7 +667,7 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 									<AlbumList items={data.albums.items} metric={metric} onSelect={a => setDrill({ type: 'album', id: a.id, label: a.title })} />
 								</Panel>
 								<Panel title="장르 분포" right={<GateNote shown={data.genre.unclassified ?? 0} total={gateTotal} label="미분류" metric={metric} />}>
-									{genreItems.length === 0 ? <div className="lf-meta">표시할 장르가 없어요.</div> : <DistChart style={chartStyle} items={genreItems} unit={unit} />}
+									{genreItems.length === 0 ? <div className="meta">표시할 장르가 없어요.</div> : <DistChart style={chartStyle} items={genreItems} unit={unit} />}
 								</Panel>
 							</div>
 
@@ -682,7 +682,7 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 
 							<div style={{ marginTop: 16 }}>
 								<Panel title="회고">
-									{retro ? <RetroPanel retro={retro} metric={metric} /> : <div className="lf-meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div>}
+									{retro ? <RetroPanel retro={retro} metric={metric} /> : <div className="meta" style={{ color: 'var(--color-faded)' }}>불러오는 중…</div>}
 								</Panel>
 							</div>
 						</>
