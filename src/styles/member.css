@@ -1083,3 +1083,9 @@
 	.lyv-line { transition: none; }
 	.lyv-btn.is-refreshing { animation: none; }
 }
+
+/* ── LikedBoard list rows (shared TrackRow consumer) ─────────────────────────
+   Hover moved out of per-row React state when the rows were migrated to the
+   shared TrackRow (ARCH-entity-interaction-contract Step 2). */
+.lk-row { transition: background 0.12s; }
+.lk-row:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }

@@ -19,11 +19,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { updateBucketItemMemo } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { useDismissable } from '@lib/useDismissable'
+import { TrackRow } from '../shared/TrackRow'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
 
 type Mode = 'info' | 'edit'
 
-export function AlbumDetail({ album, reviews, onClose, onMemoSaved }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void }) {
+export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
   const published = album.albumId ? reviews.find(r => r.albumIds.includes(album.albumId!)) : undefined
 
   // FEAT-editor-buckit Step 3: a writable, not-yet-published 평론 버킷 album that
@@ -35,11 +36,11 @@ export function AlbumDetail({ album, reviews, onClose, onMemoSaved }: { album: D
   // edit when published + writable; otherwise read-only info (covers non-writable
   // surfaces AND the rare writable-but-no-handle fallback).
   const mode: Mode = (published && album.writable) ? 'edit' : 'info'
-  return <StandardModal album={album} mode={mode} published={published} onClose={onClose} />
+  return <StandardModal album={album} mode={mode} published={published} onClose={onClose} onOpenLyrics={onOpenLyrics} />
 }
 
 // ── standard 600px modal (info / edit) ───────────────────────────────────────
-function StandardModal({ album, mode, published, onClose }: { album: DetailTarget, mode: Mode, published?: MemberReview, onClose: () => void }) {
+function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onClose: () => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore (mounted-when-open → open=true).
   useDismissable(true, onClose, cardRef)
@@ -61,7 +62,7 @@ function StandardModal({ album, mode, published, onClose }: { album: DetailTarge
 	style={{ position: 'relative', width: '100%', maxWidth: 600, maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 34px 80px rgba(0,0,0,.42)', padding: '30px 30px 26px' }}
       >
         <button type="button" className="lf-iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
-        {album.albumId ? <RealBody album={album} mode={mode} published={published} /> : <MinimalBody album={album} />}
+        {album.albumId ? <RealBody album={album} mode={mode} published={published} onOpenLyrics={onOpenLyrics} /> : <MinimalBody album={album} />}
       </div>
     </div>
   )
@@ -69,7 +70,7 @@ function StandardModal({ album, mode, published, onClose }: { album: DetailTarge
 
 // Real album: fetch DB metadata (cover/tracklist/artists), then render the
 // mode-appropriate body. On fetch failure it degrades to a minimal card.
-function RealBody({ album, mode, published }: { album: DetailTarget, mode: Mode, published?: MemberReview }) {
+function RealBody({ album, mode, published, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onOpenLyrics?: (spotifyTrackId: string) => void }) {
   const seed = album.albumId ? getCachedAlbumDetail(album.albumId) : null
   const [data, setData] = useState<AlbumDetailResp | null>(seed)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
@@ -127,8 +128,8 @@ function RealBody({ album, mode, published }: { album: DetailTarget, mode: Mode,
             </div>
           ) :
           mode === 'edit' ?
-            <EditBody published={published} tracks={data.tracks} /> :
-            <InfoBody artists={data.artists} tracks={data.tracks} year={album.year} />}
+            <EditBody published={published} tracks={data.tracks} onOpenLyrics={onOpenLyrics} /> :
+            <InfoBody artists={data.artists} tracks={data.tracks} year={album.year} onOpenLyrics={onOpenLyrics} />}
     </>
   )
 }
@@ -151,34 +152,42 @@ function Header({ cover, title, artist, meta, kicker }: { cover?: string | null,
 }
 
 // ── read-only tracklist (info / edit) ────────────────────────────────────────
-function Tracklist({ tracks }: { tracks: MusicTrack[] }) {
+// Rows are the shared TrackRow (ARCH-entity-interaction-contract): the only
+// action granted here is `lyrics` (rows stay otherwise read-only), omitted for
+// tracks without a spotify_id — nothing to query the lyrics API with.
+function Tracklist({ tracks, onOpenLyrics }: { tracks: MusicTrack[], onOpenLyrics?: (spotifyTrackId: string) => void }) {
   if (tracks.length === 0)
     return null
   return (
     <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
       <div className="lf-meta" style={{ marginBottom: 10 }}>트랙리스트</div>
       <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {tracks.map(t => (
-          <li key={t.id} style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--color-border-soft)' }}>
-            <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 22, textAlign: 'right', flex: '0 0 auto' }}>{t.track_no ?? '·'}</span>
-            <span className="lf-serif" style={{ fontSize: 15, flex: 1, minWidth: 0 }}>
-              {t.title}
-              {t.feat_artist_names.length > 0 && (
-                <span className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-faded)' }}>{` feat. ${t.feat_artist_names.join(', ')}`}</span>
-              )}
-            </span>
-            {t.duration_sec != null && (
-              <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span>
-            )}
-          </li>
-        ))}
+        {tracks.map((t) => {
+          const sid = t.spotify_id
+          return (
+            <TrackRow
+	key={t.id}
+	as="li"
+	no={t.track_no ?? '·'}
+	title={t.title}
+	titleSuffix={t.feat_artist_names.length > 0 ?
+                <span className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-faded)' }}>{` feat. ${t.feat_artist_names.join(', ')}`}</span> :
+                undefined}
+	cells={t.duration_sec != null ?
+                <span className="lf-mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
+                undefined}
+	actions={onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid) } : {}}
+	style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border-soft)' }}
+            />
+          )
+        })}
       </ol>
     </div>
   )
 }
 
 // ── info mode body (artists + tracklist) ─────────────────────────────────────
-function InfoBody({ artists, tracks, year }: { artists: MusicArtist[], tracks: MusicTrack[], year?: number | null }) {
+function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtist[], tracks: MusicTrack[], year?: number | null, onOpenLyrics?: (spotifyTrackId: string) => void }) {
   return (
     <>
       {artists.length > 0 && (
@@ -200,7 +209,7 @@ function InfoBody({ artists, tracks, year }: { artists: MusicArtist[], tracks: M
         </div>
       )}
       {tracks.length > 0 ?
-        <Tracklist tracks={tracks} /> :
+        <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} /> :
         (
           <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
             <div className="lf-sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{year ? `${year}년 발매` : '발매 정보 없음'}</div>
@@ -211,7 +220,7 @@ function InfoBody({ artists, tracks, year }: { artists: MusicArtist[], tracks: M
 }
 
 // ── edit mode body (already published) ───────────────────────────────────────
-function EditBody({ published, tracks }: { published?: MemberReview, tracks: MusicTrack[] }) {
+function EditBody({ published, tracks, onOpenLyrics }: { published?: MemberReview, tracks: MusicTrack[], onOpenLyrics?: (spotifyTrackId: string) => void }) {
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 20, padding: '12px 14px', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-paper)' }}>
@@ -222,7 +231,7 @@ function EditBody({ published, tracks }: { published?: MemberReview, tracks: Mus
           {published?.postId && <a href={`/write?id=${published.postId}`} className="lf-chip" style={{ textDecoration: 'none' }}>수정</a>}
         </div>
       </div>
-      <Tracklist tracks={tracks} />
+      <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} />
     </>
   )
 }

@@ -64,7 +64,7 @@ function AlbumCard({ a }: { a: AlbumHit }) {
 	)
 }
 
-function TrackRow({ t, no }: { t: TrackHit, no: number }) {
+function SearchTrackRow({ t, no }: { t: TrackHit, no: number }) {
 	const feat = t.featArtists.length ?
 (
 		<span className="gs-trk-feat">
@@ -268,7 +268,7 @@ export default function SearchPage() {
 					)}
 					{show('track') && s.tracks.length > 0 && (
 						<Section label="트랙" count={s.tracks.length}>
-							<div className="gs-trklist">{s.tracks.map((t, i) => <TrackRow key={t.id ?? `${t.title}${i}`} t={t} no={i + 1} />)}</div>
+							<div className="gs-trklist">{s.tracks.map((t, i) => <SearchTrackRow key={t.id ?? `${t.title}${i}`} t={t} no={i + 1} />)}</div>
 						</Section>
 					)}
 				</div>

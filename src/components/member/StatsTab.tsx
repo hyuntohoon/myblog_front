@@ -9,6 +9,6 @@
 import type { DetailTarget } from '@lib/member'
 import { LikedBoard } from './LikedBoard'
 
-export function StatsTab({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
-	return <LikedBoard onOpen={onOpen} />
+export function StatsTab({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget) => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
+	return <LikedBoard onOpen={onOpen} onOpenLyrics={onOpenLyrics} />
 }

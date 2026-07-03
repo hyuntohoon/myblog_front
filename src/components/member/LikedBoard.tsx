@@ -5,13 +5,15 @@
 // loaded via offset pagination (≤1000-row ceiling); the row table / hero /
 // facets / decade / likes-flow are liked-only, while the analysis charts carry a
 // 좋아요/재생 source toggle (LikedAnalysis). Row actions: 작품 상세 (onOpen) ·
-// 평론 버킷에 담기 (reuses BucketPickerSheet + buckets.ts) · 평론 쓰기 (/write).
+// 가사 (shared TrackRow → ProfileApp lyrics mount, list view) · 평론 버킷에 담기
+// (reuses BucketPickerSheet + buckets.ts) · 평론 쓰기 (/write).
 import type { DetailTarget } from '@lib/member'
 import type { SavedTrack } from './analysis.api'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { addBucketItem } from '@lib/buckets'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
+import { TrackRow } from '../shared/TrackRow'
 import { listSavedTracks } from './analysis.api'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { LikedAnalysis } from './LikedAnalysis'
@@ -122,7 +124,10 @@ function defaultDir(col: SortKey): SortDir {
 }
 
 // ── table column template — shared by header + rows ───────────────────────
-const LK_COLS = '30px minmax(0,1.7fr) minmax(0,1fr) 108px 56px 38px'
+// [#, identity, album, date, length, (가사 when a lyrics mount is wired), ⋯]
+function lkCols(withLyrics: boolean): string {
+	return `30px minmax(0,1.7fr) minmax(0,1fr) 108px 56px ${withLyrics ? '44px ' : ''}38px`
+}
 
 // ── row action menu ───────────────────────────────────────────────────────
 function RowMenu({ row, onOpen, onPromote }: {
@@ -239,50 +244,55 @@ function SortHead({ col, label, sort, sortDir, onSort, className }: {
 	)
 }
 
-function TableHead({ sort, sortDir, onSort }: { sort: SortKey, sortDir: SortDir, onSort: (c: SortKey) => void }) {
+function TableHead({ cols, withLyrics, sort, sortDir, onSort }: { cols: string, withLyrics: boolean, sort: SortKey, sortDir: SortDir, onSort: (c: SortKey) => void }) {
 	return (
-		<div style={{ display: 'grid', gridTemplateColumns: LK_COLS, gap: 14, alignItems: 'center', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 0, background: 'var(--color-bg)', zIndex: 5 }}>
+		<div style={{ display: 'grid', gridTemplateColumns: cols, gap: 14, alignItems: 'center', padding: '9px 12px', borderBottom: '1px solid var(--color-border)', position: 'sticky', top: 0, background: 'var(--color-bg)', zIndex: 5 }}>
 			<span className="lf-mono" style={{ color: 'var(--color-faded)', fontSize: 10.5, textAlign: 'center' }}>#</span>
 			<SortHead col="title" label="제목" sort={sort} sortDir={sortDir} onSort={onSort} />
 			<SortHead col="album" label="앨범" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-album" />
 			<SortHead col="recent" label="추가한 날짜" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-date" />
 			<SortHead col="length" label="길이" sort={sort} sortDir={sortDir} onSort={onSort} className="lk-col-length" />
+			{withLyrics && <span />}
 			<span />
 		</div>
 	)
 }
 
 // ── table row ─────────────────────────────────────────────────────────────
-function Row({ row, n, onOpen, onPromote }: {
+// Shared-TrackRow consumer (ARCH-entity-interaction-contract Step 2). Declared
+// actions = what the surface already had (open-detail) + lyrics; 담기/평론쓰기
+// stay in the surface-specific ⋯ menu (trailing).
+function Row({ row, n, cols, onOpen, onPromote, onLyrics }: {
 	row: LikedRowVM
 	n: number
+	cols: string
 	onOpen: (t: DetailTarget) => void
 	onPromote: (row: LikedRowVM) => void
+	onLyrics?: (spotifyTrackId: string) => void
 }) {
-	const [hover, setHover] = useState(false)
 	const catalogued = row.albumId != null
 	return (
-		<div
+		<TrackRow
 			className="lk-row"
-			onMouseEnter={() => setHover(true)}
-			onMouseLeave={() => setHover(false)}
-			style={{ display: 'grid', gridTemplateColumns: LK_COLS, gap: 14, alignItems: 'center', padding: '9px 12px', borderRadius: 4, background: hover ? 'color-mix(in srgb, var(--color-text) 4%, transparent)' : 'transparent', transition: 'background .12s' }}
-		>
-			<span className="lf-mono" style={{ fontSize: 12.5, color: 'var(--color-faded)', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{n}</span>
-			<div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-				<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} title={catalogued ? '작품 상세' : '카탈로그 미등록'} style={{ position: 'relative', padding: 0, border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', flex: '0 0 auto', lineHeight: 0 }}>
-					<LkCover label={row.albumName} cover={row.cover} size={42} />
-				</button>
-				<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} style={{ minWidth: 0, flex: 1, textAlign: 'left', border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', padding: 0 }}>
-					<div className="lf-serif" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-text)' }}>{row.track}</div>
-					<div className="lf-sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{row.artist}</div>
-				</button>
-			</div>
-			<span className="lf-sans lk-col-album" style={{ fontSize: 12.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.albumName}</span>
-			<span className="lf-mono lk-col-date" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{row.likedAt}</span>
-			<span className="lf-mono lk-col-length" style={{ fontSize: 11, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{row.durationLabel}</span>
-			<span style={{ display: 'inline-flex', justifyContent: 'flex-end' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>
-		</div>
+			gridTemplate={cols}
+			no={n}
+			cover={<span style={{ flex: '0 0 auto', lineHeight: 0 }}><LkCover label={row.albumName} cover={row.cover} size={42} /></span>}
+			title={row.track}
+			sub={row.artist}
+			cells={(
+				<>
+					<span className="lf-sans lk-col-album" style={{ fontSize: 12.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.albumName}</span>
+					<span className="lf-mono lk-col-date" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{row.likedAt}</span>
+					<span className="lf-mono lk-col-length" style={{ fontSize: 11, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{row.durationLabel}</span>
+				</>
+			)}
+			actions={{
+				open: { fire: () => openDetail(row, onOpen), disabled: !catalogued, title: '작품 상세', disabledTitle: '카탈로그 미등록' },
+				...(onLyrics ? { lyrics: () => onLyrics(row.id) } : {}),
+			}}
+			trailing={<span style={{ display: 'inline-flex', justifyContent: 'flex-end' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>}
+			style={{ padding: '9px 12px', borderRadius: 4 }}
+		/>
 	)
 }
 
@@ -345,7 +355,9 @@ function Toast({ msg }: { msg: string }) {
 }
 
 // ── board ─────────────────────────────────────────────────────────────────
-export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
+export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget) => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
+	// List rows gain the 가사 column only when ProfileApp's viewer mount is wired.
+	const cols = lkCols(onOpenLyrics != null)
 	const [rows, setRows] = useState<LikedRowVM[] | null>(null)
 	const [loadError, setLoadError] = useState(false)
 
@@ -597,7 +609,7 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 						) :
 						(
 							<div className="lf-panel" style={{ padding: '0 8px 8px' }}>
-								<TableHead sort={sort} sortDir={sortDir} onSort={onSortHead} />
+								<TableHead cols={cols} withLyrics={onOpenLyrics != null} sort={sort} sortDir={sortDir} onSort={onSortHead} />
 								{grouped ?
 									groups.map(grp => (
 										<div key={grp.key}>
@@ -608,10 +620,10 @@ export function LikedBoard({ onOpen }: { onOpen?: (t: DetailTarget) => void }) {
 													곡
 												</span>
 											</div>
-											{grp.items.map((t, i) => <Row key={t.id} row={t} n={i + 1} onOpen={onOpen ?? (() => {})} onPromote={startPromote} />)}
+											{grp.items.map((t, i) => <Row key={t.id} row={t} n={i + 1} cols={cols} onOpen={onOpen ?? (() => {})} onPromote={startPromote} onLyrics={onOpenLyrics} />)}
 										</div>
 									)) :
-									sorted.map((t, i) => <Row key={t.id} row={t} n={i + 1} onOpen={onOpen ?? (() => {})} onPromote={startPromote} />)}
+									sorted.map((t, i) => <Row key={t.id} row={t} n={i + 1} cols={cols} onOpen={onOpen ?? (() => {})} onPromote={startPromote} onLyrics={onOpenLyrics} />)}
 							</div>
 						)}
 
