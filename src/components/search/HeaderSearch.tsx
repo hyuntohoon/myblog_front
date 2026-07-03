@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReviewHit } from '@lib/reviewIndex'
 import { filterReviews, loadReviews } from '@lib/reviewIndex'
 import { useMusicSearch } from '@lib/useMusicSearch'
+import { artistHref, reviewHref } from '@lib/entityLinks'
 import { ResultRow } from './atoms'
 
 const DROPDOWN_LIMIT = 4
@@ -99,8 +100,8 @@ export default function HeaderSearch() {
 
 	// flat nav targets for keyboard ↑↓/Enter, in render order
 	const flatHref = useMemo<(string | null)[]>(() => [
-		...reviews.map(r => `/review/${r.slug}/`),
-		...artists.map(a => (a.id ? `/artist/${a.id}/` : null)),
+		...reviews.map(r => reviewHref(r.slug)),
+		...artists.map(a => (a.id ? artistHref(a.id) : null)),
 		...albums.map(() => null),
 		...tracks.map(() => null),
 	], [reviews, artists, albums, tracks])
@@ -240,7 +241,7 @@ export default function HeaderSearch() {
 															onHover={() => setActiveIdx(i)}
 															idAttr={i}
 															trailing={<span className="gs-row-go mono" aria-hidden="true">평론 →</span>}
-															action={{ type: 'navigate', href: `/review/${r.slug}/` }}
+															action={{ type: 'navigate', href: reviewHref(r.slug) }}
 														/>
 													)
 												})}
@@ -262,7 +263,7 @@ export default function HeaderSearch() {
 															onHover={() => setActiveIdx(i)}
 															idAttr={i}
 															trailing={a.id ? <span className="gs-row-go mono" aria-hidden="true">허브 →</span> : undefined}
-															action={a.id ? { type: 'navigate', href: `/artist/${a.id}/` } : { type: 'static' }}
+															action={a.id ? { type: 'navigate', href: artistHref(a.id) } : { type: 'static' }}
 														/>
 													)
 												})}

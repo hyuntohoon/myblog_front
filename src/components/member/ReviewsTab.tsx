@@ -8,6 +8,7 @@
 // full viewport regardless of the tab's transform/stacking context.
 import type { DetailTarget, MemberReview, MemberReviewType } from '@lib/member'
 import { useEffect, useState } from 'react'
+import { reviewHref } from '@lib/entityLinks'
 import { createPortal } from 'react-dom'
 import { REVIEW_TYPES } from '@lib/member'
 import { archivePost, listDrafts, readErrorDetail } from '../../scripts/write/api'
@@ -60,7 +61,7 @@ function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: Deta
               phone the whole group wraps below the rating instead of pushing 삭제
               off-screen (it clipped past the viewport at <=360px). */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 'auto' }}>
-            <a href={`/review/${r.slug}`} className="lf-chip" style={{ textDecoration: 'none' }}>보기</a>
+            <a href={reviewHref(r.slug)} className="lf-chip" style={{ textDecoration: 'none' }}>보기</a>
             {r.postId && (
               <a href={`/write?id=${r.postId}`} className="lf-chip" style={{ textDecoration: 'none' }}>수정</a>
             )}

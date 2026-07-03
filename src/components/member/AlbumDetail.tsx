@@ -18,6 +18,7 @@ import type { DetailTarget, MemberReview } from '@lib/member'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { updateBucketItemMemo } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
+import { artistHref, reviewHref } from '@lib/entityLinks'
 import { useDismissable } from '@lib/useDismissable'
 import { TrackRow } from '../shared/TrackRow'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
@@ -198,7 +199,12 @@ function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtis
               <div key={ar.id} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                 <div style={{ width: 40, flex: '0 0 auto' }}><AlbumArt url={ar.photo_url} label={ar.name} size={40} /></div>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ar.name}</div>
+                  {/* ARCH-entity-interaction-contract Step 3 — name links to the
+                      artist hub (the canonical artist detail surface, mirroring
+                      the tray/board artist-member click). */}
+                  <div className="lf-serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <a className="lf-artist-link" href={artistHref(ar.id)} title="아티스트 허브">{ar.name}</a>
+                  </div>
                   {ar.genres.length > 0 && (
                     <div className="lf-mono" style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-faded)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{ar.genres.join(' · ')}</div>
                   )}
@@ -227,7 +233,7 @@ function EditBody({ published, tracks, onOpenLyrics }: { published?: MemberRevie
         <span className="lf-meta" style={{ color: 'var(--color-accent)' }}>이미 발행된 평론</span>
         {published?.rating != null && <Stars score={published.rating} size={14} />}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {published?.slug && <a href={`/review/${published.slug}/`} className="lf-chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
+          {published?.slug && <a href={reviewHref(published.slug)} className="lf-chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
           {published?.postId && <a href={`/write?id=${published.postId}`} className="lf-chip" style={{ textDecoration: 'none' }}>수정</a>}
         </div>
       </div>

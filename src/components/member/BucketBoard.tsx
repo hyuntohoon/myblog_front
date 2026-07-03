@@ -25,6 +25,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
+import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_BOARD_DROP_EVENT, PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
@@ -634,7 +635,7 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
           // click (HTML5 DnD), so no suppressClick guard is needed.
           if (isArtist) {
             if (album.artistId)
-              window.location.assign(`/artist/${album.artistId}`)
+              window.location.assign(artistHref(album.artistId))
             return
           }
           // A non-album member has no album-detail target — clicking it is a no-op.

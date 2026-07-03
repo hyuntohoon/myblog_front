@@ -15,6 +15,7 @@
  */
 import type { ReviewCard } from '@lib/reviews'
 import type { CSSProperties, ReactNode } from 'react'
+import { reviewHref } from '@lib/entityLinks'
 import BrowseGenres from './BrowseGenres'
 import ByTheNumbers from './ByTheNumbers'
 import { Cover, SectionTitle, Stars } from './ui'
@@ -92,7 +93,7 @@ function Hero({ feature }: { feature: Feature }) {
 					<span className="mono" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--color-accent)' }}>★ Best New Music</span>
 					<span className="meta">금주의 선정</span>
 				</div>
-				<a href={`/review/${feature.slug}/`} className="bk-heroB">
+				<a href={reviewHref(feature.slug)} className="bk-heroB">
 					<div className="bk-lift"><Cover label={feature.album} src={feature.cover} square radius={4} /></div>
 					<div style={{ minWidth: 0 }}>
 						<div className="mono" style={{ fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-subtle)', marginBottom: 12 }}>{feature.artist}</div>
@@ -140,7 +141,7 @@ function Latest({ reviews, excludeSlug }: { reviews: ReviewCard[], excludeSlug?:
 				<SectionTitle kicker="LATEST · 평론" title="최신 평론" right={<a href="/reviews" className="btn">{`모두 보기 · ${reviews.length}편`}</a>} />
 				<div>
 					{items.map(r => (
-						<a key={r.slug} href={`/review/${r.slug}/`} className="bk-revrow">
+						<a key={r.slug} href={reviewHref(r.slug)} className="bk-revrow">
 							<div className="bk-lift" style={{ width: '100%' }}><Cover label={r.album} src={r.cover} square radius={3} /></div>
 							<div style={{ minWidth: 0 }}>
 								<div className="mono" style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[r.artist, r.genres[0], r.year].filter(Boolean).join(' · ')}</div>

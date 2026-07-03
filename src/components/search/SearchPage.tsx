@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AlbumHit, ArtistHit, TrackHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
+import { artistHref, reviewHref } from '@lib/entityLinks'
 import type { ReviewHit } from '@lib/reviewIndex'
 import { filterReviews, loadReviews } from '@lib/reviewIndex'
 import { GCover, GStars } from './atoms'
@@ -22,7 +23,7 @@ function getQuery(): string {
 // ── cards ─────────────────────────────────────────────────────────
 function ReviewCard({ r }: { r: ReviewHit }) {
 	return (
-		<a href={`/review/${r.slug}/`} className="gs-albcard">
+		<a href={reviewHref(r.slug)} className="gs-albcard">
 			<div className="gs-albcard-cov"><GCover name={r.album} src={r.cover} size={0} /></div>
 			<div className="gs-albcard-body">
 				<div className="gs-albcard-stars">
@@ -38,14 +39,18 @@ function ReviewCard({ r }: { r: ReviewHit }) {
 
 function ArtistCard({ a }: { a: ArtistHit }) {
 	return (
-		<a href={`/artist/${a.id}/`} className="gs-acard">
+		// no catalog id → no hub page; render a dead card instead of /artist/null/
+		// (mirrors HeaderSearch's 'static' row for id-less artists)
+		<a href={a.id ? artistHref(a.id) : undefined} className="gs-acard">
 			<GCover name={a.name} src={a.cover} size={84} shape="circle" />
 			<div className="gs-acard-body">
 				<div className="gs-acard-namerow"><h3 className="serif gs-acard-name">{a.name}</h3></div>
-				<span className="mono gs-acard-go">
+				{a.id && (
+					<span className="mono gs-acard-go">
 아티스트 허브
 <span aria-hidden="true">→</span>
-    </span>
+					</span>
+				)}
 			</div>
 		</a>
 	)

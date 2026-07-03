@@ -5,6 +5,7 @@
  */
 import type { CollectionEntry } from 'astro:content'
 import { getArtistNameMap, resolveArtistLinks } from '../lib/artistNames'
+import { artistHref } from '../lib/entityLinks'
 import PartialStars from './partial-stars.astro'
 
 export interface Props {
@@ -88,7 +89,7 @@ day: 'numeric',
 (
         <p class="rh-artist">
           {artistLinks.map((a, i) => (
-            <>{i > 0 ? ', ' : ''}<a class="rh-artist-link" href={`/artist/${a.id}/`}>{a.name}</a></>
+            <>{i > 0 ? ', ' : ''}<a class="rh-artist-link" href={artistHref(a.id)}>{a.name}</a></>
           ))}
         </p>
       ) :

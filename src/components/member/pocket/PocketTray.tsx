@@ -15,6 +15,7 @@ import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import type { PlaybackTarget } from '@lib/spotifyPlayback'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { artistHref } from '@lib/entityLinks'
 import { isLoggedIn } from '@lib/auth'
 import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
@@ -516,6 +517,8 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
             const isArtist = a.itemType === 'artist'
             const isAlbum = a.itemType === 'album'
             const typeLabel = ITEM_TYPE_LABEL[a.itemType] ?? a.itemType
+            // const (not a.artistId) so the narrowing survives into the onClick closure
+            const artistId = isArtist ? a.artistId : null
             return (
               <div
 	key={a.itemId}
@@ -524,7 +527,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
 	{...dragBind(a)}
                 // an artist member navigates to its /artist/[id] hub (mirrors the board);
                 // album/other members have no in-island detail surface → click is a no-op.
-	onClick={isArtist && a.artistId ? () => window.location.assign(`/artist/${a.artistId}`) : undefined}
+	onClick={artistId != null ? () => window.location.assign(artistHref(artistId)) : undefined}
 	title={isAlbum ? `${a.title} — ${a.artist}` : a.title}
               >
                 <div style={{ position: 'relative' }}>
