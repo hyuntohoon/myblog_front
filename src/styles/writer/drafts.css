@@ -37,11 +37,11 @@
   border-bottom: 1px solid var(--rule-soft);
 }
 .wr-drafts-titlewrap { display: inline-flex; align-items: baseline; gap: 9px; min-width: 0; }
-.wr-drafts-ico { font-size: 15px; line-height: 1; align-self: center; }
+.wr-drafts-ico { font-size: var(--text-md); line-height: 1; align-self: center; }
 .wr-drafts-title { font-family: var(--serif); font-size: 19px; color: var(--ink); }
 .wr-drafts-count {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.02em;
   color: var(--bg);
   background: var(--accent);
@@ -64,7 +64,7 @@
 .wr-drafts-body { flex: 1; min-height: 0; padding: 6px 0; }
 /* match the palette's roomier card rows over the compact header dropdown */
 .wr-drafts-body .gs-row { padding: 11px 16px; gap: 13px; }
-.wr-drafts-body .gs-row-title { font-size: 15px; }
+.wr-drafts-body .gs-row-title { font-size: var(--text-md); }
 .wr-drafts-body .gs-row-sub { font-size: 11.5px; }
 
 /* per-row wrapper: the .gs-row anchor + a sibling delete button in a reserved
@@ -81,7 +81,7 @@
   border: none;
   color: var(--ink-faint);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1;
   white-space: nowrap;
   padding: 6px;
@@ -107,7 +107,7 @@
 
 .wr-drafts-msg {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
   text-align: center;
   padding: 44px 24px;
@@ -117,7 +117,7 @@
   padding: 10px 18px;
   border-top: 1px solid var(--rule-soft);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   letter-spacing: 0.02em;
   color: var(--ink-faint);
 }

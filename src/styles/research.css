@@ -64,14 +64,14 @@
 }
 .rsh-refcount {
 	font-family: var(--font-mono);
-	font-size: 9.5px;
+	font-size: var(--text-3xs);
 	letter-spacing: 0.04em;
 	color: var(--color-faded);
 	white-space: nowrap;
 }
 .rsh-chevron {
 	color: var(--color-faded);
-	font-size: 12px;
+	font-size: var(--text-sm);
 	transition: transform 0.16s ease;
 	flex: 0 0 auto;
 }
@@ -109,9 +109,9 @@
 	color: var(--color-text);
 	margin: 1.4em 0 0.5em;
 }
-.rsh-h1 { font-size: 18px; }
+.rsh-h1 { font-size: var(--text-lg); }
 .rsh-h2 {
-	font-size: 13px;
+	font-size: var(--text-base);
 	font-family: var(--font-mono);
 	font-weight: 500;
 	letter-spacing: 0.08em;
@@ -120,7 +120,7 @@
 	padding-bottom: 5px;
 	border-bottom: 1px solid var(--color-border-soft);
 }
-.rsh-h3 { font-size: 15px; }
+.rsh-h3 { font-size: var(--text-md); }
 .rsh-h4 { font-size: 13.5px; }
 
 /* Inline status chips ([확인]/[미확인]/추정/…) — reuse the note-status color
@@ -192,7 +192,7 @@
 	padding-top: 10px;
 	border-top: 1px solid var(--color-border-soft);
 	font-family: var(--font-mono);
-	font-size: 9.5px;
+	font-size: var(--text-3xs);
 	letter-spacing: 0.04em;
 	color: var(--color-faded);
 }
@@ -215,7 +215,7 @@
 .rsh-btn-danger,
 .rsh-btn-ghost {
 	font-family: var(--font-mono);
-	font-size: 11px;
+	font-size: var(--text-xs);
 	letter-spacing: 0.04em;
 	padding: 6px 12px;
 	border-radius: 4px;
@@ -263,7 +263,7 @@
 }
 .rsh-loading {
 	font-family: var(--font-mono);
-	font-size: 11px;
+	font-size: var(--text-xs);
 	letter-spacing: 0.04em;
 	color: var(--color-faded);
 	padding: 10px 0;
@@ -296,7 +296,7 @@
 .rsh-confirm { margin-top: 12px; }
 .rsh-confirm-msg {
 	font-family: var(--rsh-kr-serif);
-	font-size: 13px;
+	font-size: var(--text-base);
 	color: var(--color-accent);
 	margin: 0;
 	line-height: 1.6;
@@ -314,7 +314,7 @@
 }
 .rsh-seg-btn {
 	font-family: var(--font-mono);
-	font-size: 10.5px;
+	font-size: var(--text-2xs);
 	letter-spacing: 0.04em;
 	padding: 4px 11px;
 	background: var(--color-bg);
@@ -341,7 +341,7 @@
 .rsh-mode-hint {
 	font-family: var(--rsh-kr-serif, 'Noto Serif KR', serif);
 	font-style: italic;
-	font-size: 12px;
+	font-size: var(--text-sm);
 	color: var(--color-faded);
 }
 
@@ -419,7 +419,7 @@
 .rsh-prose.rsh-doc .rsh-quote { font-size: 15.5px; line-height: 1.74; padding-left: 16px; border-left-color: var(--color-accent); }
 .rsh-prose.rsh-doc .rsh-h2 {
 	font-family: var(--font-serif);
-	font-size: 18px;
+	font-size: var(--text-lg);
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	text-transform: none;
@@ -453,7 +453,7 @@
 .rsh-sec-head:hover { color: var(--color-accent); border-color: var(--color-accent); }
 .rsh-sec-chev {
 	flex: 0 0 auto;
-	font-size: 12px;
+	font-size: var(--text-sm);
 	line-height: 1;
 	color: var(--color-faded);
 	position: relative;
@@ -464,7 +464,7 @@
 .rsh-sec-head:hover .rsh-sec-chev { color: var(--color-accent); }
 .rsh-sec-title {
 	font-family: var(--font-serif);
-	font-size: 18px;
+	font-size: var(--text-lg);
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	line-height: 1.25;
@@ -528,7 +528,7 @@
 	border-bottom: 1px solid var(--color-border-soft);
 }
 .rsh-modal-kicker { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-faded); margin: 0; }
-.rsh-modal-title { font-family: var(--font-serif); font-size: 22px; font-weight: 500; line-height: 1.2; margin: 4px 0 0; }
+.rsh-modal-title { font-family: var(--font-serif); font-size: var(--text-xl); font-weight: 500; line-height: 1.2; margin: 4px 0 0; }
 .rsh-modal-close {
 	flex: 0 0 auto;
 	width: 30px;

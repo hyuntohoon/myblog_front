@@ -15,7 +15,7 @@
 }
 .wr-btn {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   padding: 8px 15px;
@@ -92,7 +92,7 @@
   min-width: 0;
 }
 .wr-hero-kicker {
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-soft);
@@ -108,7 +108,7 @@
 }
 .wr-hero-artist {
   font-family: var(--serif);
-  font-size: 18px;
+  font-size: var(--text-lg);
   color: var(--ink-soft);
 }
 .wr-hero-controls {
@@ -159,12 +159,12 @@
 .wr-hero-empty:hover { border-color: var(--ink); }
 .wr-hero-empty-ico { font-size: 34px; color: var(--ink-faint); }
 .wr-hero-empty-title {
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-style: italic;
   color: var(--ink-soft);
 }
 .wr-hero-empty-sub {
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ink-faint);
   letter-spacing: 0.04em;
   display: inline-flex;
