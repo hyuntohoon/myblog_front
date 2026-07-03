@@ -332,6 +332,10 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
     }
   })
   const openLyrics = (t: LyricsOpenTarget) => setLyrics({ trackId: t.trackId, progressMs: t.progressMs, live: true })
+  // ARCH-entity-interaction-contract Step 2 static entry: TrackRow `lyrics`
+  // actions (AlbumDetail tracklist / LikedBoard rows) open the same mount
+  // non-live — no playback binding, no refresh affordance.
+  const openStaticLyrics = (spotifyTrackId: string) => setLyrics({ trackId: spotifyTrackId, progressMs: null, live: false })
   const closeLyrics = () => {
     setLyrics(null)
     try {
@@ -394,7 +398,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
     { id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => selectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} /> },
     { id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> },
     { id: 'bucket', node: <BucketBoard onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
-    { id: 'stats', node: <StatsTab onOpen={openDetail} /> },
+    { id: 'stats', node: <StatsTab onOpen={openDetail} onOpenLyrics={openStaticLyrics} /> },
     { id: 'integration', node: <SpotifyIntegrationTab /> },
   ]
   const content = (
@@ -444,7 +448,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
         </>
       )}
 
-      {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} />}
+      {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} onOpenLyrics={openStaticLyrics} />}
       {lyrics && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} canRefresh={lyrics.live} onClose={closeLyrics} />}
     </div>
   )

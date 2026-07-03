@@ -17,6 +17,15 @@ import { useEffect, useRef } from 'react'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
+// Stack of currently-open dismissables. Overlays can nest (the lyrics viewer
+// opens OVER the album-detail modal — ARCH-entity-interaction-contract Step 2),
+// and every instance registers its own document-level capture listener, so
+// `stopPropagation` alone cannot keep one ESC from firing all of them (same
+// node → all listeners still run). Only the TOP entry may act: ESC closes one
+// layer at a time (top first) and Tab stays trapped in the top layer instead
+// of being stolen by a lower trap's wrap-around.
+const openStack: object[] = []
+
 function visibleFocusables(root: HTMLElement): HTMLElement[] {
 	return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(el => el.offsetParent !== null || el === document.activeElement)
 }
@@ -60,13 +69,23 @@ export function useDismissable(
 		}
 	}, [open, ref, autoFocus])
 
+	// Stable per-instance stack token (identity only).
+	const stackToken = useRef<object | null>(null)
+	if (stackToken.current === null)
+		stackToken.current = {}
+
 	// Key handling: ESC closes, Tab is trapped within the overlay. Separate from
 	// the focus lifecycle so re-subscribing the listener never restores focus.
 	useEffect(() => {
 		if (!open)
 			return
+		const token = stackToken.current!
+		openStack.push(token)
 		const root = ref.current
 		const onKey = (e: KeyboardEvent) => {
+			// A lower layer under a nested overlay stays inert until it's top again.
+			if (openStack[openStack.length - 1] !== token)
+				return
 			if (e.key === 'Escape') {
 				e.stopPropagation()
 				onCloseRef.current()
@@ -88,6 +107,11 @@ export function useDismissable(
 			}
 		}
 		document.addEventListener('keydown', onKey, true)
-		return () => document.removeEventListener('keydown', onKey, true)
+		return () => {
+			const i = openStack.indexOf(token)
+			if (i >= 0)
+				openStack.splice(i, 1)
+			document.removeEventListener('keydown', onKey, true)
+		}
 	}, [open, ref, trapFocus])
 }

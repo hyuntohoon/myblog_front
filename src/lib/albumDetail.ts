@@ -15,7 +15,7 @@
 // strings, so a `?ids=` batch endpoint could not be edge-cached — per-album
 // paths cache once and are reused everywhere.
 
-export interface MusicTrack { id: string, title: string, track_no: number | null, duration_sec: number | null, feat_artist_names: string[] }
+export interface MusicTrack { id: string, title: string, track_no: number | null, duration_sec: number | null, spotify_id: string | null, feat_artist_names: string[] }
 export interface MusicArtist { id: string, name: string, photo_url: string | null, genres: string[], popularity: number | null }
 export interface MusicAlbumOut { id: string, title: string, release_date: string | null, cover_url: string | null, album_type: string | null, label: string | null }
 export interface AlbumDetail { album: MusicAlbumOut, artists: MusicArtist[], tracks: MusicTrack[] }
