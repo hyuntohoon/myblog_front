@@ -7,15 +7,27 @@
 // async token mint, so rule #9 (no synchronous Spotify call on a user-facing
 // endpoint) is not engaged. The token already carries `user-read-playback-state`.
 //
-// This is a ONE-SHOT read fired by an explicit user action (entry tap / manual
-// refresh). It is never polled and never drives continuous progression (RFC
-// non-goal); `progressMs` only seeds a single initial-focus computation.
+// This is a ONE-SHOT read: fired by an explicit user action (entry tap / manual
+// refresh / 동기화) and, since FEAT-nowplaying-live-sync, once on /profile entry
+// (owner-only authed page) to overlay the stale snapshot. It is never polled and
+// never drives continuous progression (RFC non-goal); `progressMs` only seeds a
+// single initial-focus computation. The `playing` state also carries display
+// metadata (track/artist/album/cover) so the now-playing card can render the
+// live moment without a second request.
 import { getStreamingToken } from '@lib/spotifyPlayback'
 
 const PLAYER_URL = 'https://api.spotify.com/v1/me/player'
 
 export type LivePlayback =
-	| { state: 'playing', trackId: string, progressMs: number | null } |
+	| {
+		state: 'playing'
+		trackId: string
+		progressMs: number | null
+		track: string | null
+		artist: string | null
+		album: string | null
+		albumCoverUrl: string | null
+	} |
 	{ state: 'idle' } |
 	{ state: 'unavailable' }
 
@@ -47,7 +59,20 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   if (!res.ok)
     return { state: 'unavailable' }
 
-  let body: { is_playing?: boolean, progress_ms?: number | null, item?: { id?: string, type?: string } | null }
+  let body: {
+    is_playing?: boolean
+    progress_ms?: number | null
+    item?: {
+      id?: string
+      type?: string
+      name?: string | null
+      artists?: Array<{ name?: string | null } | null> | null
+      album?: {
+        name?: string | null
+        images?: Array<{ url?: string | null, width?: number | null } | null> | null
+      } | null
+    } | null
+  }
   try {
     body = await res.json()
   }
@@ -58,9 +83,24 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   const item = body?.item
   if (!body?.is_playing || !item?.id || item.type !== 'track')
     return { state: 'idle' }
+  const artist = (item.artists ?? [])
+    .map(a => a?.name)
+    .filter((n): n is string => Boolean(n))
+    .join(', ')
+  // Smallest cover that still fills the largest card slot (116px @2x ≈ 232);
+  // Spotify orders images largest-first, so sort ascending and fall back to the
+  // largest when nothing reaches the threshold.
+  const images = (item.album?.images ?? [])
+    .filter((i): i is { url: string, width?: number | null } => Boolean(i?.url))
+    .sort((a, b) => (a.width ?? 0) - (b.width ?? 0))
+  const cover = images.find(i => (i.width ?? 0) >= 232) ?? images[images.length - 1]
   return {
     state: 'playing',
     trackId: String(item.id),
     progressMs: typeof body.progress_ms === 'number' ? body.progress_ms : null,
+    track: item.name ?? null,
+    artist: artist || null,
+    album: item.album?.name ?? null,
+    albumCoverUrl: cover?.url ?? null,
   }
 }
