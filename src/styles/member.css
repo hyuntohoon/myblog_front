@@ -1089,3 +1089,17 @@
    shared TrackRow (ARCH-entity-interaction-contract Step 2). */
 .lk-row { transition: background 0.12s; }
 .lk-row:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+
+/* ── artist-hub link (ARCH-entity-interaction-contract Step 3) ───────────────
+   Member-island artist names that navigate to /artist/[id] — the lf-flavored
+   twin of the public review hero's .rh-artist-link. */
+.lf-artist-link {
+	color: inherit;
+	text-decoration: none;
+	border-bottom: 1px solid transparent;
+	transition: color 0.14s, border-color 0.14s;
+}
+.lf-artist-link:hover {
+	color: var(--color-accent);
+	border-bottom-color: currentColor;
+}

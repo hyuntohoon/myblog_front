@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { reviewHref } from '@lib/entityLinks'
 import { allTags, allYears, selectFeatured } from '@lib/reviews'
 import type { ReviewCard } from '@lib/reviews'
 
@@ -205,13 +206,13 @@ export default function ReviewsIndex({
     <>
       {isEditorial && heroLead != null && (
         <section className="rev-c-hero" aria-label="주요 리뷰">
-          <a href={`/review/${heroLead.slug}`} className="rev-c-hero-cover" tabIndex={-1} aria-hidden="true">
+          <a href={reviewHref(heroLead.slug)} className="rev-c-hero-cover" tabIndex={-1} aria-hidden="true">
             <Cover r={heroLead} badge={null} ph={80} />
           </a>
           <div className="rev-c-hero-body">
             {heroLead.bestNew && <span className="rev-c-hero-badge">Best New Album</span>}
             {heroLead.artist && <p className="rev-artist">{heroLead.artist}</p>}
-            <a href={`/review/${heroLead.slug}`} className="rev-c-hero-link">
+            <a href={reviewHref(heroLead.slug)} className="rev-c-hero-link">
               <h2 className="rev-c-hero-album">{heroLead.album}</h2>
             </a>
             {heroLead.excerpt && <p className="rev-c-hero-pull">{heroLead.excerpt}</p>}
@@ -225,7 +226,7 @@ export default function ReviewsIndex({
 
       {!isEditorial && lead != null && (
         <section className="rev-featured" aria-label="주요 리뷰">
-          <a href={`/review/${lead.slug}`} className="rev-lead">
+          <a href={reviewHref(lead.slug)} className="rev-lead">
             <Cover r={lead} badge="full" ph={64} />
             <div className="rev-lead-body">
               <p className="rev-meta">{metaLine(lead)}</p>
@@ -241,7 +242,7 @@ export default function ReviewsIndex({
           {sides.length > 0 && (
             <div className="rev-side">
               {sides.map(r => (
-                <a key={r.slug} href={`/review/${r.slug}`} className="rev-side-card">
+                <a key={r.slug} href={reviewHref(r.slug)} className="rev-side-card">
                   <Cover r={r} badge="mini" ph={24} />
                   <div className="rev-side-body">
                     <p className="rev-meta">{metaLine(r)}</p>
@@ -364,7 +365,7 @@ export default function ReviewsIndex({
               <ul className="rev-list">
                 {shown.map(r => (
                   <li key={r.slug}>
-                    <a href={`/review/${r.slug}`} className="rev-row">
+                    <a href={reviewHref(r.slug)} className="rev-row">
                       <Cover r={r} badge="mini" ph={18} />
                       <div className="rev-row-main">
                         <h3 className="rev-row-album">{r.album}</h3>
@@ -382,7 +383,7 @@ export default function ReviewsIndex({
               <ul className={isEditorial ? `rev-grid rev-c-grid${shown.length < 3 ? ' rev-c-grid--few' : ''}` : 'rev-grid'}>
                 {shown.map(r => (
                   <li key={r.slug}>
-                    <a href={`/review/${r.slug}`} className="rev-card">
+                    <a href={reviewHref(r.slug)} className="rev-card">
                       <Cover r={r} badge="full" ph={34} />
                       <div className="rev-card-body">
                         <p className="rev-meta">{metaLine(r)}</p>

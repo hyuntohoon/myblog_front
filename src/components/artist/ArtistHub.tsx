@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react'
 import type { ArtistReviewCard } from '../../lib/artistReviews'
 import type { AlbumListItem, ArtistHero, TopTrackItem } from '../../scripts/write/artistApi'
 import { fetchArtistAlbums, fetchArtistHero, fetchArtistTopTracks } from '../../scripts/write/artistApi'
+import { reviewHref } from '@lib/entityLinks'
 import { Cover, SectionTitle, Stars } from '../home/ui'
 
 interface Props {
@@ -147,7 +148,7 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 						<SectionTitle kicker="THE CRITIC’S LENS" title="평론한 앨범" />
 						<div className="art-cov-grid">
 							{reviews.map(r => (
-								<a key={r.slug} className="art-rev-card" href={`/review/${r.slug}/`}>
+								<a key={r.slug} className="art-rev-card" href={reviewHref(r.slug)}>
 									<div className="art-rev-cover">
 										<Cover label={r.album} src={r.cover} square />
 										{r.bestNew && <span className="art-rev-bnm">베스트 뉴 뮤직</span>}
