@@ -1,12 +1,18 @@
 // Member dashboard — Now Playing (FEAT-member-dashboard Step 3, D5/D26).
 //
-// A READ-ONLY display of a worker-fed cache snapshot (GET /api/library/now-playing),
-// not a player: we hold only user-read scopes (no playback control, D11), and the
-// data can be up to ~1h stale (hourly cron + manual refresh). So: no play/pause,
-// no live-ticking seek — just the snapshot track + a static progress bar and an
-// honest "동기화 …" line. When nothing is playing, a calm idle state. The decorative
-// equalizer animates only while is_playing. Three variants (banner/full/list) share
-// the same snapshot; the list variant pairs it with recently-listened albums.
+// A READ-ONLY display, not a player: we hold only user-read scopes (no playback
+// control, D11). So: no play/pause, no live-ticking seek — just the current track
+// + an honest "동기화 …" line. When nothing is playing, a calm idle state. The
+// decorative equalizer animates only while is_playing. Three variants
+// (banner/full/list) share the same data; the list variant pairs it with
+// recently-listened albums.
+//
+// FEAT-nowplaying-live-sync — the worker-fed cache snapshot
+// (GET /api/library/now-playing, hourly cron, up to ~1h stale) is now only the
+// fallback: on mount the card also fires ONE `readLivePlayback()` and lets the
+// live moment win (playing → live card, idle → idle branch even if the snapshot
+// claimed playing; unavailable → snapshot as-is, no degradation). A 「동기화」
+// button re-fires the same one-shot read. Never polled.
 //
 // FEAT-lyrics-viewer Step 3 — the dynamic lyrics entry lives here, on the live
 // branches only (active-playback-only; the idle/최근 재생 branches never get one —
@@ -16,6 +22,7 @@
 // tap that discovers playback has stopped hides the entry instead of opening.
 import { useEffect, useRef, useState } from 'react'
 import { readLivePlayback } from './lyrics/playback.api'
+import type { LivePlayback } from './lyrics/playback.api'
 import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
 import type { NowPlaying as NowPlayingData, RecentlyListenedItem, RecentTrackItem } from './spotify.api'
 import { Cover, Equalizer } from './ui'
@@ -51,6 +58,30 @@ function SyncNote({ iso }: { iso?: string | null }) {
 }
 
 /**
+ * Sync note + the 「동기화」 button (FEAT-nowplaying-live-sync). The button
+ * re-fires the one-shot live read; double-fire is guarded in the hook.
+ */
+function SyncControl({ iso, onSync, syncing }: { iso?: string | null, onSync?: () => void, syncing?: boolean }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <SyncNote iso={iso} />
+      {onSync && (
+        <button
+	type="button"
+	className="lf-btn lf-mono"
+	onClick={onSync}
+	disabled={syncing}
+	aria-label="지금 재생 상태 동기화"
+	style={{ padding: '3px 8px', fontSize: 10.5, letterSpacing: '.06em', borderRadius: 3, whiteSpace: 'nowrap', flex: '0 0 auto' }}
+        >
+          {syncing ? '…' : '동기화'}
+        </button>
+      )}
+    </span>
+  )
+}
+
+/**
  * Fixed-size album cover (item 9): the real catalog art when a cover URL is
  *  available, else the editorial letter tile. (ui's AlbumArt fills 100% width, so
  *  it can't drive these fixed-size now-playing slots — hence a sized variant.)
@@ -70,20 +101,81 @@ function NpCover({ url, label, size, radius = 4 }: { url?: string | null, label:
   return <Cover label={label} size={size} radius={radius} />
 }
 
-/** Shared fetch — one snapshot, loading/error tracked. */
+/**
+ * Shared fetch — the worker-fed snapshot, overlaid by a one-shot live read.
+ * Snapshot and live read fire in parallel on mount; a decisive live result
+ * (`playing`/`idle`) wins regardless of arrival order, `unavailable` silently
+ * keeps the snapshot. `sync()` re-fires the live read (동기화 button); the
+ * busyRef guard makes it single-flight.
+ */
 function useNowPlaying() {
   const [np, setNp] = useState<NowPlayingData | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [syncing, setSyncing] = useState(false)
+  const busyRef = useRef(false)
+  const liveWonRef = useRef(false)
+  const onRef = useRef(true)
+
+  const applyLive = (r: LivePlayback) => {
+    if (r.state === 'unavailable')
+      return
+    liveWonRef.current = true
+    if (r.state === 'playing') {
+      setNp({
+        is_playing: true,
+        track: r.track,
+        artist: r.artist,
+        album: r.album,
+        album_cover_url: r.albumCoverUrl,
+        updated_at: new Date().toISOString(),
+      })
+    }
+    else {
+      // Live says nothing is playing — force the idle branch even if the stale
+      // snapshot claimed otherwise. Keep whatever fields are already there.
+      setNp(prev => ({ ...(prev ?? {}), is_playing: false, updated_at: new Date().toISOString() }))
+    }
+    setState('ready')
+  }
+
+  const sync = async () => {
+    if (busyRef.current)
+      return
+    busyRef.current = true
+    setSyncing(true)
+    try {
+      const r = await readLivePlayback()
+      if (onRef.current)
+        applyLive(r)
+    }
+    finally {
+      busyRef.current = false
+      if (onRef.current)
+        setSyncing(false)
+    }
+  }
+
   useEffect(() => {
-    let on = true
+    onRef.current = true
     getNowPlayingData()
-      .then(d => on && (setNp(d), setState('ready')))
-      .catch(() => on && setState('error'))
+      .then((d) => {
+        if (!onRef.current)
+          return
+        if (!liveWonRef.current)
+          setNp(d)
+        setState(s => (s === 'loading' ? 'ready' : s))
+      })
+      .catch(() => {
+        if (onRef.current && !liveWonRef.current)
+          setState(s => (s === 'loading' ? 'error' : s))
+      })
+    // FEAT-nowplaying-live-sync: one-shot live read on entry (never polled).
+    void sync()
     return () => {
-      on = false
+      onRef.current = false
     }
   }, [])
-  return { np, state }
+  return { np, state, sync, syncing }
 }
 
 /**
@@ -169,7 +261,7 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
 
 /* ── idle / loading shells ─────────────────────────────────────────────────── */
 
-function IdleBox({ compact = false, iso, latest }: { compact?: boolean, iso?: string | null, latest?: RecentTrackItem | null }) {
+function IdleBox({ compact = false, iso, latest, onSync, syncing }: { compact?: boolean, iso?: string | null, latest?: RecentTrackItem | null, onSync?: () => void, syncing?: boolean }) {
   return (
     <div className="lf-panel" style={{ padding: compact ? 16 : 22, display: 'flex', alignItems: 'center', gap: 14 }}>
       <Equalizer playing={false} h={14} />
@@ -184,7 +276,7 @@ function IdleBox({ compact = false, iso, latest }: { compact?: boolean, iso?: st
             ) :
           <div className="lf-serif lf-italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>}
       </div>
-      <SyncNote iso={iso} />
+      <SyncControl iso={iso} onSync={onSync} syncing={syncing} />
     </div>
   )
 }
@@ -192,13 +284,16 @@ function IdleBox({ compact = false, iso, latest }: { compact?: boolean, iso?: st
 /* ── full variant ──────────────────────────────────────────────────────────── */
 
 function NowPlayingFull({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
-  const { np, state } = useNowPlaying()
+  const { np, state, sync, syncing } = useNowPlaying()
+  const onSync = () => {
+    void sync()
+  }
   const idle = state === 'ready' && !liveSnapshot(np)
   const latest = useLatestPlayed(idle)
   if (state === 'loading')
     return <div className="lf-panel" style={{ padding: 18 }}><span className="lf-meta">불러오는 중…</span></div>
   if (!np || !np.is_playing || !np.track)
-    return <IdleBox iso={np?.updated_at} latest={latest} />
+    return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} />
   return (
     <div className="lf-panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
       <NpCover url={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={88} radius={4} />
@@ -208,7 +303,7 @@ function NowPlayingFull({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
           <span className="lf-kicker" style={{ color: 'var(--color-accent)' }}>NOW PLAYING</span>
           <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
             {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
-            <SyncNote iso={np.updated_at} />
+            <SyncControl iso={np.updated_at} onSync={onSync} syncing={syncing} />
           </span>
         </div>
         <div className="lf-serif lf-italic" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
@@ -223,7 +318,10 @@ function NowPlayingFull({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
 /* ── list variant (now-playing + recently-listened albums) ───────────────────── */
 
 function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
-  const { np, state } = useNowPlaying()
+  const { np, state, sync, syncing } = useNowPlaying()
+  const onSync = () => {
+    void sync()
+  }
   const [recent, setRecent] = useState<RecentlyListenedItem[] | null>(null)
   useEffect(() => {
     let on = true
@@ -247,7 +345,7 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
                     ● 재생 중
                     <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                       {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
-                      <SyncNote iso={live.updated_at} />
+                      <SyncControl iso={live.updated_at} onSync={onSync} syncing={syncing} />
                     </span>
                   </div>
                   <div className="lf-serif lf-italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
@@ -256,7 +354,7 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
                 <Equalizer playing h={16} />
               </div>
             ) :
-          <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} latest={latest} /></div>}
+          <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} /></div>}
 
       <div style={{ padding: '10px 8px 8px' }}>
         <div className="lf-meta" style={{ padding: '0 8px 8px' }}>최근 들은 앨범</div>
@@ -280,7 +378,10 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
 /* ── banner variant (overview default) ───────────────────────────────────────── */
 
 function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
-  const { np, state } = useNowPlaying()
+  const { np, state, sync, syncing } = useNowPlaying()
+  const onSync = () => {
+    void sync()
+  }
   const live = liveSnapshot(np)
   const latest = useLatestPlayed(state === 'ready' && !live)
   if (state === 'loading') {
@@ -299,7 +400,7 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
             <span style={{ color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
             <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
               {live && onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
-              <SyncNote iso={np?.updated_at} />
+              <SyncControl iso={np?.updated_at} onSync={onSync} syncing={syncing} />
             </span>
           </div>
 
