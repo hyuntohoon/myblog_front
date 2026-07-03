@@ -305,7 +305,7 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-article :global(.lfq-tt-no) {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-sm);
     color: var(--color-faded);
     font-variant-numeric: tabular-nums;
   }
@@ -330,7 +330,7 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-article :global(.lfq-tt-dur) {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-sm);
     color: var(--color-faded);
     font-variant-numeric: tabular-nums;
   }
@@ -354,7 +354,7 @@ const recordLabel = post.musicReview?.label ?? null
     opacity: 0;
     transition: opacity 0.14s, color 0.14s, border-color 0.14s;
   }
-  .lfq-article :global(.lfq-tt-add) { font-size: 13px; }
+  .lfq-article :global(.lfq-tt-add) { font-size: var(--text-base); }
   .lfq-article :global(.lfq-tt-row:hover .lfq-tt-play),
   .lfq-article :global(.lfq-tt-row:hover .lfq-tt-add),
   .lfq-article :global(.lfq-tt-play:focus-visible),
@@ -377,7 +377,7 @@ const recordLabel = post.musicReview?.label ?? null
     padding: 8px 12px;
     border-radius: 4px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-sm);
     line-height: 1.5;
     color: var(--color-subtle);
     background: color-mix(in srgb, var(--color-accent) 6%, var(--color-bg));
@@ -399,7 +399,7 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-article :global(.lfq-tt-empty) {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: var(--text-base);
     color: var(--color-faded);
     padding: 20px 0;
   }
@@ -444,7 +444,7 @@ const recordLabel = post.musicReview?.label ?? null
     align-items: center;
     justify-content: center;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-sm);
     color: var(--color-faded);
     cursor: pointer;
     border-right: 1px solid var(--color-border);
@@ -481,7 +481,7 @@ const recordLabel = post.musicReview?.label ?? null
     align-items: baseline;
     gap: 8px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-subtle);
@@ -578,7 +578,7 @@ const recordLabel = post.musicReview?.label ?? null
   .lfq-hero-dot { color: var(--color-subtle); }
   .lfq-hero-artist {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: var(--text-base);
     text-transform: uppercase;
     letter-spacing: 0.15em;
     color: var(--color-text);
@@ -609,7 +609,7 @@ const recordLabel = post.musicReview?.label ?? null
   .lfq-hero-genre {
     margin: 0;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     color: var(--color-subtle);
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -648,7 +648,7 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-score-label {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     color: var(--color-accent);
     letter-spacing: 0.1em;
     font-weight: 600;
@@ -672,7 +672,7 @@ const recordLabel = post.musicReview?.label ?? null
   .lfq-pick-legend {
     margin-left: auto;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     color: var(--color-faded);
     letter-spacing: 0.05em;
   }

@@ -92,7 +92,7 @@ import Seo from '@components/seo.astro'
     border: 1px solid var(--color-border);
     padding: 6px 14px;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-subtle);
@@ -124,7 +124,7 @@ import Seo from '@components/seo.astro'
   }
   .drafts-cta {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--color-text);
@@ -144,7 +144,7 @@ import Seo from '@components/seo.astro'
   }
   .drafts-table th {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--text-2xs);
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--color-subtle);
@@ -172,14 +172,14 @@ import Seo from '@components/seo.astro'
   }
   .draft-cat-cell {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-subtle);
   }
   .draft-date-cell {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     letter-spacing: 0.04em;
     color: var(--color-faded);
   }
@@ -191,7 +191,7 @@ import Seo from '@components/seo.astro'
   .draft-action-link,
   .draft-action-btn {
     font-family: var(--font-mono);
-    font-size: 10.5px;
+    font-size: var(--text-2xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     text-decoration: none;
@@ -252,7 +252,7 @@ import Seo from '@components/seo.astro'
   .confirm-cancel,
   .confirm-confirm {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     background: none;
@@ -282,7 +282,7 @@ import Seo from '@components/seo.astro'
     color: var(--color-bg, #fff);
     padding: 12px 20px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--text-sm);
     letter-spacing: 0.04em;
     z-index: 1001;
     transition: opacity 0.2s;
@@ -307,7 +307,7 @@ import Seo from '@components/seo.astro'
       border-bottom: none;
       padding: 0 0 6px;
     }
-    .draft-title-cell { font-size: 18px; padding-bottom: 8px; }
+    .draft-title-cell { font-size: var(--text-lg); padding-bottom: 8px; }
     .draft-actions {
       justify-content: flex-start;
       flex-wrap: wrap;
@@ -316,7 +316,7 @@ import Seo from '@components/seo.astro'
     }
     .draft-action-link,
     .draft-action-btn {
-      font-size: 12px;
+      font-size: var(--text-sm);
       min-height: 44px;
       display: inline-flex;
       align-items: center;

@@ -1,37 +1,44 @@
 /* ============================================================
    Member dashboard (/profile) — component classes.
-   Design tokens already live in global.css; this only adds the
-   component vocabulary from the prototype's ds.css, `lf-`-prefixed
-   so it is globally safe (drag overlays portal to <body>).
+   Design tokens live in global.css; this file holds member-only
+   widget/overlay styles + `lf-`-prefixed aliases that point at the
+   canonical un-prefixed primitives now defined in global.css.
+
+   ── ALIAS POLICY (2026-07, design-system unify) ──────────
+   The 20 `.lf-*` primitives below used to be value-duplicated copies of
+   the un-prefixed `.panel` / `.chip` / `.btn` / `.stars` / `.cover` / …
+   primitives in global.css. They are now aliased: the `.lf-*` selectors
+   are grouped onto the canonical declarations (selector lists), so the
+   16 components still using `className="lf-panel"` etc. resolve to the
+   single source of truth with no className migration. The `lf-` names
+   are deprecated — a follow-up PR will rename the className usages and
+   delete the alias selectors.
+
+   Drag overlays portal to <body>, so these need to be globally reachable
+   (hence global.css, not a scoped .astro block).
    ============================================================ */
 
 /* ── type helpers ───────────────────────────────────────── */
-.lf-mono { font-family: var(--font-mono); }
-.lf-serif { font-family: var(--font-serif); }
-.lf-sans { font-family: var(--font-sans); }
-.lf-italic { font-style: italic; }
+.lf-mono, .mono { font-family: var(--font-mono); }
+.lf-serif, .serif { font-family: var(--font-serif); }
+.lf-sans, .sans { font-family: var(--font-sans); }
+.lf-italic, .italic { font-style: italic; }
 
-.lf-kicker {
+/* lf-kicker / lf-meta → alias global .kicker / .meta */
+.lf-kicker, .kicker,
+.lf-meta, .meta {
 	font-family: var(--font-mono);
-	font-size: 11px;
-	font-weight: 500;
-	letter-spacing: 0.18em;
-	text-transform: uppercase;
-	color: var(--color-faded);
-}
-
-.lf-meta {
-	font-family: var(--font-mono);
-	font-size: 11px;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	color: var(--color-faded);
 }
+.lf-kicker, .kicker { font-size: var(--text-xs); font-weight: 500; letter-spacing: 0.18em; }
+.lf-meta, .meta { font-size: var(--text-xs); }
 
 /* ── loading skeleton ───────────────────────────────────── */
 /* Reserves a stable height while a widget's data loads (Spotify-fed widgets can
    take a few seconds) so the dashboard doesn't show a bare "불러오는 중…" line or
-   shift layout when data arrives. */
+   shift layout when data arrives. (Member-only — no global equivalent yet.) */
 .lf-skel-stack {
 	display: flex;
 	flex-direction: column;
@@ -57,18 +64,17 @@
 	.lf-skeleton { animation: none; }
 }
 
-/* ── surfaces ───────────────────────────────────────────── */
-.lf-panel {
+/* ── surfaces — lf-panel aliases global .panel ─────────── */
+.lf-panel, .panel {
 	background: var(--color-paper);
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-md);
 }
 
-/* ── cover (square editorial placeholder) ───────────────── */
-/* Cover-less tiles get a faint diagonal hatch + subtle initials so a grid of
-   missing covers reads as intentional placeholders, not empty dark squares
-   (UI/UX audit L12). Real covers render as <img>, never .lf-cover. */
-.lf-cover {
+/* ── cover — lf-cover aliases global .cover (hatch now lives there) ──
+   The L12 hatch used to be member-only; global .cover now carries it too,
+   so .lf-cover is a pure alias. */
+.lf-cover, .cover {
 	position: relative;
 	overflow: hidden;
 	background:
@@ -78,7 +84,13 @@
 	border-radius: var(--radius-sm);
 	flex: 0 0 auto;
 }
-.lf-cover-ph {
+.lf-cover img, .cover img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+.lf-cover-ph, .cover-ph {
 	position: absolute;
 	inset: 0;
 	display: grid;
@@ -86,15 +98,16 @@
 	font-family: var(--font-serif);
 	font-style: italic;
 	font-weight: 600;
-	color: var(--color-subtle);
 	letter-spacing: -0.03em;
 }
+.lf-cover-ph { color: var(--color-subtle); }
+.cover-ph { color: var(--color-faded); }
 
-/* ── chips ──────────────────────────────────────────────── */
-.lf-chip {
+/* ── chips — lf-chip aliases global .chip ───────────────── */
+.lf-chip, .chip {
 	flex-shrink: 0;
 	font-family: var(--font-mono);
-	font-size: 11px;
+	font-size: var(--text-xs);
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	color: var(--color-text);
@@ -106,21 +119,21 @@
 	white-space: nowrap;
 	transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.lf-chip:hover { border-color: var(--color-text); }
-.lf-chip[data-on='true'] {
+.lf-chip:hover, .chip:hover { border-color: var(--color-text); }
+.lf-chip[data-on='true'], .chip[data-on='true'] {
 	background: var(--color-text);
 	color: var(--color-bg);
 	border-color: var(--color-text);
 }
 
-/* ── buttons ────────────────────────────────────────────── */
-.lf-btn {
+/* ── buttons — lf-btn aliases global .btn ───────────────── */
+.lf-btn, .btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	gap: 8px;
 	font-family: var(--font-mono);
-	font-size: 12px;
+	font-size: var(--text-sm);
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	color: var(--color-text);
@@ -130,23 +143,23 @@
 	padding: 10px 16px;
 	transition: background 0.16s, color 0.16s, border-color 0.16s, opacity 0.16s;
 }
-.lf-btn:hover { border-color: var(--color-text); }
-.lf-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.lf-btn-solid {
+.lf-btn:hover, .btn:hover { border-color: var(--color-text); }
+.lf-btn:disabled, .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.lf-btn-solid, .btn-solid {
 	color: var(--color-bg);
 	background: var(--color-text);
 	border-color: var(--color-text);
 }
-.lf-btn-solid:hover { opacity: 0.84; border-color: var(--color-text); }
-.lf-btn-accent {
-	color: #fff;
+.lf-btn-solid:hover, .btn-solid:hover { opacity: 0.84; }
+.lf-btn-accent, .btn-accent {
+	color: var(--on-accent);
 	background: var(--color-accent);
 	border-color: var(--color-accent);
 }
-.lf-btn-accent:hover { opacity: 0.88; }
+.lf-btn-accent:hover, .btn-accent:hover { opacity: 0.88; }
 
-/* ── partial-fill stars (0–5) ───────────────────────────── */
-.lf-stars {
+/* ── partial-fill stars (0–5) — lf-stars aliases global .stars ── */
+.lf-stars, .stars {
 	position: relative;
 	display: inline-block;
 	font-size: var(--star-size, 16px);
@@ -155,10 +168,10 @@
 	color: transparent;
 	user-select: none;
 }
-.lf-stars-bg,
-.lf-stars-fg { display: inline-block; font-family: inherit; }
-.lf-stars-bg { color: var(--color-faded); }
-.lf-stars-fg {
+.lf-stars-bg, .stars-bg,
+.lf-stars-fg, .stars-fg { display: inline-block; font-family: inherit; }
+.lf-stars-bg, .stars-bg { color: var(--color-faded); }
+.lf-stars-fg, .stars-fg {
 	position: absolute;
 	top: 0;
 	left: 0;
@@ -167,16 +180,16 @@
 	white-space: nowrap;
 	color: var(--color-accent);
 }
-.lf-unrated {
+.lf-unrated, .unrated {
 	font-family: var(--font-mono);
-	font-size: 10px;
+	font-size: var(--text-2xs);
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
 	color: var(--color-faded);
 }
 
-/* ── sample badge ───────────────────────────────────────── */
-.lf-sample {
+/* ── sample badge — lf-sample aliases global .sample ────── */
+.lf-sample, .sample {
 	font-family: var(--font-mono);
 	font-size: 9px;
 	font-weight: 500;
@@ -189,8 +202,8 @@
 	white-space: nowrap;
 }
 
-/* ── slide-over (album detail) ──────────────────────────── */
-.lf-scrim {
+/* ── slide-over (album detail) — lf-scrim/lf-slideover alias global ── */
+.lf-scrim, .scrim {
 	position: fixed;
 	inset: 0;
 	z-index: var(--z-panel);
@@ -198,9 +211,9 @@
 	justify-content: flex-end;
 	background: rgba(10, 9, 8, 0.5);
 	backdrop-filter: blur(2px);
-	animation: lf-fade 0.16s ease;
+	animation: scrim-fade 0.16s ease;
 }
-.lf-slideover {
+.lf-slideover, .slideover {
 	position: relative;
 	width: min(440px, 100%);
 	height: 100%;
@@ -208,7 +221,7 @@
 	background: var(--color-bg);
 	border-left: 1px solid var(--color-border);
 	padding: 32px 26px 44px;
-	animation: lf-slide 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+	animation: slideover-slide 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 /* ── drag & drop affordances ────────────────────────────── */
@@ -221,12 +234,13 @@
 }
 
 /* ── mini icon button ───────────────────────────────────── */
-.lf-iconbtn {
+/* lf-iconbtn aliases global .iconbtn (identical values). */
+.lf-iconbtn, .iconbtn {
 	width: 26px;
 	height: 26px;
 	display: grid;
 	place-items: center;
-	font-size: 12px;
+	font-size: var(--text-sm);
 	line-height: 1;
 	color: var(--color-faded);
 	background: none;
@@ -235,8 +249,8 @@
 	cursor: pointer;
 	transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
-.lf-iconbtn:hover { color: var(--color-text); border-color: var(--color-border); }
-.lf-iconbtn.danger:hover { color: var(--color-accent); border-color: var(--color-accent); }
+.lf-iconbtn:hover, .iconbtn:hover { color: var(--color-text); border-color: var(--color-border); }
+.lf-iconbtn.danger:hover, .iconbtn.danger:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
 /* FEAT-analysis-explore — a drillable chart leaf (track/artist/album → detail slide-over).
    Only present when the chart is given an onSelect, so the 좋아요 charts are unaffected. */
@@ -278,7 +292,7 @@
 	height: 26px;
 	display: grid;
 	place-items: center;
-	font-size: 15px;
+	font-size: var(--text-md);
 	line-height: 1;
 	color: var(--color-bg);
 	background: rgba(26, 26, 26, 0.62);
@@ -295,7 +309,7 @@
    header-drag / title-click), which read as "there's no way to manage buckets". */
 .bb-bucket-actions { display: grid; }
 @media (hover: none), (pointer: coarse) {
-	.bb-tile-kebab { opacity: 1; width: 36px; height: 36px; font-size: 18px; }
+	.bb-tile-kebab { opacity: 1; width: 36px; height: 36px; font-size: var(--text-lg); }
 }
 
 /* Spotify recent strip — green accent spine to set it apart from buckets. */
@@ -454,11 +468,11 @@
   color: var(--color-faded);
   margin: 0;
 }
-.qb-modal-title { font-family: var(--font-serif); font-size: 22px; font-weight: 500; margin: 4px 0 0; }
+.qb-modal-title { font-family: var(--font-serif); font-size: var(--text-xl); font-weight: 500; margin: 4px 0 0; }
 .qb-modal-close {
   width: 28px; height: 28px;
   display: grid; place-items: center;
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--color-faded);
   background: none; border: 1px solid var(--color-border-soft); border-radius: 4px;
   cursor: pointer;
@@ -475,21 +489,21 @@
   border-radius: 4px;
   padding: 0 var(--space-3);
 }
-.qb-modal-search-icon { color: var(--color-faded); font-size: 15px; }
+.qb-modal-search-icon { color: var(--color-faded); font-size: var(--text-md); }
 .qb-modal-search-input {
   flex: 1;
   font-family: var(--font-serif);
-  font-size: 15px;
+  font-size: var(--text-md);
   color: var(--color-text);
   background: none;
   border: none;
   padding: var(--space-3) 0;
   outline: none;
 }
-.qb-modal-search-clear { color: var(--color-faded); background: none; border: none; cursor: pointer; font-size: 12px; }
+.qb-modal-search-clear { color: var(--color-faded); background: none; border: none; cursor: pointer; font-size: var(--text-sm); }
 .qb-modal-search-btn, .qb-modal-spotify-btn {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   padding: 0 var(--space-3);
@@ -502,7 +516,7 @@
 .qb-modal-spotify-btn:disabled, .qb-modal-search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .qb-modal-status {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--color-subtle);
   margin: var(--space-3) var(--space-5) 0;
 }
@@ -516,7 +530,7 @@
 }
 .qb-modal-empty {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--color-faded);
   text-align: center;
   padding: var(--space-8);
@@ -525,7 +539,7 @@
   margin-top: 4px;
   padding: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--color-subtle);
   background: none;
   border: 1px solid var(--color-border-soft);
@@ -734,7 +748,7 @@
 .memo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .memo-tag {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   letter-spacing: .06em;
   text-transform: uppercase;
   padding: 3px 8px;
@@ -755,7 +769,7 @@
   border-bottom: 1px solid var(--color-border-soft);
 }
 .memo-trow:last-child { border-bottom: none; }
-.memo-trow-no { font-family: var(--font-mono); font-size: 10.5px; color: var(--color-faded); font-variant-numeric: tabular-nums; }
+.memo-trow-no { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--color-faded); font-variant-numeric: tabular-nums; }
 .memo-trow-title { font-family: var(--font-serif); font-size: 13.5px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .memo-trow-len { font-family: var(--font-mono); font-size: 10px; color: var(--color-faded); font-variant-numeric: tabular-nums; }
 
@@ -763,7 +777,7 @@
 .memo-write-link { margin-top: 14px; text-align: right; }
 .memo-write-link a {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: .04em;
   color: var(--color-subtle);
   text-decoration: none;
@@ -843,7 +857,7 @@
 	width: 100%;
 	min-height: 48px;
 	padding: 12px 16px;
-	font-size: 15px;
+	font-size: var(--text-md);
 	color: var(--color-text);
 	background: none;
 	border: none;
@@ -855,7 +869,7 @@
 .bps-item:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
 .bps-indent { color: var(--color-faded); flex: 0 0 auto; }
 .bps-empty {
-	font-size: 11px;
+	font-size: var(--text-xs);
 	color: var(--color-faded);
 	padding: 18px 16px;
 	text-align: center;
@@ -944,7 +958,7 @@
 	height: 42px;
 	display: grid;
 	place-items: center;
-	font-size: 15px;
+	font-size: var(--text-md);
 	line-height: 1;
 	color: var(--color-subtle);
 	background: none;
@@ -963,7 +977,7 @@
 /* refresh outcome line ("재생 중 아님" / read failed) — informative, not modal */
 .lyv-note {
 	padding: 0 16px 6px;
-	font-size: 11px;
+	font-size: var(--text-xs);
 	letter-spacing: 0.08em;
 	color: var(--color-faded);
 }
@@ -1042,7 +1056,7 @@
 	padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
 }
 .lyv-count {
-	font-size: 11px;
+	font-size: var(--text-xs);
 	letter-spacing: 0.14em;
 	color: var(--color-faded);
 	font-variant-numeric: tabular-nums;
@@ -1063,9 +1077,9 @@
 	color: var(--color-subtle);
 	text-align: center;
 }
-.lyv-status.lf-mono { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.1em; }
+.lyv-status.lf-mono { font-family: var(--font-mono); font-size: var(--text-sm); letter-spacing: 0.1em; }
 .lyv-retry {
-	font-size: 11px;
+	font-size: var(--text-xs);
 	letter-spacing: 0.12em;
 	text-transform: uppercase;
 	color: var(--color-text);

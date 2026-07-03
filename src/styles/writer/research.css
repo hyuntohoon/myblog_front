@@ -142,7 +142,7 @@
 }
 .wr-rdoc-act {
 	font-family: var(--mono);
-	font-size: 9.5px;
+	font-size: var(--text-3xs);
 	letter-spacing: 0.05em;
 	padding: 4px 10px;
 	border: 1px solid var(--rule);
@@ -178,7 +178,7 @@
 }
 .wr-rdoc-status-m {
 	font-family: var(--mono);
-	font-size: 10.5px;
+	font-size: var(--text-2xs);
 	letter-spacing: 0.02em;
 	color: var(--ink-faint);
 	white-space: nowrap;
@@ -246,7 +246,7 @@
    inverted (12.5px header < 16.5px body), which buried the section boundaries. */
 .rsh-prose.rsh-doc .rsh-h2 {
 	font-family: var(--serif);
-	font-size: 18px;
+	font-size: var(--text-lg);
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	text-transform: none;
@@ -281,7 +281,7 @@
 .rsh-sec-head:hover { color: var(--accent); border-color: var(--accent); }
 .rsh-sec-chev {
 	flex: 0 0 auto;
-	font-size: 12px;
+	font-size: var(--text-sm);
 	line-height: 1;
 	color: var(--ink-faint);
 	position: relative;
@@ -292,7 +292,7 @@
 .rsh-sec-head:hover .rsh-sec-chev { color: var(--accent); }
 .rsh-sec-title {
 	font-family: var(--serif);
-	font-size: 18px;
+	font-size: var(--text-lg);
 	font-weight: 600;
 	letter-spacing: -0.01em;
 	line-height: 1.25;
@@ -350,7 +350,7 @@
 		bottom: 18px;
 		z-index: var(--z-bubble, 60);
 		font-family: var(--mono);
-		font-size: 12px;
+		font-size: var(--text-sm);
 		letter-spacing: 0.04em;
 		padding: 10px 16px;
 		border-radius: 999px;

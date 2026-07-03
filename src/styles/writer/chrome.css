@@ -13,7 +13,7 @@
   -webkit-backdrop-filter: blur(20px) saturate(140%);
   border-bottom: 1px solid var(--rule-soft);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--text-base);
 }
 [data-theme="dark"] .chrome { background: rgba(20, 19, 18, 0.86); }
 .chrome-l { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -28,13 +28,13 @@
   padding: 6px 10px 6px 12px;
   border-radius: var(--radius-pill);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.02em;
   transition: border-color 0.15s, color 0.15s;
   white-space: nowrap;
 }
 .chrome-search:hover { border-color: var(--ink); color: var(--ink); }
-.chrome-search-ico { font-family: var(--serif); font-size: 13px; }
+.chrome-search-ico { font-family: var(--serif); font-size: var(--text-base); }
 /* '임시 저장함' inbox trigger — a quiet pill grouped with 작품 검색 (both are
    "find something to work on" affordances), distinct from the bordered
    임시저장/발행 action buttons. The count chip is the morning "drafts waiting"
@@ -49,13 +49,13 @@
   padding: 6px 11px;
   border-radius: var(--radius-pill);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.02em;
   white-space: nowrap;
   transition: border-color 0.15s, color 0.15s;
 }
 .chrome-drafts:hover { border-color: var(--ink); color: var(--ink); }
-.chrome-drafts-ico { font-size: 12px; line-height: 1; }
+.chrome-drafts-ico { font-size: var(--text-sm); line-height: 1; }
 .chrome-drafts-count {
   font-family: var(--mono);
   font-size: 10px;
@@ -84,7 +84,7 @@
 }
 .chrome-logo {
   font-family: var(--serif);
-  font-size: 18px;
+  font-size: var(--text-lg);
   font-weight: 600;
   font-style: italic;
   letter-spacing: -0.02em;
@@ -151,7 +151,7 @@
   color: var(--ink-soft);
   padding: 5px 12px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.02em;
   white-space: nowrap;
   border-radius: 999px;
@@ -164,7 +164,7 @@
   color: var(--ink);
   padding: 7px 14px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   letter-spacing: 0.04em;
   white-space: nowrap;
   transition: all 0.15s;

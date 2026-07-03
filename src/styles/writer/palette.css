@@ -54,7 +54,7 @@
   background: transparent;
   color: var(--ink-soft);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.04em;
   padding: 5px 12px;
   border-radius: 999px;
@@ -76,7 +76,7 @@
 }
 .wr-fpill {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.03em;
   padding: 4px 11px;
   border-radius: 999px;
@@ -93,14 +93,14 @@
 .wr-scroll { overflow-y: auto; }
 .wr-palette-status {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--ink-soft);
   padding: 12px 16px;
   letter-spacing: 0.01em;
 }
 .wr-palette-empty {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--ink-faint);
   text-align: center;
   padding: 40px;
@@ -122,14 +122,14 @@
    rows get more breathing room to read like cards. */
 .wr-palette-body .gs-row { padding: 11px 18px; gap: 14px; }
 .wr-palette-body .gs-row-title { font-size: 16px; }
-.wr-palette-body .gs-row-sub { font-size: 12px; }
+.wr-palette-body .gs-row-sub { font-size: var(--text-sm); }
 .wr-palette-seclabel { padding: 14px 18px 6px; }
 
 .wr-palette-more {
   align-self: flex-start;
   margin: 6px 14px 12px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.04em;
   color: var(--ink-soft);
   background: transparent;
@@ -147,7 +147,7 @@
   padding: 9px 16px;
   border-top: 1px solid var(--rule-soft);
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   color: var(--ink-faint);
 }
 .wr-palette-foot b { color: var(--ink-soft); }

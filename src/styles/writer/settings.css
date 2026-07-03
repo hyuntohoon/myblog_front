@@ -64,13 +64,13 @@
 .set-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .set-l {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.02em;
   color: var(--ink-faint);
 }
 .set-select, .set-input {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--text-base);
   color: var(--ink);
   padding: 8px 10px;
   background: var(--paper);
@@ -84,7 +84,7 @@
 .set-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .set-tag {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--ink-soft);
   padding: 5px 10px;
   background: var(--paper);
@@ -158,7 +158,7 @@
 .gp-row:hover { background: var(--bg); color: var(--ink); }
 .gp-root {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -172,14 +172,14 @@
 .gp-row-label { flex: 1; }
 .gp-row-crumb {
   font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   color: var(--ink-faint);
   letter-spacing: 0.02em;
 }
 .gp-empty {
   padding: 12px;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   color: var(--ink-faint);
   text-align: center;
 }
@@ -193,7 +193,7 @@
 .gp-treerow.on { background: var(--bg); }
 .gp-treerow.gp-root .gp-row-label {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--ink-faint);
@@ -235,7 +235,7 @@
 }
 .gp-row-kids {
   margin-left: auto;
-  font-size: 9.5px;
+  font-size: var(--text-3xs);
   color: var(--ink-faint);
 }
 .tags-wrap {
@@ -256,7 +256,7 @@
   background: var(--ink);
   color: var(--bg);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--text-2xs);
   border-radius: 3px;
 }
 .tag-chip button {
@@ -268,7 +268,7 @@
   flex: 1;
   min-width: 80px;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding: 4px;
   color: var(--ink);
   background: transparent;
@@ -290,7 +290,7 @@
   border: none;
   color: var(--ink-faint);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-xs);
   padding: 4px 0;
   transition: color 0.15s;
   cursor: pointer;
