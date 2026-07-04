@@ -9,6 +9,7 @@ const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
 export type LyricsResponse = components['schemas']['Backend_LyricsResponse']
 export type LyricsSegment = components['schemas']['Backend_LyricsSegment']
+export type LyricsTranslationInfo = components['schemas']['Backend_LyricsTranslationInfo']
 
 /**
  * Fetch the normalized lyric segments for a Spotify track id.
@@ -26,4 +27,17 @@ export async function getLyrics(spotifyTrackId: string): Promise<LyricsResponse>
   if (!res.ok)
     throw new Error(`HTTP ${res.status}`)
   return res.json() as Promise<LyricsResponse>
+}
+
+/**
+ * Enqueue a Korean-translation request for one track (FEAT-lyrics-translation).
+ * Idempotent while pending; the response is the row's fresh lifecycle state.
+ */
+export async function requestTranslation(spotifyTrackId: string): Promise<LyricsTranslationInfo> {
+  const res = await apiFetch(`${BASE}/api/lyrics/${encodeURIComponent(spotifyTrackId)}/translation-request`, { method: 'POST' })
+  if (!res)
+    throw new Error('network error (no response)')
+  if (!res.ok)
+    throw new Error(`HTTP ${res.status}`)
+  return res.json() as Promise<LyricsTranslationInfo>
 }
