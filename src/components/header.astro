@@ -45,6 +45,9 @@ const navLinks = [
      scrolled out of view. header.client.ts toggles `.is-scrolled`. -->
 <div id="hdr-bar" class="hdr-bar">
   <div class="container hdr-bar-wrap">
+    <button id="hdr-menu-btn" class="hdr-menu-btn" aria-label="메뉴 열기" aria-expanded="false" aria-controls="hdr-drawer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round"></path></svg>
+    </button>
     <nav class="hdr-nav hdr-nav-left hdr-bar-nav" aria-hidden="true">
       {navLinks.map((link) => {
         const href = normalize(link.url)
@@ -96,6 +99,25 @@ const navLinks = [
     </nav>
   </div>
 </header>
+
+<!-- Mobile nav drawer (FEAT-mobile-web-app Step 1, pattern B — owner-picked at
+     the 1a mockup gate). The bottom edge stays Pocket-tray-only, so the nav
+     lives in a left drawer; visibility:hidden keeps closed-state links out of
+     the tab order without extra aria bookkeeping. -->
+<div id="hdr-drawer-veil" class="hdr-drawer-veil"></div>
+<aside id="hdr-drawer" class="hdr-drawer" aria-label="모바일 내비게이션">
+  <a href="/" class="hdr-drawer-wm" aria-label="buckit — 홈으로">bucki<span class="accent">t</span></a>
+  <nav class="hdr-drawer-nav" aria-label="Mobile navigation">
+    {navLinks.map((link) => {
+      const href = normalize(link.url)
+      return (
+        <a href={href} class={`hdr-drawer-link${isActive(link.url) ? ' active' : ''}`} aria-current={isActive(link.url) ? 'page' : undefined}>
+          {link.title}
+        </a>
+      )
+    })}
+  </nav>
+</aside>
 
 <style>
   /* ── Magazine masthead (FEAT-header-magazine-masthead, restructured) ─────────
@@ -290,19 +312,107 @@ const navLinks = [
     text-decoration: none;
   }
 
+  /* ── mobile drawer (FEAT-mobile-web-app Step 1, pattern B) ── */
+  .hdr-menu-btn { display: none; }
+  .hdr-drawer-veil {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-overlay) - 1);
+    background: rgba(10, 9, 8, 0.55);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.22s ease, visibility 0.22s;
+  }
+  .hdr-drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(78vw, 320px);
+    z-index: var(--z-overlay);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 22px calc(20px + env(safe-area-inset-bottom));
+    background: var(--color-bg);
+    border-right: 1px solid var(--color-border);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1), visibility 0.26s;
+  }
+  .hdr-drawer.is-open { transform: none; visibility: visible; }
+  .hdr-drawer-veil.is-open { opacity: 1; visibility: visible; }
+  .hdr-drawer-wm {
+    align-self: flex-start;
+    font-family: var(--font-serif);
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--color-text);
+    text-decoration: none;
+    margin: 4px 0 18px;
+  }
+  .hdr-drawer-wm .accent { color: var(--color-accent); }
+  .hdr-drawer-nav { display: flex; flex-direction: column; }
+  .hdr-drawer-link {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-subtle);
+    text-decoration: none;
+    padding: 15px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+    transition: color 0.2s;
+  }
+  .hdr-drawer-link:hover { color: var(--color-accent); }
+  .hdr-drawer-link.active { color: var(--color-text); }
+  .hdr-drawer-link.active::before {
+    content: '';
+    display: inline-block;
+    width: 14px;
+    height: 1px;
+    background: var(--color-accent);
+    vertical-align: 4px;
+    margin-right: 10px;
+  }
+
   /* ── responsive ── */
-  @media (max-width: 640px) {
+  @media (max-width: 767px) {
     .hdr-nav-center { gap: 20px; font-size: var(--text-2xs); flex-wrap: wrap; row-gap: 6px; }
     /* Grow nav-link tap targets (was 3px → ~22px tall) without moving the baseline. */
     .hdr-nav-link { padding-top: 9px; padding-bottom: 9px; }
     /* Grow the Login/write/logout hit area (was ~17px tall) for touch. */
     .hdr-write, .hdr-auth { padding-block: 6px; }
     /* In the compact bar, drop the left nav so the centered wordmark + utilities
-       don't crowd; the expanded masthead nav still shows. */
+       don't crowd; on mobile the nav lives in the drawer. */
     .hdr-bar-nav { display: none; }
     .hdr-write span,
     .hdr-auth span { display: none; }
     .hdr-utils { gap: 12px; }
+
+    /* Compact mobile header: the tall masthead is gone; the fixed bar is always
+       solid + interactive (no scroll-dependent state) and the wordmark shows.
+       Body padding compensates for the masthead leaving normal flow. */
+    .site-header { display: none; }
+    :global(body) { padding-top: 52px; }
+    .hdr-bar {
+      background: var(--color-bg);
+      border-bottom-color: var(--color-border);
+      pointer-events: auto;
+    }
+    .hdr-wordmark-sm { opacity: 1; pointer-events: auto; }
+    .hdr-menu-btn {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      margin-left: -10px;
+      background: none;
+      border: none;
+      color: var(--color-subtle);
+      cursor: pointer;
+    }
   }
   @media (prefers-reduced-motion: reduce) {
     .hdr-bar,

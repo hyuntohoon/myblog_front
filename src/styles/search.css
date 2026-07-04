@@ -279,6 +279,76 @@ a.gs-albcard:hover .gs-albcard-title { color: var(--color-accent); }
 }
 .gs-clear:hover { color: var(--color-text); background: var(--color-paper); }
 
+/* Keyboard affordances mean nothing on touch — no ⌘K badge, no ↑↓/↵/esc hints
+   (FEAT-mobile-web-app Step 1). */
+@media (pointer: coarse) {
+	.gs-kbd { display: none; }
+	.gs-foot-hints { display: none; }
+}
+
+/* ── mobile search overlay (<768px, FEAT-mobile-web-app Step 1) ──
+   The inline field collapses to an icon trigger; opening it turns .gs-search
+   into a fixed full-width bar over the header, with the dropdown pinned
+   edge-to-edge underneath. */
+.gs-mob-trigger,
+.gs-mob-close { display: none; }
+@media (max-width: 767px) {
+	.gs-search { width: auto; transition: none; }
+	.gs-search:focus-within { width: auto; }
+	.gs-search:not(.gs-mob-open) .gs-field,
+	.gs-search:not(.gs-mob-open) .gs-drop { display: none; }
+	.gs-mob-trigger {
+		display: grid;
+		place-items: center;
+		width: 40px;
+		height: 40px;
+		background: none;
+		border: none;
+		color: var(--color-subtle);
+		cursor: pointer;
+	}
+	.gs-search.gs-mob-open {
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: var(--z-panel);
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 52px;
+		padding: 0 12px;
+		background: var(--color-bg);
+		border-bottom: 1px solid var(--color-border);
+	}
+	.gs-mob-open .gs-field { flex: 1; height: 38px; }
+	.gs-mob-open .gs-mob-trigger { display: none; }
+	.gs-mob-open .gs-mob-close {
+		display: grid;
+		place-items: center;
+		flex: 0 0 auto;
+		width: 40px;
+		height: 40px;
+		background: none;
+		border: none;
+		color: var(--color-subtle);
+		font-size: var(--text-sm);
+		cursor: pointer;
+	}
+	.gs-mob-open .gs-drop {
+		position: fixed;
+		top: 52px;
+		left: 0;
+		right: 0;
+		width: auto;
+		min-width: 0;
+		max-width: none;
+		border-radius: 0;
+		border-left: none;
+		border-right: none;
+	}
+}
+
 .gs-drop {
 	position: absolute;
 	top: calc(100% + 8px);
@@ -409,10 +479,8 @@ a.gs-albcard:hover .gs-albcard-title { color: var(--color-accent); }
 .gs-foot-hints > span { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-3xs); letter-spacing: .04em; color: var(--color-faded); white-space: nowrap; }
 
 @media (max-width: 760px) {
-	.gs-search { width: clamp(130px, 32vw, 240px); }
-	/* The desktop focus floor (320px) overflows narrow phones — let the field grow
-	   to the viewport instead. */
-	.gs-search:focus-within { width: 100%; max-width: calc(100vw - 24px); }
+	/* Inline-field sizing that used to live here is obsolete: below 768px the
+	   field only renders inside the .gs-mob-open overlay (flex-sized). */
 	.gs-foot-hints { display: none; }
 }
 
