@@ -15,7 +15,7 @@ import { createPortal } from 'react-dom'
 import { bucketCount, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
 import { useDismissable } from '@lib/useDismissable'
 import { NowPlaying } from './NowPlaying'
-import { listListenedAlbums, listRecentlyListened, listRecentTracks } from './spotify.api'
+import { listListenedAlbums, listRecentlyListened, listRecentTracks, refreshRecent } from './spotify.api'
 import { AlbumArt, BucketShortcut, SectionTitle, Seg, Stars } from './ui'
 
 /** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
@@ -245,24 +245,60 @@ function RecentAlbumsModal({ items, onOpen, onClose }: { items: SampleAlbum[], o
 function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: DetailTarget) => void }) {
   const [items, setItems] = useState<SampleAlbum[] | null>(null)
   const [showAll, setShowAll] = useState(false)
-  useEffect(() => {
-    let on = true
-    listRecentlyListened()
-      .then(snap => on && setItems(snap.items.map(it => ({
-        id: it.album_id,
-        album: it.album?.title ?? '앨범',
-        artist: (it.album?.artist_names ?? []).join(', ') || '—',
-        year: null,
-        genre: '',
-        rating: null,
-        when: fmtWhen(it.last_played_at),
-        cover: it.album?.cover_url ?? null,
-      }))))
-      .catch(() => on && setItems([]))
-    return () => {
-      on = false
-    }
+  const [refreshing, setRefreshing] = useState(false)
+  const syncAnchor = useRef<string | null>(null)
+  const alive = useRef(true)
+
+  const load = useCallback(async () => {
+    const snap = await listRecentlyListened()
+    if (!alive.current)
+      return null
+    syncAnchor.current = snap.lastSyncedAt
+    setItems(snap.items.map(it => ({
+      id: it.album_id,
+      album: it.album?.title ?? '앨범',
+      artist: (it.album?.artist_names ?? []).join(', ') || '—',
+      year: null,
+      genre: '',
+      rating: null,
+      when: fmtWhen(it.last_played_at),
+      cover: it.album?.cover_url ?? null,
+    })))
+    return snap.lastSyncedAt
   }, [])
+
+  useEffect(() => {
+    alive.current = true
+    load().catch(() => alive.current && setItems([]))
+    return () => {
+      alive.current = false
+    }
+  }, [load])
+
+  // 새로고침 — refreshRecent() only enqueues the worker re-pull (202, rule #9);
+  // the cache lands asynchronously, so poll until last_synced_at moves past the
+  // pre-refresh anchor (D31), then give up quietly and keep the snapshot.
+  const onRefresh = async () => {
+    if (refreshing)
+      return
+    setRefreshing(true)
+    const anchor = syncAnchor.current
+    try {
+      await refreshRecent()
+      for (let i = 0; i < 10 && alive.current; i++) {
+        await new Promise(r => setTimeout(r, 3000))
+        const seen = await load()
+        if (seen && seen !== anchor)
+          break
+      }
+    }
+    catch {
+      // enqueue/poll failed — keep the current snapshot
+    }
+    if (alive.current)
+      setRefreshing(false)
+  }
+
   if (items == null) {
     return (
 <div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중">
@@ -272,24 +308,42 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
 </div>
 )
 }
-  if (items.length === 0)
-    return <div className="meta" style={{ padding: '6px 2px' }}>기록 없음</div>
   const shown = items.slice(0, RECENT_ALBUMS_LIMIT)
   const hidden = items.length - shown.length
   return (
     <>
-      <AlbumColl items={shown} view={view} onOpen={onOpen} />
-      {hidden > 0 && (
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
         <button
+	type="button"
+	className="lf-btn lf-mono"
+	onClick={() => {
+ void onRefresh()
+}}
+	disabled={refreshing}
+	aria-label="최근 들은 앨범 새로고침"
+	style={{ padding: '3px 8px', fontSize: 10.5, letterSpacing: '.06em', borderRadius: 3 }}
+        >
+          {refreshing ? '새로고침 중…' : '새로고침'}
+        </button>
+      </div>
+      {items.length === 0 ?
+        <div className="meta" style={{ padding: '6px 2px' }}>기록 없음</div> :
+        (
+            <>
+              <AlbumColl items={shown} view={view} onOpen={onOpen} />
+              {hidden > 0 && (
+                <button
 	type="button"
 	onClick={() => setShowAll(true)}
 	className="mono"
 	style={{ marginTop: 12, width: '100%', padding: '8px 0', background: 'none', border: '1px solid var(--color-border-soft)', borderRadius: 3, color: 'var(--color-subtle)', fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', cursor: 'pointer' }}
-        >
-          {`더 보기 (+${hidden})`}
-        </button>
-      )}
-      {showAll && <RecentAlbumsModal items={items} onOpen={onOpen} onClose={() => setShowAll(false)} />}
+                >
+                  {`더 보기 (+${hidden})`}
+                </button>
+              )}
+              {showAll && <RecentAlbumsModal items={items} onOpen={onOpen} onClose={() => setShowAll(false)} />}
+            </>
+          )}
     </>
   )
 }
