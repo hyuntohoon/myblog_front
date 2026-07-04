@@ -18,11 +18,17 @@
 // The viewer does no LRC parsing and never falls back to raw text: rows the
 // normalization model hasn't made consumable arrive as availability !== 'ok'
 // and render an availability-aware empty state.
+//
+// FEAT-lyrics-translation Step 4: a 번역 toggle interleaves each segment's
+// `text_ko` dimmed under its original line (the focus/nav unit stays the
+// original segment), and a 번역 요청 button drives the request lifecycle
+// (none/failed/stale → request → 요청됨). Korean-dominant tracks get no
+// request button — nothing to translate.
 import type { KeyboardEvent, PointerEvent, WheelEvent } from 'react'
-import type { LyricsResponse, LyricsSegment } from './lyrics.api'
-import { useEffect, useRef, useState } from 'react'
+import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
-import { getLyrics } from './lyrics.api'
+import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
@@ -59,6 +65,33 @@ function focusIndexForMs(segs: LyricsSegment[], ms: number): number {
   return idx
 }
 
+/**
+ * Korean-dominant source detection (FEAT-lyrics-translation OQ3): Hangul share
+ * of the letter-like characters across the non-gap segment text ≥ 50% means
+ * the track is already Korean — the viewer offers no translation request.
+ * Mirrors the poller's belt-and-suspenders `korean_source` guard.
+ */
+function isKoreanDominant(segs: LyricsSegment[]): boolean {
+  let hangul = 0
+  let letters = 0
+  // Hangul syllables + compatibility jamo / Latin (+ extended), Greek,
+  // Cyrillic, kana, CJK ideographs — the letter scripts the corpus carries.
+  const isHangul = /[\uAC00-\uD7A3\u3131-\u318E]/
+  const isLetter = /[a-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/i
+  for (const s of segs) {
+    for (const ch of s.text) {
+      if (isHangul.test(ch)) {
+        hangul++
+        letters++
+      }
+      else if (isLetter.test(ch)) {
+        letters++
+      }
+    }
+  }
+  return letters > 0 && hangul / letters >= 0.5
+}
+
 export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefresh = false, onClose }: {
   spotifyTrackId: string
   /** One-shot playback position from the dynamic entry; seeds the initial focus, never advances it. */
@@ -86,6 +119,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
   // (open with position, or a refresh that swapped tracks), then cleared.
   const pendingFocusMs = useRef<number | null>(initialProgressMs)
 
+  // Translation lifecycle (FEAT-lyrics-translation Step 4). The read carries
+  // the row state; a successful POST overrides it locally (→ 요청됨) until the
+  // next load re-reads the truth. Toggle interleaves text_ko under each line —
+  // the focus/nav unit stays the original segment, so nav logic is untouched.
+  const [trOverride, setTrOverride] = useState<LyricsTranslationInfo | null>(null)
+  const [showKo, setShowKo] = useState(false)
+  const [requesting, setRequesting] = useState(false)
+
   // Load (and reload on retry / refresh track swap). Guard against a stale
   // response landing after unmount or after the track changed again.
   const [loadSeq, setLoadSeq] = useState(0)
@@ -94,6 +135,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
     setPhase({ k: 'loading' })
     setFocus(0)
     segRefs.current = []
+    setTrOverride(null)
     getLyrics(trackId)
       .then((data) => {
         if (stale)
@@ -144,6 +186,24 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
     }
     finally {
       setRefreshing(false)
+    }
+  }
+
+  const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
+  const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
+  const requestTr = async () => {
+    if (requesting)
+      return
+    setRequesting(true)
+    try {
+      setTrOverride(await requestTranslation(trackId))
+      setNotice(null)
+    }
+    catch {
+      setNotice('번역 요청에 실패했어요')
+    }
+    finally {
+      setRequesting(false)
     }
   }
 
@@ -268,6 +328,38 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
               ''}
           </span>
           <div className="lyv-head-actions">
+            {phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
+              translation?.status === 'done' ?
+                (
+                  <>
+                    {translation.origin === 'manual' && <span className="lyv-tr-origin mono">manual</span>}
+                    <button
+	type="button"
+	className={showKo ? 'lyv-tr-btn is-on mono' : 'lyv-tr-btn mono'}
+	aria-pressed={showKo}
+	onClick={() => setShowKo(v => !v)}
+                    >
+                      번역
+                    </button>
+                  </>
+                ) :
+                koreanDominant ?
+                  null :
+                  translation?.status === 'requested' ?
+                    <span className="lyv-tr-state mono" role="status">요청됨</span> :
+                    (
+                      <button
+	type="button"
+	className="lyv-tr-btn mono"
+	disabled={requesting}
+	onClick={() => {
+                          void requestTr()
+                        }}
+                      >
+                        {translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
+                      </button>
+                    )
+            )}
             {canRefresh && (
               <button
 	type="button"
@@ -324,7 +416,16 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, canRefr
 	className={cls}
 	onClick={() => tapFocus(i)}
                       >
-                        {s.text === '' ? <span className="lyv-gap" aria-label="간주">· · ·</span> : s.text}
+                        {s.text === '' ?
+                          <span className="lyv-gap" aria-label="간주">· · ·</span> :
+                          showKo && s.text_ko && s.text_ko !== s.text ?
+                            (
+                              <>
+                                {s.text}
+                                <span className="lyv-line-ko">{s.text_ko}</span>
+                              </>
+                            ) :
+                            s.text}
                       </button>
                     )
                   })}

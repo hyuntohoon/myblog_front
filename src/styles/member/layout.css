@@ -576,6 +576,49 @@
 .lyv-btn.is-refreshing { animation: lyv-spin 0.9s linear infinite; }
 @keyframes lyv-spin { to { transform: rotate(360deg); } }
 
+/* translation controls (FEAT-lyrics-translation Step 4) — a pill in the head
+   actions drives the request lifecycle; `is-on` marks the active 번역 toggle */
+.lyv-tr-btn {
+	height: 42px;
+	padding: 0 16px;
+	font-size: var(--text-xs);
+	letter-spacing: 0.1em;
+	color: var(--color-subtle);
+	background: none;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-pill);
+	cursor: pointer;
+	transition: color 0.12s, border-color 0.12s;
+}
+.lyv-tr-btn:hover { color: var(--color-text); border-color: var(--color-text); }
+.lyv-tr-btn:disabled { opacity: 0.3; cursor: default; }
+.lyv-tr-btn:disabled:hover { color: var(--color-subtle); border-color: var(--color-border); }
+.lyv-tr-btn.is-on { color: var(--color-accent); border-color: var(--color-accent); }
+.lyv-tr-state {
+	font-size: var(--text-xs);
+	letter-spacing: 0.1em;
+	color: var(--color-faded);
+	padding: 0 6px;
+}
+.lyv-tr-origin {
+	font-size: 10px;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+
+/* interleaved Korean translation under the original line — em-sized so it
+   scales with the focus emphasis; dimmer than its original in every tier */
+.lyv-line-ko {
+	display: block;
+	margin-top: 2px;
+	font-size: 0.66em;
+	line-height: 1.5;
+	font-weight: 400;
+	color: var(--color-subtle);
+	opacity: 0.85;
+}
+
 /* refresh outcome line ("재생 중 아님" / read failed) — informative, not modal */
 .lyv-note {
 	padding: 0 16px 6px;
