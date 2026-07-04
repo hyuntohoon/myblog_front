@@ -303,24 +303,19 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     moveFocusTo(f => Math.max(0, Math.min(n - 1, f + delta)))
   }
 
-  // Keep the focused segment at ~42% viewport height. The focus emphasis
-  // animates font-size (layout shifts under the smooth scroll), so a short
-  // settle pass re-centers once the transition has finished.
+  // Keep the focused segment at ~42% viewport height. The focus emphasis is
+  // layout-neutral (color/opacity + transform scale — no font-size animation),
+  // so offsets are final at render time and the single smooth scroll lands
+  // exactly; the old 240ms settle re-center (a visible second jump) is gone.
   useEffect(() => {
     if (n === 0)
       return
-    const center = (behavior: ScrollBehavior) => {
-      const box = scrollRef.current
-      const el = segRefs.current[focus]
-      if (!box || !el)
-        return
-      const top = el.offsetTop + el.offsetHeight / 2 - box.clientHeight * 0.42
-      box.scrollTo({ top, behavior })
-    }
-    const behavior: ScrollBehavior = prefersReducedMotion() ? 'auto' : 'smooth'
-    center(behavior)
-    const settle = setTimeout(() => center(behavior), 240)
-    return () => clearTimeout(settle)
+    const box = scrollRef.current
+    const el = segRefs.current[focus]
+    if (!box || !el)
+      return
+    const top = el.offsetTop + el.offsetHeight / 2 - box.clientHeight * 0.42
+    box.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
   }, [focus, n])
 
   // Re-center instantly on viewport changes (rotation, keyboard, resize).
