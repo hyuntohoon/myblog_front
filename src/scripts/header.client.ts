@@ -72,3 +72,32 @@ function setupHeaderCollapse() {
 }
 
 setupHeaderCollapse()
+
+// ── Mobile nav drawer (FEAT-mobile-web-app Step 1, pattern B) ──
+// Closed-state focusability is handled by the drawer's visibility:hidden, so
+// this only drives the open/close classes + scroll lock.
+function setupDrawer() {
+	const btn = $('#hdr-menu-btn')
+	const drawer = $('#hdr-drawer')
+	const veil = $('#hdr-drawer-veil')
+	if (!btn || !drawer || !veil)
+		return
+
+	const setOpen = (open: boolean) => {
+		drawer.classList.toggle('is-open', open)
+		veil.classList.toggle('is-open', open)
+		btn.setAttribute('aria-expanded', String(open))
+		btn.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기')
+		// Lock background scroll while the drawer is open.
+		document.documentElement.style.overflow = open ? 'hidden' : ''
+	}
+
+	btn.addEventListener('click', () => setOpen(!drawer.classList.contains('is-open')))
+	veil.addEventListener('click', () => setOpen(false))
+	window.addEventListener('keydown', (e) => {
+		if (e.key === 'Escape' && drawer.classList.contains('is-open'))
+			setOpen(false)
+	})
+}
+
+setupDrawer()

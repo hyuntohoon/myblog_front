@@ -35,6 +35,9 @@ export default function HeaderSearch() {
 	const { setQuery: setCoreQuery, runDbSearch } = s
 	const [q, setQ] = useState('')
 	const [open, setOpen] = useState(false)
+	// Mobile (<768px) collapses the field to an icon; tapping it opens the
+	// search as a full-width fixed overlay (FEAT-mobile-web-app Step 1).
+	const [mobOpen, setMobOpen] = useState(false)
 	const [activeIdx, setActiveIdx] = useState(-1)
 	const [reviews, setReviews] = useState<ReviewHit[]>([])
 	const inputRef = useRef<HTMLInputElement>(null)
@@ -58,17 +61,25 @@ export default function HeaderSearch() {
 		return () => window.removeEventListener('keydown', onKey)
 	}, [])
 
-	// close on outside click
+	// close on outside click (dropdown and, on mobile, the overlay itself)
 	useEffect(() => {
-		if (!open)
+		if (!open && !mobOpen)
 			return
 		const onDown = (e: MouseEvent) => {
-			if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+			if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
 				setOpen(false)
+				setMobOpen(false)
+			}
 		}
 		window.addEventListener('mousedown', onDown)
 		return () => window.removeEventListener('mousedown', onDown)
-	}, [open])
+	}, [open, mobOpen])
+
+	// focus the field as soon as the mobile overlay opens
+	useEffect(() => {
+		if (mobOpen)
+			inputRef.current?.focus()
+	}, [mobOpen])
 
 	// debounced search + review filter as the query changes
 	useEffect(() => {
@@ -143,6 +154,7 @@ export default function HeaderSearch() {
 		}
 		else if (e.key === 'Escape') {
 			setOpen(false)
+			setMobOpen(false)
 			inputRef.current?.blur()
 		}
 	}
@@ -167,8 +179,24 @@ export default function HeaderSearch() {
 		submitAll(q)
 	}
 
+	function onMobClose() {
+		setMobOpen(false)
+		setOpen(false)
+	}
+
 	return (
-		<div className="gs-search" ref={wrapRef}>
+		<div className={`gs-search${mobOpen ? ' gs-mob-open' : ''}`} ref={wrapRef}>
+			<button
+				type="button"
+				className="gs-mob-trigger"
+				aria-label="검색 열기"
+				onClick={() => setMobOpen(true)}
+			>
+				<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+					<circle cx="11" cy="11" r="7" />
+					<path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+				</svg>
+			</button>
 			<label className={`gs-field${open ? ' is-open' : ''}`}>
 				<svg className="gs-field-ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
 					<circle cx="11" cy="11" r="7" />
@@ -202,6 +230,16 @@ export default function HeaderSearch() {
 					) :
 					<kbd className="gs-kbd mono">⌘K</kbd>}
 			</label>
+			{mobOpen && (
+				<button
+					type="button"
+					className="gs-mob-close"
+					aria-label="검색 닫기"
+					onClick={onMobClose}
+				>
+					✕
+				</button>
+			)}
 
 			{open && !onSearchPage && (
 				<div className="gs-drop" id="gs-drop" role="listbox">
