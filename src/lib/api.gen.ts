@@ -678,6 +678,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lyrics/{spotify_track_id}/translation-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Lyrics Translation
+         * @description Enqueue a Korean-translation request for one track (FEAT-lyrics-translation).
+         *
+         *     Upserts status='requested' — idempotent while pending, allowed again on
+         *     done/failed/stale. The local launchd poller claims the row; no LLM call happens
+         *     here (rule #9 spirit). Own explicit JWT route in infra/apigateway.tf like the GET —
+         *     the POST 404s at the edge until that route is applied.
+         */
+        post: operations["request_lyrics_translation_api_lyrics__spotify_track_id__translation_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/batch": {
         parameters: {
             query?: never;
@@ -1492,6 +1517,7 @@ export interface components {
              * @default false
              */
             trackable: boolean;
+            translation?: components["schemas"]["Backend_LyricsTranslationInfo"] | null;
         };
         /** LyricsSegment */
         Backend_LyricsSegment: {
@@ -1501,6 +1527,20 @@ export interface components {
             start_ms?: number | null;
             /** Text */
             text: string;
+            /** Text Ko */
+            text_ko?: string | null;
+        };
+        /** LyricsTranslationInfo */
+        Backend_LyricsTranslationInfo: {
+            /** Lang */
+            lang?: string | null;
+            /** Origin */
+            origin?: ("poller" | "manual") | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "none" | "requested" | "done" | "failed" | "stale";
         };
         /** MetricsBatchRequest */
         Backend_MetricsBatchRequest: {
@@ -3857,6 +3897,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_LyricsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_lyrics_translation_api_lyrics__spotify_track_id__translation_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotify_track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_LyricsTranslationInfo"];
                 };
             };
             /** @description Validation Error */
