@@ -27,7 +27,7 @@ import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spo
 import type { NowPlaying as NowPlayingData, RecentlyListenedItem, RecentTrackItem } from './spotify.api'
 import { Cover, Equalizer } from './ui'
 
-export interface LyricsOpenTarget { trackId: string, progressMs: number | null }
+export interface LyricsOpenTarget { trackId: string, progressMs: number | null, albumCoverUrl: string | null }
 export type OnOpenLyrics = (t: LyricsOpenTarget) => void
 
 export type NpStyle = 'banner' | 'full' | 'list'
@@ -225,7 +225,7 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
       const r = await readLivePlayback()
       if (r.state === 'playing') {
         setState('ready')
-        onOpen({ trackId: r.trackId, progressMs: r.progressMs })
+        onOpen({ trackId: r.trackId, progressMs: r.progressMs, albumCoverUrl: r.albumCoverUrl })
       }
       else if (r.state === 'idle') {
         setState('gone')
