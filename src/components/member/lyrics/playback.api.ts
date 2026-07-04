@@ -8,12 +8,13 @@
 // endpoint) is not engaged. The token already carries `user-read-playback-state`.
 //
 // This is a ONE-SHOT read: fired by an explicit user action (entry tap / manual
-// refresh / 동기화) and, since FEAT-nowplaying-live-sync, once on /profile entry
-// (owner-only authed page) to overlay the stale snapshot. It is never polled and
-// never drives continuous progression (RFC non-goal); `progressMs` only seeds a
-// single initial-focus computation. The `playing` state also carries display
-// metadata (track/artist/album/cover) so the now-playing card can render the
-// live moment without a second request.
+// refresh / 동기화), once on /profile entry (FEAT-nowplaying-live-sync,
+// owner-only authed page) to overlay the stale snapshot, and once per detected
+// end-of-track by the lyrics viewer (auto re-sync — a single event-driven read,
+// still never polled). `progressMs` + `readAtMs` seed the viewer's clock
+// estimate; `durationMs` is what lets the viewer detect the track ending. The
+// `playing` state also carries display metadata (track/artist/album/cover) so
+// the now-playing card can render the live moment without a second request.
 import { getStreamingToken } from '@lib/spotifyPlayback'
 
 const PLAYER_URL = 'https://api.spotify.com/v1/me/player'
@@ -23,6 +24,15 @@ export type LivePlayback =
 		state: 'playing'
 		trackId: string
 		progressMs: number | null
+		/**
+		 * Wall-clock instant (performance.now() timeline) `progressMs` was
+		 * measured at — the request window's midpoint, since Spotify stamps the
+		 * progress somewhere inside it. Anchoring the clock estimate against
+		 * this instead of "whenever the caller got around to it" is what keeps
+		 * lyrics from lagging by the request + lyrics-load latency.
+		 */
+		readAtMs: number
+		durationMs: number | null
 		track: string | null
 		artist: string | null
 		album: string | null
@@ -47,6 +57,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   if (!tok.ok)
     return { state: 'unavailable' }
 
+  const requestStartMs = performance.now()
   let res: Response
   try {
     res = await fetch(PLAYER_URL, { headers: { Authorization: `Bearer ${tok.token}` } })
@@ -65,6 +76,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     item?: {
       id?: string
       type?: string
+      duration_ms?: number | null
       name?: string | null
       artists?: Array<{ name?: string | null } | null> | null
       album?: {
@@ -98,6 +110,8 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     state: 'playing',
     trackId: String(item.id),
     progressMs: typeof body.progress_ms === 'number' ? body.progress_ms : null,
+    readAtMs: (requestStartMs + performance.now()) / 2,
+    durationMs: typeof item.duration_ms === 'number' ? item.duration_ms : null,
     track: item.name ?? null,
     artist: artist || null,
     album: item.album?.name ?? null,
