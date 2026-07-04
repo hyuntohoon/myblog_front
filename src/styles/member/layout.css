@@ -705,43 +705,44 @@
 	gap: 14px;
 }
 
-/* 3-level sans-serif typography (design A): focus = pure white/large/bold;
-   near = 70% white/medium; far = 18% white, most recessed. */
+/* 3-level sans-serif typography (design A, layout-stable): every line shares
+   ONE layout size/weight/padding — focus/near/far emphasis is color, opacity
+   and a transform scale only. font-size/weight deltas were animating line
+   heights under the smooth centering scroll, which bounced the whole list on
+   every focus change (auto or manual); transform never reflows, so the only
+   remaining motion is the single smooth scroll. */
 .lyv-line {
 	display: block;
 	width: 100%;
 	background: none;
 	border: none;
-	padding: 2px 0;
+	padding: 4px 0;
 	cursor: pointer;
 	text-align: center;
 	font-family: var(--font-sans);
-	font-weight: 600;
-	line-height: 1.32;
+	font-size: clamp(28px, 5.5vw, 38px);
+	font-weight: 700;
+	line-height: 1.28;
 	word-break: keep-all;
 	color: rgba(255,255,255,0.28);
 	opacity: 0.55;
-	transition: color 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.35s, font-size 0.35s;
+	transform: scale(1);
+	transition: color 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.35s, transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .lyv-line.is-near {
 	color: rgba(255,255,255,0.7);
 	opacity: 0.92;
-	font-size: clamp(24px, 4.4vw, 30px);
 }
 .lyv-line.is-focus {
 	color: #fff;
 	opacity: 1;
-	font-size: clamp(34px, 7vw, 50px);
-	font-weight: 700;
-	line-height: 1.25;
 	letter-spacing: -0.01em;
-	padding: 6px 0;
+	transform: scale(1.045);
 	text-shadow: 0 2px 24px rgba(0,0,0,0.4);
 }
 .lyv-line.is-far {
 	color: rgba(255,255,255,0.18);
 	opacity: 0.35;
-	font-size: clamp(20px, 3.6vw, 26px);
 }
 .lyv-line:focus-visible {
 	outline: 1.5px solid var(--color-accent);
