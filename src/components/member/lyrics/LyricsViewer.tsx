@@ -33,6 +33,24 @@
 // No backend / polling / SDK coupling — the position source is still the
 // existing one-shot REST read (D28 honored).
 //
+// FEAT-lyrics-end-resync extends the clock estimate two ways:
+// (1) Latency-anchored seeding — the anchor's wall instant is the moment the
+//     playback position was actually READ (`readAtMs` from readLivePlayback),
+//     not whenever the lyrics finished loading. Previously the entry-tap
+//     position was paired with a post-`getLyrics()` performance.now(), so the
+//     focus lagged by the whole read + lyrics-load latency. A small
+//     `SYNC_LEAD_MS` bias covers what can't be measured (Spotify-side progress
+//     staleness, tick granularity, perception).
+// (2) End-of-track auto re-sync — the live entry now hands in `durationMs`;
+//     when the estimate passes duration + END_GRACE_MS the viewer fires ONE
+//     automatic `refresh()` (same one-shot read — event-driven, not polling, so
+//     D28 still holds). Next track playing → existing swap path shows its
+//     lyrics; idle → the existing "지금 재생 중인 곡이 없어요" notice, view kept.
+//     One shot per anchor seed (`endSynced` ref): a re-sync re-arms it only
+//     when the fresh position sits meaningfully before the end; idle/failed
+//     results and a player stuck reporting `playing` at ≈duration leave it
+//     disarmed, so neither a stopped nor a wedged player is ever hammered.
+//
 // FEAT-lyrics-translation Step 4: a 번역 toggle interleaves each segment's
 // `text_ko` dimmed under its original line (the focus/nav unit stays the
 // original segment), and a 번역 요청 button drives the request lifecycle
@@ -59,6 +77,20 @@ const WHEEL_STEP = 80
  * grain, harder to pause/resume).
  */
 const ESTIMATE_INTERVAL_MS = 250
+/**
+ * Fixed lead added to the clock estimate (FEAT-lyrics-end-resync). Covers the
+ * unmeasurable tail after latency-anchoring: Spotify's own progress staleness
+ * and the ≤250ms tick grain — a line landing a touch early reads as "in sync",
+ * landing late reads as lagging. Tune here if the feel drifts.
+ */
+const SYNC_LEAD_MS = 300
+/**
+ * How far past `durationMs` the estimate must run before the end-of-track auto
+ * re-sync fires (FEAT-lyrics-end-resync). Gives Spotify a beat to actually
+ * advance to the next item so the one-shot read lands on it, and absorbs
+ * estimate drift near the boundary.
+ */
+const END_GRACE_MS = 1500
 
 type Phase =
 	| { k: 'loading' } |
@@ -116,10 +148,14 @@ function isKoreanDominant(segs: LyricsSegment[]): boolean {
   return letters > 0 && hangul / letters >= 0.5
 }
 
-export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialAlbumCoverUrl = null, canRefresh = false, onClose }: {
+export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, canRefresh = false, onClose }: {
   spotifyTrackId: string
   /** One-shot playback position from the dynamic entry; seeds the initial focus, never advances it. */
   initialProgressMs?: number | null
+  /** Wall instant (performance.now() timeline) `initialProgressMs` was read at — anchors the estimate at read time, not load time. */
+  initialProgressAtMs?: number | null
+  /** Track length from the dynamic entry's live read; enables end-of-track auto re-sync. */
+  initialDurationMs?: number | null
   /** Album cover URL from the dynamic entry; backs the Spotify-style blur backdrop (Step 2). Re-sync refreshes it. */
   initialAlbumCoverUrl?: string | null
   /** Show the manual-refresh control (dynamic entry only — the debug entry has no playback binding). */
@@ -160,20 +196,41 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // position is available — auto mode with a null anchor simply doesn't advance.
   const anchor = useRef<{ ms: number, wallMs: number } | null>(null)
 
+  // Track length for end-of-track detection (FEAT-lyrics-end-resync). Seeded
+  // by the dynamic entry, refreshed from every successful live read; null for
+  // static/debug entries — no duration, no end detection.
+  const [durationMs, setDurationMs] = useState<number | null>(initialDurationMs)
+
+  // One-shot-per-seed guard for the end-of-track auto re-sync: armed (false)
+  // whenever a fresh position seeds the anchor, disarmed (true) the moment the
+  // auto re-sync fires. An idle/failed re-sync never re-arms it, so a stopped
+  // player gets exactly one automatic read.
+  const endSynced = useRef(false)
+
   // Re-seed the anchor from a fresh playback position and (re)compute the
   // focus from it. Centralizes the "position → anchor + focus" step shared by
-  // open, manual override, and re-sync.
-  const applyAnchor = (progressMs: number | null) => {
+  // open, manual override, and re-sync. `readAtMs` is the wall instant the
+  // position was read (defaults to now for callers without one).
+  const applyAnchor = (progressMs: number | null, readAtMs?: number) => {
     if (progressMs == null)
       return
-    anchor.current = { ms: progressMs, wallMs: performance.now() }
+    anchor.current = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
+    // Re-arm end detection only when the fresh position sits meaningfully
+    // before the end. A same-track read still pinned inside the grace window
+    // (a player stuck reporting `playing` at ≈duration) keeps the auto
+    // re-sync spent — one automatic read, never a hammer; manual ↻ remains.
+    if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
+      endSynced.current = false
     if (n > 0)
-      setFocus(focusIndexForMs(segs, progressMs))
+      setFocus(focusIndexForMs(segs, progressMs + SYNC_LEAD_MS + (performance.now() - anchor.current.wallMs)))
   }
 
-  // One-shot initial-focus position: consumed exactly once by the next load
-  // (open with position, or a refresh that swapped tracks), then cleared.
-  const pendingFocusMs = useRef<number | null>(initialProgressMs)
+  // One-shot initial-focus seed (position + the wall instant it was read at):
+  // consumed exactly once by the next load (open with position, or a refresh
+  // that swapped tracks), then cleared.
+  const pendingSeed = useRef<{ ms: number, wallMs: number } | null>(
+    initialProgressMs != null ? { ms: initialProgressMs, wallMs: initialProgressAtMs ?? performance.now() } : null,
+  )
 
   // Translation lifecycle (FEAT-lyrics-translation Step 4). The read carries
   // the row state; a successful POST overrides it locally (→ 요청됨) until the
@@ -202,14 +259,16 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         // plain-only → manual. A user choice persists across an in-place
         // re-sync of the SAME track; a track swap re-derives the default.
         setMode(data.trackable ? 'auto' : 'manual')
-        const ms = pendingFocusMs.current
-        pendingFocusMs.current = null
+        const seed = pendingSeed.current
+        pendingSeed.current = null
         // Seed BOTH the initial focus and the continuous clock anchor from the
-        // one-shot position. Without timestamps (plain) there is nothing to
-        // anchor — auto mode simply won't advance.
-        if (ms != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
-          anchor.current = { ms, wallMs: performance.now() }
-          setFocus(focusIndexForMs(data.segments, ms))
+        // one-shot position, anchored at the instant it was READ — the lyrics
+        // load that just finished no longer eats into sync. Without timestamps
+        // (plain) there is nothing to anchor — auto mode simply won't advance.
+        if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
+          anchor.current = seed
+          endSynced.current = false
+          setFocus(focusIndexForMs(data.segments, seed.ms + SYNC_LEAD_MS + (performance.now() - seed.wallMs)))
         }
       })
       .catch(() => {
@@ -238,10 +297,11 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         setNotice(null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
         setCoverUrl(r.albumCoverUrl)
+        setDurationMs(r.durationMs)
         if (r.trackId !== trackId) {
           // Track changed → swap segments; the load effect seeds both focus
           // and the continuous anchor from the fresh position.
-          pendingFocusMs.current = r.progressMs
+          pendingSeed.current = r.progressMs != null ? { ms: r.progressMs, wallMs: r.readAtMs } : null
           setTrackId(r.trackId)
         }
         else {
@@ -250,7 +310,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           // manual, a successful re-sync of a synced track stays in their
           // chosen mode but the anchor is freshened either way so toggling
           // back to auto resumes from reality, not a stale estimate.
-          applyAnchor(r.progressMs)
+          applyAnchor(r.progressMs, r.readAtMs)
         }
       }
       else if (r.state === 'idle') {
@@ -264,6 +324,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       setRefreshing(false)
     }
   }
+
+  // Latest-ref so the estimate loop can fire the end-of-track auto re-sync
+  // without carrying refresh's per-render identity in its effect deps.
+  const refreshRef = useRef(refresh)
+  useEffect(() => {
+    refreshRef.current = refresh
+  })
 
   const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
   const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
@@ -355,7 +422,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       const a = anchor.current
       if (!a)
         return
-      const estimatedMs = a.ms + (performance.now() - a.wallMs)
+      const estimatedMs = a.ms + (performance.now() - a.wallMs) + SYNC_LEAD_MS
+      // End-of-track auto re-sync (FEAT-lyrics-end-resync): once the estimate
+      // runs past the track length + grace, fire ONE automatic refresh — next
+      // track playing swaps the lyrics in place, idle keeps the view with the
+      // notice. Live entries only (`canRefresh`); armed once per anchor seed.
+      if (canRefresh && durationMs != null && !endSynced.current && estimatedMs >= durationMs + END_GRACE_MS) {
+        endSynced.current = true
+        void refreshRef.current()
+      }
       setFocus((f) => {
         const nf = focusIndexForMs(segs, estimatedMs)
         return nf !== f ? nf : f
@@ -364,7 +439,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     tick()
     const id = window.setInterval(tick, ESTIMATE_INTERVAL_MS)
     return () => window.clearInterval(id)
-  }, [mode, trackable, n, segs])
+  }, [mode, trackable, n, segs, canRefresh, durationMs])
 
   // Vertical swipe/drag = manual navigation (touch-action: none on the scroll
   // area hands touch pans to us). Dragging up (finger/pointer moves up) reads
