@@ -692,7 +692,9 @@
 }
 .lyv-gap { letter-spacing: 0.4em; }
 
-/* bottom rail — prev/next + the position counter (the one accent on the page) */
+/* bottom rail — the auto/manual toggle + the position counter
+   (FEAT-lyrics-auto-progression Step 1: the prev/next rail was dropped in
+   favor of the mode segmented toggle; manual nav stays via swipe/keys/tap) */
 .lyv-rail {
 	display: flex;
 	align-items: center;
@@ -700,6 +702,28 @@
 	gap: 20px;
 	padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
 }
+
+/* segmented auto/manual toggle — structural only; Step 2 redesign restyles */
+.lyv-mode {
+	display: inline-flex;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-pill);
+	overflow: hidden;
+}
+.lyv-mode-btn {
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	letter-spacing: 0.1em;
+	color: var(--color-faded);
+	background: none;
+	border: none;
+	padding: 7px 14px;
+	cursor: pointer;
+	transition: color 0.12s;
+}
+.lyv-mode-btn:hover:not(:disabled) { color: var(--color-text); }
+.lyv-mode-btn.is-on { color: var(--color-accent); }
+.lyv-mode-btn:disabled { opacity: 0.3; cursor: default; }
 .lyv-count {
 	font-size: var(--text-xs);
 	letter-spacing: 0.14em;

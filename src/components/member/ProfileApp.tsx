@@ -320,22 +320,22 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   //    position, refresh enabled (`live: true`).
   //  - Step 2 debug entry: `?lyrics=<spotify_track_id>` — no playback binding, no
   //    refresh. Closing strips the param so a reload doesn't reopen it.
-  const [lyrics, setLyrics] = useState<{ trackId: string, progressMs: number | null, live: boolean } | null>(() => {
+  const [lyrics, setLyrics] = useState<{ trackId: string, progressMs: number | null, albumCoverUrl: string | null, live: boolean } | null>(() => {
     if (typeof window === 'undefined')
       return null
     try {
       const id = new URLSearchParams(window.location.search).get('lyrics')
-      return id ? { trackId: id, progressMs: null, live: false } : null
+      return id ? { trackId: id, progressMs: null, albumCoverUrl: null, live: false } : null
     }
     catch {
       return null
     }
   })
-  const openLyrics = (t: LyricsOpenTarget) => setLyrics({ trackId: t.trackId, progressMs: t.progressMs, live: true })
+  const openLyrics = (t: LyricsOpenTarget) => setLyrics({ trackId: t.trackId, progressMs: t.progressMs, albumCoverUrl: t.albumCoverUrl, live: true })
   // ARCH-entity-interaction-contract Step 2 static entry: TrackRow `lyrics`
   // actions (AlbumDetail tracklist / LikedBoard rows) open the same mount
   // non-live — no playback binding, no refresh affordance.
-  const openStaticLyrics = (spotifyTrackId: string) => setLyrics({ trackId: spotifyTrackId, progressMs: null, live: false })
+  const openStaticLyrics = (spotifyTrackId: string) => setLyrics({ trackId: spotifyTrackId, progressMs: null, albumCoverUrl: null, live: false })
   const closeLyrics = () => {
     setLyrics(null)
     try {
@@ -449,7 +449,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       )}
 
       {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} onOpenLyrics={openStaticLyrics} />}
-      {lyrics && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} canRefresh={lyrics.live} onClose={closeLyrics} />}
+      {lyrics && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} canRefresh={lyrics.live} onClose={closeLyrics} />}
     </div>
   )
 }
