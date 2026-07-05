@@ -12,19 +12,11 @@ type Track = components['schemas']['Music_TrackOut']
 
 type AlbumDetailPayload = AlbumDetail
 
-const root = document.getElementById('albumDetail')
-const musicSection = document.getElementById('music-section')
+// Step 3 (ClientRouter): #albumDetail is a fresh node on every navigation, so
+// the binding moves from module scope into an astro:page-load init (below).
+// The window-level album:detail listener stays module-scoped (bound once).
+let root: HTMLElement | null = null
 let pickedTrackIds: Set<string> = new Set()
-if (musicSection) {
-  try {
-    const raw = musicSection.dataset.recommendedTrackIds || '[]'
-    const arr = JSON.parse(raw) as string[]
-    pickedTrackIds = new Set(arr)
-  }
-  catch {
-    pickedTrackIds = new Set()
-  }
-}
 
 function fmtDur(s?: number | null): string {
   if (s == null || Number.isNaN(s))
@@ -120,26 +112,42 @@ function showPlayNote(msg: string): void {
   noteTimer = window.setTimeout(() => note?.classList.remove('is-on'), 5000)
 }
 
-root?.addEventListener('click', (e) => {
-  const btn = (e.target as Element | null)?.closest<HTMLButtonElement>('.lfq-tt-play')
-  if (!btn)
+function onRootClick(e: Event): void {
+  const target = e.target as Element | null
+  const playBtn = target?.closest<HTMLButtonElement>('.lfq-tt-play')
+  if (playBtn) {
+    const trackId = playBtn.dataset.trackId
+    if (trackId)
+      void requestPlayback({ kind: 'track', trackId, title: playBtn.dataset.trackTitle }).then(o => showPlayNote(o.message))
     return
-  const trackId = btn.dataset.trackId
-  if (!trackId)
-    return
-  void requestPlayback({ kind: 'track', trackId, title: btn.dataset.trackTitle }).then(o => showPlayNote(o.message))
-})
+  }
+  // FEAT-pocket-buckit Step 6 — per-track "담기" → hand off to the ReviewTrackAdder
+  // island, which owns the AddToBucketMenu (picker + the logged-out pb:resume → Cognito
+  // handoff). Vanilla DOM here can't mount React, so this is an event bridge (same
+  // shape as `album:detail`). Event name kept in sync with ReviewTrackAdder.PB_ADD_TRACK_EVENT.
+  const addBtn = target?.closest<HTMLButtonElement>('.lfq-tt-add')
+  if (addBtn) {
+    const trackId = addBtn.dataset.addTrackId
+    if (trackId)
+      window.dispatchEvent(new CustomEvent('pb:add-track', { detail: { trackId, title: addBtn.dataset.addTrackTitle } }))
+  }
+}
 
-// FEAT-pocket-buckit Step 6 — per-track "담기" → hand off to the ReviewTrackAdder
-// island, which owns the AddToBucketMenu (picker + the logged-out pb:resume → Cognito
-// handoff). Vanilla DOM here can't mount React, so this is an event bridge (same
-// shape as `album:detail`). Event name kept in sync with ReviewTrackAdder.PB_ADD_TRACK_EVENT.
-root?.addEventListener('click', (e) => {
-  const btn = (e.target as Element | null)?.closest<HTMLButtonElement>('.lfq-tt-add')
-  if (!btn)
-    return
-  const trackId = btn.dataset.addTrackId
-  if (!trackId)
-    return
-  window.dispatchEvent(new CustomEvent('pb:add-track', { detail: { trackId, title: btn.dataset.addTrackTitle } }))
+// Re-bind to the new page's nodes on every navigation. astro:page-load fires on
+// the initial load as well, and each #albumDetail node only ever sees one
+// page-load, so this cannot double-bind.
+document.addEventListener('astro:page-load', () => {
+  root = document.getElementById('albumDetail')
+  const musicSection = document.getElementById('music-section')
+  pickedTrackIds = new Set()
+  if (musicSection) {
+    try {
+      const raw = musicSection.dataset.recommendedTrackIds || '[]'
+      pickedTrackIds = new Set(JSON.parse(raw) as string[])
+    }
+    catch {
+      pickedTrackIds = new Set()
+    }
+  }
+  root?.addEventListener('click', onRootClick)
 })

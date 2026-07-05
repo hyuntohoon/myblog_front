@@ -42,3 +42,19 @@ select.value = theme
 	<Icon name="moon" class="dark label-icon" />
 	<Icon name="laptop" class="auto label-icon" />
 </template>
+
+<script>
+	// FEAT-mobile-web-app Step 3: ClientRouter's swap adopts the incoming
+	// document's <html> attributes, which wipes the client-applied data-theme
+	// and --color-accent inline style (the static HTML ships without them).
+	// Re-apply both before the new frame paints. Keys mirror the inline
+	// provider above and accent-select.astro.
+	document.addEventListener('astro:after-swap', () => {
+		const storedTheme = localStorage.getItem('atmb-theme')
+		const theme = storedTheme || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark'
+		const accent = localStorage.getItem('atmb-accent') || ''
+		if (accent)
+			document.documentElement.style.setProperty('--color-accent', accent)
+	})
+</script>

@@ -1,5 +1,6 @@
 ---
 import { Font } from 'astro:assets'
+import { ClientRouter } from 'astro:transitions'
 import { SITE } from '@constants'
 import SkipNavLink from '@components/a11y/skip-nav-link.astro'
 import Header from '@components/header.astro'
@@ -28,6 +29,12 @@ import '../styles/search.css';
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500;1,6..72,600&family=Noto+Serif+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 		<ThemeProvider />
+		<!--
+			FEAT-mobile-web-app Step 3: SPA-style navigation with cross-page fade.
+			Unsupported browsers fall back to normal MPA loads (the router still
+			fires astro:page-load, which page scripts now key off).
+		-->
+		<ClientRouter />
 		<slot name="seo" />
 	</head>
 	<body class="min-h-screen bg-bg text-text">
@@ -35,6 +42,10 @@ import '../styles/search.css';
 		<Header />
 		<slot />
 		<Footer />
-		<PocketBuckit client:only="react" />
+		<!--
+			transition:persist keeps this island's React state (tray contents,
+			open drawers) across ClientRouter navigations.
+		-->
+		<PocketBuckit client:only="react" transition:persist="pocket-buckit" />
 	</body>
 </html>
