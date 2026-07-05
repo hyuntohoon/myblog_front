@@ -331,6 +331,13 @@ import Seo from '@components/seo.astro'
   const API = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
   type View = 'draft' | 'published' | 'archived'
+
+  // Step 3 (ClientRouter): module scripts run once per session, so all element
+  // grabs + wiring live in a per-navigation init. astro:page-load fires on the
+  // initial load too; the guard skips every non-drafts page.
+  function initDrafts() {
+  if (!document.getElementById('drafts-table'))
+    return
   let currentView: View = 'draft'
 
   const $loading = document.getElementById('drafts-loading')!
@@ -583,4 +590,7 @@ return
   })
 
   loadPosts()
+  }
+
+  document.addEventListener('astro:page-load', initDrafts)
 </script>

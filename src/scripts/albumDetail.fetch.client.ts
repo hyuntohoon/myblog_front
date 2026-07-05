@@ -11,11 +11,18 @@ async function getCachedJSON<T = any>(url: string): Promise<T> {
 	})
 }
 
-const section = document.getElementById('music-section') as HTMLElement | null
-if (!section) {
-	console.warn('[albumDetail.fetch] #music-section not found')
-}
- else {
+// Step 3 (ClientRouter): module scripts run once per session — re-read the new
+// page's #music-section and dispatch per navigation. sessionCache dedupes the
+// underlying GETs, so revisits render from cache without a network hit.
+document.addEventListener('astro:page-load', () => {
+	const section = document.getElementById('music-section') as HTMLElement | null
+	if (!section) {
+		// This module is imported by review pages only, but astro:page-load fires
+		// on every navigation — silence is correct off the review template.
+		if (location.pathname.startsWith('/review/'))
+			console.warn('[albumDetail.fetch] #music-section not found')
+		return
+	}
 	const albumIdsRaw = section.dataset.albumIds || '[]'
 	const artistIdsRaw = section.dataset.artistIds || '[]'
 
@@ -84,4 +91,4 @@ if (!section) {
 				console.error('[albumDetail.fetch] Artist fetch failed:', err)
 			})
 	}
-}
+})

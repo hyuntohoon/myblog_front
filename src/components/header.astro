@@ -43,7 +43,11 @@ const navLinks = [
      near the top). Utilities are always visible + interactive; the nav + small
      wordmark fade in (opacity only, no layout change) once the masthead has
      scrolled out of view. header.client.ts toggles `.is-scrolled`. -->
-<div id="hdr-bar" class="hdr-bar">
+<!-- FEAT-mobile-web-app Step 3: all four header roots carry transition:persist,
+     so the same DOM nodes (and header.client.ts's element bindings + the
+     HeaderSearch island's state) survive ClientRouter swaps. Per-page nav
+     active state is re-synced client-side in header.client.ts. -->
+<div id="hdr-bar" class="hdr-bar" transition:persist="hdr-bar">
   <div class="container hdr-bar-wrap">
     <button id="hdr-menu-btn" class="hdr-menu-btn" aria-label="메뉴 열기" aria-expanded="false" aria-controls="hdr-drawer">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round"></path></svg>
@@ -83,7 +87,7 @@ const navLinks = [
 </div>
 
 <!-- Expanded masthead — normal document flow, scrolls away naturally. -->
-<header id="site-header" class="site-header">
+<header id="site-header" class="site-header" transition:persist="site-header">
   <div class="container hdr-masthead">
     <a href="/" class="hdr-wordmark-lg" aria-label="buckit — 홈으로">bucki<span class="accent">t</span></a>
     <hr class="hdr-rule" />
@@ -104,8 +108,8 @@ const navLinks = [
      the 1a mockup gate). The bottom edge stays Pocket-tray-only, so the nav
      lives in a left drawer; visibility:hidden keeps closed-state links out of
      the tab order without extra aria bookkeeping. -->
-<div id="hdr-drawer-veil" class="hdr-drawer-veil"></div>
-<aside id="hdr-drawer" class="hdr-drawer" aria-label="모바일 내비게이션">
+<div id="hdr-drawer-veil" class="hdr-drawer-veil" transition:persist="hdr-drawer-veil"></div>
+<aside id="hdr-drawer" class="hdr-drawer" aria-label="모바일 내비게이션" transition:persist="hdr-drawer">
   <a href="/" class="hdr-drawer-wm" aria-label="buckit — 홈으로">bucki<span class="accent">t</span></a>
   <nav class="hdr-drawer-nav" aria-label="Mobile navigation">
     {navLinks.map((link) => {

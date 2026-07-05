@@ -76,6 +76,8 @@ setupHeaderCollapse()
 // ── Mobile nav drawer (FEAT-mobile-web-app Step 1, pattern B) ──
 // Closed-state focusability is handled by the drawer's visibility:hidden, so
 // this only drives the open/close classes + scroll lock.
+let closeDrawer: (() => void) | null = null
+
 function setupDrawer() {
 	const btn = $('#hdr-menu-btn')
 	const drawer = $('#hdr-drawer')
@@ -91,6 +93,7 @@ function setupDrawer() {
 		// Lock background scroll while the drawer is open.
 		document.documentElement.style.overflow = open ? 'hidden' : ''
 	}
+	closeDrawer = () => setOpen(false)
 
 	btn.addEventListener('click', () => setOpen(!drawer.classList.contains('is-open')))
 	veil.addEventListener('click', () => setOpen(false))
@@ -101,3 +104,38 @@ function setupDrawer() {
 }
 
 setupDrawer()
+
+// ── ClientRouter fixups (FEAT-mobile-web-app Step 3) ──
+// The header roots are transition:persist-ed, so everything above binds once
+// and survives swaps. Two things ARE per-page: the drawer must not stay open
+// (nor keep the scroll lock) across a navigation, and the nav active state
+// belongs to the new URL.
+
+// Mirror of the server-side isActive() in header.astro: path match, then the
+// ?bnm=1 filter must agree so /reviews and Best New Music don't both light up.
+function syncActiveNav() {
+	const normalize = (p: string) => (p.endsWith('/') ? p : `${p}/`)
+	const herePath = normalize(location.pathname)
+	const hereBnm = location.search.includes('bnm=1')
+	document.querySelectorAll<HTMLAnchorElement>('.hdr-nav-link, .hdr-drawer-link').forEach((a) => {
+		const url = new URL(a.href, location.origin)
+		const active = normalize(url.pathname) === herePath && url.search.includes('bnm=1') === hereBnm
+		a.classList.toggle('active', active)
+		// aria-current only on the masthead + drawer navs — the compact-bar nav
+		// is aria-hidden and keeps its links out of the a11y tree entirely.
+		if (!a.closest('[aria-hidden="true"]')) {
+			if (active)
+				a.setAttribute('aria-current', 'page')
+			else
+				a.removeAttribute('aria-current')
+		}
+	})
+}
+
+document.addEventListener('astro:after-swap', () => {
+	closeDrawer?.()
+})
+document.addEventListener('astro:page-load', () => {
+	syncAuthUI()
+	syncActiveNav()
+})

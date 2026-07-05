@@ -45,8 +45,23 @@ export default function HeaderSearch() {
 	const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 	// On /search the page renders its own first-class field (M4); suppress this
 	// header dropdown there so it doesn't overlay the page hero. The input still
-	// works as a quick-nav (Enter → submitAll).
-	const onSearchPage = typeof window !== 'undefined' && window.location.pathname.startsWith('/search')
+	// works as a quick-nav (Enter → submitAll). State (not a const): this island
+	// is transition:persist-ed, so the current path changes under it (Step 3).
+	const [onSearchPage, setOnSearchPage] = useState(
+		() => typeof window !== 'undefined' && window.location.pathname.startsWith('/search'),
+	)
+
+	// ClientRouter navigation: the persisted island crosses pages — close the
+	// dropdown/overlay and re-derive the /search suppression for the new URL.
+	useEffect(() => {
+		const onSwap = () => {
+			setOpen(false)
+			setMobOpen(false)
+			setOnSearchPage(window.location.pathname.startsWith('/search'))
+		}
+		document.addEventListener('astro:after-swap', onSwap)
+		return () => document.removeEventListener('astro:after-swap', onSwap)
+	}, [])
 
 	// ⌘K / Ctrl+K focuses the field (the single global owner, post-Pagefind)
 	useEffect(() => {

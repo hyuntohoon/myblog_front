@@ -697,17 +697,25 @@ const recordLabel = post.musicReview?.label ?? null
 
 <script>
   // Scroll progress + font-size toggle. Co-located on this page only.
-  const article = document.querySelector('.lfq-article') as HTMLElement | null
-  if (article) {
+  // Step 3 (ClientRouter): module scripts run once per session, so DOM wiring
+  // hangs off astro:page-load (fires on the initial load too). The scroll
+  // listener is a module-level singleton that re-queries the fill node — a
+  // per-page bind would stack one leaked listener per visited review.
+  function onScroll() {
     const fill = document.getElementById('lfqProgFill')
-    const onScroll = () => {
-      const doc = document.documentElement
-      const h = doc.scrollHeight - doc.clientHeight
-      const pct = h > 0 ? Math.min(100, Math.max(0, (doc.scrollTop / h) * 100)) : 0
-      if (fill)
-        fill.style.width = `${pct}%`
-    }
-    window.addEventListener('scroll', onScroll, { passive: true })
+    if (!fill)
+      return
+    const doc = document.documentElement
+    const h = doc.scrollHeight - doc.clientHeight
+    const pct = h > 0 ? Math.min(100, Math.max(0, (doc.scrollTop / h) * 100)) : 0
+    fill.style.width = `${pct}%`
+  }
+  window.addEventListener('scroll', onScroll, { passive: true })
+
+  document.addEventListener('astro:page-load', () => {
+    const article = document.querySelector('.lfq-article') as HTMLElement | null
+    if (!article)
+      return
     onScroll()
 
     const buttons = article.querySelectorAll<HTMLButtonElement>('.lfq-size-btn')
@@ -731,8 +739,8 @@ const recordLabel = post.musicReview?.label ?? null
         buttons.forEach(b => b.classList.toggle('is-active', b.dataset.size === saved))
       }
     }
- catch { /* ignore */ }
-  }
+    catch { /* ignore */ }
+  })
 </script>
 
 <script>
@@ -741,9 +749,11 @@ const recordLabel = post.musicReview?.label ?? null
   // / crawler views never expose it (and the static HTML stays cache-safe).
   import { isLoggedIn } from '../../lib/auth'
 
-  const editLink = document.getElementById('lfqEditLink')
-  if (editLink && isLoggedIn())
-    editLink.hidden = false
+  document.addEventListener('astro:page-load', () => {
+    const editLink = document.getElementById('lfqEditLink')
+    if (editLink && isLoggedIn())
+      editLink.hidden = false
+  })
 </script>
 
 <script>
