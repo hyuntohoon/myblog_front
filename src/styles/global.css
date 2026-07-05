@@ -94,12 +94,17 @@
 	--text-mast:    clamp(33px, 5.2vw, 44px); /* header masthead wordmark */
 
 	/* ─── Breakpoint scale ───
-	   Project-measured breakpoints aligned to Tailwind's sm/md/lg/xl. Used
-	   for the ~25 ad-hoc max-width values across scoped styles; meaningful
-	   layout transitions are preserved as-is (not force-collapsed). */
+	   Project-measured breakpoints aligned to Tailwind's sm/md/lg/xl.
+	   CSS @media cannot read custom properties, so these tokens are the
+	   CANONICAL documentation — every read-path max-width query must use one
+	   of these literal values (FEAT-mobile-web-app Step 2):
+	     480 · 640 · 767 (below --bp-md; pairs with Tailwind min-width md:)
+	     · 880 · 1024 · 1280
+	   Workspace surfaces (styles/member, styles/writer) are out of scope. */
 	--bp-xs: 480px;   /* narrow phone */
 	--bp-sm: 640px;   /* phone ↔ tablet (Tailwind sm) */
-	--bp-md: 768px;   /* tablet (Tailwind md) */
+	--bp-md: 768px;   /* tablet (Tailwind md); max-width queries use 767px */
+	--bp-tab: 880px;  /* tablet-landscape collapse (multi-col read layouts stack) */
 	--bp-lg: 1024px;  /* desktop (Tailwind lg) */
 	--bp-xl: 1280px;  /* wide */
 
@@ -496,10 +501,10 @@ html {
 	gap: 8px;
 	white-space: nowrap;
 }
-@media (max-width: 760px) {
+@media (max-width: 767px) {
 	.bk-heroB { grid-template-columns: 1fr; gap: 22px; }
 }
-@media (max-width: 540px) {
+@media (max-width: 640px) {
 	.bk-revrow { grid-template-columns: 60px 1fr; row-gap: 8px; }
 	.bk-revrow-aside { grid-column: 2; flex-direction: row; align-items: center; gap: 12px; }
 }

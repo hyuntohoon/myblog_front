@@ -706,29 +706,26 @@
 .gm-a-resizer:hover .gm-resizer-grip { width: 3px; background: var(--color-accent); }
 
 /* ── responsive ──────────────────────────────────────────── */
-@media (max-width: 860px) {
+@media (max-width: 880px) {
 	.gm-b-cols { flex-direction: column; }
 	.gm-b-col { flex: 1 1 auto !important; border-right: none; border-bottom: 1px solid var(--color-border); }
 	.gm-b-cols .gm-resizer { display: none; }
 	.gm-b-col1 .gm-b-collist, .gm-b-col2 .gm-b-collist { max-height: 30vh; }
 	.gm-c-dockwrap { max-width: 52%; }
 }
-@media (max-width: 680px) {
-	.gm-switch { flex: 1; }
-	.gm-switch button { flex: 1; padding: 7px 8px; }
-	.gm-controlbar-hint { display: none; }
-	.gm-a-label { font-size: 21px; }
+@media (max-width: 767px) {
+	/* Mobile forces layout A (GenreMap.tsx effLayout) — the B/C switcher and
+	   its hint are pointless chrome here, so the whole control bar goes. */
+	.gm-controlbar { display: none; }
+	/* long English labels mustn't clip on a narrow phone column → allow wrap.
+	   (B/C rules dropped: below 768px GenreMap forces layout A.) */
+	.gm-a-label { font-size: 21px; white-space: normal; overflow-wrap: anywhere; }
 	.gm-a-meter { display: none; }
 	.gm-a-stats { width: auto; gap: 8px; }
-	.gm-c-wrap { flex-direction: column; }
-	.gm-c-dockwrap { flex: 0 0 auto !important; max-width: none; max-height: 44%; border-left: none; border-top: 1px solid var(--color-border); }
-	.gm-c-resizer, .gm-a-resizer { display: none; }
-	.gm-c-stage { flex: 1; }
-	/* gesture hint advertises ⌘/Ctrl+scroll zoom — meaningless on phones; the
-	   +/- zoom buttons remain. */
-	.gm-c-panhint { display: none; }
-	/* long English labels mustn't clip on a narrow phone column → allow wrap. */
-	.gm-a-label, .gm-b-label, .gm-c-label { white-space: normal; overflow-wrap: anywhere; }
+	.gm-a-resizer { display: none; }
+	/* the toolhint sentence ("N개 최상위 장르 · …") clipped at 390px under
+	   nowrap — let it wrap on phones. */
+	.gm-a-toolhint { white-space: normal; }
 }
 
 /* ── touch affordance (desktop untouched) ────────────────── */
