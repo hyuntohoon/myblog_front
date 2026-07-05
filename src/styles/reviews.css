@@ -781,7 +781,7 @@
     gap: 32px 24px;
   }
 }
-@media (max-width: 560px) {
+@media (max-width: 640px) {
   .rev-c-grid {
     grid-template-columns: 1fr;
   }

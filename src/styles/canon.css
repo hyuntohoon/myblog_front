@@ -81,7 +81,7 @@
 	background: repeating-linear-gradient(var(--color-border) 0 7px, transparent 7px 14px);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 767px) {
 	.canon-grid {
 		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
 	}

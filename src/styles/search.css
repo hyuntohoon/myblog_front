@@ -478,7 +478,7 @@ a.gs-albcard:hover .gs-albcard-title { color: var(--color-accent); }
 .gs-foot-hints { display: flex; gap: 12px; flex: 0 0 auto; }
 .gs-foot-hints > span { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-3xs); letter-spacing: .04em; color: var(--color-faded); white-space: nowrap; }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
 	/* Inline-field sizing that used to live here is obsolete: below 768px the
 	   field only renders inside the .gs-mob-open overlay (flex-sized). */
 	.gs-foot-hints { display: none; }

@@ -61,7 +61,7 @@ const SCOPED_CSS = `
 .bg-mod .bg-chev{opacity:0;transform:translateX(-3px);transition:opacity .16s,transform .16s,color .16s}
 .bg-mod .bg-row:hover .bg-chev{opacity:1;transform:none;color:var(--color-text)}
 .bg-mod .bg-row[data-rank="0"]:hover .bg-chev{color:var(--color-accent)}
-@media (max-width:540px){
+@media (max-width:640px){
 	.bg-mod .bg-row{grid-template-columns:1fr auto 14px;grid-template-areas:"name stat chev" "meter meter meter";row-gap:11px}
 	.bg-mod .bg-name{grid-area:name}
 	.bg-mod .bg-stat{grid-area:stat}

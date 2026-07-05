@@ -43,10 +43,29 @@ function readStored(key: string, fallback: string): string {
 	return localStorage.getItem(key) ?? fallback
 }
 
+/* Below --bp-md the map always renders layout A (FEAT-mobile-web-app Step 2,
+   OQ2): B/C are desktop-only exploratory views, and a stored B/C preference
+   must not leak onto a phone. Keep in sync with the genres.css 767px block
+   that hides .gm-controlbar. */
+const MOBILE_MQ = '(max-width: 767px)'
+
+function useIsMobile(): boolean {
+	const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia(MOBILE_MQ).matches)
+	useEffect(() => {
+		const mq = window.matchMedia(MOBILE_MQ)
+		const onChange = () => setIsMobile(mq.matches)
+		mq.addEventListener('change', onChange)
+		return () => mq.removeEventListener('change', onChange)
+	}, [])
+	return isMobile
+}
+
 export default function GenreMap() {
 	const [doc, setDoc] = useState<GmDoc | null>(null)
 	const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
 	const [layout, setLayoutRaw] = useState<LayoutId>(() => (readStored('lfq-genremap-layout', 'A') as LayoutId))
+	const isMobile = useIsMobile()
+	const effLayout: LayoutId = isMobile ? 'A' : layout
 	const [selId, setSelId] = useState<string | null>(() => readStored('lfq-genremap-sel', '') || null)
 
 	// peek modal — explore a relationship neighbour without losing your place
@@ -116,12 +135,12 @@ export default function GenreMap() {
 		if (!doc)
 			return null
 		const common = { doc, selId, onSelect, onNavigate: openPeek }
-		if (layout === 'B')
+		if (effLayout === 'B')
 			return <TreeB {...common} />
-		if (layout === 'C')
+		if (effLayout === 'C')
 			return <TreeC {...common} />
 		return <TreeA {...common} />
-	}, [doc, layout, selId, onSelect, openPeek])
+	}, [doc, effLayout, selId, onSelect, openPeek])
 
 	if (status === 'loading')
 		return <div className="gm-a-state">장르 맵을 불러오는 중…</div>
@@ -131,7 +150,7 @@ export default function GenreMap() {
 		return <div className="gm-a-state">아직 장르가 없습니다.</div>
 
 	return (
-		<div className="gm-app-embed" data-layout={layout}>
+		<div className="gm-app-embed" data-layout={effLayout}>
 			<div className="gm-controlbar">
 				<div className="gm-switch" role="tablist" aria-label="레이아웃">
 					<span className="mono gm-switch-label">보기</span>
@@ -140,18 +159,18 @@ export default function GenreMap() {
 							type="button"
 							key={l.id}
 							role="tab"
-							aria-selected={layout === l.id}
-							className={layout === l.id ? 'on' : ''}
+							aria-selected={effLayout === l.id}
+							className={effLayout === l.id ? 'on' : ''}
 							onClick={() => setLayout(l.id)}
 						>
 							{l.label}
 						</button>
 					))}
 				</div>
-				<span className="gm-controlbar-hint">{HINTS[layout]}</span>
+				<span className="gm-controlbar-hint">{HINTS[effLayout]}</span>
 			</div>
 
-			<div className="gm-stage-host" key={layout}>
+			<div className="gm-stage-host" key={effLayout}>
 				{view}
 			</div>
 
