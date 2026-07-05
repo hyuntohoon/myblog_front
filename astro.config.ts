@@ -3,6 +3,7 @@ import mdx from '@astrojs/mdx'
 import react from '@astrojs/react'
 import sitemap from '@astrojs/sitemap'
 import tailwindcss from '@tailwindcss/vite'
+import AstroPWA from '@vite-pwa/astro'
 import { imageService } from '@unpic/astro/service'
 import expressiveCode from 'astro-expressive-code'
 import rehypeAutolinkHeadings from 'rehype-autolink-headings'
@@ -47,6 +48,72 @@ export default defineConfig({
 			filter: page => !/\/(?:drafts|write|admin|test|blog)\//.test(page),
 		}),
 		react(),
+		// FEAT-mobile-web-app Step 4 — installable PWA. Cache policy (RFC OQ3):
+		// precache = app shell (home + reviews index HTML, hashed assets) only;
+		// runtime = visited /review/* HTML (NetworkFirst, small cap) + covers
+		// (SWR, capped). /api/* is NEVER cached: no runtimeCaching entry matches
+		// it, precache can't contain it, and navigateFallback stays off (MPA —
+		// an app-shell fallback would serve home for every offline route).
+		// Rollback: deploy a kill-switch SW (self.registration.unregister()),
+		// never plain removal — see RFC Step 4.
+		AstroPWA({
+			registerType: 'autoUpdate',
+			manifest: {
+				name: 'buckit — 음악을 듣고 · 쓰고 · 모으다',
+				short_name: 'buckit',
+				description: '음악 리뷰와 컬렉션 — buckit',
+				lang: 'ko',
+				start_url: '/',
+				scope: '/',
+				display: 'standalone',
+				background_color: '#141312',
+				theme_color: '#141312',
+				icons: [
+					{ src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+					{ src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+					{ src: '/maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+				],
+			},
+			workbox: {
+				// Shell only — NOT '**/*.html' (the whole site would grow unbounded
+				// into every client's precache as reviews accumulate).
+				globPatterns: [
+					'index.html',
+					'reviews/index.html',
+					'404.html',
+					'_astro/**/*.{js,css,woff2}',
+					'favicon.svg',
+					'pwa-192x192.png',
+					'pwa-512x512.png',
+					'maskable-icon-512x512.png',
+				],
+				navigateFallback: null,
+				runtimeCaching: [
+					{
+						// Visited review pages readable offline (RFC OQ3: small cap).
+						// Same-origin path match only — a bare /\/review\//-style regex
+						// runs against the FULL url and could catch foreign origins.
+						urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/review/'),
+						handler: 'NetworkFirst',
+						options: {
+							cacheName: 'review-pages',
+							expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 14 },
+							cacheableResponse: { statuses: [200] },
+						},
+					},
+					{
+						// Album/artist cover art (Spotify CDN) — capped SWR.
+						urlPattern: /^https:\/\/i\.scdn\.co\/.*/,
+						handler: 'StaleWhileRevalidate',
+						options: {
+							cacheName: 'cover-images',
+							expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 30 },
+							cacheableResponse: { statuses: [0, 200] },
+						},
+					},
+				],
+			},
+		}),
 	],
 
 	vite: {

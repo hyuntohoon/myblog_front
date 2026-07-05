@@ -1,0 +1,90 @@
+---
+// FEAT-mobile-web-app Step 4 — iOS install guidance. Safari on iOS has no
+// beforeinstallprompt, so a PWA is only installable via 공유 → 홈 화면에 추가.
+// Shown ONLY when: iOS Safari UA · not already standalone · not dismissed
+// before (dismiss persists in localStorage). Everything else sees nothing.
+---
+
+<div id="ios-a2hs" class="ios-a2hs" hidden>
+	<p class="ios-a2hs-text">
+		앱처럼 쓰려면 Safari의 <strong>공유</strong> 버튼
+		<svg class="ios-a2hs-share" width="13" height="16" viewBox="0 0 13 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M6.5 1v9M3.5 3.5 6.5 1l3 2.5" stroke-linecap="round" stroke-linejoin="round" /><path d="M2 6H1v9h11V6h-1" stroke-linecap="round" /></svg>
+		→ <strong>홈 화면에 추가</strong>를 누르세요.
+	</p>
+	<button id="ios-a2hs-x" class="ios-a2hs-x" type="button" aria-label="설치 안내 닫기">✕</button>
+</div>
+
+<style>
+	.ios-a2hs {
+		position: fixed;
+		left: 12px;
+		right: 12px;
+		bottom: calc(12px + env(safe-area-inset-bottom));
+		z-index: var(--z-panel, 60);
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 12px 14px;
+		background: var(--color-paper, var(--color-bg));
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md, 8px);
+		box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+	}
+	.ios-a2hs-text {
+		margin: 0;
+		font-size: 13px;
+		line-height: 1.5;
+		color: var(--color-text);
+	}
+	.ios-a2hs-share { vertical-align: -2px; }
+	.ios-a2hs-x {
+		flex: 0 0 auto;
+		width: 40px;
+		height: 40px;
+		border: none;
+		background: none;
+		color: var(--color-subtle);
+		cursor: pointer;
+		font-size: 14px;
+	}
+</style>
+
+<script>
+	const KEY = 'pwa-ios-hint-dismissed'
+
+	function isIosSafari(): boolean {
+		const ua = navigator.userAgent
+		// iPadOS 13+ reports as Mac; touch points disambiguate.
+		const isIos = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+		// Real Safari only — in-app webviews & Chrome/Firefox-on-iOS can't A2HS.
+		const isSafari = /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|GSA|KAKAOTALK|Instagram|NAVER/.test(ua)
+		return isIos && isSafari
+	}
+
+	function isStandalone(): boolean {
+		return window.matchMedia('(display-mode: standalone)').matches ||
+			(navigator as any).standalone === true
+	}
+
+	document.addEventListener('astro:page-load', () => {
+		const el = document.getElementById('ios-a2hs')
+		if (!el)
+			return
+		const dismissed = (() => {
+			try {
+				return localStorage.getItem(KEY) === '1'
+			}
+			catch {
+				return true
+			}
+		})()
+		el.hidden = dismissed || !isIosSafari() || isStandalone()
+		document.getElementById('ios-a2hs-x')?.addEventListener('click', () => {
+			el.hidden = true
+			try {
+				localStorage.setItem(KEY, '1')
+			}
+			catch { /* quota */ }
+		})
+	})
+</script>
