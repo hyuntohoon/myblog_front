@@ -98,6 +98,56 @@ function ArrowLink() {
 	)
 }
 
+/** Dim static placeholder bar — no shimmer, theme-safe via --color-border-soft. */
+function Bone({ w, h }: { w: number, h: number }) {
+	return <span style={{ display: 'inline-block', width: w, height: h, borderRadius: 3, background: 'var(--color-border-soft)' }} />
+}
+
+/**
+ * Loading placeholder for one genre row. Mirrors Row's grid markup (same
+ * classes so the mobile 2-row variant in SCOPED_CSS applies, same font sizes /
+ * line heights / paddings) so the loading → ready swap causes no layout shift.
+ * Not a link, not hoverable — inert bars only.
+ */
+function SkeletonRow({ i }: { i: number }) {
+	return (
+		<div className="bg-row" data-rank={i} style={{ ...rowStyle, pointerEvents: 'none', ...(i === 0 ? { borderTop: 0 } : null) }}>
+			<span className="bg-name" style={{ fontSize: 'clamp(17px, 2vw, 21px)', lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+				<Bone w={i % 2 ? 96 : 72} h={12} />
+			</span>
+			<span className="bg-meter" style={{ display: 'block', height: 12, borderRadius: 2, background: 'var(--color-border-soft)', minWidth: 24 }} />
+			<span className="bg-stat" style={{ display: 'flex', alignItems: 'center', gap: 9, justifySelf: 'end', whiteSpace: 'nowrap' }}>
+				<span style={{ fontSize: 'clamp(18px, 2vw, 22px)', lineHeight: 1 }}><Bone w={44} h={13} /></span>
+				<span style={{ width: 38, textAlign: 'right' }}><Bone w={26} h={9} /></span>
+			</span>
+			<span className="bg-chev" style={{ width: 15, height: 15, justifySelf: 'end' }} />
+		</div>
+	)
+}
+
+/**
+ * Full loading skeleton: intro-line slot + TOP_N rows + footer-note slot, all
+ * reserving the same vertical space as the loaded state (home CLS fix).
+ */
+function Skeleton() {
+	return (
+		<div aria-hidden="true" style={{ pointerEvents: 'none' }}>
+			<p className="serif" style={{ fontSize: 13.5, lineHeight: 1.4, margin: '0 0 4px' }}>
+				<Bone w={280} h={10} />
+			</p>
+
+			<div className="bg-rows" style={{ display: 'flex', flexDirection: 'column' }}>
+				{Array.from({ length: TOP_N }, (_, i) => <SkeletonRow key={i} i={i} />)}
+			</div>
+
+			<div className="bg-foot" style={{ marginTop: 18, paddingTop: 15, borderTop: '1px solid var(--color-border-soft)', display: 'flex', alignItems: 'center', gap: 9 }}>
+				<span style={{ width: 6, height: 6, borderRadius: 6, background: 'var(--color-border-soft)', flex: '0 0 auto' }} />
+				<p style={{ margin: 0, fontSize: 13, lineHeight: 1.45 }}><Bone w={220} h={9} /></p>
+			</div>
+		</div>
+	)
+}
+
 function Row({ g, i, max, total }: { g: GenreRow, i: number, max: number, total: number }) {
 	const w = max ? Math.max(4, (g.count / max) * 100) : 0
 	const pct = total ? (g.count / total) * 100 : 0
@@ -178,7 +228,7 @@ export default function BrowseGenres() {
 			<SectionTitle kicker="정직한 분포" title="장르로 탐색" right={right} />
 
 			{status === 'loading' ?
-				<div className="meta" style={{ padding: '28px 4px', color: 'var(--color-faded)' }}>장르 분포를 불러오는 중…</div> :
+				<Skeleton /> :
 				status === 'error' ?
 					<div className="meta" style={{ padding: '28px 4px', color: 'var(--color-faded)' }}>장르 분포를 불러오지 못했습니다.</div> :
 					rows.length === 0 ?
