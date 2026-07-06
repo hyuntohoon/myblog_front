@@ -729,6 +729,13 @@
    heights under the smooth centering scroll, which bounced the whole list on
    every focus change (auto or manual); transform never reflows, so the only
    remaining motion is the single smooth scroll. */
+/* Emphasis tiers are OPACITY + TRANSFORM ONLY (color constant, no per-tier
+   letter-spacing): color transitions can't run on the compositor, so they
+   repainted the moving list's tiles every frame of the 0.35s tier cross-fade —
+   a per-step raster spike on WebKit. Opacity values fold in the old per-tier
+   color alpha (e.g. far = .18 alpha × .35 opacity ≈ .07), so the rendered
+   grays are unchanged. letter-spacing also left the layout non-neutral (a
+   focused line could re-wrap), which the offset cache relies on. */
 .lyv-line {
 	display: block;
 	width: 100%;
@@ -742,25 +749,28 @@
 	font-weight: 700;
 	line-height: 1.28;
 	word-break: keep-all;
-	color: rgba(255,255,255,0.28);
-	opacity: 0.55;
+	color: #fff;
+	opacity: 0.15;
 	transform: scale(1);
-	transition: color 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.35s, transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+	transition: opacity 0.35s, transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+	/* Pre-promote every line: starting an opacity/transform transition on a
+	   non-composited element makes WebKit create (and later destroy) a layer
+	   for it mid-step — that raster churn was the residual per-step hitch (isolated
+	   2026-07-06: transitions-off AND will-change both cut >33ms frames 11→1).
+	   Kept as a hint; under memory pressure iOS just demotes back to the old
+	   behavior. */
+	will-change: opacity, transform;
 }
 .lyv-line.is-near {
-	color: rgba(255,255,255,0.7);
-	opacity: 0.92;
+	opacity: 0.64;
 }
 .lyv-line.is-focus {
-	color: #fff;
 	opacity: 1;
-	letter-spacing: -0.01em;
 	transform: scale(1.045);
 	text-shadow: 0 2px 24px rgba(0,0,0,0.4);
 }
 .lyv-line.is-far {
-	color: rgba(255,255,255,0.18);
-	opacity: 0.35;
+	opacity: 0.07;
 }
 .lyv-line:focus-visible {
 	outline: 1.5px solid var(--color-accent);
