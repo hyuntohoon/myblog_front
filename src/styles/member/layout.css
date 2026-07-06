@@ -551,15 +551,22 @@
 /* Album-blur backdrop — the real cover as a CSS background-image + filter
    (CORS-free: no pixel reads), scaled up so the blur edges stay covered.
    Re-renders on track swap via the coverUrl state (the inline backgroundImage).
-   .is-empty (static/debug entry, no cover) leaves the neutral dark base. */
+   .is-empty (static/debug entry, no cover) leaves the neutral dark base.
+   The filter runs on a QUARTER-size layer scaled 6x back up (25% × 6 = 150%
+   viewport overscan): blur(12px) × 6 reads like the old full-size blur(72px)
+   but rasterizes 1/16 of the pixels — a full-viewport retina blur layer was a
+   per-frame WebKit jank source under the auto-advance animation. */
 .lyv-bg {
 	position: absolute;
-	inset: 0;
+	left: 50%;
+	top: 50%;
+	width: 25%;
+	height: 25%;
 	z-index: 0;
 	background-size: cover;
 	background-position: center;
-	filter: blur(72px) saturate(1.9) brightness(0.55);
-	transform: scale(1.35);
+	filter: blur(12px) saturate(1.9) brightness(0.55);
+	transform: translate(-50%, -50%) scale(6);
 	transition: background-image 0.6s ease;
 }
 .lyv-bg.is-empty { background-image: none; }
@@ -696,6 +703,12 @@
 	z-index: 1;
 }
 .lyv-scroll:active { cursor: grabbing; }
+/* The list is the moving part: focus centering translates it (compositor-only)
+   instead of scrolling the overflow-hidden container — a non-composited
+   scrollTo(smooth) repainted this large-type block every frame on WebKit (the
+   auto-advance stutter). The transition's duration/easing own the motion; the
+   viewer sets `transition: none` inline for instant jumps (first position,
+   resize). */
 .lyv-list {
 	max-width: 680px;
 	margin: 0 auto;
@@ -703,6 +716,11 @@
 	display: flex;
 	flex-direction: column;
 	gap: 14px;
+	will-change: transform;
+	transition: transform 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+	.lyv-list { transition: none; }
 }
 
 /* 3-level sans-serif typography (design A, layout-stable): every line shares

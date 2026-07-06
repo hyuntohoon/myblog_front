@@ -97,15 +97,6 @@ type Phase =
 	{ k: 'error' } |
 	{ k: 'ready', data: LyricsResponse }
 
-function prefersReducedMotion(): boolean {
-  try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  }
-  catch {
-    return false
-  }
-}
-
 /**
  * The segment a playback moment maps to: the last segment whose `start_ms` is
  * at or before `ms` (synced rows only — plain rows carry no timestamps and are
@@ -174,7 +165,11 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const [coverUrl, setCoverUrl] = useState<string | null>(initialAlbumCoverUrl)
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   const segRefs = useRef<(HTMLButtonElement | null)[]>([])
+  // False until the current track's list has been positioned once — the first
+  // centering after (re)load is instant, everything after animates.
+  const positionedRef = useRef(false)
   useDismissable(true, onClose, panelRef)
 
   const segs = phase.k === 'ready' && phase.data.availability === 'ok' ?
@@ -370,32 +365,48 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     moveFocusTo(f => Math.max(0, Math.min(n - 1, f + delta)))
   }
 
-  // Keep the focused segment at ~42% viewport height. The focus emphasis is
-  // layout-neutral (color/opacity + transform scale — no font-size animation),
-  // so offsets are final at render time and the single smooth scroll lands
-  // exactly; the old 240ms settle re-center (a visible second jump) is gone.
-  useEffect(() => {
-    if (n === 0)
-      return
+  // Keep the focused segment at ~42% viewport height by translating the whole
+  // list (compositor-only) instead of scrolling the container. `.lyv-scroll`
+  // is overflow:hidden, so `scrollTo({behavior:'smooth'})` was a NON-composited
+  // scroll — WebKit repainted the large-type list every animation frame (the
+  // reported iPhone/Mac stutter). A `transform` transition never repaints, its
+  // duration/easing are ours (CSS `.lyv-list`), and a new focus mid-animation
+  // retargets smoothly instead of restarting a native scroll. The focus
+  // emphasis stays layout-neutral, so offsets are final at render time.
+  const applyCenter = (i: number, instant: boolean) => {
     const box = scrollRef.current
-    const el = segRefs.current[focus]
-    if (!box || !el)
+    const list = listRef.current
+    const el = segRefs.current[i]
+    if (!box || !list || !el)
       return
-    const top = el.offsetTop + el.offsetHeight / 2 - box.clientHeight * 0.42
-    box.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+    const y = box.clientHeight * 0.42 - (el.offsetTop + el.offsetHeight / 2)
+    if (instant) {
+      list.style.transition = 'none'
+      list.style.transform = `translate3d(0, ${y}px, 0)`
+      void list.offsetHeight // flush so restoring the transition can't animate this jump
+      list.style.transition = ''
+    }
+    else {
+      list.style.transform = `translate3d(0, ${y}px, 0)`
+    }
+  }
+
+  useEffect(() => {
+    if (n === 0) {
+      positionedRef.current = false
+      return
+    }
+    // First position after (re)load lands instantly; reduced-motion users get
+    // no animation either way (CSS transition: none under the media query).
+    applyCenter(focus, !positionedRef.current)
+    positionedRef.current = true
   }, [focus, n])
 
   // Re-center instantly on viewport changes (rotation, keyboard, resize).
   useEffect(() => {
     if (n === 0)
       return
-    const onResize = () => {
-      const box = scrollRef.current
-      const el = segRefs.current[focus]
-      if (!box || !el)
-        return
-      box.scrollTo({ top: el.offsetTop + el.offsetHeight / 2 - box.clientHeight * 0.42, behavior: 'auto' })
-    }
+    const onResize = () => applyCenter(focus, true)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [focus, n])
@@ -610,7 +621,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	onPointerCancel={onPointerEnd}
 	onWheel={onWheel}
               >
-                <div className="lyv-list">
+                <div className="lyv-list" ref={listRef}>
                   {segs.map((s, i) => {
                     const d = Math.abs(i - focus)
                     // 3-level emphasis (FEAT-lyrics-auto-progression Step 2):
