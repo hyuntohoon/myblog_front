@@ -61,7 +61,7 @@
 // always-dark + large sans-serif typography); it lives in the `.lyv-*` CSS.
 import type { KeyboardEvent, PointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
@@ -138,6 +138,42 @@ function isKoreanDominant(segs: LyricsSegment[]): boolean {
   }
   return letters > 0 && hangul / letters >= 0.5
 }
+
+/**
+ * One lyric line, memoized so a focus step re-renders only the ≤4 lines whose
+ * emphasis tier changed instead of the whole list — the full-list commit was
+ * the main-thread spike at the start of every auto-advance step on WebKit.
+ * `register`/`onTap` are stable callbacks (refs inside), so shallow compare
+ * only sees `cls`/`textKo` flips.
+ */
+const LyricsLine = memo(({ i, text, textKo, cls, register, onTap }: {
+  i: number
+  text: string
+  textKo: string | null
+  cls: string
+  register: (i: number, el: HTMLButtonElement | null) => void
+  onTap: (i: number) => void
+}) => (
+  <button
+	type="button"
+	ref={(el) => {
+      register(i, el)
+    }}
+	className={cls}
+	onClick={() => onTap(i)}
+  >
+    {text === '' ?
+      <span className="lyv-gap" aria-label="간주">· · ·</span> :
+      textKo ?
+        (
+          <>
+            {text}
+            <span className="lyv-line-ko">{textKo}</span>
+          </>
+        ) :
+        text}
+  </button>
+))
 
 export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, canRefresh = false, onClose }: {
   spotifyTrackId: string
@@ -373,13 +409,30 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // duration/easing are ours (CSS `.lyv-list`), and a new focus mid-animation
   // retargets smoothly instead of restarting a native scroll. The focus
   // emphasis stays layout-neutral, so offsets are final at render time.
+  // Cached line-center offsets: reading offsetTop/clientHeight forces a full
+  // layout of the large-type list, so measure once per (track, 번역 toggle,
+  // resize) instead of on every focus step — a per-step forced layout was part
+  // of the WebKit step hitch. Offsets are transform-independent, so moving the
+  // list never invalidates them.
+  const measureRef = useRef<{ centers: number[], boxH: number } | null>(null)
+
   const applyCenter = (i: number, instant: boolean) => {
     const box = scrollRef.current
     const list = listRef.current
-    const el = segRefs.current[i]
-    if (!box || !list || !el)
+    if (!box || !list)
       return
-    const y = box.clientHeight * 0.42 - (el.offsetTop + el.offsetHeight / 2)
+    let m = measureRef.current
+    if (!m) {
+      m = {
+        centers: segRefs.current.slice(0, n).map(el => (el ? el.offsetTop + el.offsetHeight / 2 : 0)),
+        boxH: box.clientHeight,
+      }
+      measureRef.current = m
+    }
+    const center = m.centers[i]
+    if (center == null)
+      return
+    const y = m.boxH * 0.42 - center
     if (instant) {
       list.style.transition = 'none'
       list.style.transform = `translate3d(0, ${y}px, 0)`
@@ -391,22 +444,34 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
   }
 
+  // 번역 toggle interleaves/removes ko lines → line heights change → offsets
+  // must be re-measured (ordered before the centering effect below, which
+  // re-applies the now-fresh center on the same commit).
+  useEffect(() => {
+    measureRef.current = null
+  }, [showKo])
+
   useEffect(() => {
     if (n === 0) {
       positionedRef.current = false
+      measureRef.current = null
       return
     }
     // First position after (re)load lands instantly; reduced-motion users get
     // no animation either way (CSS transition: none under the media query).
     applyCenter(focus, !positionedRef.current)
     positionedRef.current = true
-  }, [focus, n])
+  }, [focus, n, showKo])
 
-  // Re-center instantly on viewport changes (rotation, keyboard, resize).
+  // Re-center instantly on viewport changes (rotation, keyboard, resize) —
+  // sizes changed, so drop the offset cache before re-measuring.
   useEffect(() => {
     if (n === 0)
       return
-    const onResize = () => applyCenter(focus, true)
+    const onResize = () => {
+      measureRef.current = null
+      applyCenter(focus, true)
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [focus, n])
@@ -512,11 +577,21 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
   }
 
-  const tapFocus = (i: number) => {
+  // Stable handlers for the memoized lines (latest-ref pattern, same as
+  // refreshRef): identity never changes, so a focus step's shallow compare
+  // re-renders only the lines whose `cls` flipped.
+  const moveFocusToRef = useRef(moveFocusTo)
+  useEffect(() => {
+    moveFocusToRef.current = moveFocusTo
+  })
+  const onLineTap = useCallback((i: number) => {
     if (suppressTap.current)
       return
-    moveFocusTo(i)
-  }
+    moveFocusToRef.current(i)
+  }, [])
+  const registerLine = useCallback((i: number, el: HTMLButtonElement | null) => {
+    segRefs.current[i] = el
+  }, [])
 
   const emptyText = phase.k === 'ready' && phase.data.availability === 'no_lyrics' ?
     '가사 없음 (연주곡)' :
@@ -628,26 +703,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                     // focus = current line; near = ±1 neighbor; far = the rest.
                     const cls = i === focus ? 'lyv-line is-focus' : d === 1 ? 'lyv-line is-near' : 'lyv-line is-far'
                     return (
-                      <button
+                      <LyricsLine
 	key={s.i}
-	ref={(el) => {
-                          segRefs.current[i] = el
-                        }}
-	type="button"
-	className={cls}
-	onClick={() => tapFocus(i)}
-                      >
-                        {s.text === '' ?
-                          <span className="lyv-gap" aria-label="간주">· · ·</span> :
-                          showKo && s.text_ko && s.text_ko !== s.text ?
-                            (
-                              <>
-                                {s.text}
-                                <span className="lyv-line-ko">{s.text_ko}</span>
-                              </>
-                            ) :
-                            s.text}
-                      </button>
+	i={i}
+	text={s.text}
+	textKo={showKo && s.text_ko && s.text_ko !== s.text ? s.text_ko : null}
+	cls={cls}
+	register={registerLine}
+	onTap={onLineTap}
+                      />
                     )
                   })}
                 </div>
