@@ -13,6 +13,13 @@
 // union over `itemType`: an album intent carries `albumId`, a track intent carries
 // `trackId`; the unused id is null. The resume re-opens the SAME AddToBucketMenu
 // for whichever kind was stashed.
+//
+// Member-authoring follow-on — REVIEW intents (a public /review/[slug] "평론 담기"
+// while logged out) carry `reviewTargetId` (the posts-table DB id). Playback (queue)
+// and snapshot adds are NOT stashed: the queue toggle lives inside the picker sheet
+// (unreachable logged-out — a track intent resumes as a plain track add), and the
+// snapshot source (/profile analysis) is a logged-in-only surface whose frozen
+// payload would violate the thin-descriptor rule.
 
 export const POCKET_INTENT_KEY = 'pb:resume'
 
@@ -23,11 +30,13 @@ export interface PocketIntent {
   /** epoch ms at capture — the TTL gate. */
   ts: number
   /** Which membership kind to add after sign-in. */
-  itemType: 'album' | 'track'
-  /** DB album id (album intents); null for track intents. */
+  itemType: 'album' | 'track' | 'review'
+  /** DB album id (album intents); null otherwise. */
   albumId: string | null
-  /** DB track id (track intents); null for album intents. */
+  /** DB track id (track intents); null otherwise. */
   trackId: string | null
+  /** DB post id (review intents — `review_target_id`); null otherwise. */
+  reviewTargetId: string | null
   /** display title, for the resume confirmation surface. */
   title: string
   /**
@@ -41,7 +50,8 @@ export interface PocketIntent {
 /** The caller-supplied intent (a tagged union — exactly one target id per kind). */
 export type PocketIntentInput =
 	| { itemType: 'album', albumId: string, title: string, bucketId: string | null } |
-	{ itemType: 'track', trackId: string, title: string, bucketId: string | null }
+	{ itemType: 'track', trackId: string, title: string, bucketId: string | null } |
+	{ itemType: 'review', reviewTargetId: string, title: string, bucketId: string | null }
 
 /** Stash a pending add. Overwrites any previous intent (last write wins). */
 export function writePocketIntent(input: PocketIntentInput): void {
@@ -52,6 +62,7 @@ export function writePocketIntent(input: PocketIntentInput): void {
     itemType: input.itemType,
     albumId: input.itemType === 'album' ? input.albumId : null,
     trackId: input.itemType === 'track' ? input.trackId : null,
+    reviewTargetId: input.itemType === 'review' ? input.reviewTargetId : null,
     title: input.title,
     bucketId: input.bucketId,
   }
@@ -90,11 +101,14 @@ export function drainPocketIntent(): PocketIntent | null {
     const title = typeof v.title === 'string' ? v.title : '항목'
     const bucketId = typeof v.bucketId === 'string' ? v.bucketId : null
     if (v.itemType === 'track' && typeof v.trackId === 'string') {
-      return { ts: v.ts, itemType: 'track', albumId: null, trackId: v.trackId, title: title || '트랙', bucketId }
+      return { ts: v.ts, itemType: 'track', albumId: null, trackId: v.trackId, reviewTargetId: null, title: title || '트랙', bucketId }
+    }
+    if (v.itemType === 'review' && typeof v.reviewTargetId === 'string') {
+      return { ts: v.ts, itemType: 'review', albumId: null, trackId: null, reviewTargetId: v.reviewTargetId, title: title || '평론', bucketId }
     }
     // Default/album path (covers legacy blobs written before Step 6 with no itemType).
     if (typeof v.albumId === 'string') {
-      return { ts: v.ts, itemType: 'album', albumId: v.albumId, trackId: null, title: title || '앨범', bucketId }
+      return { ts: v.ts, itemType: 'album', albumId: v.albumId, trackId: null, reviewTargetId: null, title: title || '앨범', bucketId }
     }
     return null
   }

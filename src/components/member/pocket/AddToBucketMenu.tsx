@@ -13,19 +13,26 @@
 // Auth split: when logged out there are no buckets and every write is 401/403, so
 // it stashes a thin pending-intent (album or track) and hands off to Cognito PKCE;
 // the home resume completes the add after sign-in (see lib/pocketBuckit/intent.ts).
-import type { BoardBucket } from '@lib/buckets'
+import type { BoardBucket, SnapshotCapture } from '@lib/buckets'
 import type { CSSProperties, ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { goLogin, isLoggedIn } from '@lib/auth'
-import { addBucketItem, addBucketTrack, deleteBucketItem, listBuckets } from '@lib/buckets'
+import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, listBuckets } from '@lib/buckets'
+import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { writePocketIntent } from '@lib/pocketBuckit/intent'
 
-// What to add: an album (default, back-compat) or a track (FEAT-pocket-buckit
-// Step 6). A tagged union so each kind carries exactly its own target id.
+// What to add: an album (default, back-compat), a track (FEAT-pocket-buckit
+// Step 6), or — member authoring follow-on — a review / an analysis snapshot.
+// A tagged union so each kind carries exactly its own target. A track picker
+// additionally offers a queue mode (item_type='playback', duplicate-allowed),
+// so 'playback' is not a separate AddTarget kind. For review/snapshot the title
+// doubles as the note caption the tile renders (mapItem's noteTitle).
 export type AddTarget =
 	| { itemType?: 'album', albumId: string, title: string } |
-	{ itemType: 'track', trackId: string, title: string }
+	{ itemType: 'track', trackId: string, title: string } |
+	{ itemType: 'review', reviewTargetId: string, title: string } |
+	{ itemType: 'snapshot', snapshot: SnapshotCapture, title: string }
 
 interface FlatBucket { id: string, name: string, depth: number }
 
@@ -61,16 +68,26 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
   const [sheetOpen, setSheetOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
+  // Track-only queue mode: pick() posts item_type='playback' (duplicate-allowed
+  // queue entry) instead of 'track'. Reset on every open so a fresh sheet always
+  // starts in the default collection mode.
+  const [asQueue, setAsQueue] = useState(false)
   const busy = useRef(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Flatten the union to primitives so `open`/`pick` stay referentially stable
   // (the autoOpen effect depends on `open`'s identity — a fresh `item` object each
-  // render must not re-fire it). Exactly one of albumId/trackId is set per kind.
+  // render must not re-fire it). Exactly one target is set per kind. The snapshot
+  // capture object rides a ref for the same reason (its identity changes per render
+  // but its content is only read inside pick()).
   const title = item.title
   const isTrack = item.itemType === 'track'
   const trackId = item.itemType === 'track' ? item.trackId : undefined
-  const albumId = item.itemType === 'track' ? undefined : item.albumId
+  const reviewTargetId = item.itemType === 'review' ? item.reviewTargetId : undefined
+  const isSnapshot = item.itemType === 'snapshot'
+  const albumId = item.itemType === 'album' || item.itemType === undefined ? item.albumId : undefined
+  const snapshotRef = useRef<SnapshotCapture | null>(null)
+  snapshotRef.current = item.itemType === 'snapshot' ? item.snapshot : null
 
   const showToast = useCallback((t: ToastState) => {
     if (toastTimer.current)
@@ -86,15 +103,20 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
 
   const open = useCallback(() => {
     // Anonymous: capture intent + hand off to Cognito PKCE. Never attempts a write
-    // that would 401/403; the home resume finishes the add after sign-in.
+    // that would 401/403; the home resume finishes the add after sign-in. A snapshot
+    // has no intent path (logged-in-only surface + a frozen payload is not a thin
+    // descriptor) — it just routes to login.
     if (!isLoggedIn()) {
       if (trackId)
         writePocketIntent({ itemType: 'track', trackId, title, bucketId: null })
+      else if (reviewTargetId)
+        writePocketIntent({ itemType: 'review', reviewTargetId, title, bucketId: null })
       else if (albumId)
         writePocketIntent({ itemType: 'album', albumId, title, bucketId: null })
       void goLogin()
       return
     }
+    setAsQueue(false)
     setLoading(true)
     listBuckets()
       .then((t) => {
@@ -103,7 +125,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
       })
       .catch(() => showToast({ label: '버킷을 불러오지 못했어요', undo: null }))
       .finally(() => setLoading(false))
-  }, [trackId, albumId, title, showToast])
+  }, [trackId, albumId, reviewTargetId, title, showToast])
 
   // resume / explicit auto-open. `open` is a stable useCallback, so this runs once
   // (on mount when autoOpen is set); the intent is already single-drained upstream.
@@ -122,20 +144,32 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
       return
     busy.current = true
     try {
+      // One branch per kind; review/snapshot seed `note` with the title so the
+      // board/tray tile renders a caption (they carry no display brief).
       const { item: added, conflict } = trackId ?
-        await addBucketTrack(bucketId, trackId) :
-        await addBucketItem(bucketId, albumId!)
+        (asQueue ? await addBucketPlayback(bucketId, trackId) : await addBucketTrack(bucketId, trackId)) :
+        reviewTargetId ?
+          await addBucketReview(bucketId, reviewTargetId, title) :
+          snapshotRef.current ?
+            await addBucketSnapshot(bucketId, snapshotRef.current, title) :
+            await addBucketItem(bucketId, albumId!)
       setSheetOpen(false)
       if (conflict) {
         showToast({ label: '이미 담겨 있어요', undo: null })
       }
       else if (added) {
+        // The menu writes past the shared bucketStore (SWR, 5-min window) — force a
+        // revalidate so the board/tray islands show the new member now, not on the
+        // next stale-window expiry. Fire-and-forget; the toast already confirmed.
+        void bucketStore.ensureFresh(true)
         showToast({
           label: `${title} 담음`,
           // Best-effort restore; swallow a network failure so a failed undo can't
           // surface as an unhandled rejection (the toast already reported the add).
           undo: () => {
-            deleteBucketItem(bucketId, added.itemId).catch(() => {})
+            deleteBucketItem(bucketId, added.itemId)
+              .then(() => bucketStore.ensureFresh(true))
+              .catch(() => {})
           },
         })
       }
@@ -147,7 +181,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
       busy.current = false
       onResolved?.()
     }
-  }, [trackId, albumId, title, showToast, onResolved])
+  }, [trackId, albumId, reviewTargetId, asQueue, title, showToast, onResolved])
 
   const entries: FlatBucket[] = []
   if (tree)
@@ -180,12 +214,32 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
                 «
                 {title}
                 »
-                {isTrack && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-subtle)', fontFamily: 'var(--font-mono, monospace)' }}> 트랙</span>}
+                {isTrack && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-subtle)', fontFamily: 'var(--font-mono, monospace)' }}>{asQueue ? ' 재생 큐' : ' 트랙'}</span>}
+                {reviewTargetId && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-subtle)', fontFamily: 'var(--font-mono, monospace)' }}> 평론</span>}
+                {isSnapshot && <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--color-subtle)', fontFamily: 'var(--font-mono, monospace)' }}> 스냅샷</span>}
                 {' '}
                 담기
               </span>
               <button type="button" onClick={cancel} aria-label="닫기" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-subtle)', fontSize: 15 }}>✕</button>
             </div>
+            {/* Track queue mode — 'track' de-dupes (collection), 'playback' appends a
+                duplicate-allowed queue entry (D8). Sits above the bucket list so the
+                choice is made before the destination. */}
+            {isTrack && (
+              <div role="group" aria-label="담기 방식" style={{ display: 'flex', gap: 6, margin: '0 4px 10px' }}>
+                {([[false, '트랙으로'], [true, '재생 큐로 (중복 허용)']] as const).map(([q, lbl]) => (
+                  <button
+	key={String(q)}
+	type="button"
+	aria-pressed={asQueue === q}
+	onClick={() => setAsQueue(q)}
+	style={{ padding: '5px 11px', fontSize: 11.5, borderRadius: 999, cursor: 'pointer', border: '1px solid var(--color-border)', background: asQueue === q ? 'var(--color-text)' : 'var(--color-bg)', color: asQueue === q ? 'var(--color-bg)' : 'var(--color-subtle)' }}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            )}
             {entries.length === 0 ?
               <div style={{ padding: '18px 12px', fontSize: 13, color: 'var(--color-faded)' }}>버킷이 없어요. /profile에서 먼저 버킷을 만들어 주세요.</div> :
               entries.map(e => (
