@@ -970,7 +970,7 @@ export function PocketTray() {
       {undo && (
         <div className="undo-rib" style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: `calc(${trayBottom} + ${sc(14)})`, width: 'auto', borderRadius: sc(4), zIndex: 73 }}>
           <span>{undo.label}</span>
-          <button type="button" onClick={runUndo}>되돌리기</button>
+          {undo.run && <button type="button" onClick={runUndo}>되돌리기</button>}
         </div>
       )}
     </div>

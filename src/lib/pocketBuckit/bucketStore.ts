@@ -61,6 +61,10 @@ const EMPTY: BucketStoreSnapshot = { tree: null, fetchedAt: 0, loading: false, e
 let current: BucketStoreSnapshot = EMPTY
 const listeners = new Set<() => void>()
 let inflight: Promise<void> | null = null
+// Monotonic id of the latest issued fetch. A resolving fetch only applies its
+// result when it is still the latest (`seq === fetchSeq`); an earlier fetch that
+// a later `force` superseded drops its (now-stale) result instead of overwriting.
+let fetchSeq = 0
 let seeded = false
 
 function emit(): void {
@@ -141,24 +145,36 @@ export const bucketStore = {
     const fresh = current.tree != null && (Date.now() - current.fetchedAt) < staleMs
     if (fresh && !force)
       return
-    if (inflight)
+    // A non-forced revalidate dedupes onto any in-flight fetch. A FORCED refresh
+    // (post-mutation / optimistic-failure rollback) must NOT join a possibly-stale
+    // in-flight fetch: that pre-mutation snapshot would resolve, get stamped fresh,
+    // and mask the mutation for the whole SWR window. So force always issues its own
+    // fetch; the fetchSeq guard drops the superseded in-flight result when it lands.
+    if (inflight && !force)
       return inflight
+    const seq = ++fetchSeq
     current = { ...current, loading: true }
     emit()
-    inflight = listBuckets()
+    const p = listBuckets()
       .then((tree) => {
+        if (seq !== fetchSeq)
+          return // a newer (forced) fetch superseded this one — drop the stale result
         current = { tree, fetchedAt: Date.now(), loading: false, error: null }
         writeCache()
         emit()
       })
       .catch((e: unknown) => {
+        if (seq !== fetchSeq)
+          return
         current = { ...current, loading: false, error: e instanceof Error ? e.message : 'load failed' }
         emit()
       })
       .finally(() => {
-        inflight = null
+        if (seq === fetchSeq)
+          inflight = null
       })
-    return inflight
+    inflight = p
+    return p
   },
   /** Optimistic local replace (a mutation patched the tree). Persists + notifies all islands. */
   setTree(tree: BoardBucket[]): void {
