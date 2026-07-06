@@ -49,6 +49,8 @@ type Density = 'compact' | 'regular' | 'comfy'
 
 const LAYOUT_KEY = 'lf_layout'
 const DENSITY_KEY = 'lf_density'
+const NP_STYLE_KEY = 'lf_np_style'
+const NP_STYLE_OPTS = ['banner', 'full', 'list'] as const
 
 const LAYOUT_OPTS: { v: Layout, label: string }[] = [
   { v: 'sidebar', label: '사이드바' },
@@ -312,7 +314,7 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       return next
     })
   }
-  const [npStyle, setNpStyle] = useState<NpStyle>('banner')
+  const [npStyle, setNpStyle] = useState<NpStyle>(() => readPref(NP_STYLE_KEY, NP_STYLE_OPTS, 'banner'))
   const [detail, setDetail] = useState<DetailTarget | null>(null)
   // FEAT-lyrics-viewer overlay state (ProfileApp owns overlay mounts — component
   // map). Two entries share one mount:
@@ -373,6 +375,12 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
     }
     catch { /* ignore */ }
   }, [density])
+  useEffect(() => {
+    try {
+      localStorage.setItem(NP_STYLE_KEY, npStyle)
+    }
+    catch { /* ignore */ }
+  }, [npStyle])
 
   const tabNav = (
     <div className="mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginBottom: 26, overflowX: 'auto' }}>

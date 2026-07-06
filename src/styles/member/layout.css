@@ -20,6 +20,10 @@
 @media (max-width: 880px) {
 	.lf-sidebar-grid { grid-template-columns: minmax(0, 1fr) !important; }
 	.lf-sidebar-grid > * { min-width: 0; }
+	/* Single-column: a sticky grid item's containing block is the whole grid,
+	   so the stacked hero would stay glued over the content row while it
+	   scrolls. !important beats the inline position:sticky. */
+	.lf-sidebar-grid > aside { position: static !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -97,13 +97,15 @@ export function Equalizer({ bars = 4, h = 16, playing = true }: { bars?: number,
       {Array.from({ length: bars }).map((_, i) => (
         <span
 	key={i}
+	className={playing ? 'lf-eq-bar' : undefined}
 	style={{
             width: 3,
             height: h,
             borderRadius: 1,
             background: i % 2 ? 'var(--color-accent)' : 'var(--color-text)',
             transformOrigin: 'bottom',
-            animation: playing ? `lf-eq ${0.7 + (i % 3) * 0.22}s ease-in-out ${i * 0.12}s infinite` : 'none',
+            animationDuration: `${0.7 + (i % 3) * 0.22}s`,
+            animationDelay: `${i * 0.12}s`,
             transform: playing ? undefined : 'scaleY(0.3)',
           }}
         />
