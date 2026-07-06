@@ -32,6 +32,21 @@ export type OnOpenLyrics = (t: LyricsOpenTarget) => void
 
 export type NpStyle = 'banner' | 'full' | 'list'
 
+/**
+ * Viewport-narrow flag (canonical 640px breakpoint) — drives the mobile size
+ * tier (cover / padding / type scale). Media-query listener, never polled.
+ */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)')
+    const on = (e: MediaQueryListEvent) => setNarrow(e.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return narrow
+}
+
 /** Relative freshness label for the snapshot timestamp. */
 function fmtSince(iso?: string | null): string {
   if (!iso)
@@ -54,27 +69,31 @@ function SyncNote({ iso }: { iso?: string | null }) {
   const s = fmtSince(iso)
   if (!s)
     return null
-  return <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{`동기화 ${s}`}</span>
+  // Bare freshness ("3시간 전") — the adjacent ↻ button carries the sync
+  // semantic; the old "동기화 …" prefix pushed narrow columns into a wrap.
+  return <span className="mono" title={`동기화 ${s}`} style={{ fontSize: 11, color: 'var(--color-faded)', whiteSpace: 'nowrap' }}>{s}</span>
 }
 
 /**
- * Sync note + the 「동기화」 button (FEAT-nowplaying-live-sync). The button
- * re-fires the one-shot live read; double-fire is guarded in the hook.
+ * Sync note + the ↻ button (FEAT-nowplaying-live-sync). The button re-fires
+ * the one-shot live read; double-fire is guarded in the hook. Compact icon
+ * (not a text button) so the control row fits a phone-width column.
  */
 function SyncControl({ iso, onSync, syncing }: { iso?: string | null, onSync?: () => void, syncing?: boolean }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
       <SyncNote iso={iso} />
       {onSync && (
         <button
 	type="button"
-	className="btn mono"
+	className="iconbtn mono"
 	onClick={onSync}
 	disabled={syncing}
 	aria-label="지금 재생 상태 동기화"
-	style={{ padding: '3px 8px', fontSize: 10.5, letterSpacing: '.06em', borderRadius: 3, whiteSpace: 'nowrap', flex: '0 0 auto' }}
+	title="동기화"
+	style={{ width: 26, height: 26, fontSize: 14, lineHeight: 1, flex: '0 0 auto' }}
         >
-          {syncing ? '…' : '동기화'}
+          {syncing ? '…' : '↻'}
         </button>
       )}
     </span>
@@ -106,7 +125,9 @@ function NpCover({ url, label, size, radius = 4 }: { url?: string | null, label:
  * Snapshot and live read fire in parallel on mount; a decisive live result
  * (`playing`/`idle`) wins regardless of arrival order, `unavailable` silently
  * keeps the snapshot. `sync()` re-fires the live read (동기화 button); the
- * busyRef guard makes it single-flight.
+ * busyRef guard makes it single-flight. Lives in the NowPlaying wrapper (not
+ * the variants) so a banner↔full↔list toggle re-renders without re-firing the
+ * snapshot GET + live Spotify read.
  */
 function useNowPlaying() {
   const [np, setNp] = useState<NowPlayingData | null>(null)
@@ -206,6 +227,16 @@ function useLatestPlayed(enabled: boolean): RecentTrackItem | null {
   return latest
 }
 
+/** The wrapper-owned data bundle every variant renders from. */
+interface NpShared {
+  np: NowPlayingData | null
+  state: 'loading' | 'ready' | 'error'
+  sync: () => Promise<void>
+  syncing: boolean
+  latest: RecentTrackItem | null
+  onOpenLyrics?: OnOpenLyrics
+}
+
 /**
  * The dynamic lyrics entry ("가사"). Rendered ONLY beside a live snapshot; the
  * tap performs the one-shot live read and opens on `playing`. Discovering the
@@ -243,15 +274,18 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       {state === 'failed' && <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>확인 실패</span>}
+      {/* Quiet text-link entry (not a boxed button) — same borderless control
+          family as the dashboard's 새로고침; keeps the narrow control row on
+          one line next to the ↻ iconbtn. */}
       <button
 	type="button"
-	className="btn mono"
+	className="mono"
 	onClick={() => {
           void click()
         }}
 	disabled={state === 'busy'}
 	aria-label="현재 재생 중인 곡 가사 보기"
-	style={{ padding: '4px 10px', fontSize: 10.5, letterSpacing: '.06em', borderRadius: 3, whiteSpace: 'nowrap', flex: '0 0 auto' }}
+	style={{ background: 'none', border: 'none', padding: '4px 2px', fontSize: 11, letterSpacing: '.06em', color: 'var(--color-text)', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)', whiteSpace: 'nowrap', flex: '0 0 auto' }}
       >
         {state === 'busy' ? '…' : '가사'}
       </button>
@@ -263,9 +297,11 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
 
 function IdleBox({ compact = false, iso, latest, onSync, syncing }: { compact?: boolean, iso?: string | null, latest?: RecentTrackItem | null, onSync?: () => void, syncing?: boolean }) {
   return (
-    <div className="panel" style={{ padding: compact ? 16 : 22, display: 'flex', alignItems: 'center', gap: 14 }}>
+    // minWidth 140 on the text cell forces the sync controls to wrap below it on
+    // narrow screens instead of squeezing the track title to nothing.
+    <div className="panel" style={{ padding: compact ? 16 : 22, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14, rowGap: 10 }}>
       <Equalizer playing={false} h={14} />
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 140 }}>
         <div className="kicker" style={{ color: 'var(--color-faded)', marginBottom: 4 }}>{latest ? '최근 재생' : 'NOW PLAYING'}</div>
         {latest ?
           (
@@ -276,38 +312,36 @@ function IdleBox({ compact = false, iso, latest, onSync, syncing }: { compact?: 
             ) :
           <div className="serif italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>}
       </div>
-      <SyncControl iso={iso} onSync={onSync} syncing={syncing} />
+      <span style={{ marginLeft: 'auto' }}><SyncControl iso={iso} onSync={onSync} syncing={syncing} /></span>
     </div>
   )
 }
 
 /* ── full variant ──────────────────────────────────────────────────────────── */
 
-function NowPlayingFull({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
-  const { np, state, sync, syncing } = useNowPlaying()
+function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics }: NpShared) {
+  const narrow = useNarrow()
   const onSync = () => {
     void sync()
   }
-  const idle = state === 'ready' && !liveSnapshot(np)
-  const latest = useLatestPlayed(idle)
   if (state === 'loading')
     return <div className="panel" style={{ padding: 18 }}><span className="meta">불러오는 중…</span></div>
   if (!np || !np.is_playing || !np.track)
     return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} />
   return (
-    <div className="panel" style={{ padding: 18, display: 'flex', gap: 18, alignItems: 'center' }}>
-      <NpCover url={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={88} radius={4} />
+    <div className="panel" style={{ padding: narrow ? 14 : 18, display: 'flex', gap: narrow ? 14 : 18, alignItems: 'center' }}>
+      <NpCover url={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={narrow ? 64 : 88} radius={4} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, rowGap: 6, marginBottom: 6 }}>
           <Equalizer playing h={12} />
-          <span className="kicker" style={{ color: 'var(--color-accent)' }}>NOW PLAYING</span>
-          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+          <span className="kicker" style={{ color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>NOW PLAYING</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, rowGap: 6, minWidth: 0 }}>
             {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
             <SyncControl iso={np.updated_at} onSync={onSync} syncing={syncing} />
           </span>
         </div>
-        <div className="serif italic" style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
-        <div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3 }}>
+        <div className="serif italic" style={{ fontSize: narrow ? 18 : 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
+        <div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {[np.artist, np.album].filter(Boolean).join(' — ')}
         </div>
       </div>
@@ -317,8 +351,7 @@ function NowPlayingFull({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
 
 /* ── list variant (now-playing + recently-listened albums) ───────────────────── */
 
-function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
-  const { np, state, sync, syncing } = useNowPlaying()
+function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics }: NpShared) {
   const onSync = () => {
     void sync()
   }
@@ -331,7 +364,6 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
     }
   }, [])
   const live = liveSnapshot(np)
-  const latest = useLatestPlayed(state === 'ready' && !live)
   return (
     <div className="panel" style={{ overflow: 'hidden' }}>
       {state === 'loading' ?
@@ -341,15 +373,15 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
               <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
                 <NpCover url={live.album_cover_url} label={live.album ?? live.track ?? '?'} size={50} radius={3} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    ● 재생 중
-                    <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <div className="kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: 8, rowGap: 4, alignItems: 'center' }}>
+                    <span style={{ whiteSpace: 'nowrap' }}>● 재생 중</span>
+                    <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8, rowGap: 4, minWidth: 0 }}>
                       {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
                       <SyncControl iso={live.updated_at} onSync={onSync} syncing={syncing} />
                     </span>
                   </div>
                   <div className="serif italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
-                  <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>{live.artist}</div>
+                  <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.artist}</div>
                 </div>
                 <Equalizer playing h={16} />
               </div>
@@ -367,7 +399,7 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
               <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.album?.title}</div>
               <div className="sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it.album?.artist_names ?? []).join(', ')}</div>
             </div>
-            <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em' }}>{fmtSince(it.last_played_at)}</span>
+            <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em', whiteSpace: 'nowrap', flex: '0 0 auto' }}>{fmtSince(it.last_played_at)}</span>
           </div>
         ))}
       </div>
@@ -377,13 +409,27 @@ function NowPlayingList({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
 
 /* ── banner variant (overview default) ───────────────────────────────────────── */
 
-function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
-  const { np, state, sync, syncing } = useNowPlaying()
+function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: NpShared) {
+  const narrow = useNarrow()
   const onSync = () => {
     void sync()
   }
   const live = liveSnapshot(np)
-  const latest = useLatestPlayed(state === 'ready' && !live)
+  // 2-line clamp instead of single-line ellipsis: the banner title is the
+  // centerpiece, and long titles were clipping to a handful of characters in
+  // narrow columns (worst on mobile).
+  const titleStyle = {
+    fontSize: narrow ? 'clamp(20px,5.8vw,26px)' : 'clamp(26px,3.4vw,38px)',
+    fontWeight: 500,
+    letterSpacing: '-.02em',
+    lineHeight: 1.08,
+    marginBottom: 6,
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    overflowWrap: 'anywhere',
+  } as const
   if (state === 'loading') {
     return (
       <div className="panel" style={{ padding: 24, borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: 0, borderRight: 0, borderRadius: 0 }}>
@@ -393,12 +439,12 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
   }
   return (
     <div className="panel" style={{ padding: 0, overflow: 'hidden', borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'var(--color-bg)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 22, padding: 24 }}>
-        <NpCover url={live ? live.album_cover_url : (latest?.album?.cover_url ?? null)} label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={116} radius={4} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 14 : 22, padding: narrow ? 16 : 24 }}>
+        <NpCover url={live ? live.album_cover_url : (latest?.album?.cover_url ?? null)} label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={narrow ? 84 : 116} radius={4} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="kicker" style={{ marginBottom: 8, display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+          <div className="kicker" style={{ marginBottom: 8, display: 'flex', flexWrap: 'wrap', gap: 10, rowGap: 6, alignItems: 'center' }}>
+            <span style={{ whiteSpace: 'nowrap', color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, rowGap: 6, minWidth: 0 }}>
               {live && onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
               <SyncControl iso={np?.updated_at} onSync={onSync} syncing={syncing} />
             </span>
@@ -407,21 +453,23 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
           {live ?
             (
                 <>
-                  <div className="serif italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
-                  <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
+                  <div className="serif italic" style={titleStyle}>{live.track}</div>
+                  <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: narrow ? 12 : 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {[live.artist, live.album].filter(Boolean).join(' — ')}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 30, marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: narrow ? 22 : 30, marginBottom: narrow ? 8 : 14 }}>
                     {Array.from({ length: 32 }).map((_, i) => (
                       <span
 	key={i}
+	className="lf-eq-bar"
 	style={{
                           flex: 1,
                           transformOrigin: 'bottom',
                           height: '100%',
                           background: i / 32 > 0.82 ? 'var(--color-accent)' : 'var(--color-text)',
                           opacity: i / 32 > 0.82 ? 1 : 0.65 - (i / 32) * 0.25,
-                          animation: `lf-eq ${0.5 + (i % 5) * 0.16}s ease-in-out ${i * 0.035}s infinite`,
+                          animationDuration: `${0.5 + (i % 5) * 0.16}s`,
+                          animationDelay: `${i * 0.035}s`,
                         }}
                       />
                     ))}
@@ -431,14 +479,14 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
             latest ?
               (
                   <>
-                    <div className="serif italic" style={{ fontSize: 'clamp(26px,3.4vw,38px)', fontWeight: 500, letterSpacing: '-.02em', lineHeight: 1, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latest.track_name}</div>
-                    <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: 18 }}>
+                    <div className="serif italic" style={titleStyle}>{latest.track_name}</div>
+                    <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: narrow ? 12 : 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {[latest.artist_name, latest.album_name].filter(Boolean).join(' — ')}
                     </div>
                   </>
                 ) :
               (
-                  <div className="serif italic" style={{ fontSize: 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
+                  <div className="serif italic" style={{ fontSize: narrow ? 'clamp(18px,5vw,22px)' : 'clamp(22px,3vw,30px)', fontWeight: 500, color: 'var(--color-subtle)', lineHeight: 1.1, padding: '6px 0 4px' }}>
                     재생 중 아님
                   </div>
                 )}
@@ -449,9 +497,15 @@ function NowPlayingBanner({ onOpenLyrics }: { onOpenLyrics?: OnOpenLyrics }) {
 }
 
 export function NowPlaying({ variant, onOpenLyrics }: { variant: NpStyle, onOpenLyrics?: OnOpenLyrics }) {
+  // Data lives here, above the variant switch: toggling 배너/플레이어/리스트
+  // remounts the variant component but must NOT re-fire the snapshot GET +
+  // one-shot live Spotify read (they used to run per variant mount).
+  const { np, state, sync, syncing } = useNowPlaying()
+  const latest = useLatestPlayed(state === 'ready' && !liveSnapshot(np))
+  const shared: NpShared = { np, state, sync, syncing, latest, onOpenLyrics }
   if (variant === 'list')
-    return <NowPlayingList onOpenLyrics={onOpenLyrics} />
+    return <NowPlayingList {...shared} />
   if (variant === 'banner')
-    return <NowPlayingBanner onOpenLyrics={onOpenLyrics} />
-  return <NowPlayingFull onOpenLyrics={onOpenLyrics} />
+    return <NowPlayingBanner {...shared} />
+  return <NowPlayingFull {...shared} />
 }

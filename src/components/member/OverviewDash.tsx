@@ -662,7 +662,7 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
 	className="panel"
 	style={{ padding: 18, transition: 'box-shadow .18s, border-color .18s', boxShadow: dragging ? '0 22px 50px -16px rgba(0,0,0,.45)' : undefined, borderColor: dragging ? 'color-mix(in srgb, var(--color-accent) 55%, var(--color-border))' : undefined }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, borderBottom: '1px solid var(--color-text)', paddingBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, rowGap: 8, marginBottom: 16, borderBottom: '1px solid var(--color-text)', paddingBottom: 10 }}>
         <span {...handleProps} className="lf-drag-handle mono" style={{ ...handleProps.style, color: dragging ? 'var(--color-accent)' : 'var(--color-faded)', fontSize: 15, lineHeight: 1, userSelect: 'none' }} title="드래그하여 순서 변경">⠿</span>
         <span className="mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{WIDGET_TITLES[id]}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>

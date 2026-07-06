@@ -14,6 +14,20 @@
 	0%, 100% { transform: scaleY(0.3); }
 	50% { transform: scaleY(1); }
 }
+
+/* Equalizer bar — name/timing live here so reduced-motion can switch it off;
+   each bar sets its own animation-duration/-delay inline (per-bar variance). */
+.lf-eq-bar {
+	animation-name: lf-eq;
+	animation-timing-function: ease-in-out;
+	animation-iteration-count: infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+	.lf-eq-bar {
+		animation: none;
+		transform: scaleY(0.45);
+	}
+}
 @keyframes lf-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes lf-slide {
 	from { transform: translateX(28px); opacity: 0; }
