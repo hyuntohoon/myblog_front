@@ -32,13 +32,15 @@ export default function PocketResume() {
   if (!intent)
     return null
 
-  // Reconstruct the add target from the drained intent — a track resumes a track
-  // add, an album resumes an album add (drain guarantees the matching id exists).
+  // Reconstruct the add target from the drained intent — each kind resumes its own
+  // add (drain guarantees the matching id exists). Snapshot has no intent path.
   const target: AddTarget | null = intent.itemType === 'track' && intent.trackId ?
     { itemType: 'track', trackId: intent.trackId, title: intent.title } :
-    intent.albumId ?
-      { itemType: 'album', albumId: intent.albumId, title: intent.title } :
-      null
+    intent.itemType === 'review' && intent.reviewTargetId ?
+      { itemType: 'review', reviewTargetId: intent.reviewTargetId, title: intent.title } :
+      intent.albumId ?
+        { itemType: 'album', albumId: intent.albumId, title: intent.title } :
+        null
   if (!target)
     return null
 

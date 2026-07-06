@@ -597,6 +597,38 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 	// Gate denominator = the in-scope population in the metric's own unit (plays or ms).
 	const gateTotal = metric === 'time' ? totals.total_ms : totals.total_streams
 
+	// Member-authoring follow-on — freeze EXACTLY what this view is displaying as an
+	// item_type='snapshot' membership (server-side the capture is an append-only
+	// bucket_item_snapshots row — a re-capture is a new member, never an update). The
+	// title doubles as the tile caption via `note` (no display brief in the contract).
+	const range = periodRange(period)
+	const snapshotTitle = `임포트 분석 · ${periodLabel(period)} · ${metric === 'time' ? `청취 ${fmtDur(totals.total_ms)}` : `재생 ${totals.total_streams.toLocaleString()}회`}`
+	const snapshotCapture = {
+		kind: 'period',
+		as_of: totals.as_of ?? new Date().toISOString(),
+		metric,
+		range_from: range.from,
+		range_to: range.to,
+		total: gateTotal,
+		unit: metric === 'time' ? 'ms' : 'plays',
+		unresolved: data.albums.unresolved ?? 0,
+		unclassified: data.genre.unclassified ?? 0,
+		source_album_ids: (data.albums.items ?? []).map(x => x.album.id),
+		frozen: {
+			source: 'stream-import-analysis',
+			period: periodLabel(period),
+			metric,
+			total_streams: totals.total_streams,
+			total_ms: totals.total_ms,
+			live_streams: live,
+			tracks: data.tracks.items,
+			artists: data.artists.items,
+			albums: (data.albums.items ?? []).map(x => ({ id: x.album.id, title: x.album.title, value: x.value })),
+			genres: data.genre.items,
+			eras: data.era.items,
+		},
+	}
+
 	// Period dropdown options derived from the real data (retrospective is lifetime).
 	const kY = kstNow().getUTCFullYear()
 	const dataYears = [...new Set((retro?.per_year ?? []).map(y => y.year))].sort((a, b) => b - a)
@@ -641,6 +673,11 @@ export function ImportAnalysis({ chartStyle }: { chartStyle: ChartStyle }) {
 					{metric === 'time' ? '오래 들은 순' : '많이 들은 순'}
 					{!loading && metric === 'time' && live > 0 ? ' · 라이브 시간 추정' : ''}
 				</span>
+				{!empty && !loading && (
+					<span style={{ marginLeft: 'auto' }}>
+						<AddToBucketMenu item={{ itemType: 'snapshot', snapshot: snapshotCapture, title: snapshotTitle }} label="스냅샷 담기" />
+					</span>
+				)}
 			</div>
 
 			{empty ?

@@ -170,9 +170,17 @@ const recordLabel = post.musicReview?.label ?? null
                   <PartialStars value={ratingForStars} max={5} size={28} />
                 </div>
               )}
-              {heroAlbumId && (
+              {(heroAlbumId || post.postId) && (
                 <div class="lfq-hero-actions">
-                  <AddToBucketMenu client:only="react" item={{ albumId: heroAlbumId, title: albumTitle ?? post.title }} />
+                  {heroAlbumId && (
+                    <AddToBucketMenu client:only="react" item={{ albumId: heroAlbumId, title: albumTitle ?? post.title }} />
+                  )}
+                  {/* Member-authoring follow-on — the review ITSELF as a bucket member
+                      (item_type='review', review_target_id = the DB post id from
+                      frontmatter). Public page: logged-out routes through pb:resume. */}
+                  {post.postId && (
+                    <AddToBucketMenu client:only="react" item={{ itemType: 'review', reviewTargetId: post.postId, title: post.title }} label="평론 담기" />
+                  )}
                 </div>
               )}
             </div>

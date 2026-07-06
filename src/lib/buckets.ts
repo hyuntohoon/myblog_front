@@ -135,19 +135,30 @@ export interface BoardBucket {
   children: BoardBucket[]
 }
 
-// Placeholder display title for the generalized-membership kinds that carry no
-// display payload yet (review/playback/snapshot) — so a non-album/track member
-// renders as a labeled tile instead of '제목 미상'. album/track use their brief.
-const TYPE_TITLE: Record<string, string> = { review: '평론', playback: '재생목록', snapshot: '스냅샷' }
+// Placeholder display title for the generalized-membership kinds when no display
+// payload resolves (a payload-less playback row, a caption-less review/snapshot
+// row) — so the tile stays labeled instead of '제목 미상'. album/track/playback use
+// their brief; review/snapshot prefer the auto-caption stashed in `note` at add time.
+const TYPE_TITLE: Record<string, string> = { review: '평론', playback: '재생 큐', snapshot: '스냅샷' }
 
 function mapItem(it: ApiItem): BoardAlbum {
   const a = it.album
   const tr = it.track
   const ar = it.artist
   const itemType = it.item_type ?? 'album'
-  const isTrack = itemType === 'track'
+  // A playback (queue) member is a track reference too — the serializer sends its
+  // TrackBrief for item_type in ('track','playback'), so both render identically.
+  const isTrack = itemType === 'track' || itemType === 'playback'
   const isArtist = itemType === 'artist'
   const rel = a?.release_date
+  // review/snapshot carry no display payload in BucketItemResponse; the add path
+  // seeds `note` with a display caption (review title / analysis-period summary),
+  // so a first-line-of-note title keeps the tile meaningful without a contract
+  // change. Scoped to those two kinds only — on an album row `note` is a user
+  // memo and must not surface as the title when the album relation is null.
+  const noteTitle = (itemType === 'review' || itemType === 'snapshot') ?
+    ((it.note ?? '').trim().split('\n')[0] || null) :
+    null
   return {
     itemId: it.id,
     itemType,
@@ -158,12 +169,11 @@ function mapItem(it: ApiItem): BoardAlbum {
     trackId: it.track_id ?? null,
     reviewTargetId: it.review_target_id ?? null,
     artistId: it.artist_id ?? null,
-    // FEAT-pocket-buckit Step 6: a track member renders from its TrackBrief
+    // FEAT-pocket-buckit Step 6: a track/playback member renders from its TrackBrief
     // (title + artist_names) so it never falls back to '제목 미상'. An artist member
-    // (FEAT-my-buckit-artist) renders its ArtistBrief name. Other non-album kinds
-    // (review/playback/snapshot) carry no display payload yet → a typed placeholder
-    // ('평론'/'재생목록'/'스냅샷') so the tile is labeled, not blank.
-    title: isArtist ? (ar?.name ?? '아티스트') : isTrack ? (tr?.title ?? '제목 미상') : (a?.title ?? TYPE_TITLE[itemType] ?? '제목 미상'),
+    // (FEAT-my-buckit-artist) renders its ArtistBrief name. review/snapshot render
+    // their note caption, falling back to the typed placeholder ('평론'/'스냅샷').
+    title: isArtist ? (ar?.name ?? '아티스트') : isTrack ? (tr?.title ?? '제목 미상') : (a?.title ?? noteTitle ?? TYPE_TITLE[itemType] ?? '제목 미상'),
     // An artist tile has no secondary line (the name is the title); a track shows
     // its artists; an album shows its artists.
     artist: isArtist ? '' : isTrack ? ((tr?.artist_names ?? []).join(', ') || '—') : ((a?.artist_names ?? []).join(', ') || '—'),
@@ -430,6 +440,43 @@ export async function addBucketTrack(bucketId: string, trackId: string): Promise
  */
 export async function addBucketArtist(bucketId: string, artistId: string): Promise<AddItemOutcome> {
   return postBucketItem(bucketId, { artist_id: artistId, item_type: 'artist' })
+}
+
+// ── FEAT-pocket-buckit member authoring — the remaining generalized kinds ───────
+// The backend has accepted these since Step 6 (backend #93); these are their first
+// front callers. `note` doubles as the tile display caption (see mapItem) — the
+// response carries no ReviewBrief/snapshot payload, so the caption is seeded at add
+// time instead of widening the contract.
+
+/**
+ * POST a review membership (item_type='review', review_target_id = the posts-table
+ * DB id). 409 on a duplicate review in the bucket (uq_review_bucket_items_review).
+ * `note` carries the review title as the tile caption.
+ */
+export async function addBucketReview(bucketId: string, reviewTargetId: string, note?: string): Promise<AddItemOutcome> {
+  return postBucketItem(bucketId, { review_target_id: reviewTargetId, item_type: 'review', ...(note ? { note } : {}) })
+}
+
+/**
+ * POST a playback (queue) membership (item_type='playback', track_id). Queues are
+ * ordered + duplicate-allowed (D8) — no 409 path; re-adding the same track appends
+ * another queue entry.
+ */
+export async function addBucketPlayback(bucketId: string, trackId: string): Promise<AddItemOutcome> {
+  return postBucketItem(bucketId, { track_id: trackId, item_type: 'playback' })
+}
+
+/** The frozen capture body for a snapshot membership (append-only server-side). */
+export type SnapshotCapture = components['schemas']['Backend_SnapshotCaptureRequest']
+
+/**
+ * POST a snapshot membership (item_type='snapshot' + the frozen capture). The
+ * server APPEND-ONLY inserts a bucket_item_snapshots side-row — a re-capture is a
+ * new member, never an update. Duplicates allowed (D8). `note` carries the
+ * period/metric caption as the tile title.
+ */
+export async function addBucketSnapshot(bucketId: string, snapshot: SnapshotCapture, note?: string): Promise<AddItemOutcome> {
+  return postBucketItem(bucketId, { item_type: 'snapshot', snapshot, ...(note ? { note } : {}) })
 }
 
 /** One credited artist as added/skipped by a source-expansion. */
