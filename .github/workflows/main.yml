@@ -5,6 +5,17 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege: default GITHUB_TOKEN is too broad; this workflow only reads this repo.
+# (The workspace-contracts checkout uses its own WORKSPACE_GITHUB_TOKEN PAT, not GITHUB_TOKEN,
+# and AWS deploy uses AWS_* secrets — so contents: read is sufficient.)
+permissions:
+  contents: read
+
+# Serialize prod deploys so out-of-order pushes can't overwrite newer S3/CloudFront content.
+concurrency:
+  group: front-deploy-prod
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -55,6 +66,12 @@ jobs:
 
   deploy:
     needs: check
+    # Production deploy is main-only. push already filters to main (on.push.branches), but
+    # workflow_dispatch can be invoked against ANY ref, so guard the ref explicitly — otherwise
+    # a dispatch from a feature branch would ship that branch's code to prod.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
