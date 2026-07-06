@@ -24,7 +24,9 @@ const EMPTY_BUCKETS: BoardBucket[] = []
 
 interface UndoState {
   label: string
-  run: () => Promise<void>
+  // Absent when the removal is not reversible (a non-album member has no album
+  // re-add path) — the toast then shows no 되돌리기 button instead of a dead one.
+  run?: () => Promise<void>
 }
 
 export interface DrawerPos { x: number, y: number }
@@ -258,17 +260,18 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   const removeItem = useCallback(async (bucketId: string, itemId: string, albumId: string | null, title: string) => {
     await deleteBucketItem(bucketId, itemId)
     void bucketStore.ensureFresh(true)
-    showUndo({
-      label: `${title} 제거됨 · 실행취소`,
-      // Undo re-adds by album_id, which only exists for album members. A
-      // non-album row can't be re-added through the album path, so the removal stands.
-      run: albumId ?
-        async () => {
+    // Undo re-adds by album_id, which only exists for album members. A non-album row
+    // can't be re-added through the album path, so its removal stands — offer no undo
+    // (no `run`, no "실행취소" affordance) rather than a button that silently no-ops.
+    showUndo(albumId ?
+      {
+        label: `${title} 제거됨 · 실행취소`,
+        run: async () => {
           await addBucketItem(bucketId, albumId)
           void bucketStore.ensureFresh(true)
-        } :
-        async () => {},
-    })
+        },
+      } :
+      { label: `${title} 제거됨` })
   }, [showUndo])
 
   const reorderBucket = useCallback(async (draggedId: string, targetId: string, place: 'before' | 'after') => {
@@ -317,7 +320,7 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   const runUndo = useCallback(() => {
     const u = undo
     setUndo(null)
-    if (u)
+    if (u?.run)
       void u.run()
   }, [undo])
 

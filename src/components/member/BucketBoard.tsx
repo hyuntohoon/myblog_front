@@ -818,7 +818,9 @@ function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: Ops): void {
   if (it.kind === 'album' && copyIn && it.albumId) {
     ops.copyAlbum(it.albumId, target.id)
   }
-  else if (it.kind === 'album' && it.itemId && it.fromBucketId) {
+  else if (it.kind === 'album' && it.itemId && it.fromBucketId && it.fromBucketId !== target.id) {
+    // Same-bucket guard (mirrors the artist branch): dropping a member on its own
+    // bucket would otherwise persist a spurious reorder (PUT /api/buckets/reorder).
     ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
   }
   else if (it.kind === 'bucket' && it.bucketId && it.bucketId !== target.id) {
@@ -1345,7 +1347,10 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
   // A 기존/preexisting Spotify-library album can't be trashed (req 4): removing it
   // wouldn't delete it from Spotify and the next sync re-pulls it anyway. myblog_added
   // library albums DO trash (→ next sync removes them from Spotify).
-  const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy && !(dnd.fromLib && dnd.source === 'preexisting')) || dnd.kind === 'bucket')
+  // `!!dnd.albumId`: only album members are trashable — the trash restores solely via
+  // the album re-add path, so a track/artist/review/playback row (albumId null) would
+  // vanish permanently on 복원. Reject the drop rather than offer a false recovery.
+  const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy && !!dnd.albumId && !(dnd.fromLib && dnd.source === 'preexisting')) || dnd.kind === 'bucket')
   return (
     <div
 	className="crate-trash-dock"
@@ -2287,6 +2292,11 @@ ids.push(a.albumId)
     if (tree == null)
       return
     const found = findAlbum(tree, itemId)
+    // Defense in depth (callers already gate on albumId): the trash can only restore
+    // album members via re-add, so never trash a non-album row — it would DELETE
+    // server-side and then be unrecoverable on 복원.
+    if (found && !found.album.albumId)
+      return
     const t = clone(tree)
     const src = findBucket(t, fromBucketId)
     if (src) {
@@ -2692,8 +2702,9 @@ ids.push(a.albumId)
               })
             }
             // 휴지통: normal items, and myblog_added library items (a 기존/preexisting
-            // library album can't be trashed — mirrors TrashDock.accepts()).
-            if (!s.copySource && !(s.fromLib && s.source === 'preexisting')) {
+            // library album can't be trashed — mirrors TrashDock.accepts()). `s.album.albumId`
+            // gates out non-album members that the trash can't restore (would vanish on 복원).
+            if (!s.copySource && !(s.fromLib && s.source === 'preexisting') && !!s.album.albumId) {
               list.push({
                 label: '휴지통으로',
                 danger: true,

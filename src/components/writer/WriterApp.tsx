@@ -44,7 +44,10 @@ function useIsWide(): boolean {
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  // KST wall-clock date: shift the instant so its UTC fields read as KST (robust to
+  // browser TZ), then slice. A plain UTC slice gives a KST writer YESTERDAY's date
+  // between 00:00 and 08:59. Mirrors ImportAnalysis.kstNow().
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10)
 }
 
 // Resolve a DB album id to the writer's AlbumDetail subject shape (music-API
