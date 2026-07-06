@@ -595,6 +595,38 @@
 	justify-content: space-between;
 	padding: 8px 16px 4px;
 }
+/* eyebrow + track identity (title/artist from the live read; absent on the
+   debug/static entries) */
+.lyv-head-id {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+	padding-right: 12px;
+}
+.lyv-title-block {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.lyv-title {
+	font-family: var(--font-sans);
+	font-size: 14.5px;
+	font-weight: 700;
+	color: #fff;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lyv-artist {
+	font-family: var(--font-sans);
+	font-size: 12px;
+	font-weight: 500;
+	color: rgba(255,255,255,0.6);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
 .lyv-eyebrow {
 	font-size: 9.5px;
 	font-weight: 500;
@@ -655,15 +687,17 @@
 }
 
 /* interleaved Korean translation under the original line — em-sized so it
-   scales with the focus emphasis; dimmer than its original in every tier */
+   scales with the focus emphasis. SAME color as its original (inherit): the
+   old --color-subtle gray was near-invisible on the dark backdrop (owner
+   report 2026-07-06). Hierarchy comes from size/weight only; the parent
+   line's tier opacity dims both together. */
 .lyv-line-ko {
 	display: block;
-	margin-top: 2px;
-	font-size: 0.66em;
+	margin-top: 3px;
+	font-size: 0.62em;
 	line-height: 1.5;
-	font-weight: 400;
-	color: var(--color-subtle);
-	opacity: 0.85;
+	font-weight: 500;
+	color: inherit;
 }
 
 /* refresh outcome line ("재생 중 아님" / read failed) — informative, not modal */
@@ -778,6 +812,54 @@
 	border-radius: var(--radius-sm);
 }
 .lyv-gap { letter-spacing: 0.5em; }
+
+/* ── 플랫 variant (data-lyv-style='flat') — Apple-Music-like reading surface
+   (owner reference screenshot 2026-07-06): the cover flattened into a muted
+   wash, left-aligned bold lines with the translation right under each one,
+   sung lines white / upcoming lines dark ink. Perf rules from the jank fix
+   hold: transitions stay opacity/transform-only — the per-tier COLOR here
+   snaps on class change (one small repaint into the line's existing layer,
+   never per-frame), and the focus scale/text-shadow are dropped. */
+.lyv-panel[data-lyv-style='flat'] .lyv-bg {
+	/* heavier blur + desaturation on the same downscaled layer → reads flat */
+	filter: blur(26px) saturate(0.65) brightness(0.72);
+}
+.lyv-panel[data-lyv-style='flat'] .lyv-bg-overlay {
+	/* flat veil instead of the vertical gradient */
+	background: rgba(52, 64, 74, 0.42);
+}
+.lyv-panel[data-lyv-style='flat'] .lyv-body::before { background: linear-gradient(to bottom, rgba(63,74,84,0.55), transparent); }
+.lyv-panel[data-lyv-style='flat'] .lyv-body::after { background: linear-gradient(to top, rgba(63,74,84,0.55), transparent); }
+.lyv-panel[data-lyv-style='flat'] .lyv-list {
+	max-width: 620px;
+	gap: 26px;
+}
+.lyv-panel[data-lyv-style='flat'] .lyv-line {
+	text-align: left;
+	font-size: clamp(24px, 5vw, 32px);
+	line-height: 1.22;
+	letter-spacing: -0.01em;
+	color: #fff;
+	opacity: 1;
+}
+.lyv-panel[data-lyv-style='flat'] .lyv-line.is-past { opacity: 0.42; }
+.lyv-panel[data-lyv-style='flat'] .lyv-line.is-ahead {
+	color: rgba(10, 16, 22, 0.92);
+	opacity: 0.85;
+}
+.lyv-panel[data-lyv-style='flat'] .lyv-line.is-focus {
+	color: #fff;
+	opacity: 1;
+	/* identity scale, NOT `none`: transform:none demotes the line's layer and
+	   the churn hitch returns (A/B-isolated 2026-07-06, 7→2 frames >33ms) */
+	transform: scale(1);
+	text-shadow: none;
+}
+.lyv-panel[data-lyv-style='flat'] .lyv-line-ko {
+	font-size: 0.6em;
+	font-weight: 400;
+	margin-top: 5px;
+}
 
 /* bottom rail — the auto/manual toggle only (Step 1: prev/next dropped in
    favor of the mode segmented toggle; manual nav stays via swipe/keys/tap).
