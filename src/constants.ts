@@ -5,6 +5,7 @@ export const SITE: Record<string, string> = {
 	url: 'https://www.ratemymusic.blog',
 	title: 'buckit',
 	titleDefault: 'buckit',
+	description: '앨범을 끝까지 듣고 쓰는 개인 음악 평론지 buckit — 음악을 듣고 · 쓰고 · 모으다. 정직한 앨범 평론과 장르별 탐색, 직접 고른 명반 컬렉션을 기록합니다.',
 	lang: 'ko-KR',
 	defaultOgImage: '', // no default OG asset yet — emit og:image only when a page supplies one (avoids 404 to /og-image.png)
 	defaultAuthor: 'hyuntohoon',
