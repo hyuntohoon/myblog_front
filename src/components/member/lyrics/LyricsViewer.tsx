@@ -175,7 +175,20 @@ const LyricsLine = memo(({ i, text, textKo, cls, register, onTap }: {
   </button>
 ))
 
-export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, canRefresh = false, onClose }: {
+/** localStorage key for the viewer style choice ('blur' | 'flat'). */
+const STYLE_KEY = 'lyv:style'
+type LyvStyle = 'blur' | 'flat'
+
+function readStoredStyle(): LyvStyle {
+  try {
+    return localStorage.getItem(STYLE_KEY) === 'flat' ? 'flat' : 'blur'
+  }
+  catch {
+    return 'blur'
+  }
+}
+
+export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, canRefresh = false, onClose }: {
   spotifyTrackId: string
   /** One-shot playback position from the dynamic entry; seeds the initial focus, never advances it. */
   initialProgressMs?: number | null
@@ -185,6 +198,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   initialDurationMs?: number | null
   /** Album cover URL from the dynamic entry; backs the Spotify-style blur backdrop (Step 2). Re-sync refreshes it. */
   initialAlbumCoverUrl?: string | null
+  /** Track title / artist from the dynamic entry's live read (display only — the debug/static entries have none and hide the block). Re-sync refreshes them. */
+  initialTrack?: string | null
+  initialArtist?: string | null
   /** Show the manual-refresh control (dynamic entry only — the debug entry has no playback binding). */
   canRefresh?: boolean
   onClose: () => void
@@ -199,6 +215,19 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // re-sync's readLivePlayback(). The dynamic entry passes it; the static/debug
   // entries have no cover and fall back to the neutral dark background.
   const [coverUrl, setCoverUrl] = useState<string | null>(initialAlbumCoverUrl)
+  // Track title/artist for the header (live entry only; refreshed per re-sync).
+  const [meta, setMeta] = useState<{ track: string | null, artist: string | null }>({ track: initialTrack, artist: initialArtist })
+  // Viewer style variant: 'blur' = the Spotify-like centered album-blur look,
+  // 'flat' = the Apple-Music-like left-aligned flat wash (owner request
+  // 2026-07-06, reference screenshot). Persisted per browser.
+  const [lyvStyle, setLyvStyle] = useState<LyvStyle>(readStoredStyle)
+  const pickStyle = (s: LyvStyle) => {
+    setLyvStyle(s)
+    try {
+      localStorage.setItem(STYLE_KEY, s)
+    }
+    catch { /* private mode — the choice just doesn't persist */ }
+  }
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -290,6 +319,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         // plain-only → manual. A user choice persists across an in-place
         // re-sync of the SAME track; a track swap re-derives the default.
         setMode(data.trackable ? 'auto' : 'manual')
+        // A finished translation shows by default (owner decision 2026-07-06);
+        // the 번역 toggle can still hide it. Re-derived per loaded track.
+        setShowKo(data.availability === 'ok' && data.translation?.status === 'done')
         const seed = pendingSeed.current
         pendingSeed.current = null
         // Seed BOTH the initial focus and the continuous clock anchor from the
@@ -328,6 +360,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         setNotice(null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
         setCoverUrl(r.albumCoverUrl)
+        setMeta({ track: r.track, artist: r.artist })
         setDurationMs(r.durationMs)
         if (r.trackId !== trackId) {
           // Track changed → swap segments; the load effect seeds both focus
@@ -444,12 +477,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
   }
 
-  // 번역 toggle interleaves/removes ko lines → line heights change → offsets
-  // must be re-measured (ordered before the centering effect below, which
-  // re-applies the now-fresh center on the same commit).
+  // 번역 toggle interleaves/removes ko lines and the style variant changes
+  // alignment/type size → line heights change → offsets must be re-measured
+  // (ordered before the centering effect below, which re-applies the
+  // now-fresh center on the same commit).
   useEffect(() => {
     measureRef.current = null
-  }, [showKo])
+  }, [showKo, lyvStyle])
 
   useEffect(() => {
     if (n === 0) {
@@ -461,7 +495,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     // no animation either way (CSS transition: none under the media query).
     applyCenter(focus, !positionedRef.current)
     positionedRef.current = true
-  }, [focus, n, showKo])
+  }, [focus, n, showKo, lyvStyle])
 
   // Re-center instantly on viewport changes (rotation, keyboard, resize) —
   // sizes changed, so drop the offset cache before re-measuring.
@@ -599,7 +633,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 
   return (
     <div className="scrim lyv-scrim" role="dialog" aria-modal="true" aria-label="가사 뷰어">
-      <div ref={panelRef} className="lyv-panel" onKeyDown={onKeyDown}>
+      <div ref={panelRef} className="lyv-panel" data-lyv-style={lyvStyle} onKeyDown={onKeyDown}>
         {/*
           Album-blur backdrop (FEAT-lyrics-auto-progression Step 2). The real
           cover as a CSS background-image + filter: blur() — CORS-free (no pixel
@@ -615,12 +649,20 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         />
         <div className="lyv-bg-overlay" aria-hidden="true" />
         <div className="lyv-head">
-          <span className="lyv-eyebrow mono">
-            Lyrics
-            {phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.source_kind ?
-              ` · ${phase.data.source_kind}` :
-              ''}
-          </span>
+          <div className="lyv-head-id">
+            <span className="lyv-eyebrow mono">
+              Lyrics
+              {phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.source_kind ?
+                ` · ${phase.data.source_kind}` :
+                ''}
+            </span>
+            {meta.track && (
+              <span className="lyv-title-block">
+                <span className="lyv-title">{meta.track}</span>
+                {meta.artist && <span className="lyv-artist">{meta.artist}</span>}
+              </span>
+            )}
+          </div>
           <div className="lyv-head-actions">
             {phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
               translation?.status === 'done' ?
@@ -701,7 +743,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                     const d = Math.abs(i - focus)
                     // 3-level emphasis (FEAT-lyrics-auto-progression Step 2):
                     // focus = current line; near = ±1 neighbor; far = the rest.
-                    const cls = i === focus ? 'lyv-line is-focus' : d === 1 ? 'lyv-line is-near' : 'lyv-line is-far'
+                    // The flat variant additionally reads direction (sung vs
+                    // upcoming), so past/ahead ride along; the blur variant
+                    // has no styles for them. Only lines around the crossing
+                    // change class per step, so the memo still holds.
+                    const tier = i === focus ? 'is-focus' : d === 1 ? 'is-near' : 'is-far'
+                    const rel = i < focus ? ' is-past' : i > focus ? ' is-ahead' : ''
+                    const cls = `lyv-line ${tier}${rel}`
                     return (
                       <LyricsLine
 	key={s.i}
@@ -743,6 +791,27 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	aria-label="수동 진행"
                 >
                   수동
+                </button>
+              </div>
+              {/* viewer style variant (owner request 2026-07-06): 블러 = the
+                  centered album-blur look, 플랫 = the Apple-Music-like
+                  left-aligned flat wash. Persisted per browser. */}
+              <div className="lyv-mode" role="group" aria-label="가사 화면 스타일">
+                <button
+	type="button"
+	className={lyvStyle === 'blur' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
+	onClick={() => pickStyle('blur')}
+	aria-pressed={lyvStyle === 'blur'}
+                >
+                  블러
+                </button>
+                <button
+	type="button"
+	className={lyvStyle === 'flat' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
+	onClick={() => pickStyle('flat')}
+	aria-pressed={lyvStyle === 'flat'}
+                >
+                  플랫
                 </button>
               </div>
               {/*
