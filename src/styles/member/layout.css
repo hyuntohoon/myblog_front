@@ -836,8 +836,8 @@
 }
 .lyv-panel[data-lyv-style='flat'] .lyv-line {
 	text-align: left;
-	font-size: clamp(24px, 5vw, 32px);
-	line-height: 1.22;
+	font-size: clamp(28px, 6.2vw, 40px);
+	line-height: 1.2;
 	letter-spacing: -0.01em;
 	color: #fff;
 	opacity: 1;
