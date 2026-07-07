@@ -10,6 +10,7 @@ import type { ChangeEvent, KeyboardEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useMusicSearch } from '@lib/useMusicSearch'
 import { useDismissable } from '@lib/useDismissable'
+import { useScrollLock } from '@lib/useScrollLock'
 import { ResultRow, SourceTag } from '@components/search/atoms'
 import type { AddOutcome } from './AddAlbumModal'
 
@@ -41,13 +42,7 @@ export default function AddArtistModal({ bucketName, onAdd, onClose, existingArt
   }, [])
 
   // Lock background page scroll while the modal is open — only the results scroll.
-  useEffect(() => {
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prev
-    }
-  }, [])
+  useScrollLock()
 
   // Auto-search: debounce the DB search as the query changes. Spotify stays manual
   // (it enqueues SQS + has a 3 s cooldown).

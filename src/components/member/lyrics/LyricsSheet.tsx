@@ -23,6 +23,7 @@ import type { CSSProperties, PointerEvent, ReactNode, RefObject } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
+import { useScrollLock } from '@lib/useScrollLock'
 import { getLyrics, requestTranslation } from './lyrics.api'
 
 /** Header pointer handlers — the sheet's grab handle (move / tear). */
@@ -342,6 +343,8 @@ export function LyricsSheet({ spotifyTrackId, meta, onClose }: {
 }) {
 	const panelRef = useRef<HTMLDivElement>(null)
 	useDismissable(true, onClose, panelRef)
+	// Freeze the page behind the scrim (else the profile scrolls under the sheet).
+	useScrollLock()
 
 	// Free drag-to-reposition by the header. Offset rides on top of the scrim's
 	// flex-centering; loosely clamped so the header can never leave the viewport.

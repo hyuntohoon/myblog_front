@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { AlbumHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
 import { useDismissable } from '@lib/useDismissable'
+import { useScrollLock } from '@lib/useScrollLock'
 import { ResultRow, SourceTag } from '@components/search/atoms'
 
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
@@ -51,14 +52,8 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose, existingAlbu
   }, [])
 
   // Lock background page scroll while the modal is open — only the results area
-  // scrolls (item 5). Self-restores on close.
-  useEffect(() => {
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prev
-    }
-  }, [])
+  // scrolls (item 5).
+  useScrollLock()
 
   // Auto-search: debounce the DB search as the query changes (same UX as the
   // header search). Spotify stays manual — it enqueues SQS + has a 3 s cooldown.

@@ -32,6 +32,7 @@ import { prefetchAlbumDetail } from '@lib/albumDetail'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
+import { useScrollLock } from '@lib/useScrollLock'
 import ResearchNote from './ResearchNote'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
@@ -1826,15 +1827,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   useDismissable(!!researchTarget, () => setResearchTarget(null), researchPanelRef)
   // Lock background page scroll while the reading modal is open (only the modal
   // body scrolls). useDismissable handles ESC + focus, not scroll.
-  useEffect(() => {
-    if (!researchTarget)
-      return
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = prev
-    }
-  }, [researchTarget])
+  useScrollLock(!!researchTarget)
 
   // album_id → the member's own star rating (0–5). Feeds the rated-bucket chips
   // without any extra fetch (reviews are already server-built into props).

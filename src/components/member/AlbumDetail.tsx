@@ -22,6 +22,7 @@ import { updateBucketItemMemo } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { artistHref, reviewHref } from '@lib/entityLinks'
 import { useDismissable } from '@lib/useDismissable'
+import { useScrollLock } from '@lib/useScrollLock'
 import { TrackRow } from '../shared/TrackRow'
 import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
 import { LyricsSheet } from './lyrics/LyricsSheet'
@@ -69,6 +70,8 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore (mounted-when-open → open=true).
   useDismissable(true, onClose, cardRef)
+  // Freeze the page behind the scrim (else the profile scrolls under the modal).
+  useScrollLock()
 
   return (
     <div
@@ -457,6 +460,8 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
   // ESC + focus trap + focus restore. autoFocus off so MemoBody's own autoFocus
   // owns initial focus (the textarea, not the ✕) — zero-friction 쓰레기통 intent.
   useDismissable(true, onClose, cardRef, { autoFocus: false })
+  // Freeze the page behind the scrim (else the profile scrolls under the modal).
+  useScrollLock()
 
   // FEAT-lyrics-sheet PR 2 — the memo window is the sheet's dock host. A track
   // opens the sheet docked into the reserved right column (desktop) or as a
