@@ -722,6 +722,40 @@ export interface paths {
         patch: operations["update_me_api_me_patch"];
         trace?: never;
     };
+    "/api/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Members */
+        get: operations["list_members_api_members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/members/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Member */
+        get: operations["get_member_api_members__handle__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/batch": {
         parameters: {
             query?: never;
@@ -1062,6 +1096,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reviews/albums/{album_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Album Reviews */
+        get: operations["get_album_reviews_api_reviews_albums__album_id__get"];
+        /** Put Album Review */
+        put: operations["put_album_review_api_reviews_albums__album_id__put"];
+        post?: never;
+        /** Delete My Album Review */
+        delete: operations["delete_my_album_review_api_reviews_albums__album_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/{review_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Owner Delete Review */
+        delete: operations["owner_delete_review_api_reviews__review_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sections": {
         parameters: {
             query?: never;
@@ -1198,6 +1268,49 @@ export interface components {
             tokens_in?: number | null;
             /** Tokens Out */
             tokens_out?: number | null;
+        };
+        /**
+         * AlbumReviewAggregateResponse
+         * @description Album-page block: live avg/count + the full public review list.
+         */
+        Backend_AlbumReviewAggregateResponse: {
+            /** Album Id */
+            album_id: string;
+            /** Average */
+            average?: number | null;
+            /** Count */
+            count: number;
+            /** Reviews */
+            reviews?: components["schemas"]["Backend_AlbumReviewResponse"][];
+        };
+        /** AlbumReviewResponse */
+        Backend_AlbumReviewResponse: {
+            /** Album Id */
+            album_id: string;
+            author: components["schemas"]["Backend_ReviewAuthor"];
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Rating */
+            rating: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AlbumReviewUpsertRequest */
+        Backend_AlbumReviewUpsertRequest: {
+            /** Comment */
+            comment?: string | null;
+            /** Rating */
+            rating: number;
         };
         /**
          * ArtistBrief
@@ -1596,6 +1709,75 @@ export interface components {
             /** Id */
             id: string;
         };
+        /**
+         * MemberListResponse
+         * @description Handle index for the front's getStaticPaths (static profile prerender).
+         */
+        Backend_MemberListResponse: {
+            /** Members */
+            members?: components["schemas"]["Backend_MemberSummary"][];
+        };
+        /**
+         * MemberProfileResponse
+         * @description Public profile at /members/{handle}: identity + newest-first review feed.
+         */
+        Backend_MemberProfileResponse: {
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Display Name */
+            display_name: string;
+            /** Handle */
+            handle: string;
+            /** Review Count */
+            review_count: number;
+            /** Reviews */
+            reviews?: components["schemas"]["Backend_MemberReviewResponse"][];
+        };
+        /**
+         * MemberReviewResponse
+         * @description One row in a member's public profile feed — the review plus enough album
+         *     context to render + link without a second fetch.
+         */
+        Backend_MemberReviewResponse: {
+            /** Album Cover Url */
+            album_cover_url?: string | null;
+            /** Album Id */
+            album_id: string;
+            /** Album Title */
+            album_title: string;
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Rating */
+            rating: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** MemberSummary */
+        Backend_MemberSummary: {
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Handle */
+            handle: string;
+            /** Review Count */
+            review_count: number;
+        };
         /** MetricsBatchRequest */
         Backend_MetricsBatchRequest: {
             /** Slugs */
@@ -1880,6 +2062,20 @@ export interface components {
             per_year?: components["schemas"]["Backend_RetroYearStat"][];
             /** Today Kst */
             today_kst: string;
+        };
+        /**
+         * ReviewAuthor
+         * @description The public reviewer identity embedded in an album's review list.
+         */
+        Backend_ReviewAuthor: {
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Handle */
+            handle: string;
+            /** Id */
+            id: string;
         };
         /** ReviewedAlbumResponse */
         Backend_ReviewedAlbumResponse: {
@@ -4110,6 +4306,57 @@ export interface operations {
             };
         };
     };
+    list_members_api_members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_MemberListResponse"];
+                };
+            };
+        };
+    };
+    get_member_api_members__handle__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_MemberProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
     batch_metrics_api_metrics_batch_post: {
         parameters: {
             query?: never;
@@ -4857,6 +5104,130 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_ResearchStatusMapResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_album_reviews_api_reviews_albums__album_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AlbumReviewAggregateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_album_review_api_reviews_albums__album_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AlbumReviewUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AlbumReviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_album_review_api_reviews_albums__album_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    owner_delete_review_api_reviews__review_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

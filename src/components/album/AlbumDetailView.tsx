@@ -16,6 +16,7 @@ import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { artistHref } from '@lib/entityLinks'
 import { TrackRow } from '../shared/TrackRow'
 import { AlbumArt, fmtTime } from '../member/ui'
+import AlbumRatingBlock from './AlbumRatingBlock'
 
 // Static-lyrics entry (FEAT-lyrics-sheet). `meta` carries the header identity
 // the lyrics read itself does not (title/artist/album/cover).
@@ -161,6 +162,9 @@ export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyr
     <>
       <Header cover={a?.cover_url ?? cover} title={displayTitle} artist={artist} meta={metaParts} kicker="앨범" />
       {topSlot}
+      {/* FEAT-multi-user Phase 1: public community rating + signed-in write panel.
+          Renders on every album surface (public overlay + member modal). */}
+      <AlbumRatingBlock albumId={albumId} />
       {state === 'loading' ?
         <div className="meta" style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>불러오는 중…</div> :
         (state === 'error' || !data) ?
