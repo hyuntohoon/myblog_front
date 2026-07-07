@@ -756,6 +756,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/music/albums/on-this-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 오늘, 이 앨범들 (같은 월/일에 과거 발매된 앨범) */
+        get: operations["albums_on_this_day_api_music_albums_on_this_day_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/music/albums/{album_id}": {
         parameters: {
             query?: never;
@@ -2662,6 +2679,43 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["Music_ValidationError"][];
         };
+        /** OnThisDayArtist */
+        Music_OnThisDayArtist: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Spotify Id */
+            spotify_id?: string | null;
+        };
+        /** OnThisDayItem */
+        Music_OnThisDayItem: {
+            /** Album Id */
+            album_id: string;
+            /** Artists */
+            artists?: components["schemas"]["Music_OnThisDayArtist"][];
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Release Date */
+            release_date: string;
+            /** Spotify Album Id */
+            spotify_album_id?: string | null;
+            /** Title */
+            title: string;
+            /** Years Ago */
+            years_ago: number;
+        };
+        /** OnThisDayResult */
+        Music_OnThisDayResult: {
+            /** Day */
+            day: number;
+            /** Items */
+            items?: components["schemas"]["Music_OnThisDayItem"][];
+            /** Month */
+            month: number;
+            /** Total */
+            total: number;
+        };
         /** SearchResult */
         Music_SearchResult: {
             /** Items */
@@ -4107,6 +4161,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_AlbumDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    albums_on_this_day_api_music_albums_on_this_day_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_OnThisDayResult"];
                 };
             };
             /** @description Validation Error */

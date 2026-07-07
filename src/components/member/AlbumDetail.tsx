@@ -15,15 +15,16 @@
 //             with an "이미 발행됨" banner → 평론 보기 (/review/{slug}) + 수정 (/write?id).
 import type { DockState } from './lyrics/DockableLyricsSheet'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
-import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
+import type { AlbumDetail as AlbumDetailResp, MusicArtist } from '@lib/albumDetail'
 import type { DetailTarget, MemberReview } from '@lib/member'
+import type { OnOpenLyrics } from '../album/AlbumDetailView'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { updateBucketItemMemo } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
-import { artistHref, reviewHref } from '@lib/entityLinks'
+import { reviewHref } from '@lib/entityLinks'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
-import { TrackRow } from '../shared/TrackRow'
+import { AlbumDetailView, Header } from '../album/AlbumDetailView'
 import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
 import { LyricsSheet } from './lyrics/LyricsSheet'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
@@ -43,12 +44,6 @@ function useIsMobileHost(): boolean {
 }
 
 type Mode = 'info' | 'edit'
-// Static-lyrics entry (FEAT-lyrics-sheet). `meta` carries the header identity
-// the lyrics read itself does not (title/artist/album/cover).
-type OnOpenLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => void
-// Album-level identity for the lyrics header; the per-track title is added at
-// each row. Threaded RealBody → Info/Edit body → Tracklist.
-type AlbumLyricsMeta = Omit<LyricsSheetMeta, 'track'>
 
 export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, onOpenLyrics?: OnOpenLyrics }) {
   const published = album.albumId ? reviews.find(r => r.albumIds.includes(album.albumId!)) : undefined
@@ -90,182 +85,25 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
 	style={{ position: 'relative', width: '100%', maxWidth: 600, maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 34px 80px rgba(0,0,0,.42)', padding: '30px 30px 26px' }}
       >
         <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
-        {album.albumId ? <RealBody album={album} mode={mode} published={published} onOpenLyrics={onOpenLyrics} /> : <MinimalBody album={album} />}
+        {album.albumId ?
+          <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
+          <MinimalBody album={album} />}
       </div>
     </div>
   )
 }
 
-// Real album: fetch DB metadata (cover/tracklist/artists), then render the
-// mode-appropriate body. On fetch failure it degrades to a minimal card.
-function RealBody({ album, mode, published, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onOpenLyrics?: OnOpenLyrics }) {
-  const seed = album.albumId ? getCachedAlbumDetail(album.albumId) : null
-  const [data, setData] = useState<AlbumDetailResp | null>(seed)
-  const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
-
-  useEffect(() => {
-    if (!album.albumId) {
-      setState('error')
-      return
-    }
-    let alive = true
-    fetchAlbumDetail(album.albumId)
-      .then((json) => {
-        if (!alive)
-          return
-        if (json) {
-          setData(json)
-          setState('ok')
-        }
-        else {
-          setState('error')
-        }
-      })
-    return () => {
-      alive = false
-    }
-  }, [album.albumId])
-
-  const a = data?.album
-  const metaParts: string[] = []
-  if (a?.album_type)
-    metaParts.push(a.album_type.toUpperCase())
-  if (a?.release_date)
-    metaParts.push(a.release_date)
-  if (data?.tracks?.length)
-    metaParts.push(`${data.tracks.length}곡`)
-  if (a?.label)
-    metaParts.push(a.label)
-
+// ── published banner (edit-mode top slot) ──────────────────
+function PublishedBanner({ published }: { published?: MemberReview }) {
   return (
-    <>
-      <Header
-	cover={a?.cover_url ?? album.cover}
-	title={album.album}
-	artist={album.artist}
-	meta={metaParts}
-	kicker="앨범"
-      />
-
-      {state === 'loading' ?
-        <div className="meta" style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>불러오는 중…</div> :
-        (state === 'error' || !data) ?
-          (
-            <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-              <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{album.year ? `${album.year}년 발매` : '상세 정보를 불러오지 못했습니다'}</div>
-            </div>
-          ) :
-          mode === 'edit' ?
-            <EditBody published={published} tracks={data.tracks} onOpenLyrics={onOpenLyrics} albumMeta={{ artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }} /> :
-            <InfoBody artists={data.artists} tracks={data.tracks} year={album.year} onOpenLyrics={onOpenLyrics} albumMeta={{ artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }} />}
-    </>
-  )
-}
-
-// ── header (cover + title + meta) ────────────────────────────────────────────
-function Header({ cover, title, artist, meta, kicker }: { cover?: string | null, title: string, artist?: string, meta: string[], kicker: string }) {
-  return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', paddingRight: 28 }}>
-      <div style={{ width: 110, flex: '0 0 auto' }}><AlbumArt url={cover} label={title} size={110} /></div>
-      <div style={{ minWidth: 0, flex: 1, paddingTop: 2 }}>
-        <div className="kicker" style={{ marginBottom: 5 }}>{kicker}</div>
-        <h2 className="serif italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.14, margin: 0 }}>{title}</h2>
-        {artist && <div className="sans" style={{ fontSize: 13, color: 'var(--color-subtle)', marginTop: 6 }}>{artist}</div>}
-        {meta.length > 0 && (
-          <div className="mono" style={{ fontSize: 10.5, letterSpacing: '0.04em', color: 'var(--color-faded)', marginTop: 10, lineHeight: 1.5 }}>{meta.join(' · ')}</div>
-        )}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 20, padding: '12px 14px', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-paper)' }}>
+      <span className="meta" style={{ color: 'var(--color-accent)' }}>이미 발행된 평론</span>
+      {published?.rating != null && <Stars score={published.rating} size={14} />}
+      <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        {published?.slug && <a href={reviewHref(published.slug)} className="chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
+        {published?.postId && <a href={`/write?id=${published.postId}`} className="chip" style={{ textDecoration: 'none' }}>수정</a>}
       </div>
     </div>
-  )
-}
-
-// ── read-only tracklist (info / edit) ────────────────────────────────────────
-// Rows are the shared TrackRow (ARCH-entity-interaction-contract): the only
-// action granted here is `lyrics` (rows stay otherwise read-only), omitted for
-// tracks without a spotify_id — nothing to query the lyrics API with.
-function Tracklist({ tracks, onOpenLyrics, albumMeta }: { tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, albumMeta?: AlbumLyricsMeta }) {
-  if (tracks.length === 0)
-    return null
-  return (
-    <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-      <div className="meta" style={{ marginBottom: 10 }}>트랙리스트</div>
-      <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {tracks.map((t) => {
-          const sid = t.spotify_id
-          return (
-            <TrackRow
-	key={t.id}
-	as="li"
-	no={t.track_no ?? '·'}
-	title={t.title}
-	titleSuffix={t.feat_artist_names.length > 0 ?
-                <span className="sans" style={{ fontSize: 11.5, color: 'var(--color-faded)' }}>{` feat. ${t.feat_artist_names.join(', ')}`}</span> :
-                undefined}
-	cells={t.duration_sec != null ?
-                <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
-                undefined}
-	actions={onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid, { track: t.title, ...albumMeta }) } : {}}
-	style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border-soft)' }}
-            />
-          )
-        })}
-      </ol>
-    </div>
-  )
-}
-
-// ── info mode body (artists + tracklist) ─────────────────────────────────────
-function InfoBody({ artists, tracks, year, onOpenLyrics, albumMeta }: { artists: MusicArtist[], tracks: MusicTrack[], year?: number | null, onOpenLyrics?: OnOpenLyrics, albumMeta?: AlbumLyricsMeta }) {
-  return (
-    <>
-      {artists.length > 0 && (
-        <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-          <div className="meta" style={{ marginBottom: 12 }}>아티스트</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {artists.map(ar => (
-              <div key={ar.id} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                <div style={{ width: 40, flex: '0 0 auto' }}><AlbumArt url={ar.photo_url} label={ar.name} size={40} /></div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  {/* ARCH-entity-interaction-contract Step 3 — name links to the
-                      artist hub (the canonical artist detail surface, mirroring
-                      the tray/board artist-member click). */}
-                  <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    <a className="lf-artist-link" href={artistHref(ar.id)} title="아티스트 허브">{ar.name}</a>
-                  </div>
-                  {ar.genres.length > 0 && (
-                    <div className="mono" style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--color-faded)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{ar.genres.join(' · ')}</div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {tracks.length > 0 ?
-        <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} albumMeta={albumMeta} /> :
-        (
-          <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-            <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{year ? `${year}년 발매` : '발매 정보 없음'}</div>
-          </div>
-        )}
-    </>
-  )
-}
-
-// ── edit mode body (already published) ───────────────────────────────────────
-function EditBody({ published, tracks, onOpenLyrics, albumMeta }: { published?: MemberReview, tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, albumMeta?: AlbumLyricsMeta }) {
-  return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 20, padding: '12px 14px', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-paper)' }}>
-        <span className="meta" style={{ color: 'var(--color-accent)' }}>이미 발행된 평론</span>
-        {published?.rating != null && <Stars score={published.rating} size={14} />}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {published?.slug && <a href={reviewHref(published.slug)} className="chip" style={{ textDecoration: 'none' }}>평론 보기</a>}
-          {published?.postId && <a href={`/write?id=${published.postId}`} className="chip" style={{ textDecoration: 'none' }}>수정</a>}
-        </div>
-      </div>
-      <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} albumMeta={albumMeta} />
-    </>
   )
 }
 
