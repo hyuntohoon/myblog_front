@@ -395,6 +395,15 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
           {tb.label}
         </button>
       ))}
+      {/* FEAT-multi-user-accounts 0e: 계정 설정은 대시보드 탭이 아니라 별도
+          /settings 페이지 — 탭줄 끝에 진입 링크만 둔다. */}
+      <a
+	href="/settings/"
+	className="lf-tab-btn"
+	style={{ marginLeft: 'auto', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', color: 'var(--color-faded)', textDecoration: 'none', borderBottom: '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
+      >
+        설정 ↗
+      </a>
     </div>
   )
 

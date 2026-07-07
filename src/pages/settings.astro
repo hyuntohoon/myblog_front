@@ -1,0 +1,31 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import SettingsApp from '@components/member/SettingsApp'
+import '@styles/member.css'
+
+// /settings — 계정 설정 (FEAT-multi-user-accounts 0e). handle/표시 이름 편집 +
+// 계정 삭제(개인정보보호법). GET/PATCH/DELETE /api/me (backend 0d). Signup entry
+// opens with 0c — this page assumes an existing session (guard below).
+---
+
+<Layout>
+  <Seo slot="seo" forceTitle="설정" description="계정 설정 — 핸들·표시 이름 변경, 계정 삭제." />
+
+  <SkipNavContent>
+    <div class="settings-wrap">
+      <SettingsApp client:only="react" />
+    </div>
+  </SkipNavContent>
+</Layout>
+
+<style>
+  .settings-wrap {
+    max-width: var(--measure);
+    margin: 0 auto;
+    padding: 34px 20px 80px;
+  }
+</style>
+
+<script src="../scripts/profile.guard.ts"></script>
