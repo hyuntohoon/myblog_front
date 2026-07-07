@@ -26,11 +26,43 @@ function syncAuthUI() {
 // 초기 동기화
 syncAuthUI()
 
-// 이벤트 바인딩
-loginBtn?.addEventListener('click', () => {
-	// 로그인 후에는 항상 홈으로 이동한다(콜백 처리에서 결정).
-	goLogin(false)
+// ── Login popover (FEAT-multi-user social-login entry) ──
+// The Login button opens a small menu instead of redirecting straight to the
+// hosted UI. Each option deep-links to an IdP (data-idp → identity_provider);
+// the empty one falls through to the hosted UI (email + enabled IdPs). Login
+// always lands back on home via the shared /admin/callback.
+const loginMenu = $('#login-menu')
+
+function setLoginMenu(open: boolean) {
+	if (!loginMenu || !loginBtn)
+		return
+	loginMenu.hidden = !open
+	loginBtn.setAttribute('aria-expanded', String(open))
+}
+
+loginBtn?.addEventListener('click', (e) => {
+	e.stopPropagation()
+	setLoginMenu(loginMenu?.hidden ?? true)
 })
+
+// Clicks on the menu chrome (padding between options) must not dismiss it.
+loginMenu?.addEventListener('click', e => e.stopPropagation())
+
+loginMenu?.querySelectorAll<HTMLButtonElement>('.hdr-login-opt').forEach((opt) => {
+	opt.addEventListener('click', () => {
+		const idp = opt.dataset.idp
+		setLoginMenu(false)
+		void goLogin(false, idp === 'Google' || idp === 'Kakao' ? idp : undefined)
+	})
+})
+
+// Dismiss on outside-click and Esc (the menu itself stops propagation above).
+document.addEventListener('click', () => setLoginMenu(false))
+window.addEventListener('keydown', (e) => {
+	if (e.key === 'Escape' && loginMenu && !loginMenu.hidden)
+		setLoginMenu(false)
+})
+
 logoutBtn?.addEventListener('click', () => logout())
 
 window.addEventListener('popstate', syncAuthUI)
@@ -134,6 +166,7 @@ function syncActiveNav() {
 
 document.addEventListener('astro:after-swap', () => {
 	closeDrawer?.()
+	setLoginMenu(false)
 })
 document.addEventListener('astro:page-load', () => {
 	syncAuthUI()
