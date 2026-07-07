@@ -4,16 +4,21 @@
 // "tweaks panel" + prototype TopNav are dropped; the site header is the nav).
 import type { ReactNode } from 'react'
 import type { LyricsOpenTarget, NpStyle } from './NowPlaying'
+import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
 import { AlbumDetail } from './AlbumDetail'
 import { BucketBoard } from './BucketBoard'
+import { LyricsSheet } from './lyrics/LyricsSheet'
 import { LyricsViewer } from './lyrics/LyricsViewer'
 import { OverviewDash } from './OverviewDash'
 import { ReviewsTab } from './ReviewsTab'
 import { SpotifyIntegrationTab } from './SpotifyIntegrationTab'
 import { StatsTab } from './StatsTab'
 import { Avatar, Stat } from './ui'
+
+interface LiveLyrics { kind: 'live', trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null }
+interface StaticLyrics { kind: 'static', trackId: string, meta?: LyricsSheetMeta }
 
 const TABS = [
   { id: 'overview', label: '개요' },
@@ -322,22 +327,27 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
   //    position, refresh enabled (`live: true`).
   //  - Step 2 debug entry: `?lyrics=<spotify_track_id>` — no playback binding, no
   //    refresh. Closing strips the param so a reload doesn't reopen it.
-  const [lyrics, setLyrics] = useState<{ trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null, live: boolean } | null>(() => {
+  // Two viewers share one overlay slot (discriminated by `kind`):
+  //  - live   → the immersive LyricsViewer (NowPlaying tap: live track id +
+  //             one-shot position, refresh enabled).
+  //  - static → the LyricsSheet (FEAT-lyrics-sheet): a bright reading document
+  //             for review writing. TrackRow `lyrics` actions (AlbumDetail
+  //             tracklist / memo window / LikedBoard) + the `?lyrics=` debug
+  //             entry, all non-live (no playback binding). `meta` carries the
+  //             header identity the reads don't (title/artist/album/cover).
+  const [lyrics, setLyrics] = useState<LiveLyrics | StaticLyrics | null>(() => {
     if (typeof window === 'undefined')
       return null
     try {
       const id = new URLSearchParams(window.location.search).get('lyrics')
-      return id ? { trackId: id, progressMs: null, progressAtMs: null, durationMs: null, albumCoverUrl: null, track: null, artist: null, live: false } : null
+      return id ? { kind: 'static', trackId: id } : null
     }
     catch {
       return null
     }
   })
-  const openLyrics = (t: LyricsOpenTarget) => setLyrics({ trackId: t.trackId, progressMs: t.progressMs, progressAtMs: t.progressAtMs, durationMs: t.durationMs, albumCoverUrl: t.albumCoverUrl, track: t.track, artist: t.artist, live: true })
-  // ARCH-entity-interaction-contract Step 2 static entry: TrackRow `lyrics`
-  // actions (AlbumDetail tracklist / LikedBoard rows) open the same mount
-  // non-live — no playback binding, no refresh affordance.
-  const openStaticLyrics = (spotifyTrackId: string) => setLyrics({ trackId: spotifyTrackId, progressMs: null, progressAtMs: null, durationMs: null, albumCoverUrl: null, track: null, artist: null, live: false })
+  const openLyrics = (t: LyricsOpenTarget) => setLyrics({ kind: 'live', trackId: t.trackId, progressMs: t.progressMs, progressAtMs: t.progressAtMs, durationMs: t.durationMs, albumCoverUrl: t.albumCoverUrl, track: t.track, artist: t.artist })
+  const openStaticLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => setLyrics({ kind: 'static', trackId: spotifyTrackId, meta })
   const closeLyrics = () => {
     setLyrics(null)
     try {
@@ -457,7 +467,8 @@ export function ProfileApp({ reviews, profile }: { reviews: MemberReview[], prof
       )}
 
       {detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} onOpenLyrics={openStaticLyrics} />}
-      {lyrics && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} canRefresh={lyrics.live} onClose={closeLyrics} />}
+      {lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} canRefresh onClose={closeLyrics} />}
+      {lyrics?.kind === 'static' && <LyricsSheet key={lyrics.trackId} spotifyTrackId={lyrics.trackId} meta={lyrics.meta} onClose={closeLyrics} />}
     </div>
   )
 }
