@@ -1168,3 +1168,157 @@
 @media (prefers-reduced-motion: reduce) {
 	.lys-sheet { animation: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FEAT-lyrics-sheet PR 2 — drag tear / dock (DockableLyricsSheet + memo host).
+   Docking isn't a panel, it's a 봉합: while docked the sheet is the SAME paper
+   as the memo window (no border/shadow, only the perforation seam), and the
+   header can be grabbed to tear it off into a free-floating sheet. Constants
+   (TEAR_PX 70 · RESIST .35 · tilt ±2°) live in DockableLyricsSheet.tsx.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* the sheet once it is JS-positioned (fixed) by the dock mount — resets the
+   float card's relative/centered sizing + entrance animation, and installs the
+   dock/tear transition (top/left/size glide, shadow + seam crossfade). */
+.lys-sheet.is-mounted {
+	position: fixed;
+	width: auto;
+	max-width: none;
+	max-height: none;
+	animation: none;
+	transition:
+		top 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		left 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		width 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		height 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		box-shadow 0.42s, transform 0.3s ease, border-radius 0.42s, border-color 0.42s;
+	will-change: top, left, width, height, transform;
+	z-index: 2;
+}
+/* while grabbed: top/left follow the pointer raw (no glide); size/shadow/tilt
+   stay smooth. */
+.lys-sheet.is-mounted.is-grabbed {
+	transition: width 0.38s cubic-bezier(0.22, 0.85, 0.25, 1), height 0.38s cubic-bezier(0.22, 0.85, 0.25, 1), box-shadow 0.3s, transform 0.25s ease;
+}
+.lys-sheet.is-mounted.is-float { box-shadow: 0 34px 80px rgba(0, 0, 0, 0.45); }
+.lys-sheet.is-mounted.is-lifted { box-shadow: 0 40px 90px rgba(0, 0, 0, 0.5); }
+/* docked = the memo paper's right column: no card border/shadow, only the right
+   corners rounded — the left edge is the seam, not an edge. */
+.lys-sheet.is-mounted.is-docked {
+	border-color: transparent;
+	box-shadow: none;
+	border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+}
+
+/* perforation seam — sits ON the docked boundary (left: 0), a punched 절취선.
+   Hidden unless docked; turns accent while the tear is straining. */
+.lys-perf {
+	position: absolute;
+	top: 12px;
+	bottom: 12px;
+	left: 0;
+	width: 0;
+	border-left: 2px dotted var(--color-border);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.3s, border-color 0.15s;
+}
+.lys-sheet.is-docked .lys-perf { opacity: 1; }
+.lys-sheet.is-straining .lys-perf { border-color: var(--color-accent); }
+
+/* docked column is only 320px — stack the header (identity above the controls)
+   so the title stays readable and the action pills wrap under it instead of
+   crushing the title to zero width. */
+.lys-sheet.is-docked .lys-head { flex-direction: column; align-items: stretch; gap: 10px; padding: 16px 18px 12px 22px; }
+.lys-sheet.is-docked .lys-actions { justify-content: flex-start; }
+
+/* docked column is narrower than a float sheet — tighten the typography so the
+   lines don't wrap raggedly (mirrors the prototype's docked scale). */
+.lys-sheet.is-docked .lys-orig { font-size: 14px; }
+.lys-sheet.is-docked .lys-ko { font-size: 11.5px; }
+.lys-sheet.is-docked .lys-stanza-o { font-size: 13.5px; }
+.lys-sheet.is-docked .lys-stanza-k { font-size: 11px; }
+.lys-sheet.is-docked .lys-liner-art { width: 48px; height: 48px; }
+
+/* dim laid over the memo card once the sheet tears off & floats, so the free
+   sheet reads as lifted above the paper it left. Sits above the memo, below the
+   sheet (DOM order inside the memo scrim). */
+.lys-float-dim {
+	position: fixed;
+	inset: 0;
+	background: rgba(10, 9, 8, 0.42);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.4s;
+	z-index: 1;
+}
+.lys-float-dim.is-shown { opacity: 1; }
+
+/* ── memo window as a dock host — a full-height parking column ──────────────
+   The memo modal becomes a flex row: the memo paper (main) + the dock slot.
+   The slot reserves the sheet's width (animated 0 ⇄ 320) so the memo text never
+   runs under the docked sheet; the sheet itself is JS-positioned over it. */
+.memo-modal.has-dock { display: flex; padding: 0; align-items: stretch; }
+/* transparent by default (display:contents → the modal looks exactly as before,
+   close button anchored to the modal); a real padded flex column only when a
+   sheet is docked, so it sits left of the reserved slot. */
+.memo-dock-main { display: contents; }
+.has-dock .memo-dock-main { display: block; position: relative; flex: 1 1 auto; min-width: 0; padding: 26px 34px 28px; }
+.lys-dock-slot {
+	position: relative;
+	flex: 0 0 auto;
+	width: 320px;
+	align-self: stretch;
+	transition: width 0.42s cubic-bezier(0.22, 0.85, 0.25, 1);
+}
+.lys-dock-slot.is-collapsed { width: 0; }
+.lys-dock-hint {
+	position: absolute;
+	inset: 16px 12px;
+	border: 1.5px dashed var(--color-border);
+	border-radius: var(--radius-md);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-family: var(--font-mono);
+	font-size: var(--text-3xs);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+	white-space: nowrap;
+	overflow: hidden;
+	opacity: 0;
+	transition: opacity 0.25s, border-color 0.15s, color 0.15s, background 0.15s;
+}
+.lys-dock-hint.is-shown { opacity: 1; }
+.lys-dock-hint.is-expect {
+	border-color: var(--color-accent);
+	color: var(--color-accent);
+	background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+}
+
+/* the 분리/도킹 keyboard-equivalent button — a mono pill matching .lys-btn. */
+.lys-place {
+	font-family: var(--font-mono);
+	font-size: var(--text-2xs);
+	letter-spacing: 0.05em;
+	padding: 5px 10px;
+	border-radius: var(--radius-pill);
+	border: 1px solid var(--color-border);
+	background: none;
+	color: var(--color-faded);
+	cursor: pointer;
+	transition: color 0.12s, border-color 0.12s;
+}
+.lys-place:hover { color: var(--color-accent); border-color: var(--color-accent); }
+
+/* narrow (mobile float, no dock) — the header can't fit identity + all controls
+   on one row, so stack them (same remedy as the docked column). */
+@media (max-width: 767px) {
+	.lys-head { flex-direction: column; align-items: stretch; gap: 10px; }
+	.lys-actions { justify-content: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.lys-sheet.is-mounted, .lys-dock-slot, .lys-float-dim { transition: opacity 0.18s; }
+}

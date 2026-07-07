@@ -13,6 +13,7 @@
 //             cover + metadata + tracklist, read-only.
 //   · edit  — a bucket album that already has a published review: read-only detail
 //             with an "이미 발행됨" banner → 평론 보기 (/review/{slug}) + 수정 (/write?id).
+import type { DockState } from './lyrics/DockableLyricsSheet'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
 import type { DetailTarget, MemberReview } from '@lib/member'
@@ -22,7 +23,23 @@ import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { artistHref, reviewHref } from '@lib/entityLinks'
 import { useDismissable } from '@lib/useDismissable'
 import { TrackRow } from '../shared/TrackRow'
+import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
+import { LyricsSheet } from './lyrics/LyricsSheet'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
+
+// The memo window is a dock host: below this width (mobile) header-drag would
+// fight scrolling, so the sheet opens as a plain float instead of docking.
+function useIsMobileHost(): boolean {
+	const [mobile, setMobile] = useState(false)
+	useEffect(() => {
+		const mq = window.matchMedia('(max-width: 767px)')
+		const on = () => setMobile(mq.matches)
+		on()
+		mq.addEventListener('change', on)
+		return () => mq.removeEventListener('change', on)
+	}, [])
+	return mobile
+}
 
 type Mode = 'info' | 'edit'
 // Static-lyrics entry (FEAT-lyrics-sheet). `meta` carries the header identity
@@ -39,7 +56,7 @@ export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics
   // carries its bucket-item handle opens the memo "쓰레기통" window. Without the
   // handle (unexpected on a bucket surface) it degrades to the read-only info modal.
   if (album.writable && !published && album.albumId && album.bucketId && album.itemId)
-    return <MemoWindow album={album} onClose={onClose} onMemoSaved={onMemoSaved} onOpenLyrics={onOpenLyrics} />
+    return <MemoWindow album={album} onClose={onClose} onMemoSaved={onMemoSaved} />
 
   // edit when published + writable; otherwise read-only info (covers non-writable
   // surfaces AND the rare writable-but-no-handle fallback).
@@ -435,11 +452,27 @@ function uniqueGenres(artists: MusicArtist[]): string[] {
   return [...seen].slice(0, 4)
 }
 
-function MemoWindow({ album, onClose, onMemoSaved, onOpenLyrics }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, onOpenLyrics?: OnOpenLyrics }) {
+function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore. autoFocus off so MemoBody's own autoFocus
   // owns initial focus (the textarea, not the ✕) — zero-friction 쓰레기통 intent.
   useDismissable(true, onClose, cardRef, { autoFocus: false })
+
+  // FEAT-lyrics-sheet PR 2 — the memo window is the sheet's dock host. A track
+  // opens the sheet docked into the reserved right column (desktop) or as a
+  // plain float (mobile). The sheet lives here (not in ProfileApp) so tearing /
+  // docking never crosses a remount boundary and reloads its lyrics.
+  const mobile = useIsMobileHost()
+  const [sheet, setSheet] = useState<{ trackId: string, meta?: LyricsSheetMeta } | null>(null)
+  const [dock, setDock] = useState<DockState>(INITIAL_DOCK)
+  const patchDock = useCallback((p: Partial<DockState>) => setDock(d => ({ ...d, ...p })), [])
+  const openSheet = (trackId: string, meta?: LyricsSheetMeta) => {
+    setDock(INITIAL_DOCK)
+    setSheet({ trackId, meta })
+  }
+  const closeSheet = () => setSheet(null)
+  const dockCapable = sheet != null && !mobile
+  const slotReserved = dockCapable && (dock.docked || dock.dragging)
 
   // album identity for the left column — same fetch/cache as the standard modal
   const seed = album.albumId ? getCachedAlbumDetail(album.albumId) : null
@@ -498,13 +531,14 @@ function MemoWindow({ album, onClose, onMemoSaved, onOpenLyrics }: { album: Deta
     >
       <div
 	ref={cardRef}
-	className={`memo-modal memo-modal-lg size-${size}${grow ? ' is-night' : ''}`}
+	className={`memo-modal memo-modal-lg size-${size}${grow ? ' is-night' : ''}${dockCapable ? ' has-dock' : ''}`}
 	onClick={e => e.stopPropagation()}
 	role="dialog"
 	aria-modal="true"
 	aria-labelledby="memo-dialog-title"
 	style={{ maxHeight: '92vh', overflowY: 'auto', animation: 'lf-rise .26s both' }}
       >
+       <div className="memo-dock-main">
         <button type="button" className="memo-x memo-x-abs" onClick={onClose} aria-label="닫기">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
@@ -544,14 +578,14 @@ function MemoWindow({ album, onClose, onMemoSaved, onOpenLyrics }: { album: Deta
                     const sid = t.spotify_id
                     const len = t.duration_sec != null ? fmtTime(t.duration_sec) : ''
                     const no = String(t.track_no ?? 0).padStart(2, '0')
-                    if (onOpenLyrics && sid) {
+                    if (sid) {
                       return (
                         <button
 	type="button"
 	key={t.id}
 	className="memo-trow memo-trow-btn"
 	title="가사 보기"
-	onClick={() => onOpenLyrics(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover })}
+	onClick={() => openSheet(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover })}
                         >
                           <span className="memo-trow-no">{no}</span>
                           <span className="memo-trow-title">{t.title}</span>
@@ -589,7 +623,27 @@ function MemoWindow({ album, onClose, onMemoSaved, onOpenLyrics }: { album: Deta
             </div>
           </section>
         </div>
+       </div>
+
+        {/* FEAT-lyrics-sheet PR 2 — reserved dock column (the sheet is placed over
+            it by DockableLyricsSheet). Collapses to 0 when the sheet floats, so
+            the memo reclaims the space; re-opens as a dashed drop target while a
+            floating sheet is being dragged. */}
+        {dockCapable && (
+          <div className={`lys-dock-slot${slotReserved ? '' : ' is-collapsed'}`} aria-hidden="true">
+            <div className={`lys-dock-hint${dock.dragging && !dock.docked ? ' is-shown' : ''}${dock.expect ? ' is-expect' : ''}`}>여기에 도킹</div>
+          </div>
+        )}
       </div>
+
+      {sheet && (mobile ?
+        <LyricsSheet key={sheet.trackId} spotifyTrackId={sheet.trackId} meta={sheet.meta} onClose={closeSheet} /> :
+        (
+            <>
+              <div className={`lys-float-dim${dock.docked ? '' : ' is-shown'}`} aria-hidden="true" />
+              <DockableLyricsSheet key={sheet.trackId} spotifyTrackId={sheet.trackId} meta={sheet.meta} onClose={closeSheet} hostRef={cardRef} dock={dock} patch={patchDock} />
+            </>
+          ))}
     </div>
   )
 }
