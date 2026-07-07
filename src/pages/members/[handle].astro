@@ -1,0 +1,42 @@
+---
+// FEAT-multi-user-accounts Phase 1 — public member profile /members/[handle].
+// Static site: getStaticPaths prebuilds a thin shell per member (from the public
+// member index), and the MemberProfile island fetches the full review feed at
+// runtime. Absorbs the old (never-shipped) /members stub. Included in the sitemap
+// automatically (static page, not in the astro.config filter) — SEO = the growth
+// channel for the review community.
+import MemberProfile from '@components/member/MemberProfile'
+import Seo from '@components/seo.astro'
+import Layout from '@layouts/layout.astro'
+
+interface MemberSummary { handle: string, display_name: string, avatar_url: string | null, review_count: number }
+
+export async function getStaticPaths() {
+	// Build-time member index from the backend (via CloudFront, which injects the
+	// edge_guard header). On any failure (offline/local build, API blip) fall back
+	// to zero prebuilt profiles — new members get a page on the next build that can
+	// reach the API. Only members with ≥1 review are indexed (backend list_members).
+	try {
+		const base = import.meta.env.PUBLIC_BACKEND_API_URL
+		const res = await fetch(`${base}/api/members`)
+		if (!res.ok)
+			return []
+		const data = (await res.json()) as { members: MemberSummary[] }
+		return (data.members ?? []).map(m => ({
+			params: { handle: m.handle },
+			props: { displayName: m.display_name, avatarUrl: m.avatar_url },
+		}))
+	}
+	catch {
+		return []
+	}
+}
+
+const handle = Astro.params.handle as string
+const { displayName, avatarUrl } = Astro.props as { displayName?: string, avatarUrl?: string | null }
+---
+
+<Layout>
+	<Seo slot="seo" forceTitle={displayName || handle} description={`${displayName || handle} 님의 앨범 평가 — RateMyMusic`} />
+	<MemberProfile client:only="react" handle={handle} displayName={displayName} avatarUrl={avatarUrl} />
+</Layout>
