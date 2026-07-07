@@ -13,6 +13,7 @@
 //             cover + metadata + tracklist, read-only.
 //   · edit  — a bucket album that already has a published review: read-only detail
 //             with an "이미 발행됨" banner → 평론 보기 (/review/{slug}) + 수정 (/write?id).
+import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
 import type { DetailTarget, MemberReview } from '@lib/member'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -24,15 +25,21 @@ import { TrackRow } from '../shared/TrackRow'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
 
 type Mode = 'info' | 'edit'
+// Static-lyrics entry (FEAT-lyrics-sheet). `meta` carries the header identity
+// the lyrics read itself does not (title/artist/album/cover).
+type OnOpenLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => void
+// Album-level identity for the lyrics header; the per-track title is added at
+// each row. Threaded RealBody → Info/Edit body → Tracklist.
+type AlbumLyricsMeta = Omit<LyricsSheetMeta, 'track'>
 
-export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
+export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, onOpenLyrics?: OnOpenLyrics }) {
   const published = album.albumId ? reviews.find(r => r.albumIds.includes(album.albumId!)) : undefined
 
   // FEAT-editor-buckit Step 3: a writable, not-yet-published 평론 버킷 album that
   // carries its bucket-item handle opens the memo "쓰레기통" window. Without the
   // handle (unexpected on a bucket surface) it degrades to the read-only info modal.
   if (album.writable && !published && album.albumId && album.bucketId && album.itemId)
-    return <MemoWindow album={album} onClose={onClose} onMemoSaved={onMemoSaved} />
+    return <MemoWindow album={album} onClose={onClose} onMemoSaved={onMemoSaved} onOpenLyrics={onOpenLyrics} />
 
   // edit when published + writable; otherwise read-only info (covers non-writable
   // surfaces AND the rare writable-but-no-handle fallback).
@@ -41,7 +48,7 @@ export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics
 }
 
 // ── standard 600px modal (info / edit) ───────────────────────────────────────
-function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onClose: () => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
+function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onClose: () => void, onOpenLyrics?: OnOpenLyrics }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore (mounted-when-open → open=true).
   useDismissable(true, onClose, cardRef)
@@ -71,7 +78,7 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
 
 // Real album: fetch DB metadata (cover/tracklist/artists), then render the
 // mode-appropriate body. On fetch failure it degrades to a minimal card.
-function RealBody({ album, mode, published, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onOpenLyrics?: (spotifyTrackId: string) => void }) {
+function RealBody({ album, mode, published, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onOpenLyrics?: OnOpenLyrics }) {
   const seed = album.albumId ? getCachedAlbumDetail(album.albumId) : null
   const [data, setData] = useState<AlbumDetailResp | null>(seed)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
@@ -129,8 +136,8 @@ function RealBody({ album, mode, published, onOpenLyrics }: { album: DetailTarge
             </div>
           ) :
           mode === 'edit' ?
-            <EditBody published={published} tracks={data.tracks} onOpenLyrics={onOpenLyrics} /> :
-            <InfoBody artists={data.artists} tracks={data.tracks} year={album.year} onOpenLyrics={onOpenLyrics} />}
+            <EditBody published={published} tracks={data.tracks} onOpenLyrics={onOpenLyrics} albumMeta={{ artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }} /> :
+            <InfoBody artists={data.artists} tracks={data.tracks} year={album.year} onOpenLyrics={onOpenLyrics} albumMeta={{ artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }} />}
     </>
   )
 }
@@ -156,7 +163,7 @@ function Header({ cover, title, artist, meta, kicker }: { cover?: string | null,
 // Rows are the shared TrackRow (ARCH-entity-interaction-contract): the only
 // action granted here is `lyrics` (rows stay otherwise read-only), omitted for
 // tracks without a spotify_id — nothing to query the lyrics API with.
-function Tracklist({ tracks, onOpenLyrics }: { tracks: MusicTrack[], onOpenLyrics?: (spotifyTrackId: string) => void }) {
+function Tracklist({ tracks, onOpenLyrics, albumMeta }: { tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, albumMeta?: AlbumLyricsMeta }) {
   if (tracks.length === 0)
     return null
   return (
@@ -177,7 +184,7 @@ function Tracklist({ tracks, onOpenLyrics }: { tracks: MusicTrack[], onOpenLyric
 	cells={t.duration_sec != null ?
                 <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
                 undefined}
-	actions={onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid) } : {}}
+	actions={onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid, { track: t.title, ...albumMeta }) } : {}}
 	style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border-soft)' }}
             />
           )
@@ -188,7 +195,7 @@ function Tracklist({ tracks, onOpenLyrics }: { tracks: MusicTrack[], onOpenLyric
 }
 
 // ── info mode body (artists + tracklist) ─────────────────────────────────────
-function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtist[], tracks: MusicTrack[], year?: number | null, onOpenLyrics?: (spotifyTrackId: string) => void }) {
+function InfoBody({ artists, tracks, year, onOpenLyrics, albumMeta }: { artists: MusicArtist[], tracks: MusicTrack[], year?: number | null, onOpenLyrics?: OnOpenLyrics, albumMeta?: AlbumLyricsMeta }) {
   return (
     <>
       {artists.length > 0 && (
@@ -215,7 +222,7 @@ function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtis
         </div>
       )}
       {tracks.length > 0 ?
-        <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} /> :
+        <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} albumMeta={albumMeta} /> :
         (
           <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
             <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{year ? `${year}년 발매` : '발매 정보 없음'}</div>
@@ -226,7 +233,7 @@ function InfoBody({ artists, tracks, year, onOpenLyrics }: { artists: MusicArtis
 }
 
 // ── edit mode body (already published) ───────────────────────────────────────
-function EditBody({ published, tracks, onOpenLyrics }: { published?: MemberReview, tracks: MusicTrack[], onOpenLyrics?: (spotifyTrackId: string) => void }) {
+function EditBody({ published, tracks, onOpenLyrics, albumMeta }: { published?: MemberReview, tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, albumMeta?: AlbumLyricsMeta }) {
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginTop: 20, padding: '12px 14px', border: '1px solid var(--color-border)', borderRadius: 6, background: 'var(--color-paper)' }}>
@@ -237,7 +244,7 @@ function EditBody({ published, tracks, onOpenLyrics }: { published?: MemberRevie
           {published?.postId && <a href={`/write?id=${published.postId}`} className="chip" style={{ textDecoration: 'none' }}>수정</a>}
         </div>
       </div>
-      <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} />
+      <Tracklist tracks={tracks} onOpenLyrics={onOpenLyrics} albumMeta={albumMeta} />
     </>
   )
 }
@@ -428,7 +435,7 @@ function uniqueGenres(artists: MusicArtist[]): string[] {
   return [...seen].slice(0, 4)
 }
 
-function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void }) {
+function MemoWindow({ album, onClose, onMemoSaved, onOpenLyrics }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, onOpenLyrics?: OnOpenLyrics }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore. autoFocus off so MemoBody's own autoFocus
   // owns initial focus (the textarea, not the ✕) — zero-friction 쓰레기통 intent.
@@ -528,13 +535,38 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
                 <div style={{ margin: '16px 0 9px', borderTop: '1px solid var(--color-border-soft)' }} />
                 <div className="meta" style={{ letterSpacing: '.12em' }}>{`트랙리스트 · ${data.tracks.length}곡`}</div>
                 <div className="memo-tracks">
-                  {data.tracks.map(t => (
-                    <div key={t.id} className="memo-trow">
-                      <span className="memo-trow-no">{String(t.track_no ?? 0).padStart(2, '0')}</span>
-                      <span className="memo-trow-title">{t.title}</span>
-                      <span className="memo-trow-len">{t.duration_sec != null ? fmtTime(t.duration_sec) : ''}</span>
-                    </div>
-                  ))}
+                  {data.tracks.map((t) => {
+                    // FEAT-lyrics-sheet: a track with a spotify_id opens the
+                    // lyrics sheet (the bucket-album entry that was missing —
+                    // the memo window replaced the shared TrackRow, so its rows
+                    // had no 가사 affordance). Without an id there is nothing to
+                    // query, so the row stays a plain read-only line.
+                    const sid = t.spotify_id
+                    const len = t.duration_sec != null ? fmtTime(t.duration_sec) : ''
+                    const no = String(t.track_no ?? 0).padStart(2, '0')
+                    if (onOpenLyrics && sid) {
+                      return (
+                        <button
+	type="button"
+	key={t.id}
+	className="memo-trow memo-trow-btn"
+	title="가사 보기"
+	onClick={() => onOpenLyrics(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover })}
+                        >
+                          <span className="memo-trow-no">{no}</span>
+                          <span className="memo-trow-title">{t.title}</span>
+                          <span className="memo-trow-len">{len}</span>
+                        </button>
+                      )
+                    }
+                    return (
+                      <div key={t.id} className="memo-trow">
+                        <span className="memo-trow-no">{no}</span>
+                        <span className="memo-trow-title">{t.title}</span>
+                        <span className="memo-trow-len">{len}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </>
             )}

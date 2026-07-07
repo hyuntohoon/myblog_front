@@ -378,6 +378,20 @@
 .memo-trow-no { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--color-faded); font-variant-numeric: tabular-nums; }
 .memo-trow-title { font-family: var(--font-serif); font-size: 13.5px; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .memo-trow-len { font-family: var(--font-mono); font-size: 10px; color: var(--color-faded); font-variant-numeric: tabular-nums; }
+/* a track row that opens the lyrics sheet (FEAT-lyrics-sheet) — button reset,
+   left-aligned to match the plain rows, with a hover affordance. */
+.memo-trow-btn {
+  width: 100%;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s;
+}
+.memo-trow-btn:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.memo-trow-btn:hover .memo-trow-title { color: var(--color-accent); }
+.memo-trow-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
 /* the single preserved path to the full editor */
 .memo-write-link { margin-top: 14px; text-align: right; }
@@ -965,4 +979,192 @@
 .lf-artist-link:hover {
 	color: var(--color-accent);
 	border-bottom-color: currentColor;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FEAT-lyrics-sheet — the STATIC lyrics viewer (LyricsSheet.tsx).
+   Paper-toned, theme-following (unlike the always-dark .lyv-* live viewer):
+   this is review-writing material, so it reads like the site's document
+   surfaces. Scrollbars are inherited from the global ink-tone rule. Two
+   typography modes share the card: .lys-doc (대역 문서) and .lys-liner (라이너).
+   ═══════════════════════════════════════════════════════════════════════════ */
+.lys-sheet {
+	position: relative;
+	width: 100%;
+	max-width: 600px;
+	max-height: 86vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--color-bg);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	box-shadow: 0 34px 80px rgba(0, 0, 0, 0.42);
+	overflow: hidden;
+	animation: lf-rise 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* header — grab-to-move handle (free-drag placement, PR 1) */
+.lys-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 18px 20px 14px 24px;
+	border-bottom: 1px solid var(--color-border-soft);
+	flex: 0 0 auto;
+	cursor: grab;
+	touch-action: none;
+}
+.lys-head:active { cursor: grabbing; }
+.lys-id { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.lys-eyebrow {
+	font-size: var(--text-3xs);
+	letter-spacing: 0.13em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+}
+.lys-title {
+	font-style: italic;
+	font-size: var(--text-lg);
+	font-weight: 500;
+	line-height: 1.15;
+	color: var(--color-text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lys-sub {
+	font-size: var(--text-sm);
+	color: var(--color-subtle);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lys-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+
+/* segmented 조판 toggle */
+.lys-seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--radius-pill); overflow: hidden; }
+.lys-seg button {
+	font-family: var(--font-mono);
+	font-size: var(--text-2xs);
+	padding: 5px 11px;
+	border: none;
+	background: none;
+	color: var(--color-faded);
+	cursor: pointer;
+	transition: color 0.12s, background 0.12s;
+}
+.lys-seg button.on { background: var(--color-text); color: var(--color-bg); }
+
+.lys-btn {
+	font-size: var(--text-2xs);
+	letter-spacing: 0.05em;
+	padding: 5px 11px;
+	border-radius: var(--radius-pill);
+	border: 1px solid var(--color-border);
+	background: none;
+	color: var(--color-text);
+	cursor: pointer;
+	transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.lys-btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.lys-btn.is-on { background: var(--color-accent); border-color: var(--color-accent); color: var(--on-accent); }
+.lys-btn:disabled { opacity: 0.4; cursor: default; }
+.lys-btn:disabled:hover { color: var(--color-text); border-color: var(--color-border); }
+.lys-tr-state { font-size: var(--text-2xs); letter-spacing: 0.05em; color: var(--color-faded); padding: 5px 4px; }
+.lys-x {
+	border: none;
+	background: none;
+	color: var(--color-faded);
+	font-size: var(--text-base);
+	line-height: 1;
+	cursor: pointer;
+	padding: 5px 6px;
+	transition: color 0.12s;
+}
+.lys-x:hover { color: var(--color-text); }
+
+.lys-note {
+	flex: 0 0 auto;
+	padding: 8px 24px;
+	font-size: var(--text-2xs);
+	color: var(--color-accent);
+	border-bottom: 1px solid var(--color-border-soft);
+}
+
+.lys-body { flex: 1; overflow-y: auto; padding: 20px 24px 28px; }
+
+.lys-status { padding: 30px 4px; color: var(--color-subtle); font-size: var(--text-md); }
+.lys-retry {
+	margin-top: 12px;
+	font-size: var(--text-xs);
+	letter-spacing: 0.08em;
+	color: var(--color-text);
+	background: none;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-pill);
+	padding: 8px 16px;
+	cursor: pointer;
+	transition: border-color 0.12s;
+}
+.lys-retry:hover { border-color: var(--color-accent); }
+
+/* ── 조판 A: 대역 문서 ── */
+.lys-line { margin: 0 0 4px; }
+.lys-orig {
+	display: block;
+	font-size: var(--text-md);
+	line-height: 1.5;
+	color: var(--color-text);
+}
+.lys-ko {
+	display: block;
+	font-size: var(--text-sm);
+	line-height: 1.55;
+	color: var(--color-faded);
+	padding: 2px 0 0 13px;
+	border-left: 2px solid var(--color-border-soft);
+	margin: 3px 0 10px;
+}
+.lys-gap { color: var(--color-border); font-size: var(--text-sm); letter-spacing: 0.4em; margin: 14px 0; }
+
+/* ── 조판 C: 라이너 노트 ── */
+.lys-liner { text-align: center; }
+.lys-liner-art {
+	width: 72px;
+	height: 72px;
+	margin: 2px auto 14px;
+	border-radius: var(--radius-sm);
+	background-size: cover;
+	background-position: center;
+	background-color: var(--color-paper);
+	box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+}
+.lys-stanza { margin: 0 0 6px; }
+.lys-stanza-rule { width: 40px; height: 1px; background: var(--color-border); margin: 18px auto; }
+.lys-stanza-o {
+	font-style: italic;
+	font-size: var(--text-md);
+	line-height: 1.66;
+	color: var(--color-text);
+	margin: 0;
+	white-space: pre-line;
+}
+.lys-stanza-k {
+	font-size: var(--text-sm);
+	line-height: 1.7;
+	color: var(--color-faded);
+	margin: 10px auto 0;
+	max-width: 42ch;
+	white-space: pre-line;
+}
+.lys-liner-src {
+	font-size: var(--text-3xs);
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--color-faded);
+	margin-top: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.lys-sheet { animation: none; }
 }
