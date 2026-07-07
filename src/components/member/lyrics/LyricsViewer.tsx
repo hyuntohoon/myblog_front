@@ -63,6 +63,7 @@ import type { KeyboardEvent, PointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
+import { useScrollLock } from '@lib/useScrollLock'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 
@@ -236,6 +237,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // centering after (re)load is instant, everything after animates.
   const positionedRef = useRef(false)
   useDismissable(true, onClose, panelRef)
+  // Freeze the page behind the viewer (it can open over the album-detail modal).
+  useScrollLock()
 
   const segs = phase.k === 'ready' && phase.data.availability === 'ok' ?
     (phase.data.segments ?? []) :
