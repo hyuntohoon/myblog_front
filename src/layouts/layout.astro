@@ -8,6 +8,7 @@ import Footer from '@components/footer.astro'
 import ThemeProvider from '@components/theme-provider.astro'
 import IosInstallHint from '@components/ios-install-hint.astro'
 import PocketBuckit from '@components/member/pocket/PocketBuckit'
+import AlbumOverlay from '@components/album/AlbumOverlay'
 import { pwaInfo } from 'virtual:pwa-info'
 
 import '../styles/global.css'
@@ -61,6 +62,12 @@ import '../styles/search.css';
 			open drawers) across ClientRouter navigations.
 		-->
 		<PocketBuckit client:only="react" transition:persist="pocket-buckit" />
+		<!--
+			ARCH-entity-interaction-unify Step 1 — app-wide read-only album overlay.
+			Un-gated (works on public pages, unlike PocketBuckit); opened by the
+			`ent:open-album` event any surface dispatches via openAlbum().
+		-->
+		<AlbumOverlay client:only="react" transition:persist="album-overlay" />
 		<IosInstallHint />
 	</body>
 </html>

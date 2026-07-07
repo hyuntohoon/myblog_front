@@ -19,3 +19,10 @@ export function artistHref(id: string): string {
 export function reviewHref(slug: string): string {
 	return `/review/${slug}/`
 }
+
+// ARCH-entity-interaction-unify Step 1 — albums have no route; they open the
+// app-wide read-only overlay via an event. Re-exported here so this file stays
+// the single entity-interaction contract point (artist → href, album → open).
+// Impl lives in entityEvents (public-safe, no member types).
+export { openAlbum } from './entityEvents'
+export type { OpenAlbumDetail } from './entityEvents'
