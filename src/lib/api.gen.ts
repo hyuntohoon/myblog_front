@@ -703,6 +703,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Me */
+        get: operations["get_me_api_me_get"];
+        put?: never;
+        post?: never;
+        /** Delete Me */
+        delete: operations["delete_me_api_me_delete"];
+        options?: never;
+        head?: never;
+        /** Update Me */
+        patch: operations["update_me_api_me_patch"];
+        trace?: never;
+    };
     "/api/metrics/batch": {
         parameters: {
             query?: never;
@@ -1542,6 +1561,24 @@ export interface components {
              */
             status: "none" | "requested" | "done" | "failed" | "stale";
         };
+        /** MeResponse */
+        Backend_MeResponse: {
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Display Name */
+            display_name: string;
+            /** Email */
+            email?: string | null;
+            /** Handle */
+            handle: string;
+            /** Id */
+            id: string;
+        };
         /** MetricsBatchRequest */
         Backend_MetricsBatchRequest: {
             /** Slugs */
@@ -2266,6 +2303,13 @@ export interface components {
             label?: string | null;
             /** Position */
             position?: number | null;
+        };
+        /** UpdateMeRequest */
+        Backend_UpdateMeRequest: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Handle */
+            handle?: string | null;
         };
         /** UpdatePostRequest */
         Backend_UpdatePostRequest: {
@@ -3928,6 +3972,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_LyricsTranslationInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_me_api_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_MeResponse"];
+                };
+            };
+        };
+    };
+    delete_me_api_me_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_me_api_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_UpdateMeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_MeResponse"];
                 };
             };
             /** @description Validation Error */
