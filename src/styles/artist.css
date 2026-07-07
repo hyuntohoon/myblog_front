@@ -183,6 +183,22 @@
 .art-disco-item { opacity: .66; transition: opacity .2s; }
 .art-disco-item:hover { opacity: 1; }
 .art-disco-grid.is-foreground .art-disco-item { opacity: 1; }
+/* ARCH-entity-interaction-unify Step 2: catalog albums with a DB id render as a
+   button (opens the read-only album overlay). Reset UA button chrome so the grid
+   item is visually identical to the id-less static div. */
+button.art-disco-item {
+	appearance: none;
+	display: block;
+	border: 0;
+	background: none;
+	padding: 0;
+	margin: 0;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	width: 100%;
+	cursor: pointer;
+}
 .art-disco-cover { transition: transform .28s cubic-bezier(.2, .7, .2, 1); }
 .art-disco-item:hover .art-disco-cover { transform: translateY(-3px); }
 .art-disco-title {

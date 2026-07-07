@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import type { ArtistReviewCard } from '../../lib/artistReviews'
 import type { AlbumListItem, ArtistHero, TopTrackItem } from '../../scripts/write/artistApi'
 import { fetchArtistAlbums, fetchArtistHero, fetchArtistTopTracks } from '../../scripts/write/artistApi'
-import { reviewHref } from '@lib/entityLinks'
+import { openAlbum, reviewHref } from '@lib/entityLinks'
 import { Cover, SectionTitle, Stars } from '../home/ui'
 
 interface Props {
@@ -189,21 +189,43 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 						catalog.length > 0 ?
 							(
 								<div className={`art-disco-grid${hasReviews ? '' : ' is-foreground'}`}>
-									{catalog.map(al => (
-										<div key={al.id ?? al.title} className="art-disco-item">
-											<div className="art-disco-cover">
-												<Cover label={al.title} src={al.cover_url} square />
-											</div>
-											<div className="art-disco-title">{al.title}</div>
-											<div className="art-disco-meta">
-												<span>
-													{al.release_date ? al.release_date.slice(0, 4) : ''}
-													{al.album_type ? ` · ${al.album_type}` : ''}
-												</span>
-												<span className="art-disco-unrated">아직 평론 없음</span>
-											</div>
-										</div>
-									))}
+									{catalog.map((al) => {
+										const body = (
+											<>
+												<div className="art-disco-cover">
+													<Cover label={al.title} src={al.cover_url} square />
+												</div>
+												<div className="art-disco-title">{al.title}</div>
+												<div className="art-disco-meta">
+													<span>
+														{al.release_date ? al.release_date.slice(0, 4) : ''}
+														{al.album_type ? ` · ${al.album_type}` : ''}
+													</span>
+													<span className="art-disco-unrated">아직 평론 없음</span>
+												</div>
+											</>
+										)
+										// ARCH-entity-interaction-unify Step 2: a catalog album is now
+										// clickable → the app-wide read-only album overlay (openAlbum).
+										// id-less catalog rows (Spotify-only, no DB album) stay static.
+										return al.id ?
+											(
+												<button
+													key={al.id}
+													type="button"
+													className="art-disco-item is-clickable"
+													onClick={() => openAlbum({ albumId: al.id!, title: al.title, artist: name, cover: al.cover_url, year: al.release_date ? Number.parseInt(al.release_date.slice(0, 4), 10) : null })}
+													aria-label={`${al.title} 앨범 상세 보기`}
+												>
+													{body}
+												</button>
+											) :
+											(
+												<div key={al.title} className="art-disco-item">
+													{body}
+												</div>
+											)
+									})}
 								</div>
 							) :
 							<p className="art-cov-empty-sub">등록된 앨범이 없습니다.</p>}
