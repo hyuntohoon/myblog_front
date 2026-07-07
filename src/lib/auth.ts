@@ -71,10 +71,20 @@ export function getAuthHeader(): Record<string, string> {
 
 // ─────────────────────── Login / Logout ─────────────────────────
 /**
+ * Cognito IdP identifiers registered on the user pool (workspace #565).
+ * Passing one deep-links straight to that provider's consent screen and
+ * skips the hosted-UI provider picker. Omit → the hosted UI (email +
+ * whatever IdPs are enabled).
+ */
+export type IdentityProvider = 'Google' | 'Kakao'
+
+/**
  * 로그인 시작. 로그인 완료 후에는 항상 홈(`/`)으로 이동한다(콜백 처리에서 결정).
  * @param force true이면 매번 로그인 폼 강제(prompt=login)
+ * @param identityProvider 지정 시 해당 IdP(Google/Kakao) 동의 화면으로 바로 딥링크
+ *   (`identity_provider`). 콜백은 기존 /admin/callback을 그대로 재사용한다.
  */
-export async function goLogin(force: boolean = false) {
+export async function goLogin(force: boolean = false, identityProvider?: IdentityProvider) {
 	// ENV guard
 	if (COGNITO_DOMAIN.includes('/')) {
 		console.error(
@@ -101,6 +111,8 @@ export async function goLogin(force: boolean = false) {
 	}
 	if (force)
 params.prompt = 'login'
+	if (identityProvider)
+params.identity_provider = identityProvider
 	url.search = new URLSearchParams(params).toString()
 
 	location.assign(url.toString())
