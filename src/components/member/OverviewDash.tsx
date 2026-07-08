@@ -14,6 +14,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { bucketCount, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
 import { useDismissable } from '@lib/useDismissable'
+import { LastfmNowPlaying } from './LastfmNowPlaying'
 import { NowPlaying } from './NowPlaying'
 import { listListenedAlbums, listRecentlyListened, listRecentTracks, refreshRecent } from './spotify.api'
 import { AlbumArt, BucketShortcut, SectionTitle, Seg, Stars } from './ui'
@@ -180,6 +181,7 @@ function ViewToggle({ value, onChange }: { value: ViewKey, onChange: (v: ViewKey
 /* ── widget registry ─────────────────────────────────────── */
 const WIDGET_TITLES: Record<string, string> = {
   'nowplaying': '지금 듣는 음악',
+  'lastfm-nowplaying': 'Last.fm 지금 듣기',
   'recent-albums': '최근 들은 앨범',
   'recent-tracks': '최근 재생 트랙',
   'listened-albums': '들은 앨범 (누적)',
@@ -479,6 +481,7 @@ function ListenedAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Det
 function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
   switch (id) {
     case 'nowplaying': return <NowPlaying variant={ctx.npStyle} onOpenLyrics={ctx.onOpenLyrics} />
+    case 'lastfm-nowplaying': return <LastfmNowPlaying />
     case 'recent-albums': return <RecentAlbumsWidget view={ctx.views['recent-albums']} onOpen={ctx.onOpen} />
     case 'recent-tracks': return <RecentTracksWidget view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
     case 'listened-albums': return <ListenedAlbumsWidget view={ctx.views['listened-albums']} onOpen={ctx.onOpen} />
