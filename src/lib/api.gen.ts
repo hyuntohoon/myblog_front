@@ -228,6 +228,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Integrations */
+        get: operations["list_integrations_api_integrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/lastfm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Connect Lastfm */
+        put: operations["connect_lastfm_api_integrations_lastfm_put"];
+        post?: never;
+        /** Disconnect Lastfm */
+        delete: operations["disconnect_lastfm_api_integrations_lastfm_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/lastfm/now-playing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lastfm Now Playing */
+        get: operations["lastfm_now_playing_api_integrations_lastfm_now_playing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/listened-albums": {
         parameters: {
             query?: never;
@@ -1466,6 +1518,11 @@ export interface components {
              */
             status: string;
         };
+        /** ConnectLastfmRequest */
+        Backend_ConnectLastfmRequest: {
+            /** Username */
+            username: string;
+        };
         /** CreateBucketRequest */
         Backend_CreateBucketRequest: {
             /** Color */
@@ -1616,6 +1673,37 @@ export interface components {
         Backend_HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["Backend_ValidationError"][];
+        };
+        /** IntegrationResponse */
+        Backend_IntegrationResponse: {
+            /** Last Synced At */
+            last_synced_at?: string | null;
+            /** Provider */
+            provider: string;
+            /** Status */
+            status: string;
+            /** Username */
+            username?: string | null;
+        };
+        /** IntegrationsResponse */
+        Backend_IntegrationsResponse: {
+            /** Integrations */
+            integrations: components["schemas"]["Backend_IntegrationResponse"][];
+        };
+        /** LastfmNowPlayingResponse */
+        Backend_LastfmNowPlayingResponse: {
+            /** Album */
+            album?: string | null;
+            /** Artist */
+            artist?: string | null;
+            /** Image Url */
+            image_url?: string | null;
+            /** Is Playing */
+            is_playing: boolean;
+            /** Played At */
+            played_at?: string | null;
+            /** Track */
+            track?: string | null;
         };
         /** ListenedAlbumItem */
         Backend_ListenedAlbumItem: {
@@ -3449,6 +3537,97 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_integrations_api_integrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_IntegrationsResponse"];
+                };
+            };
+        };
+    };
+    connect_lastfm_api_integrations_lastfm_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_ConnectLastfmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_IntegrationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_lastfm_api_integrations_lastfm_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    lastfm_now_playing_api_integrations_lastfm_now_playing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_LastfmNowPlayingResponse"];
                 };
             };
         };
