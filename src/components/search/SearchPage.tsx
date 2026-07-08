@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AlbumHit, ArtistHit, TrackHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
-import { artistHref, reviewHref } from '@lib/entityLinks'
+import { artistHref, openAlbum, reviewHref } from '@lib/entityLinks'
 import type { ReviewHit } from '@lib/reviewIndex'
 import { filterReviews, loadReviews } from '@lib/reviewIndex'
 import { GCover, GStars } from './atoms'
@@ -57,15 +57,29 @@ function ArtistCard({ a }: { a: ArtistHit }) {
 }
 
 function AlbumCard({ a }: { a: AlbumHit }) {
-	// non-navigable (no album page) — static figure
-	return (
-		<div className="gs-albcard is-static">
+	const body = (
+		<>
 			<div className="gs-albcard-cov"><GCover name={a.title} src={a.cover} size={0} /></div>
 			<div className="gs-albcard-body">
 				<h3 className="serif gs-albcard-title">{a.title}</h3>
 				<p className="mono gs-albcard-meta">{[a.artist, a.year].filter(Boolean).join(' · ')}</p>
 			</div>
-		</div>
+		</>
+	)
+	// ARCH-entity-interaction-unify Step 2: a DB-catalog album now opens the
+	// app-wide read-only album overlay (openAlbum). Spotify-only hits with no DB
+	// id stay a static figure (no album to fetch).
+	if (!a.id)
+		return <div className="gs-albcard is-static">{body}</div>
+	return (
+		<button
+			type="button"
+			className="gs-albcard"
+			onClick={() => openAlbum({ albumId: a.id!, title: a.title, artist: a.artist ?? undefined, cover: a.cover, year: a.year ? Number.parseInt(a.year, 10) : null })}
+			aria-label={`${a.title} 앨범 상세 보기`}
+		>
+			{body}
+		</button>
 	)
 }
 
