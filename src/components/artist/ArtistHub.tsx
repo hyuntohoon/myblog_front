@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react'
 import type { ArtistReviewCard } from '../../lib/artistReviews'
 import type { AlbumListItem, ArtistHero, TopTrackItem } from '../../scripts/write/artistApi'
 import { fetchArtistAlbums, fetchArtistHero, fetchArtistTopTracks } from '../../scripts/write/artistApi'
-import { openAlbum, reviewHref } from '@lib/entityLinks'
+import { openAlbum, openTrackAlbum, reviewHref } from '@lib/entityLinks'
 import { Cover, SectionTitle, Stars } from '../home/ui'
 
 interface Props {
@@ -236,9 +236,18 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 						<SectionTitle title="주요 트랙" />
 						<ol className="art-tt-list">
 							{topTracks.map((tk, i) => (
+								// ARCH-entity-interaction-unify Step 3: a top track opens the
+								// overlay for its album (Music_TrackItem.album_id is always set).
 								<li key={tk.id} className="art-tt-row">
-									<span className="art-tt-rank">{String(i + 1).padStart(2, '0')}</span>
-									<span className="art-tt-name">{tk.title}</span>
+									<button
+										type="button"
+										className="art-tt-open"
+										onClick={() => openTrackAlbum({ albumId: tk.album_id, albumTitle: tk.album_title, artist: tk.artist_name ?? name, cover: tk.cover_url })}
+										aria-label={`${tk.title}${tk.album_title ? ` — ${tk.album_title}` : ''} 앨범 상세 보기`}
+									>
+										<span className="art-tt-rank">{String(i + 1).padStart(2, '0')}</span>
+										<span className="art-tt-name">{tk.title}</span>
+									</button>
 								</li>
 							))}
 						</ol>
