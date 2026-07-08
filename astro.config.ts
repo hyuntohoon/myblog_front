@@ -102,8 +102,13 @@ export default defineConfig({
 						},
 					},
 					{
-						// Album/artist cover art (Spotify CDN) — capped SWR.
-						urlPattern: /^https:\/\/i\.scdn\.co\/.*/,
+						// Album/artist cover art (Spotify CDNs) — capped SWR. Matches both
+						// i.scdn.co and the newer *.spotifycdn.com image hosts (both in the
+						// CSP img-src/connect-src cover allowlist). NOTE: SW-revalidated
+						// covers are fetch()ed, so the cover CDN hosts MUST stay in CSP
+						// connect-src — omitting them net::ERR_FAILEDs every cached cover
+						// (FIX-csp-connect-src-cover-cdn, infra security_headers.js).
+						urlPattern: /^https:\/\/(i\.scdn\.co|[a-z0-9-]+\.spotifycdn\.com)\/.*/,
 						handler: 'StaleWhileRevalidate',
 						options: {
 							cacheName: 'cover-images',
