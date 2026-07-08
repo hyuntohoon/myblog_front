@@ -7,6 +7,8 @@ import type { Me } from './me.api'
 import { useEffect, useMemo, useState } from 'react'
 import { logout } from '@lib/auth'
 import { deleteMe, getMe, HANDLE_RE, HandleTakenError, OwnerUndeletableError, updateMe } from './me.api'
+import { connectLastfm, disconnectLastfm, getIntegrations  } from './integrations.api'
+import type { Integration } from './integrations.api'
 import { SectionTitle } from './ui'
 
 const FIELD_STYLE: React.CSSProperties = {
@@ -28,6 +30,113 @@ function Field({ label, hint, children }: { label: string, hint?: string, childr
 			{children}
 			{hint && <span className="meta" style={{ textTransform: 'none', letterSpacing: '0.02em' }}>{hint}</span>}
 		</label>
+	)
+}
+
+// FEAT-multi-user Phase 3a — Last.fm connect (username only, no OAuth). The worker
+// poll validates the handle on its first run (status → 'error' if not found).
+function LastfmConnect() {
+	const [loaded, setLoaded] = useState(false)
+	const [conn, setConn] = useState<Integration | null>(null)
+	const [username, setUsername] = useState('')
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState<string | null>(null)
+
+	useEffect(() => {
+		let on = true
+		getIntegrations().then((rows) => {
+			if (!on)
+				return
+			setConn(rows.find(r => r.provider === 'lastfm') ?? null)
+			setLoaded(true)
+		})
+		return () => {
+			on = false
+		}
+	}, [])
+
+	async function onConnect() {
+		const u = username.trim()
+		if (!u || busy)
+			return
+		setBusy(true)
+		setError(null)
+		const row = await connectLastfm(u)
+		setBusy(false)
+		if (!row) {
+			setError('연결하지 못했어요. 잠시 후 다시 시도해 주세요.')
+			return
+		}
+		setConn(row)
+		setUsername('')
+	}
+
+	async function onDisconnect() {
+		if (busy)
+			return
+		setBusy(true)
+		setError(null)
+		const ok = await disconnectLastfm()
+		setBusy(false)
+		if (!ok) {
+			setError('해제하지 못했어요. 잠시 후 다시 시도해 주세요.')
+			return
+		}
+		setConn(null)
+	}
+
+	if (!loaded)
+		return <p className="meta" style={{ margin: 0 }}>불러오는 중…</p>
+
+	if (conn) {
+		const isError = conn.status === 'error'
+		const statusLabel = isError ?
+			'사용자를 찾지 못했어요 — 이름을 확인하고 다시 연결해 주세요' :
+			conn.status === 'connected' ? '연결됨' : conn.status
+		return (
+			<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+					<span className="kicker">Last.fm</span>
+					<span className="mono" style={{ fontSize: 14 }}>{conn.username}</span>
+					<span className="meta" style={{ textTransform: 'none', color: isError ? 'var(--color-accent)' : 'var(--color-subtle)' }}>{`· ${statusLabel}`}</span>
+				</div>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
+					{error && <span className="meta" role="alert" style={{ color: 'var(--color-accent)', textTransform: 'none' }}>{error}</span>}
+					<button type="button" className="btn" disabled={busy} onClick={onDisconnect}>{busy ? '해제 중…' : '연결 해제'}</button>
+				</div>
+			</div>
+		)
+	}
+
+	return (
+		<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+			<p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)' }}>
+				Last.fm 사용자 이름을 연결하면 최근 들은 곡이 프로필에 나타나요. OAuth 없이 공개 프로필만 읽어요.
+			</p>
+			<Field label="Last.fm 사용자 이름">
+				<input
+					className="mono"
+					style={FIELD_STYLE}
+					value={username}
+					onChange={(e) => {
+						setUsername(e.target.value)
+						setError(null)
+					}}
+					onKeyDown={(e) => {
+ if (e.key === 'Enter')
+onConnect()
+}}
+					autoComplete="off"
+					spellCheck={false}
+					placeholder="username"
+					aria-label="Last.fm 사용자 이름"
+				/>
+			</Field>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
+				{error && <span className="meta" role="alert" style={{ color: 'var(--color-accent)', textTransform: 'none' }}>{error}</span>}
+				<button type="button" className="btn btn-solid" disabled={!username.trim() || busy} onClick={onConnect}>{busy ? '연결 중…' : '연결'}</button>
+			</div>
+		</div>
 	)
 }
 
@@ -199,12 +308,10 @@ export function SettingsApp() {
 								</div>
 							</section>
 
-							{/* 연동 — Phase 3 자리 (RFC: empty at first) */}
-							<section className="panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 10 }}>
+							{/* 연동 — FEAT-multi-user Phase 3a: Last.fm connect (Spotify tier + AI keys later) */}
+							<section className="panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
 								<div className="serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.1 }}>연동</div>
-								<p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)' }}>
-									아직 연결된 서비스가 없어요. 리스닝 기록 연동(Last.fm·Spotify)은 준비 중이에요.
-								</p>
+								<LastfmConnect />
 							</section>
 
 							{/* 계정 삭제 */}
