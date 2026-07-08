@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AlbumHit, ArtistHit, TrackHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
-import { artistHref, openAlbum, reviewHref } from '@lib/entityLinks'
+import { artistHref, openAlbum, openTrackAlbum, reviewHref } from '@lib/entityLinks'
 import type { ReviewHit } from '@lib/reviewIndex'
 import { filterReviews, loadReviews } from '@lib/reviewIndex'
 import { GCover, GStars } from './atoms'
@@ -93,8 +93,8 @@ feat.
   </span>
 	) :
 		null
-	return (
-		<div className="gs-trk">
+	const inner = (
+		<>
 			<span className="mono gs-trk-no">{String(no).padStart(2, '0')}</span>
 			<GCover name={t.title} src={t.cover} size={40} radius={2} />
 			<span className="gs-trk-main">
@@ -105,7 +105,21 @@ feat.
 {t.albumTitle ? ` · ${t.albumTitle}` : ''}
     </span>
 			</span>
-		</div>
+		</>
+	)
+	// ARCH-entity-interaction-unify Step 3: a track opens the overlay for its
+	// album. Spotify-only hits with no DB album id stay a static row.
+	if (!t.albumId)
+		return <div className="gs-trk is-static">{inner}</div>
+	return (
+		<button
+			type="button"
+			className="gs-trk"
+			onClick={() => openTrackAlbum({ albumId: t.albumId, albumTitle: t.albumTitle, artist: t.artist, cover: t.cover })}
+			aria-label={`${t.title}${t.albumTitle ? ` — ${t.albumTitle}` : ''} 앨범 상세 보기`}
+		>
+			{inner}
+		</button>
 	)
 }
 

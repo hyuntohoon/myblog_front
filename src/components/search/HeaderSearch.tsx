@@ -2,13 +2,15 @@
 // Replaces the Pagefind ⌘K dialog as the site's single global search. Public =
 // DB-only (no Spotify candidate rows). Dropdown groups 평론(reviews, from the
 // build-time index) + 아티스트/앨범/트랙 (unified search); artist/review rows
-// navigate (hub / review page), album/track rows are non-navigable (no page).
-// Enter on an active nav row goes there; otherwise → the full /search page.
-import { useEffect, useMemo, useRef, useState } from 'react'
+// navigate (hub / review page), album/track rows open the app-wide album
+// overlay (ARCH-entity-interaction-unify Step 3; id-less rows stay static).
+// Enter on an active row navigates or opens; otherwise → the full /search page.
+import { useEffect, useRef, useState } from 'react'
 import type { ReviewHit } from '@lib/reviewIndex'
+import type { AlbumHit, TrackHit } from '@lib/useMusicSearch'
 import { filterReviews, loadReviews } from '@lib/reviewIndex'
 import { useMusicSearch } from '@lib/useMusicSearch'
-import { artistHref, reviewHref } from '@lib/entityLinks'
+import { artistHref, openAlbum, openTrackAlbum, reviewHref } from '@lib/entityLinks'
 import { ResultRow } from './atoms'
 
 const DROPDOWN_LIMIT = 4
@@ -124,13 +126,34 @@ export default function HeaderSearch() {
 	const tracks = s.tracks.slice(0, DROPDOWN_LIMIT)
 	const total = reviews.length + artists.length + albums.length + tracks.length
 
-	// flat nav targets for keyboard ↑↓/Enter, in render order
-	const flatHref = useMemo<(string | null)[]>(() => [
-		...reviews.map(r => reviewHref(r.slug)),
-		...artists.map(a => (a.id ? artistHref(a.id) : null)),
-		...albums.map(() => null),
-		...tracks.map(() => null),
-	], [reviews, artists, albums, tracks])
+	// ARCH-entity-interaction-unify Step 3: album/track rows open the app-wide
+	// overlay (no page) instead of navigating; close the dropdown on open.
+	function openAlbumRow(a: AlbumHit) {
+		if (!a.id)
+			return
+		openAlbum({ albumId: a.id, title: a.title, artist: a.artist ?? undefined, cover: a.cover, year: a.year ? Number.parseInt(a.year, 10) : null })
+		setOpen(false)
+		setMobOpen(false)
+		inputRef.current?.blur()
+	}
+	function openTrackRow(t: TrackHit) {
+		if (!t.albumId)
+			return
+		openTrackAlbum({ albumId: t.albumId, albumTitle: t.albumTitle, artist: t.artist, cover: t.cover })
+		setOpen(false)
+		setMobOpen(false)
+		inputRef.current?.blur()
+	}
+
+	// flat keyboard targets (↑↓/Enter), in render order. Each entry is the row's
+	// activation: navigate (reviews/artists) or open the overlay (albums/tracks);
+	// null = a non-navigable row (id-less).
+	const flatAction: (null | (() => void))[] = [
+		...reviews.map(r => () => { window.location.href = reviewHref(r.slug) }),
+		...artists.map(a => (a.id ? () => { window.location.href = artistHref(a.id!) } : null)),
+		...albums.map(a => (a.id ? () => openAlbumRow(a) : null)),
+		...tracks.map(t => (t.albumId ? () => openTrackRow(t) : null)),
+	]
 
 	// scroll the active row into view
 	useEffect(() => {
@@ -152,7 +175,7 @@ export default function HeaderSearch() {
 		if (e.key === 'ArrowDown') {
 			e.preventDefault()
 			setOpen(true)
-			setActiveIdx(i => Math.min(flatHref.length - 1, i + 1))
+			setActiveIdx(i => Math.min(flatAction.length - 1, i + 1))
 		}
 		else if (e.key === 'ArrowUp') {
 			e.preventDefault()
@@ -160,9 +183,9 @@ export default function HeaderSearch() {
 		}
 		else if (e.key === 'Enter') {
 			e.preventDefault()
-			const href = activeIdx >= 0 ? flatHref[activeIdx] : null
-			if (href) {
-				window.location.href = href
+			const act = activeIdx >= 0 ? flatAction[activeIdx] : null
+			if (act) {
+				act()
 				return
 			}
 			submitAll(q)
@@ -336,7 +359,8 @@ export default function HeaderSearch() {
 															active={i === activeIdx}
 															onHover={() => setActiveIdx(i)}
 															idAttr={i}
-															action={{ type: 'static' }}
+															trailing={a.id ? <span className="gs-row-go mono" aria-hidden="true">상세 →</span> : undefined}
+															action={a.id ? { type: 'button', onClick: () => openAlbumRow(a) } : { type: 'static' }}
 														/>
 													)
 												})}
@@ -356,7 +380,8 @@ export default function HeaderSearch() {
 															active={i === activeIdx}
 															onHover={() => setActiveIdx(i)}
 															idAttr={i}
-															action={{ type: 'static' }}
+															trailing={t.albumId ? <span className="gs-row-go mono" aria-hidden="true">앨범 →</span> : undefined}
+															action={t.albumId ? { type: 'button', onClick: () => openTrackRow(t) } : { type: 'static' }}
 														/>
 													)
 												})}

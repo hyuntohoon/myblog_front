@@ -24,5 +24,5 @@ export function reviewHref(slug: string): string {
 // app-wide read-only overlay via an event. Re-exported here so this file stays
 // the single entity-interaction contract point (artist → href, album → open).
 // Impl lives in entityEvents (public-safe, no member types).
-export { openAlbum } from './entityEvents'
-export type { OpenAlbumDetail } from './entityEvents'
+export { openAlbum, openTrackAlbum } from './entityEvents'
+export type { OpenAlbumDetail, OpenTrackAlbumDetail } from './entityEvents'

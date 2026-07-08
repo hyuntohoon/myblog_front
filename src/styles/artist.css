@@ -246,6 +246,24 @@ button.art-disco-item {
 	color: var(--color-text);
 	text-wrap: pretty;
 }
+/* ARCH-entity-interaction-unify Step 3: top-track row is a button (opens the
+   album overlay). Reset UA chrome; carries the row's flex layout so rank+name
+   sit exactly as before. */
+.art-tt-open {
+	appearance: none;
+	display: flex;
+	align-items: baseline;
+	gap: 14px;
+	width: 100%;
+	text-align: left;
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+.art-tt-open:hover .art-tt-name { color: var(--color-accent); }
 
 .art-pending {
 	color: var(--color-subtle);

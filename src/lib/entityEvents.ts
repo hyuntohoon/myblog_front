@@ -29,3 +29,30 @@ export function openAlbum(detail: OpenAlbumDetail): void {
     return
   window.dispatchEvent(new CustomEvent<OpenAlbumDetail>(ENT_OPEN_ALBUM, { detail }))
 }
+
+// ARCH-entity-interaction-unify Step 3 — a track opens the album window for its
+// album (the album window is the canonical track destination in v1; play/add
+// stay reserved). The read stack resolves only the DB album id, so a track with
+// no `albumId` (Spotify-only hit) is non-navigable → no-op (RFC OQ4). Display
+// identity (album title / artist / cover) seeds the overlay header immediately.
+export interface OpenTrackAlbumDetail {
+  /** DB album id of the track's album; null/absent ⇒ non-navigable (no-op). */
+  albumId?: string | null
+  albumTitle?: string | null
+  artist?: string | null
+  cover?: string | null
+  year?: number | null
+}
+
+/** Open the album overlay for a track's album. No-op when the album id is null. */
+export function openTrackAlbum(t: OpenTrackAlbumDetail): void {
+  if (!t.albumId)
+    return
+  openAlbum({
+    albumId: t.albumId,
+    title: t.albumTitle ?? undefined,
+    artist: t.artist ?? undefined,
+    cover: t.cover,
+    year: t.year,
+  })
+}
