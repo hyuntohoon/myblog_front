@@ -19,6 +19,7 @@ import { reviewHref } from '@lib/entityLinks'
 import BrowseGenres from './BrowseGenres'
 import ByTheNumbers from './ByTheNumbers'
 import TodayAlbumBuckit from './TodayAlbumBuckit'
+import TodaySongBuckit from './TodaySongBuckit'
 import { Cover, SectionTitle, Stars } from './ui'
 
 /** Best New Music pick (built in index.astro from the review collection). */
@@ -167,6 +168,7 @@ export default function EditorialHome({ bnm, reviews, stats }: Props) {
 		<div className="bk-page">
 			{feature ? <Hero feature={feature} /> : <ColdStart />}
 			<Latest reviews={reviews} excludeSlug={feature?.slug} />
+			<Measure style={{ paddingTop: 56 }}><TodaySongBuckit /></Measure>
 			<Measure style={{ paddingTop: 56 }}><TodayAlbumBuckit /></Measure>
 			<Measure style={{ paddingTop: 56 }}><BrowseGenres /></Measure>
 			<Measure style={{ paddingTop: 56, paddingBottom: 40 }}><ByTheNumbers stats={stats} /></Measure>
