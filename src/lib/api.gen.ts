@@ -1218,6 +1218,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/todays-pick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Todays Pick
+         * @description Today's pick, or null on a no-pick day (home tile hides on null).
+         */
+        get: operations["get_todays_pick_api_todays_pick_get"];
+        /**
+         * Put Todays Pick
+         * @description Set today's pick. Upserts on pick_date = today; re-POST overwrites. The
+         *     server pins pick_date to today — the body carries the track's ids + display.
+         */
+        put: operations["put_todays_pick_api_todays_pick_put"];
+        post?: never;
+        /**
+         * Delete Todays Pick
+         * @description Clear today's pick ("unpost today"). 204 if a pick was removed; 404 if
+         *     nothing was posted today (re-PUT is the normal path to replace a pick).
+         */
+        delete: operations["delete_todays_pick_api_todays_pick_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/todays-pick/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Todays Pick History
+         * @description Date-desc history of past picks. `before` pages older entries.
+         */
+        get: operations["get_todays_pick_history_api_todays_pick_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1586,6 +1636,38 @@ export interface components {
             tags?: string[];
             /** Title */
             title: string;
+        };
+        /** DailyPickItem */
+        Backend_DailyPickItem: {
+            /** Album Id */
+            album_id: string;
+            /** Artist */
+            artist: string;
+            /** Cover Url */
+            cover_url?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Pick Date
+             * Format: date
+             */
+            pick_date: string;
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /** Title */
+            title: string;
+            /** Track Id */
+            track_id: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** DistItem */
         Backend_DistItem: {
@@ -2640,6 +2722,27 @@ export interface components {
             tags?: string[] | null;
             /** Title */
             title?: string | null;
+        };
+        /** UpsertTodaysPickRequest */
+        Backend_UpsertTodaysPickRequest: {
+            /**
+             * Album Id
+             * Format: uuid
+             */
+            album_id: string;
+            /** Artist */
+            artist: string;
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
         };
         /** ValidationError */
         Backend_ValidationError: {
@@ -5455,6 +5558,111 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_TagListResponse"];
+                };
+            };
+        };
+    };
+    get_todays_pick_api_todays_pick_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DailyPickItem"] | null;
+                };
+            };
+        };
+    };
+    put_todays_pick_api_todays_pick_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_UpsertTodaysPickRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DailyPickItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_todays_pick_api_todays_pick_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_todays_pick_history_api_todays_pick_history_get: {
+        parameters: {
+            query?: {
+                /** @description max picks to return */
+                limit?: number;
+                /** @description exclusive upper bound (ISO date) for paging older picks */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DailyPickItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };
