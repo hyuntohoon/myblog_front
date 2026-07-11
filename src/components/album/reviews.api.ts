@@ -66,6 +66,26 @@ export async function fetchMemberProfile(handle: string): Promise<MemberProfile 
 	}
 }
 
+export type MemberNowPlaying = components['schemas']['Backend_LastfmNowPlayingResponse']
+
+/**
+ * Public: a member's Last.fm now-playing (DB cache read). Returns null on any
+ * failure or when nothing is playing — the profile hides the section entirely
+ * (미연동 and idle are indistinguishable by design; integration status is private).
+ */
+export async function fetchMemberNowPlaying(handle: string): Promise<MemberNowPlaying | null> {
+	try {
+		const res = await fetch(`${BASE}/api/members/${handle}/now-playing`)
+		if (!res.ok)
+			return null
+		const np = (await res.json()) as MemberNowPlaying
+		return np.is_playing ? np : null
+	}
+	catch {
+		return null
+	}
+}
+
 /**
  * The signed-in member's own id (to find "my review" in a public list). null
  *  when logged out / unprovisioned. Rides the edge_guard GET proxy + lazy-create.

@@ -808,6 +808,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/members/{handle}/now-playing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Member Now Playing
+         * @description The member's public now-playing. Reads only the worker-written
+         *     lastfm_recent_tracks cache (rule #9 — never a synchronous Last.fm call).
+         *     404 for an unknown handle; is_playing=false covers both 'not connected'
+         *     and 'nothing playing' so a member's integration status stays private —
+         *     the profile page hides the section unless is_playing is true.
+         */
+        get: operations["member_now_playing_api_members__handle__now_playing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/metrics/batch": {
         parameters: {
             query?: never;
@@ -4626,6 +4650,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_MemberProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    member_now_playing_api_members__handle__now_playing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                handle: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_LastfmNowPlayingResponse"];
                 };
             };
             /** @description Validation Error */

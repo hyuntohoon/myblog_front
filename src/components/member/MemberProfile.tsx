@@ -3,11 +3,11 @@
 // off the public reviews API). Album titles open the app-wide read-only overlay
 // via openAlbum (no member DetailTarget). Seeded from getStaticPaths props so the
 // header paints before the runtime feed fetch resolves.
-import type { MemberProfile as Profile } from '../album/reviews.api'
+import type { MemberNowPlaying, MemberProfile as Profile } from '../album/reviews.api'
 import { useEffect, useState } from 'react'
 import { openAlbum } from '@lib/entityEvents'
-import { fetchMemberProfile } from '../album/reviews.api'
-import { Stars } from './ui'
+import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
+import { Cover, Stars } from './ui'
 
 function fmtDate(iso: string): string {
 	const d = new Date(iso)
@@ -31,9 +31,41 @@ function Avatar({ url, name, size = 64 }: { url?: string | null, name: string, s
 	)
 }
 
+// The member's public now-playing strip (FEAT-multi-user Phase 3a follow-on).
+// Rendered ONLY with an actively playing scrobble — 미연동/idle/fetch failure all
+// resolve to null upstream (fetchMemberNowPlaying) and the section never mounts.
+function NowPlayingStrip({ np }: { np: MemberNowPlaying }) {
+	return (
+		<section
+			aria-label="지금 듣는 중"
+			style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', border: '1px solid var(--color-border-soft)', borderRadius: 6 }}
+		>
+			{np.image_url ?
+				(
+					<img
+						src={np.image_url}
+						alt={np.album ?? np.track ?? 'Last.fm'}
+						loading="lazy"
+						decoding="async"
+						style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4, display: 'block', flex: '0 0 auto', border: '1px solid var(--color-border)' }}
+					/>
+				) :
+				<Cover label={np.album ?? np.track ?? 'Last.fm'} size={56} radius={4} />}
+			<div style={{ minWidth: 0, flex: 1 }}>
+				<div className="kicker" style={{ marginBottom: 4, whiteSpace: 'nowrap', color: 'var(--color-accent)' }}>● 지금 듣는 중</div>
+				<div className="serif italic" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
+				<div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+					{[np.artist, np.album].filter(Boolean).join(' — ')}
+				</div>
+			</div>
+		</section>
+	)
+}
+
 export default function MemberProfile({ handle, displayName, avatarUrl }: { handle: string, displayName?: string, avatarUrl?: string | null }) {
 	const [profile, setProfile] = useState<Profile | null>(null)
 	const [state, setState] = useState<'loading' | 'ok' | 'missing'>('loading')
+	const [np, setNp] = useState<MemberNowPlaying | null>(null)
 
 	useEffect(() => {
 		let alive = true
@@ -42,6 +74,10 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 				return
 			setProfile(p)
 			setState(p ? 'ok' : 'missing')
+		})
+		fetchMemberNowPlaying(handle).then((r) => {
+			if (alive)
+				setNp(r)
 		})
 		return () => {
 			alive = false
@@ -71,6 +107,8 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 					</div>
 				</div>
 			</header>
+
+			{np && <NowPlayingStrip np={np} />}
 
 			<section style={{ marginTop: 30, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
 				<div className="meta" style={{ marginBottom: 14 }}>평가한 앨범</div>
