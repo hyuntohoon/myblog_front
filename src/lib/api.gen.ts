@@ -985,6 +985,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/music/feed/new-releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 새 앨범 피드 (최근 발매 정규 앨범, 아티스트 인기순) */
+        get: operations["new_releases_api_music_feed_new_releases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/music/search/candidates": {
         parameters: {
             query?: never;
@@ -3090,6 +3107,46 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["Music_ValidationError"][];
         };
+        /** NewReleaseArtist */
+        Music_NewReleaseArtist: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Popularity */
+            popularity?: number | null;
+        };
+        /** NewReleaseItem */
+        Music_NewReleaseItem: {
+            /** Album Id */
+            album_id: string;
+            /** Artist Popularity */
+            artist_popularity?: number | null;
+            /** Artists */
+            artists?: components["schemas"]["Music_NewReleaseArtist"][];
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Release Date */
+            release_date: string;
+            /**
+             * Reviewed Artist
+             * @default false
+             */
+            reviewed_artist: boolean;
+            /** Spotify Album Id */
+            spotify_album_id?: string | null;
+            /** Title */
+            title: string;
+        };
+        /** NewReleasesResult */
+        Music_NewReleasesResult: {
+            /** Items */
+            items?: components["schemas"]["Music_NewReleaseItem"][];
+            /** Total */
+            total: number;
+            /** Window Days */
+            window_days: number;
+        };
         /** OnThisDayArtist */
         Music_OnThisDayArtist: {
             /** Id */
@@ -4956,6 +5013,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_TrackItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    new_releases_api_music_feed_new_releases_get: {
+        parameters: {
+            query?: {
+                /** @description 발매 윈도우 (일) */
+                days?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_NewReleasesResult"];
                 };
             };
             /** @description Validation Error */
