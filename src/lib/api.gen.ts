@@ -1026,6 +1026,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/music/releases/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 발매 캘린더 (관측 소스별 발매 이벤트, 표시용 소프트 그룹핑) */
+        get: operations["release_calendar_api_music_releases_calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/music/search/candidates": {
         parameters: {
             query?: never;
@@ -3213,6 +3230,45 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** ReleaseCalendarDay */
+        Music_ReleaseCalendarDay: {
+            /** Date */
+            date: string;
+            /** Events */
+            events?: components["schemas"]["Music_ReleaseCalendarEvent"][];
+        };
+        /** ReleaseCalendarEvent */
+        Music_ReleaseCalendarEvent: {
+            /** Artist Id */
+            artist_id: string;
+            /** Artist Name */
+            artist_name: string;
+            /** Artist Popularity */
+            artist_popularity?: number | null;
+            /** Release Date */
+            release_date: string;
+            /** Release Type */
+            release_type?: string | null;
+            /** Sources */
+            sources?: string[];
+            /** Spotify Album Id */
+            spotify_album_id?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+        };
+        /** ReleaseCalendarResult */
+        Music_ReleaseCalendarResult: {
+            /** Date From */
+            date_from: string;
+            /** Date To */
+            date_to: string;
+            /** Days */
+            days?: components["schemas"]["Music_ReleaseCalendarDay"][];
+            /** Total */
+            total: number;
+        };
         /** SearchResult */
         Music_SearchResult: {
             /** Items */
@@ -5126,6 +5182,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_NewReleasesResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_calendar_api_music_releases_calendar_get: {
+        parameters: {
+            query?: {
+                /** @description 윈도우 시작 (YYYY-MM-DD, 기본: 이번 달 1일) */
+                from?: string | null;
+                /** @description 윈도우 끝 (YYYY-MM-DD, 기본: from이 속한 달의 말일) */
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_ReleaseCalendarResult"];
                 };
             };
             /** @description Validation Error */
