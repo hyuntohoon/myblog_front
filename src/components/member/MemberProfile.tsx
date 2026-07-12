@@ -25,11 +25,12 @@ import { Cover, Stars } from './ui'
 const SelfDashboard = lazy(() => import('./SelfDashboard'))
 
 // Dashboard tab ids match /profile's (?tab= deep links stay interchangeable —
-// same convention as the /buckets → ?tab=bucket link). 평론 is deliberately
-// absent in PR1 (build-time data, stays on /profile); 'ratings' is the public
-// 평가한 앨범 list every viewer gets.
+// same convention as the /buckets → ?tab=bucket link). 평론 hosts the runtime
+// review feed since merge PR2; 'ratings' is the public 평가한 앨범 list every
+// viewer gets.
 const DASH_TABS = [
 	{ id: 'overview', label: '개요' },
+	{ id: 'reviews', label: '평론' },
 	{ id: 'bucket', label: 'My Buckit' },
 	{ id: 'stats', label: '분석 버킷' },
 	{ id: 'integration', label: '연동' },
@@ -272,7 +273,7 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 			    tab=null) so tab state survives switching back to the public list. */}
 			{isSelf && dashSeen && (
 				<Suspense fallback={<div className="meta" style={{ marginTop: 30 }}>불러오는 중…</div>}>
-					<SelfDashboard tab={dashActive ? tab : null} onSelectTab={selectTab} />
+					<SelfDashboard handle={handle} publicReviews={profile?.reviews} tab={dashActive ? tab : null} onSelectTab={selectTab} />
 				</Suspense>
 			)}
 		</div>

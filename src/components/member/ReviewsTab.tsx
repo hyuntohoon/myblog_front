@@ -8,6 +8,7 @@
 // full viewport regardless of the tab's transform/stacking context.
 import type { DetailTarget, MemberReview, MemberReviewType } from '@lib/member'
 import { useEffect, useState } from 'react'
+import { openAlbum } from '@lib/entityEvents'
 import { reviewHref } from '@lib/entityLinks'
 import { createPortal } from 'react-dom'
 import { REVIEW_TYPES } from '@lib/member'
@@ -25,8 +26,22 @@ function fmtDate(iso: string): string {
 
 function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: DetailTarget) => void, onDelete: (r: MemberReview) => void }) {
   const isColumn = r.type === '칼럼'
+  // Runtime album-review rows (member self-dashboard, merge PR2) have no MDX
+  // post behind them: slug '' + no postId. Their actions degrade — 보기 opens
+  // the app-wide album overlay instead of /review/{slug}, 수정/삭제 (post
+  // editor / archive) are hidden. Build-time rows keep the PR1 behavior.
+  const hasPost = r.slug !== ''
+  const albumId = r.albumIds[0]
   const clickable = !isColumn
-  const open = () => clickable && onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating, track: r.type === '트랙 리뷰' ? r.album : undefined })
+  const open = () => {
+    if (!clickable)
+      return
+    if (!hasPost && albumId) {
+      openAlbum({ albumId, title: r.album, cover: r.cover })
+      return
+    }
+    onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating, track: r.type === '트랙 리뷰' ? r.album : undefined })
+  }
   return (
     <article className="panel" style={{ padding: 16, display: 'flex', gap: 16, background: 'var(--color-bg)' }}>
       <div onClick={open} style={{ cursor: clickable ? 'pointer' : 'default', flex: '0 0 auto', width: 92 }}><AlbumArt url={r.cover} label={r.album} size={92} /></div>
@@ -61,11 +76,13 @@ function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: Deta
               phone the whole group wraps below the rating instead of pushing 삭제
               off-screen (it clipped past the viewport at <=360px). */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 'auto' }}>
-            <a href={reviewHref(r.slug)} className="chip" style={{ textDecoration: 'none' }}>보기</a>
+            {hasPost ?
+              <a href={reviewHref(r.slug)} className="chip" style={{ textDecoration: 'none' }}>보기</a> :
+              albumId && <button type="button" className="chip" onClick={open}>보기</button>}
             {r.postId && (
               <a href={`/write?id=${r.postId}`} className="chip" style={{ textDecoration: 'none' }}>수정</a>
             )}
-            <button type="button" className="chip" onClick={() => onDelete(r)} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 35%, var(--color-border))' }}>삭제</button>
+            {hasPost && <button type="button" className="chip" onClick={() => onDelete(r)} style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 35%, var(--color-border))' }}>삭제</button>}
           </div>
         </div>
       </div>
@@ -99,6 +116,14 @@ function DraftCard({ d }: { d: PostListItem }) {
 
 export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpen: (t: DetailTarget) => void }) {
   const [list, setList] = useState(reviews)
+  // On /profile `reviews` is a stable build-time prop (this effect is a no-op
+  // re-set of the same reference). On the member self-dashboard (merge PR2)
+  // the list arrives async AFTER mount (owner JSON fetch / public feed) — sync
+  // it in. Reference-keyed, so local deletes (setList filter) aren't clobbered
+  // by parent re-renders with the unchanged array.
+  useEffect(() => {
+    setList(reviews)
+  }, [reviews])
   const [type, setType] = useState<TypeFilter>('전체')
   const [sort, setSort] = useState<SortKey>('recent')
   const [pending, setPending] = useState<MemberReview | null>(null)
@@ -165,7 +190,7 @@ export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpe
         {REVIEW_TYPES.map(g => <span key={g} className="chip" data-on={type === g} onClick={() => setType(g as TypeFilter)}>{g}</span>)}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {view.map(r => <ReviewCard key={r.slug} r={r} onOpen={onOpen} onDelete={setPending} />)}
+        {view.map(r => <ReviewCard key={r.slug || r.albumIds[0] || `${r.album}|${r.date}`} r={r} onOpen={onOpen} onDelete={setPending} />)}
         {view.length === 0 && <div className="panel" style={{ padding: 40, textAlign: 'center' }}><span className="meta">평론 없음</span></div>}
       </div>
       {pending != null && typeof document !== 'undefined' && createPortal(
