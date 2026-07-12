@@ -45,7 +45,7 @@ export default defineConfig({
 		sitemap({
 			// Exclude the legacy /blog/* redirect stubs (noindex) from the sitemap;
 			// the real review pages live at /review/* (FEAT-blog-to-review-migration).
-			filter: page => !/\/(?:drafts|write|admin|test|blog)\//.test(page),
+			filter: page => !/\/(?:drafts|write|admin|test|blog|settings\/spotify)\//.test(page),
 		}),
 		react(),
 		// FEAT-mobile-web-app Step 4 — installable PWA. Cache policy (RFC OQ3):

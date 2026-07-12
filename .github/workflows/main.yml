@@ -106,6 +106,10 @@ jobs:
           PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.PUBLIC_COGNITO_CLIENT_ID }}
           PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.PUBLIC_COGNITO_USER_POOL_ID }}
           PUBLIC_COGNITO_REDIRECT_URI: ${{ secrets.PUBLIC_COGNITO_REDIRECT_URI }}
+          # 3b-e: Spotify OAuth client id (public by design — it appears in the
+          # authorize URL). Repo VARIABLE, owner-set; empty ⇒ the connect button
+          # renders disabled and no authorize URL is built.
+          PUBLIC_SPOTIFY_CLIENT_ID: ${{ vars.PUBLIC_SPOTIFY_CLIENT_ID }}
         run: pnpm build
 
       - uses: aws-actions/configure-aws-credentials@v4

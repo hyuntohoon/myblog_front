@@ -1,13 +1,13 @@
 // /settings root island (FEAT-multi-user-accounts 0e). Three quiet panels in
 // the member editorial system: 프로필 (handle + 표시 이름 → PATCH /api/me),
-// 연동 (empty until Phase 3), 계정 삭제 (the one deliberate accent moment —
+// 연동 (Last.fm 3a + Spotify 3b), 계정 삭제 (the one deliberate accent moment —
 // the member signs their own @handle to confirm, 개인정보보호법 deletion).
 // Signup entry is NOT here — it opens with 0c (Cognito self-signup + IdPs).
 import type { Me } from './me.api'
 import { useEffect, useMemo, useState } from 'react'
 import { logout } from '@lib/auth'
 import { deleteMe, getMe, HANDLE_RE, HandleTakenError, OwnerUndeletableError, updateMe } from './me.api'
-import { connectLastfm, disconnectLastfm, getIntegrations  } from './integrations.api'
+import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable } from './integrations.api'
 import type { Integration } from './integrations.api'
 import { SectionTitle } from './ui'
 
@@ -35,25 +35,12 @@ function Field({ label, hint, children }: { label: string, hint?: string, childr
 
 // FEAT-multi-user Phase 3a — Last.fm connect (username only, no OAuth). The worker
 // poll validates the handle on its first run (status → 'error' if not found).
-function LastfmConnect() {
-	const [loaded, setLoaded] = useState(false)
-	const [conn, setConn] = useState<Integration | null>(null)
+// The integrations fetch is lifted to IntegrationsPanel (one GET for all providers).
+function LastfmConnect({ initial }: { initial: Integration | null }) {
+	const [conn, setConn] = useState<Integration | null>(initial)
 	const [username, setUsername] = useState('')
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState<string | null>(null)
-
-	useEffect(() => {
-		let on = true
-		getIntegrations().then((rows) => {
-			if (!on)
-				return
-			setConn(rows.find(r => r.provider === 'lastfm') ?? null)
-			setLoaded(true)
-		})
-		return () => {
-			on = false
-		}
-	}, [])
 
 	async function onConnect() {
 		const u = username.trim()
@@ -84,9 +71,6 @@ function LastfmConnect() {
 		}
 		setConn(null)
 	}
-
-	if (!loaded)
-		return <p className="meta" style={{ margin: 0 }}>불러오는 중…</p>
 
 	if (conn) {
 		const isError = conn.status === 'error'
@@ -137,6 +121,97 @@ onConnect()
 				<button type="button" className="btn btn-solid" disabled={!username.trim() || busy} onClick={onConnect}>{busy ? '연결 중…' : '연결'}</button>
 			</div>
 		</div>
+	)
+}
+
+// FEAT-multi-user 3b-e — Spotify connect. The button hands off to Spotify's
+// authorize page; /settings/spotify/callback relays the code to the backend
+// (server-side exchange, 3b-c) and returns here. status==='reauth' is the
+// worker's invalid_grant signal (3b-d) — the row stays until the member
+// reconnects or disconnects.
+function SpotifyConnect({ initial }: { initial: Integration | null }) {
+	const [conn, setConn] = useState<Integration | null>(initial)
+	const [busy, setBusy] = useState(false)
+	const [error, setError] = useState<string | null>(null)
+	const available = spotifyConnectAvailable()
+
+	function onAuthorize() {
+		const url = buildSpotifyAuthorizeUrl()
+		if (url)
+			location.assign(url)
+	}
+
+	async function onDisconnect() {
+		if (busy)
+			return
+		setBusy(true)
+		setError(null)
+		const ok = await disconnectSpotify()
+		setBusy(false)
+		if (!ok) {
+			setError('해제하지 못했어요. 잠시 후 다시 시도해 주세요.')
+			return
+		}
+		setConn(null)
+	}
+
+	if (conn) {
+		const needsReauth = conn.status === 'reauth'
+		const statusLabel = needsReauth ?
+			'다시 연결이 필요해요 — 재생 기록을 읽지 못하고 있어요' :
+			conn.status === 'connected' ? '연결됨' : conn.status
+		return (
+			<div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+					<span className="kicker">Spotify</span>
+					<span className="meta" style={{ textTransform: 'none', color: needsReauth ? 'var(--color-accent)' : 'var(--color-subtle)' }}>{statusLabel}</span>
+				</div>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
+					{error && <span className="meta" role="alert" style={{ color: 'var(--color-accent)', textTransform: 'none' }}>{error}</span>}
+					{needsReauth && <button type="button" className="btn btn-solid" disabled={busy} onClick={onAuthorize}>다시 연결</button>}
+					<button type="button" className="btn" disabled={busy} onClick={onDisconnect}>{busy ? '해제 중…' : '연결 해제'}</button>
+				</div>
+			</div>
+		)
+	}
+
+	return (
+		<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+			<p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)' }}>
+				Spotify 계정을 연결하면 최근 들은 곡과 지금 재생 중인 곡이 프로필에 나타나요. 재생 기록 읽기 권한만 요청해요.
+			</p>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
+				{!available && <span className="meta" style={{ textTransform: 'none' }}>연결 준비 중이에요</span>}
+				<button type="button" className="btn btn-solid" disabled={!available} onClick={onAuthorize}>Spotify 연결</button>
+			</div>
+		</div>
+	)
+}
+
+// 연동 panel body — one GET /api/integrations feeds every provider field.
+function IntegrationsPanel() {
+	const [rows, setRows] = useState<Integration[] | null>(null)
+
+	useEffect(() => {
+		let on = true
+		getIntegrations().then((r) => {
+			if (on)
+				setRows(r)
+		})
+		return () => {
+			on = false
+		}
+	}, [])
+
+	if (rows == null)
+		return <p className="meta" style={{ margin: 0 }}>불러오는 중…</p>
+
+	return (
+		<>
+			<LastfmConnect initial={rows.find(r => r.provider === 'lastfm') ?? null} />
+			<div style={{ borderTop: '1px solid var(--color-border)' }} />
+			<SpotifyConnect initial={rows.find(r => r.provider === 'spotify') ?? null} />
+		</>
 	)
 }
 
@@ -308,10 +383,10 @@ export function SettingsApp() {
 								</div>
 							</section>
 
-							{/* 연동 — FEAT-multi-user Phase 3a: Last.fm connect (Spotify tier + AI keys later) */}
-							<section className="panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
+							{/* 연동 — FEAT-multi-user 3a Last.fm + 3b Spotify (AI keys later) */}
+							<section className="panel" style={{ padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
 								<div className="serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.1 }}>연동</div>
-								<LastfmConnect />
+								<IntegrationsPanel />
 							</section>
 
 							{/* 계정 삭제 */}
