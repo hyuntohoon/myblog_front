@@ -3,12 +3,14 @@
 // other surfaces are sample (see lib/member.ts). Ported from app.jsx (the dev
 // "tweaks panel" + prototype TopNav are dropped; the site header is the nav).
 import type { ReactNode } from 'react'
+import type { Density } from './dashboardShared'
 import type { LyricsOpenTarget, NpStyle } from './NowPlaying'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import type { DetailTarget, MemberProfile, MemberReview } from '@lib/member'
 import { useEffect, useRef, useState } from 'react'
 import { AlbumDetail } from './AlbumDetail'
 import { BucketBoard } from './BucketBoard'
+import { DENSITY_KEY, DENSITY_OPTS, NP_STYLE_KEY, NP_STYLE_OPTS, readPref, TabPanel } from './dashboardShared'
 import { LyricsSheet } from './lyrics/LyricsSheet'
 import { LyricsViewer } from './lyrics/LyricsViewer'
 import { OverviewDash } from './OverviewDash'
@@ -48,38 +50,18 @@ function initialTab(): string {
   return 'overview'
 }
 
-/* ── view preferences (layout + density), persisted to localStorage ──────── */
+/* ── view preferences (layout + density), persisted to localStorage ────────
+   Density / np-style prefs + readPref moved to dashboardShared.tsx (profile→
+   member merge PR1) so the /members/[handle] self dashboard shares them. */
 type Layout = 'sidebar' | 'stacked' | 'dashboard'
-type Density = 'compact' | 'regular' | 'comfy'
 
 const LAYOUT_KEY = 'lf_layout'
-const DENSITY_KEY = 'lf_density'
-const NP_STYLE_KEY = 'lf_np_style'
-const NP_STYLE_OPTS = ['banner', 'full', 'list'] as const
 
 const LAYOUT_OPTS: { v: Layout, label: string }[] = [
   { v: 'sidebar', label: '사이드바' },
   { v: 'stacked', label: '에디토리얼' },
   { v: 'dashboard', label: '대시보드' },
 ]
-const DENSITY_OPTS: { v: Density, label: string }[] = [
-  { v: 'compact', label: '콤팩트' },
-  { v: 'regular', label: '보통' },
-  { v: 'comfy', label: '넓게' },
-]
-
-/** Read a persisted enum pref, falling back when storage/value is unusable. */
-function readPref<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  if (typeof localStorage === 'undefined')
-    return fallback
-  try {
-    const v = localStorage.getItem(key)
-    if (v && (allowed as readonly string[]).includes(v))
-      return v as T
-  }
-  catch { /* ignore */ }
-  return fallback
-}
 
 function STAT_ITEMS(s: MemberProfile['stats']): [string, string | number][] {
   return [
@@ -270,27 +252,6 @@ function ThemeToggle() {
       ) :
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>}
     </button>
-  )
-}
-
-/**
- * One tab's content. Mounted on first visit and then KEPT MOUNTED — inactive
- * tabs are hidden with display:none rather than unmounted, so revisiting a tab
- * never refetches data or resets its in-tab state (scroll, filters, open sheets).
- * The lf-rise entrance plays once, on the panel's first appearance; later
- * re-shows skip it (toggling display would otherwise replay the animation).
- */
-function TabPanel({ active, children }: { active: boolean, children: ReactNode }) {
-  const seenRef = useRef(false)
-  const firstShow = active && !seenRef.current
-  useEffect(() => {
-    if (active)
-      seenRef.current = true
-  }, [active])
-  return (
-    <div className={firstShow ? 'lf-rise' : undefined} style={{ display: active ? undefined : 'none' }}>
-      {children}
-    </div>
   )
 }
 

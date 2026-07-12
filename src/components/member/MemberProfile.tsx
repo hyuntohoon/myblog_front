@@ -3,11 +3,52 @@
 // off the public reviews API). Album titles open the app-wide read-only overlay
 // via openAlbum (no member DetailTarget). Seeded from getStaticPaths props so the
 // header paints before the runtime feed fetch resolves.
+//
+// profile→member merge PR1 (OQ5 Option 1): when the AUTHED /api/me handle equals
+// the page handle, the member sees their private dashboard tabs (개요 / My
+// Buckit / 분석 버킷 / 연동) here, lazy-loaded via React.lazy so anonymous
+// visitors never download the dashboard chunks. The public 평가 list stays for
+// every viewer. PRIVACY: isSelf comes only from the authed response — token
+// presence merely gates the attempt (and avoids apiFetch's login redirect for
+// anonymous visitors); any error/401 leaves the page fully public.
 import type { MemberNowPlaying, MemberProfile as Profile } from '../album/reviews.api'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { isLoggedIn } from '@lib/auth'
 import { openAlbum } from '@lib/entityEvents'
 import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
+import { getMe } from './me.api'
 import { Cover, Stars } from './ui'
+
+// Bundle guard: the dashboard (and everything it drags in — BucketBoard,
+// OverviewDash, LikedBoard, member.css …) loads only after isSelf is confirmed
+// AND a dashboard tab is first visited.
+const SelfDashboard = lazy(() => import('./SelfDashboard'))
+
+// Dashboard tab ids match /profile's (?tab= deep links stay interchangeable —
+// same convention as the /buckets → ?tab=bucket link). 평론 is deliberately
+// absent in PR1 (build-time data, stays on /profile); 'ratings' is the public
+// 평가한 앨범 list every viewer gets.
+const DASH_TABS = [
+	{ id: 'overview', label: '개요' },
+	{ id: 'bucket', label: 'My Buckit' },
+	{ id: 'stats', label: '분석 버킷' },
+	{ id: 'integration', label: '연동' },
+]
+const DASH_TAB_IDS = DASH_TABS.map(t => t.id)
+const RATINGS_TAB = 'ratings'
+
+/** Initial tab from `?tab=<id>` — dashboard ids only; anything else → public list. */
+function initialTab(): string {
+	if (typeof window === 'undefined')
+		return RATINGS_TAB
+	try {
+		const q = new URLSearchParams(window.location.search).get('tab')
+		if (q && DASH_TAB_IDS.includes(q))
+			return q
+	}
+	catch { /* ignore */ }
+	return RATINGS_TAB
+}
 
 function fmtDate(iso: string): string {
 	const d = new Date(iso)
@@ -66,6 +107,12 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	const [profile, setProfile] = useState<Profile | null>(null)
 	const [state, setState] = useState<'loading' | 'ok' | 'missing'>('loading')
 	const [np, setNp] = useState<MemberNowPlaying | null>(null)
+	// Self-view (merge PR1). isSelf flips true only on an authed /api/me whose
+	// handle matches this page; dashSeen latches once a dashboard tab was
+	// visited so the lazy chunk mounts exactly once and then stays (keep-alive).
+	const [isSelf, setIsSelf] = useState(false)
+	const [tab, setTab] = useState<string>(initialTab)
+	const [dashSeen, setDashSeen] = useState(false)
 
 	useEffect(() => {
 		let alive = true
@@ -84,12 +131,51 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 		}
 	}, [handle])
 
+	useEffect(() => {
+		// Token presence gates the ATTEMPT only (anonymous visitors make no authed
+		// call and can never be redirected to login); the authed response decides.
+		// getMe() is null on 401/transport error → the page simply stays public.
+		if (!isLoggedIn())
+			return
+		let alive = true
+		getMe().then((me) => {
+			if (alive && me != null && me.handle === handle)
+				setIsSelf(true)
+		})
+		return () => {
+			alive = false
+		}
+	}, [handle])
+
+	const dashActive = isSelf && DASH_TAB_IDS.includes(tab)
+	useEffect(() => {
+		if (dashActive)
+			setDashSeen(true)
+	}, [dashActive])
+
+	// Same URL-sync convention as ProfileApp.selectTab (replaceState, shareable /
+	// reload-stable). The public list is the default view → no ?tab= param.
+	const selectTab = (id: string) => {
+		setTab(id)
+		try {
+			const url = new URL(window.location.href)
+			if (id === RATINGS_TAB)
+				url.searchParams.delete('tab')
+			else
+				url.searchParams.set('tab', id)
+			url.hash = ''
+			window.history.replaceState(null, '', url)
+		}
+		catch { /* ignore */ }
+	}
+
 	const name = profile?.display_name ?? displayName ?? handle
 	const avatar = profile?.avatar_url ?? avatarUrl
 	const reviews = profile?.reviews ?? []
+	const activeNavId = dashActive ? tab : RATINGS_TAB
 
 	return (
-		<div style={{ maxWidth: 760, margin: '0 auto', padding: '32px 20px 80px' }}>
+		<div style={{ maxWidth: dashActive ? 1200 : 760, margin: '0 auto', padding: '32px 20px 80px' }}>
 			<header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
 				<Avatar url={avatar} name={name} />
 				<div style={{ minWidth: 0 }}>
@@ -108,51 +194,87 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 				</div>
 			</header>
 
-			{np && <NowPlayingStrip np={np} />}
+			{/* Self-only tab nav (merge PR1) — visual language of ProfileApp's tab bar. */}
+			{isSelf && (
+				<nav className="mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginTop: 26, overflowX: 'auto' }} aria-label="내 대시보드">
+					{[{ id: RATINGS_TAB, label: '평가' }, ...DASH_TABS].map(tb => (
+						<button
+							key={tb.id}
+							type="button"
+							className="lf-tab-btn"
+							onClick={() => selectTab(tb.id)}
+							style={{ border: 'none', background: 'none', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', color: activeNavId === tb.id ? 'var(--color-text)' : 'var(--color-faded)', borderBottom: activeNavId === tb.id ? '2px solid var(--color-accent)' : '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
+						>
+							{tb.label}
+						</button>
+					))}
+					<a
+						href="/settings/"
+						className="lf-tab-btn"
+						style={{ marginLeft: 'auto', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', color: 'var(--color-faded)', textDecoration: 'none', borderBottom: '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
+					>
+						설정 ↗
+					</a>
+				</nav>
+			)}
 
-			<section style={{ marginTop: 30, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
-				<div className="meta" style={{ marginBottom: 14 }}>평가한 앨범</div>
+			{!dashActive && (
+				<>
+					{np && <NowPlayingStrip np={np} />}
 
-				{state === 'loading' && <div className="meta">불러오는 중…</div>}
-				{state === 'missing' && <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>존재하지 않는 사용자입니다.</div>}
-				{state === 'ok' && reviews.length === 0 && <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>아직 남긴 평가가 없습니다.</div>}
+					<section style={{ marginTop: 30, paddingTop: 20, borderTop: isSelf ? 'none' : '1px solid var(--color-border-soft)' }}>
+						<div className="meta" style={{ marginBottom: 14 }}>평가한 앨범</div>
 
-				<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
-					{reviews.map(r => (
-						<li key={r.id} style={{ display: 'flex', gap: 14 }}>
-							<button
-								type="button"
-								onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
-								title={r.album_title}
-								style={{ flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
-							>
-								<img
-									src={r.album_cover_url ?? ''}
-									alt={r.album_title}
-									width={64}
-									height={64}
-									style={{ borderRadius: 3, objectFit: 'cover', background: 'var(--color-border-soft)', display: 'block' }}
-								/>
-							</button>
-							<div style={{ minWidth: 0, flex: 1 }}>
-								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+						{state === 'loading' && <div className="meta">불러오는 중…</div>}
+						{state === 'missing' && <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>존재하지 않는 사용자입니다.</div>}
+						{state === 'ok' && reviews.length === 0 && <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>아직 남긴 평가가 없습니다.</div>}
+
+						<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
+							{reviews.map(r => (
+								<li key={r.id} style={{ display: 'flex', gap: 14 }}>
 									<button
 										type="button"
 										onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
-										className="serif"
-										style={{ fontSize: 16, fontWeight: 500, padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+										title={r.album_title}
+										style={{ flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
 									>
-										{r.album_title}
+										<img
+											src={r.album_cover_url ?? ''}
+											alt={r.album_title}
+											width={64}
+											height={64}
+											style={{ borderRadius: 3, objectFit: 'cover', background: 'var(--color-border-soft)', display: 'block' }}
+										/>
 									</button>
-									<Stars score={Number(r.rating)} size={14} />
-									<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
-								</div>
-								{r.comment && <p className="sans" style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.5 }}>{r.comment}</p>}
-							</div>
-						</li>
-					))}
-				</ul>
-			</section>
+									<div style={{ minWidth: 0, flex: 1 }}>
+										<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+											<button
+												type="button"
+												onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
+												className="serif"
+												style={{ fontSize: 16, fontWeight: 500, padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+											>
+												{r.album_title}
+											</button>
+											<Stars score={Number(r.rating)} size={14} />
+											<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+										</div>
+										{r.comment && <p className="sans" style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.5 }}>{r.comment}</p>}
+									</div>
+								</li>
+							))}
+						</ul>
+					</section>
+				</>
+			)}
+
+			{/* Mounted after first dashboard-tab visit, then kept mounted (hidden via
+			    tab=null) so tab state survives switching back to the public list. */}
+			{isSelf && dashSeen && (
+				<Suspense fallback={<div className="meta" style={{ marginTop: 30 }}>불러오는 중…</div>}>
+					<SelfDashboard tab={dashActive ? tab : null} onSelectTab={selectTab} />
+				</Suspense>
+			)}
 		</div>
 	)
 }
