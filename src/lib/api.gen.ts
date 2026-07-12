@@ -280,6 +280,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/spotify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Connect Spotify
+         * @description FEAT-multi-user 3b-c: exchange the callback `?code` server-side and store
+         *     the KMS-enveloped refresh token. Rule #9: a member-initiated mutation against
+         *     the Spotify AUTH host (the playback-mint exception) — no sync content call.
+         *     Fail-closed: missing KMS key / app creds ⇒ 503 before any outbound call.
+         */
+        put: operations["connect_spotify_api_integrations_spotify_put"];
+        post?: never;
+        /** Disconnect Spotify */
+        delete: operations["disconnect_spotify_api_integrations_spotify_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/library/listened-albums": {
         parameters: {
             query?: never;
@@ -1613,6 +1637,11 @@ export interface components {
         Backend_ConnectLastfmRequest: {
             /** Username */
             username: string;
+        };
+        /** ConnectSpotifyRequest */
+        Backend_ConnectSpotifyRequest: {
+            /** Code */
+            code: string;
         };
         /** CreateBucketRequest */
         Backend_CreateBucketRequest: {
@@ -3813,6 +3842,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_LastfmNowPlayingResponse"];
                 };
+            };
+        };
+    };
+    connect_spotify_api_integrations_spotify_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_ConnectSpotifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_IntegrationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_spotify_api_integrations_spotify_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
