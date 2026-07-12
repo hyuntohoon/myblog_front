@@ -1,0 +1,25 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import ReleaseCalendar from '@components/releases/ReleaseCalendar'
+
+// /releases — 발매 캘린더 (FEAT-release-calendar Step 7). The owner-approved
+// "발매 장부" ledger is the default view; a toggle switches to a month-grid
+// 달력 view whose day cells open card lists. All data is fetched client-side
+// from the public /api/music/releases/calendar endpoint (one month at a time),
+// so this page is a static shell + one React island. The album overlay host
+// already lives in layout.astro (openAlbum event).
+---
+
+<Layout>
+  <Seo
+	slot="seo"
+	title="발매 캘린더"
+	description="MusicBrainz · iTunes에서 관측한 발매 예고와 Spotify로 확정된 발매를 한 곳에 모은 발매 캘린더. 발매 전 정보는 예고 시점의 관측이며, 카탈로그 확인 후 확정으로 표시됩니다."
+  />
+
+  <SkipNavContent>
+    <ReleaseCalendar client:load />
+  </SkipNavContent>
+</Layout>

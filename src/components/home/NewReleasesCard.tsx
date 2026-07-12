@@ -46,6 +46,9 @@ const SCOPED_CSS = `
 .nrl-mod .nrl-artist{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--color-subtle);text-decoration:none}
 .nrl-mod a.nrl-artist:hover{color:var(--color-text);text-decoration:underline}
 .nrl-mod .nrl-date{display:block;margin-top:3px;color:var(--color-faded)}
+.nrl-mod .nrl-cal{color:var(--color-faded);text-decoration:none;transition:color .15s}
+.nrl-mod .nrl-cal:hover{color:var(--color-accent)}
+.nrl-mod .nrl-cal:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:2px}
 @media (prefers-reduced-motion:reduce){.nrl-mod .nrl-cover-wrap{transition:none}}
 `
 
@@ -121,7 +124,16 @@ export default function NewReleasesCard() {
 		<section className="nrl-mod">
 			<style>{SCOPED_CSS}</style>
 			<div style={{ maxWidth: 'var(--home-measure)', margin: '0 auto', padding: '56px clamp(16px, 4vw, 30px) 0' }}>
-				<SectionTitle kicker={`NEW · 최근 ${WINDOW_DAYS}일`} title="새 앨범" />
+				<SectionTitle
+					kicker={`NEW · 최근 ${WINDOW_DAYS}일`}
+					title="새 앨범"
+					right={(
+						// Entry point to /releases/ (FEAT-release-calendar Step 7). Lives
+						// inside this component so it inherits the degradation contract —
+						// no card, no link.
+						<a className="nrl-cal mono" style={{ fontSize: 11, letterSpacing: '.06em', whiteSpace: 'nowrap' }} href="/releases/">캘린더 →</a>
+					)}
+				/>
 				<div className="nrl-strip">
 					{items.map(it => <CardItem key={it.album_id} it={it} />)}
 				</div>
