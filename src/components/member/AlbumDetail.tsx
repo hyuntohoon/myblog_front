@@ -46,7 +46,13 @@ function useIsMobileHost(): boolean {
 type Mode = 'info' | 'edit'
 
 export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics }: { album: DetailTarget, reviews: MemberReview[], onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, onOpenLyrics?: OnOpenLyrics }) {
-  const published = album.albumId ? reviews.find(r => r.albumIds.includes(album.albumId!)) : undefined
+  // "Published" here means a real post page exists. Runtime member rating rows
+  // (merge PR2) carry slug '' — they must NOT hijack the memo/edit decision, or
+  // a member who merely rated a bucket album would lose the MemoWindow
+  // authoring path. Owner/build-time rows always carry a slug, so /profile is
+  // unaffected. (Informational surfaces — rating chips, 평론 tab — still show
+  // slug-less rows; only this matcher is post-gated.)
+  const published = album.albumId ? reviews.find(r => r.slug !== '' && r.albumIds.includes(album.albumId!)) : undefined
 
   // FEAT-editor-buckit Step 3: a writable, not-yet-published 평론 버킷 album that
   // carries its bucket-item handle opens the memo "쓰레기통" window. Without the

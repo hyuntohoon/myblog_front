@@ -105,6 +105,18 @@ export const MEMBER_IDENTITY = {
 	location: '서울',
 } as const
 
+/**
+ * The blog owner's live `users.handle` in prod (profile→member merge PR2).
+ * MUST match the prod users row of the OWNER_SUB account — MEMBER_IDENTITY
+ * above is a front-side fiction and must never be used for this check. The
+ * owner signal is a build-time constant by owner decision (over a 403-probe
+ * or a contract field): on /members/[handle], `getMe().handle === handle`
+ * establishes self, and `handle === OWNER_HANDLE` additionally marks the
+ * owner, whose 평론 come from the static /profile-reviews.json (build-time
+ * blog collection) instead of the public album-review feed.
+ */
+export const OWNER_HANDLE = 'user-0468fd3c'
+
 export const REVIEW_TYPES: readonly ('전체' | MemberReviewType)[] = ['전체', '앨범 리뷰', '칼럼', '트랙 리뷰']
 
 /**

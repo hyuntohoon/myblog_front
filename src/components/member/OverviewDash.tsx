@@ -486,7 +486,8 @@ function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
     case 'recent-tracks': return <RecentTracksWidget view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
     case 'listened-albums': return <ListenedAlbumsWidget view={ctx.views['listened-albums']} onOpen={ctx.onOpen} />
     case 'bucket': return <BucketShortcut count={bucketCount()} onGo={ctx.goBucket} />
-    case 'latest-reviews': return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{ctx.reviews.slice(0, 2).map(r => <MiniReview key={r.slug} r={r} onOpen={ctx.onOpen} />)}</div>
+    // MiniReview key: runtime member rows (merge PR2) carry slug '' → fall back to the album id.
+    case 'latest-reviews': return <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{ctx.reviews.slice(0, 2).map(r => <MiniReview key={r.slug || r.albumIds[0]} r={r} onOpen={ctx.onOpen} />)}</div>
     default: return null
   }
 }
