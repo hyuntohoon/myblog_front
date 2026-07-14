@@ -2194,6 +2194,7 @@ export interface components {
             items?: components["schemas"]["Backend_PublicBucketItem"][];
             /** Name */
             name: string;
+            owner: components["schemas"]["Backend_PublicBucketOwner"];
             /** Position */
             position: number;
         };
@@ -2209,6 +2210,13 @@ export interface components {
             already_reviewed: boolean;
             /** Position */
             position: number;
+        };
+        /** PublicBucketOwner */
+        Backend_PublicBucketOwner: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Handle */
+            handle: string;
         };
         /** PublicBucketsResponse */
         Backend_PublicBucketsResponse: {

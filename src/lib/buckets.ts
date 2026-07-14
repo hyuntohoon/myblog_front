@@ -257,6 +257,12 @@ export interface PublicCollection {
   id: string
   name: string
   color: string | null
+  /**
+   * Whose shelf this is (FEAT-multi-user-accounts P2: any member can publish a
+   * bucket, so the viewer attributes every shelf). Nullable defensively for the
+   * rollout window where the deployed backend predates the field.
+   */
+  owner: { handle: string, displayName: string | null } | null
   albums: PublicAlbum[]
 }
 
@@ -275,17 +281,21 @@ function mapPublicItem(it: ApiPublicItem): PublicAlbum {
 }
 
 function mapPublicBucket(b: ApiPublicBucket): PublicCollection {
+  // b.owner is required in the current contract but may be absent from a
+  // not-yet-redeployed backend during rollout — degrade to unattributed.
+  const owner = (b as Partial<ApiPublicBucket>).owner
   return {
     id: b.id,
     name: b.name,
     color: b.color ?? null,
+    owner: owner ? { handle: owner.handle, displayName: owner.display_name ?? null } : null,
     albums: (b.items ?? []).map(mapPublicItem),
   }
 }
 
 /**
- * GET /api/buckets/public — every public review bucket (flat, owner-curated),
- * mapped to slim read-only collections. No auth required.
+ * GET /api/buckets/public — every member-published review bucket (flat, each
+ * attributed to its owner), mapped to slim read-only collections. No auth required.
  */
 export async function listPublicBuckets(): Promise<PublicCollection[]> {
   const res = await apiFetch(`${BASE}/api/buckets/public`, { method: 'GET' })
