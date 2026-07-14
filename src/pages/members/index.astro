@@ -1,0 +1,16 @@
+---
+// FEAT-multi-user-accounts — runtime member surface (OQ6 option a, audit
+// 2026-07-14). /members/ is the deploy-independent member surface: the
+// directory (no params), any member's runtime profile (?u=<handle>), and the
+// signed-in user's own page (?me). The static /members/[handle] pages remain
+// for SEO where they exist; this page is what links target so a member's
+// profile is reachable the moment their users row exists — no redeploy needed.
+import MembersHub from '@components/member/MembersHub'
+import Seo from '@components/seo.astro'
+import Layout from '@layouts/layout.astro'
+---
+
+<Layout>
+	<Seo slot="seo" forceTitle="회원" description="RateMyMusic 회원 — 앨범 평가와 지금 듣는 곡" />
+	<MembersHub client:only="react" />
+</Layout>
