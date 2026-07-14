@@ -1,7 +1,8 @@
 ---
 // FEAT-public-bucket-multiuser Scope A A4 — read-only public collection viewer.
 // Public, no auth. The grid hydrates client-side from GET /api/buckets/public so
-// it reflects the owner's current public toggles; the masthead is static (SEO).
+// it reflects members' current public toggles (multi-user P2: every member's
+// published bucket appears here, attributed); the masthead is static (SEO).
 import Layout from '@layouts/layout.astro'
 import Seo from '@components/seo.astro'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
@@ -13,13 +14,13 @@ import '@styles/member.css'
   <Seo
 	slot="seo"
 	forceTitle="컬렉션"
-	description="저자가 공개로 설정한 My Buckit을 한자리에서 — 큐레이션된 앨범 컬렉션."
+	description="회원들이 공개로 설정한 My Buckit을 한자리에서 — 큐레이션된 앨범 컬렉션."
   />
   <SkipNavContent>
     <div class="container" style="padding-block: 40px 64px;">
       <header class="cl-masthead">
         <h1 class="cl-title">컬렉션</h1>
-        <p class="cl-sub">저자가 공개한 My Buckit을 모았습니다.</p>
+        <p class="cl-sub">회원들이 공개한 My Buckit을 모았습니다.</p>
       </header>
       <CollectionView client:load />
     </div>

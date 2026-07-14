@@ -58,7 +58,7 @@ export default function CollectionView() {
 
   const collections = data.filter(c => c.albums.length > 0)
   if (collections.length === 0)
-    return <Notice title="아직 공개된 컬렉션이 없습니다" sub="저자가 공개로 설정한 My Buckit이 여기에 모입니다." />
+    return <Notice title="아직 공개된 컬렉션이 없습니다" sub="회원이 공개로 설정한 My Buckit이 여기에 모입니다." />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 44 }}>
@@ -66,7 +66,14 @@ export default function CollectionView() {
         <section key={c.id}>
           <SectionTitle
 	title={c.name}
-	right={<span className="mono" style={{ fontSize: 12, color: 'var(--color-faded)' }}>{`${c.albums.length}장`}</span>}
+	right={(
+	// Attribution: any member can publish a bucket (multi-user P2) — every
+	// shelf says whose it is. Plain text (no /members link) until member
+	// pages are runtime-reachable; owner==null only during backend rollout.
+	<span className="mono" style={{ fontSize: 12, color: 'var(--color-faded)' }}>
+		{c.owner ? `@${c.owner.handle} · ${c.albums.length}장` : `${c.albums.length}장`}
+	</span>
+	)}
           />
           <div style={{ display: 'grid', gap: '16px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
             {c.albums.map(a => (
