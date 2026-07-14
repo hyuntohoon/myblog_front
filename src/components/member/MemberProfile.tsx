@@ -94,7 +94,16 @@ function NowPlayingStrip({ np }: { np: MemberNowPlaying }) {
 				) :
 				<Cover label={np.album ?? np.track ?? 'Last.fm'} size={56} radius={4} />}
 			<div style={{ minWidth: 0, flex: 1 }}>
-				<div className="kicker" style={{ marginBottom: 4, whiteSpace: 'nowrap', color: 'var(--color-accent)' }}>● 지금 듣는 중</div>
+				<div className="kicker" style={{ marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-accent)' }}>
+					● 지금 듣는 중
+					{/* Provenance (audit OQ7): Last.fm connects are unverified usernames — the
+					    public surface says where the data comes from. Spotify is OAuth-proven. */}
+					{np.source && (
+						<span style={{ color: 'var(--color-faded)', textTransform: 'none', letterSpacing: 0 }}>
+							{np.source === 'lastfm' ? ` · via Last.fm${np.source_username ? ` @${np.source_username}` : ''}` : ' · via Spotify'}
+						</span>
+					)}
+				</div>
 				<div className="serif italic" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
 				<div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
 					{[np.artist, np.album].filter(Boolean).join(' — ')}
