@@ -33,7 +33,7 @@ export interface TrackRowOpen {
 
 /**
  * The declared action set. Provide only what the surface actually grants:
- * `lyrics` opens the ProfileApp lyrics viewer mount non-live (`{trackId,
+ * `lyrics` opens the dashboard lyrics viewer mount non-live (`{trackId,
  * progressMs: null, live: false}`) — per RFC OQ1 it is ALWAYS shown when
  * granted (no per-row availability probe; the viewer's availability empty
  * state handles misses). Omit `lyrics` when the track has no Spotify id

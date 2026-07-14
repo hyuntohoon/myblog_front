@@ -62,7 +62,7 @@ function playbackTargetFor(a: BoardAlbum): PlaybackTarget | null {
 
 // FEAT-pocket-buckit-viewers Track B — `url` + `square` added for the Card Viewer
 // (board-style square cover). The site-wide global `.cover`/`.cover img` rules size the
-// image, so this stays self-contained off-/profile (no member.css dependency). List-mode
+// image, so this stays self-contained off-dashboard (no member.css dependency). List-mode
 // callers omit both and are unchanged.
 function Cover({ label, size, url, square }: { label: string, size: number, url?: string | null, square?: boolean }) {
   const dim: CSSProperties = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: sc(size), height: sc(size) }
@@ -611,9 +611,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
       </div>
       )}
       {notice && <div className="pb-playnote" role="status">{notice}</div>}
-      {/* per-role target (audit 2026-07-14): members manage buckets on their own
-          member page — /profile is the owner dashboard until profile-merge PR3. */}
-      <a className="btn" href={isOwner ? '/profile/?tab=bucket' : '/members/?me&tab=bucket'} style={{ display: 'block', textAlign: 'center', padding: `${sc(7)} 0`, fontSize: sc(10), marginTop: sc(10), textDecoration: 'none', borderColor: 'color-mix(in srgb, var(--bucket-accent) 40%, var(--color-border))' }}>전체 버킷 페이지 열기 ↗</a>
+      <a className="btn" href="/members/?me&tab=bucket" style={{ display: 'block', textAlign: 'center', padding: `${sc(7)} 0`, fontSize: sc(10), marginTop: sc(10), textDecoration: 'none', borderColor: 'color-mix(in srgb, var(--bucket-accent) 40%, var(--color-border))' }}>전체 버킷 페이지 열기 ↗</a>
     </div>
   )
 }
@@ -831,7 +829,7 @@ export function PocketTray() {
           setConfirmDeleteId(null)
           // Marker clear is driven by PocketBuckitInner's useEffect([open]) on the
           // open→false transition (it re-emits pb:closed), so EVERY close path —
-          // this 닫기 button AND the /profile board's 🪣 toggle — clears the board's
+          // this 닫기 button AND the member board's 🪣 toggle — clears the board's
           // transient NEW drag markers. No manual dispatch needed here.
         }}
 	style={light ? { background: 'color-mix(in srgb, #fff 55%, transparent)' } : undefined}

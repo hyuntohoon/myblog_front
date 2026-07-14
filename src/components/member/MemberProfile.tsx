@@ -1,6 +1,6 @@
 // FEAT-multi-user-accounts Phase 1 — public member profile at /members/[handle].
-// A SEPARATE React root from the authed owner ProfileApp (this is public, feeds
-// off the public reviews API). Album titles open the app-wide read-only overlay
+// Public and self-dashboard member profile root, fed by the public reviews API.
+// Album titles open the app-wide read-only overlay
 // via openAlbum (no member DetailTarget). Seeded from getStaticPaths props so the
 // header paints before the runtime feed fetch resolves.
 //
@@ -24,8 +24,8 @@ import { Cover, Stars } from './ui'
 // AND a dashboard tab is first visited.
 const SelfDashboard = lazy(() => import('./SelfDashboard'))
 
-// Dashboard tab ids match /profile's (?tab= deep links stay interchangeable —
-// same convention as the /buckets → ?tab=bucket link). 평론 hosts the runtime
+// Dashboard tab ids are the authoritative ?tab= deep-link values (same
+// convention as the /buckets → ?tab=bucket link). 평론 hosts the runtime
 // review feed since merge PR2; 'ratings' is the public 평가한 앨범 list every
 // viewer gets.
 const DASH_TABS = [
@@ -163,8 +163,8 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 			setDashSeen(true)
 	}, [dashActive])
 
-	// Same URL-sync convention as ProfileApp.selectTab (replaceState, shareable /
-	// reload-stable). The public list is the default view → no ?tab= param.
+	// Dashboard URL sync uses replaceState so the active tab is shareable and
+	// reload-stable. The public list is the default view → no ?tab= param.
 	const selectTab = (id: string) => {
 		setTab(id)
 		try {
@@ -204,7 +204,7 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 				</div>
 			</header>
 
-			{/* Self-only tab nav (merge PR1) — visual language of ProfileApp's tab bar. */}
+			{/* Self-only dashboard tab nav. */}
 			{isSelf && (
 				<nav className="mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginTop: 26, overflowX: 'auto' }} aria-label="내 대시보드">
 					{[{ id: RATINGS_TAB, label: '평가' }, ...DASH_TABS].map(tb => (

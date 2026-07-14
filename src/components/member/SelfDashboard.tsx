@@ -1,5 +1,5 @@
 // /members/[handle] self-view dashboard — profile→member merge PR1+PR2 (OQ5
-// Option 1). Re-hosts the /profile tabs 개요 / 평론 / My Buckit / 분석 버킷 /
+// Option 1). Hosts the unified self-dashboard tabs 개요 / 평론 / My Buckit / 분석 버킷 /
 // 연동 on the member page when the AUTHED /api/me handle matches the page
 // handle. MemberProfile gates the mount AND loads this module via React.lazy,
 // so a logged-out visitor never downloads these dashboard chunks (privacy gate
@@ -8,7 +8,7 @@
 // 평론 data (PR2) is runtime-sourced, split by who the member is:
 //   - owner (handle === OWNER_HANDLE): the blog 평론 live in the build-time
 //     content collection → fetched from the prerendered /profile-reviews.json
-//     (same MemberReview[] the /profile island gets as props). Fetched lazily
+//     as MemberReview[]. Fetched lazily
 //     here — this module only mounts after the authed self check — so the
 //     public bundle/waterfall doesn't grow.
 //   - any other member: their 평가 rows (already fetched by MemberProfile via
@@ -66,7 +66,7 @@ function toMemberReview(r: PublicMemberReview): MemberReview {
 /**
  * `tab` is the active dashboard tab id (overview|reviews|bucket|stats|
  * integration) or null while a non-dashboard view (the public 평가 list) is
- * showing — panels stay mounted but hidden, mirroring ProfileApp's keep-alive
+ * showing — panels stay mounted but hidden to preserve keep-alive
  * behavior. `handle` is the page handle MemberProfile already proved equal to
  * the authed getMe().handle; `publicReviews` is the member's public feed it
  * already fetched (undefined while loading).
@@ -124,13 +124,13 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 		}
 		catch { /* ignore */ }
 	}, [npStyle])
-	// Same density the member set on /profile; read-only here (no settings menu
-	// on the member page in PR1 — the ⚙ layout machinery stays on /profile).
+	// Restore the member's saved dashboard density; this surface has no layout
+	// settings menu.
 	const [density] = useState(() => readPref(DENSITY_KEY, DENSITY_OPTS.map(o => o.v), 'regular'))
 
 	const [detail, setDetail] = useState<DetailTarget | null>(null)
 	// Latest in-session memo edits keyed by bucket-item id — same stale-snapshot
-	// merge as ProfileApp (see its memoEdits comment / AlbumDetail.useBucketMemo).
+	// merge before opening AlbumDetail so stale bucket snapshots cannot overwrite edits.
 	const memoEdits = useRef<Map<string, { note: string | null, prepTonight: boolean }>>(new Map())
 	const onMemoSaved = (itemId: string, memo: { note: string | null, prepTonight: boolean }) => {
 		memoEdits.current.set(itemId, memo)

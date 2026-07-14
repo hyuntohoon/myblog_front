@@ -1,27 +1,24 @@
 ---
-import Layout from '@layouts/layout.astro'
-import Seo from '@components/seo.astro'
-import SkipNavContent from '@components/a11y/skip-nav-content.astro'
-import ProfileApp from '@components/member/ProfileApp'
-import { getCollection } from 'astro:content'
-import { computeStats, MEMBER_IDENTITY } from '@lib/member'
-import { buildMemberReviews } from '@lib/reviewCollection'
-import '@styles/member.css'
-import '@styles/research.css'
-
-// Mapper shared with /profile-reviews.json (profile-merge PR2) — see
-// lib/reviewCollection.ts for the 평론 typing/normalization rules.
-const reviews = buildMemberReviews(await getCollection('blog'))
-
-const profile = { ...MEMBER_IDENTITY, stats: computeStats(reviews) }
+// Legacy owner-dashboard entry point. The unified member surface resolves the
+// signed-in user at runtime and preserves dashboard tab deep links below.
+const target = '/members/?me'
 ---
 
-<Layout>
-  <Seo slot="seo" title="회원" />
-
-  <SkipNavContent>
-    <ProfileApp client:only="react" reviews={reviews} profile={profile} />
-  </SkipNavContent>
-</Layout>
-
-<script src="../scripts/profile.guard.ts"></script>
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content={`0; url=${target}`} />
+    <link rel="canonical" href={target} />
+    <meta name="robots" content="noindex" />
+    <title>회원 페이지 · buckit</title>
+    <script is:inline define:vars={{ target }}>
+      const tab = new URLSearchParams(location.search).get('tab')
+      const destination = tab == null ? target : `${target}&tab=${encodeURIComponent(tab)}`
+      location.replace(destination)
+    </script>
+  </head>
+  <body>
+    <p>회원 페이지로 이동 중… <a href={target}>바로 가기</a></p>
+  </body>
+</html>

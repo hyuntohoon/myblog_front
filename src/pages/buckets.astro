@@ -1,9 +1,8 @@
 ---
 // /buckets — a dedicated, discoverable entry point to the 평론 버킷 management
 // surface. Redirects to the signed-in user's OWN member page bucket tab
-// (audit 2026-07-14: the old /profile/?tab=bucket target sent members to the
-// owner dashboard; /members/?me resolves self at runtime and its SelfDashboard
-// hosts the same BucketBoard — works for the owner too). The `?tab=bucket`
+// /members/?me resolves self at runtime and its SelfDashboard hosts BucketBoard
+// for every role, including the owner. The `?tab=bucket`
 // deeplink lands directly on it; not logged in → goLogin via the ?me path.
 const target = '/members/?me&tab=bucket'
 ---

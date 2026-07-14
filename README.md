@@ -28,11 +28,11 @@
 - `/settings/` — 핸들·표시명 편집, Last.fm/Spotify 연동, 계정 삭제; `/privacy` 개인정보처리방침
 - 공개 컬렉션 `/collection` — 회원들이 공개로 설정한 버킷, 소유자 귀속(@handle) 표시
 
-**오너 (글쓰기 + 대시보드)**
+**오너 (글쓰기)**
 
 - Cognito 인증 후 글 작성 화면 진입 (`/write`, `/drafts`) — 오너 전용 (`isOwnerUser()` UI 게이트 + 서버 `require_owner`)
 - 에디터에서 앨범·아티스트 검색 및 연결, 평점(0~5, 0.5 단위) 입력, 임시저장/발행/아카이브/복원/삭제
-- 오너 대시보드 (`/profile`) — 개요·평론·My Buckit·분석 버킷·연동 탭 (profile-merge PR3 에서 `/members/?me` 로 은퇴 예정)
+- 오너의 대시보드도 회원과 같은 `/members/?me` 서피스(개요·평론·My Buckit·분석 버킷·연동)에서 제공
 
 ---
 

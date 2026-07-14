@@ -15,7 +15,7 @@ export type PostListItem = components['schemas']['Backend_PostListItem']
 
 // FEAT-member-dashboard-realdata Goal 1: the author's draft reviews (DB-only —
 // drafts aren't committed as MDX, so the build-time review list can't see them).
-// Cognito-JWT gated via apiFetch; returns [] on failure (the /profile section
+// Cognito-JWT gated via apiFetch; returns [] on failure (the member-dashboard section
 // just stays empty rather than erroring the page).
 export async function listDrafts(): Promise<PostListItem[]> {
 	const res = await apiFetch(`${API_BASE_URL}/api/posts?status=draft`)

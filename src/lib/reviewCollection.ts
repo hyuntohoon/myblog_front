@@ -2,11 +2,8 @@
  * Blog-collection → MemberReview[] mapper (profile→member merge PR2).
  *
  * The ONE implementation turning the build-time `blog` content collection into
- * the dashboard's 평론 rows. Shared by:
- *   - /profile (profile.astro server props), and
- *   - /profile-reviews.json (prerendered static JSON the /members/[handle]
- *     self-dashboard fetches at runtime for the owner)
- * so the two surfaces can never drift. Extracted verbatim from profile.astro.
+ * the dashboard's 평론 rows for /profile-reviews.json, the prerendered static
+ * JSON that the member self-dashboard fetches at runtime for the owner.
  */
 import type { CollectionEntry } from 'astro:content'
 import type { MemberReview, MemberReviewType } from './member'

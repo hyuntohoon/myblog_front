@@ -116,7 +116,7 @@ function DraftCard({ d }: { d: PostListItem }) {
 
 export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpen: (t: DetailTarget) => void }) {
   const [list, setList] = useState(reviews)
-  // On /profile `reviews` is a stable build-time prop (this effect is a no-op
+  // For owner reviews, `reviews` is stable build-time data (this effect is a no-op
   // re-set of the same reference). On the member self-dashboard (merge PR2)
   // the list arrives async AFTER mount (owner JSON fetch / public feed) — sync
   // it in. Reference-keyed, so local deletes (setList filter) aren't clobbered

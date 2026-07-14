@@ -9,7 +9,7 @@ import type { ReviewCard } from '@lib/reviews'
  *
  * Fed a JSON-safe, date-desc `reviews` array serialized by reviews/index.astro.
  * Owns tag / sort / search / BNM / year / view / load-more state. (The genre
- * filter was dropped — genre is navigated via the /profile crate, not here.) Every filter
+ * filter was dropped — genre is navigated via the member dashboard, not here.) Every filter
  * (everything except the load-more cursor) is mirrored to the URL querystring
  * (pushState + popstate) so deep-links and the back button restore the view.
  * The featured row hides as soon as any narrowing filter is active.

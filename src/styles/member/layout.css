@@ -32,8 +32,8 @@
 
 /* ── Add-album modal ─────────────────────────────────────────────────────────
    Ported from the retired queue.css (FEAT-member-dashboard Step 5). AddAlbumModal
-   now lives in components/member/ and renders on /profile (bucket board + library
-   to-listen); profile.astro loads only member.css, so these qb-* rules must live
+   now lives in components/member/ and renders on the member dashboard (bucket board + library
+   to-listen); SelfDashboard loads member.css, so these qb-* rules must live
    here. Tokens (--color-*, --space-*, --font-*, --z-panel) come from global.css. */
 .qb-modal-scrim {
   position: fixed;

@@ -14,7 +14,7 @@ import './pocket.css'
 function PocketBuckitInner() {
   const { open, setOpen } = usePocket()
   const [settings, setSettings] = useState(false)
-  // Cross-island toggle bridge: the /profile My Buckit board (a separate React
+  // Cross-island toggle bridge: the member My Buckit board (a separate React
   // root) dispatches `pb:toggle` from its toolbar button; flip the in-memory tray
   // `open` here, where usePocket() is inside the provider. setOpen is pure state —
   // no fetch — so the toggle never hits the network. Mirrors the pb:add-track
@@ -24,7 +24,7 @@ function PocketBuckitInner() {
     window.addEventListener(PB_TOGGLE_EVENT, onToggle)
     return () => window.removeEventListener(PB_TOGGLE_EVENT, onToggle)
   }, [setOpen])
-  // Broadcast `open` back to the /profile board on EVERY transition. The board
+  // Broadcast `open` back to the member board on EVERY transition. The board
   // can't read this island's `open`, so it mirrors `detail.open` for the 🪣 Pocket
   // toggle's aria-expanded. Driving this from useEffect([open]) — not the tray's
   // 닫기 click — means EVERY close path is observed: the 닫기 button AND the board

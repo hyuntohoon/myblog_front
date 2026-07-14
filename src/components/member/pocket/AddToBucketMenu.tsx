@@ -5,7 +5,7 @@
 //
 // SELF-CONTAINED BY DESIGN: it can be mounted on member pages, the home resume
 // banner, or a public drop source (the review hero album + per-track adder).
-// member.css (the .bps-*/.lf-* sheet styles) is NOT loaded outside /profile, so
+// member.css (the .bps-*/.lf-* sheet styles) is NOT loaded outside the dashboard, so
 // this component brings its own portal sheet + toast styled with only the GLOBAL
 // color tokens — never reusing BucketPickerSheet, which would render unstyled off
 // the member pages.
@@ -241,7 +241,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
               </div>
             )}
             {entries.length === 0 ?
-              <div style={{ padding: '18px 12px', fontSize: 13, color: 'var(--color-faded)' }}>버킷이 없어요. /profile에서 먼저 버킷을 만들어 주세요.</div> :
+              <div style={{ padding: '18px 12px', fontSize: 13, color: 'var(--color-faded)' }}>버킷이 없어요. 회원 페이지에서 먼저 버킷을 만들어 주세요.</div> :
               entries.map(e => (
                 <button
 	key={e.id}

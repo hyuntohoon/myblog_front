@@ -2,7 +2,7 @@
 // the bucket tree, shared across every island.
 //
 // WHY: the site is an MPA (no client router), so each page load remounts the layout
-// Pocket island AND any /profile board, and each used to re-`listBuckets()` the full
+// Pocket island AND any member board, and each used to re-`listBuckets()` the full
 // tree. Three independent copies (tray provider / BucketBoard / LikedBoard) also drifted
 // from each other. This module is a framework-agnostic observable store:
 //   - module singleton → islands on the SAME page share one in-memory tree (a mutation

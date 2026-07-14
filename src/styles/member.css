@@ -1,5 +1,5 @@
 /* ============================================================
-   Member dashboard (/profile) + /collection — entry point.
+   Member dashboard + /collection — entry point.
    Editorial primitives (.panel/.chip/.btn/.stars/.cover/.kicker/.meta/
    .scrim/.slideover/.sample/.iconbtn + type helpers) live in global.css.
    This file re-exports the member-only modules:
@@ -8,7 +8,7 @@
      ./member/animations.css — entrance / equalizer keyframes
      ./member/layout.css     — profile shell, modals, picker sheet, lyrics
 
-   Imported by pages/profile.astro + pages/collection.astro.
+   Imported by SelfDashboard + pages/collection.astro.
    ============================================================ */
 
 @import './member/widgets.css';
