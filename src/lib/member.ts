@@ -106,6 +106,14 @@ export const MEMBER_IDENTITY = {
 } as const
 
 /**
+ * Identifies lazy-provisioned placeholder names so public surfaces present the
+ * stable handle as a handle, instead of styling the generated value as a name.
+ */
+export function isPlaceholderIdentity(displayName: string | null | undefined, handle: string): boolean {
+	return !displayName || (displayName === handle && /^user-[0-9a-f]{8}$/.test(handle))
+}
+
+/**
  * The blog owner's live `users.handle` in prod (profile→member merge PR2).
  * MUST match the prod users row of the OWNER_SUB account — MEMBER_IDENTITY
  * above is a front-side fiction and must never be used for this check. The

@@ -15,6 +15,7 @@ import type { MemberNowPlaying, MemberProfile as Profile } from '../album/review
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { openAlbum } from '@lib/entityEvents'
+import { isPlaceholderIdentity } from '@lib/member'
 import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
 import { getMe } from './me.api'
 import { Cover, Stars } from './ui'
@@ -179,7 +180,9 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 		catch { /* ignore */ }
 	}
 
-	const name = profile?.display_name ?? displayName ?? handle
+	const display = profile?.display_name ?? displayName
+	const placeholder = isPlaceholderIdentity(display, handle)
+	const name = placeholder ? handle : display ?? handle
 	const avatar = profile?.avatar_url ?? avatarUrl
 	const reviews = profile?.reviews ?? []
 	const activeNavId = dashActive ? tab : RATINGS_TAB
@@ -189,8 +192,8 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 			<header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
 				<Avatar url={avatar} name={name} />
 				<div style={{ minWidth: 0 }}>
-					<h1 className="serif italic" style={{ fontSize: 26, fontWeight: 500, margin: 0, lineHeight: 1.15 }}>{name}</h1>
-					<div className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', marginTop: 6 }}>
+					{!placeholder && <h1 className="serif italic" style={{ fontSize: 26, fontWeight: 500, margin: 0, lineHeight: 1.15 }}>{name}</h1>}
+					<div className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', marginTop: placeholder ? 0 : 6 }}>
 						@
 {handle}
 						{profile && (

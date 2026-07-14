@@ -17,6 +17,7 @@
 import type { MemberSummary } from '../album/reviews.api'
 import { useEffect, useState } from 'react'
 import { goLogin, isLoggedIn } from '@lib/auth'
+import { isPlaceholderIdentity } from '@lib/member'
 import { fetchMembers } from '../album/reviews.api'
 import { getMe } from './me.api'
 import MemberProfile from './MemberProfile'
@@ -58,28 +59,31 @@ function Directory() {
 			)}
 			{members != null && members.length > 0 && (
 				<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-					{members.map(m => (
-						<li key={m.handle}>
-							<a
-								href={`/members/?u=${encodeURIComponent(m.handle)}`}
-								style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 8px', borderRadius: 6, textDecoration: 'none' }}
-							>
-								{m.avatar_url ?
-									<img src={m.avatar_url} alt="" width={44} height={44} loading="lazy" style={{ borderRadius: '50%', objectFit: 'cover', flex: '0 0 auto' }} /> :
-									<Initial name={m.display_name || m.handle} />}
-								<span style={{ minWidth: 0 }}>
-									<span className="sans" style={{ display: 'block', fontSize: 14.5, fontWeight: 500, color: 'var(--color-text)' }}>{m.display_name || m.handle}</span>
-									<span className="mono" style={{ display: 'block', fontSize: 11, color: 'var(--color-faded)', marginTop: 2 }}>
-										@
-										{m.handle}
-										{' · '}
-										{m.review_count}
-										개 평가
+					{members.map((m) => {
+						const placeholder = isPlaceholderIdentity(m.display_name, m.handle)
+						return (
+							<li key={m.handle}>
+								<a
+									href={`/members/?u=${encodeURIComponent(m.handle)}`}
+									style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 8px', borderRadius: 6, textDecoration: 'none' }}
+								>
+									{m.avatar_url ?
+										<img src={m.avatar_url} alt="" width={44} height={44} loading="lazy" style={{ borderRadius: '50%', objectFit: 'cover', flex: '0 0 auto' }} /> :
+										<Initial name={placeholder ? m.handle : m.display_name} />}
+									<span style={{ minWidth: 0 }}>
+										{!placeholder && <span className="sans" style={{ display: 'block', fontSize: 14.5, fontWeight: 500, color: 'var(--color-text)' }}>{m.display_name}</span>}
+										<span className="mono" style={{ display: 'block', fontSize: 11, color: 'var(--color-faded)', marginTop: placeholder ? 0 : 2 }}>
+											@
+											{m.handle}
+											{' · '}
+											{m.review_count}
+											개 평가
+										</span>
 									</span>
-								</span>
-							</a>
-						</li>
-					))}
+								</a>
+							</li>
+						)
+					})}
 				</ul>
 			)}
 		</div>

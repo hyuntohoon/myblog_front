@@ -5,6 +5,7 @@
 import type { AlbumReviewAggregate } from './reviews.api'
 import { useEffect, useState } from 'react'
 import { goLogin, isLoggedIn } from '@lib/auth'
+import { isPlaceholderIdentity } from '@lib/member'
 import { Stars } from '../member/ui'
 import HalfStarInput from './HalfStarInput'
 import {
@@ -188,18 +189,21 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 			{/* review list */}
 			{reviews.length > 0 && (
 				<ul style={{ listStyle: 'none', margin: '18px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-					{reviews.map(r => (
-						<li key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-								{/* runtime member URL (OQ6): works for every member immediately —
-								    the static /members/[handle] page exists only post-redeploy. */}
-								<a href={`/members/?u=${encodeURIComponent(r.author.handle)}`} className="sans" style={{ fontSize: 13, fontWeight: 500 }}>{r.author.display_name}</a>
-								<Stars score={Number(r.rating)} size={13} />
-								<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
-							</div>
-							{r.comment && <p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.5 }}>{r.comment}</p>}
-						</li>
-					))}
+					{reviews.map((r) => {
+						const placeholder = isPlaceholderIdentity(r.author.display_name, r.author.handle)
+						return (
+							<li key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+									{/* runtime member URL (OQ6): works for every member immediately —
+									    the static /members/[handle] page exists only post-redeploy. */}
+									<a href={`/members/?u=${encodeURIComponent(r.author.handle)}`} className={placeholder ? 'mono' : 'sans'} style={{ fontSize: 13, fontWeight: 500 }}>{placeholder ? `@${r.author.handle}` : r.author.display_name}</a>
+									<Stars score={Number(r.rating)} size={13} />
+									<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+								</div>
+								{r.comment && <p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.5 }}>{r.comment}</p>}
+							</li>
+						)
+					})}
 				</ul>
 			)}
 		</div>

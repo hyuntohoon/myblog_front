@@ -15,6 +15,7 @@
 // estimate; `durationMs` is what lets the viewer detect the track ending. The
 // `playing` state also carries display metadata (track/artist/album/cover) so
 // the now-playing card can render the live moment without a second request.
+import { isOwnerUser } from '@lib/owner'
 import { getStreamingToken } from '@lib/spotifyPlayback'
 
 const PLAYER_URL = 'https://api.spotify.com/v1/me/player'
@@ -53,6 +54,10 @@ export type LivePlayback =
  *   transient failure.
  */
 export async function readLivePlayback(): Promise<LivePlayback> {
+  // The v1 token is owner-only; mirror require_owner before touching its route.
+  if (!await isOwnerUser())
+    return { state: 'unavailable' }
+
   const tok = await getStreamingToken()
   if (!tok.ok)
     return { state: 'unavailable' }
