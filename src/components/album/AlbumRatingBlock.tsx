@@ -4,13 +4,13 @@
 // panel appears only when signed in. Everything here is public-bundle-safe.
 import type { AlbumReviewAggregate } from './reviews.api'
 import { useEffect, useState } from 'react'
-import { isLoggedIn } from '@lib/auth'
+import { goLogin, isLoggedIn } from '@lib/auth'
 import { Stars } from '../member/ui'
 import HalfStarInput from './HalfStarInput'
 import {
 	deleteMyReview,
 	fetchAlbumReviews,
-	fetchMyId,
+	fetchMyHandle,
 	putMyReview,
 	ReviewRateLimitError,
 } from './reviews.api'
@@ -36,7 +36,10 @@ const BTN_QUIET: React.CSSProperties = { ...BTN_BASE, border: '1px solid var(--c
 
 export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	const [agg, setAgg] = useState<AlbumReviewAggregate | null>(null)
-	const [myId, setMyId] = useState<string | null>(null)
+	// Handle-keyed "my review" match (audit 2026-07-14) — the public contract's
+	// author.id is the Cognito sub and is slated for removal; handle is the
+	// stable public identity.
+	const [myHandle, setMyHandle] = useState<string | null>(null)
 	const [editing, setEditing] = useState(false)
 	const [draftRating, setDraftRating] = useState(4)
 	const [draftComment, setDraftComment] = useState('')
@@ -55,7 +58,7 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 		let alive = true
 		load().then(() => {
 			if (alive && authed)
-				fetchMyId().then(id => alive && setMyId(id))
+				fetchMyHandle().then(h => alive && setMyHandle(h))
 		})
 		return () => {
 			alive = false
@@ -63,7 +66,7 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	}, [albumId])
 
 	const reviews = agg?.reviews ?? []
-	const myReview = myId ? reviews.find(r => r.author.id === myId) ?? null : null
+	const myReview = myHandle ? reviews.find(r => r.author.handle === myHandle) ?? null : null
 
 	function startEdit() {
 		setDraftRating(myReview ? Number(myReview.rating) : 4)
@@ -81,9 +84,9 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 				setErr('저장에 실패했습니다. 다시 시도해 주세요.')
 				return
 			}
-			// pick up my id from the write response if we didn't have it yet
-			if (!myId)
-				setMyId(res.author.id)
+			// pick up my handle from the write response if we didn't have it yet
+			if (!myHandle)
+				setMyHandle(res.author.handle)
 			await load()
 			setEditing(false)
 		}
@@ -174,13 +177,23 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 				</div>
 			)}
 
+			{/* login CTA — anonymous visitors used to get NO write affordance at all
+			    (audit 2026-07-14); goLogin captures this page as the returnTo. */}
+			{!authed && (
+				<div style={{ marginTop: 16 }}>
+					<button type="button" onClick={() => void goLogin(true)} style={{ ...BTN_QUIET, fontSize: 12.5 }}>로그인하고 평가 남기기</button>
+				</div>
+			)}
+
 			{/* review list */}
 			{reviews.length > 0 && (
 				<ul style={{ listStyle: 'none', margin: '18px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
 					{reviews.map(r => (
 						<li key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
 							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-								<a href={`/members/${r.author.handle}/`} className="sans" style={{ fontSize: 13, fontWeight: 500 }}>{r.author.display_name}</a>
+								{/* runtime member URL (OQ6): works for every member immediately —
+								    the static /members/[handle] page exists only post-redeploy. */}
+								<a href={`/members/?u=${encodeURIComponent(r.author.handle)}`} className="sans" style={{ fontSize: 13, fontWeight: 500 }}>{r.author.display_name}</a>
 								<Stars score={Number(r.rating)} size={13} />
 								<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
 							</div>

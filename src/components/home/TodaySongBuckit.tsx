@@ -8,18 +8,19 @@
  * artist is denormalized text (no DB id in the row), so it renders as a static
  * label, not an artist-hub link.
  *
- * Owner control is INLINE (OQ6 decision): a logged-in owner (isLoggedIn) sees
- * "올리기/바꾸기/삭제" affordances right on the tile. The server's require_owner
- * is the real gate (fail-closed); isLoggedIn is just the client hint so visitors
- * don't see inert buttons. On a no-pick day: owner sees an empty-state prompt,
- * visitors see nothing (the section hides — RFC: quiet on no-pick days).
+ * Owner control is INLINE (OQ6 decision): the OWNER sees "올리기/바꾸기/삭제"
+ * affordances right on the tile. The server's require_owner is the real gate
+ * (fail-closed); the client hint is isOwnerUser() — post multi-user, any member
+ * is "logged in", so isLoggedIn alone rendered owner controls that 403'd on
+ * click (audit 2026-07-14). On a no-pick day: owner sees an empty-state prompt,
+ * visitors AND members see nothing (the section hides — RFC: quiet no-pick days).
  *
  * "지난 추천곡" in the header opens the history overlay (OQ5 = modal).
  * Self-contained styling mirrors TodayAlbumBuckit (scoped .tsp-mod <style>).
  */
 import { useEffect, useState } from 'react'
 import { openAlbum } from '@lib/entityLinks'
-import { isLoggedIn } from '@lib/auth'
+import { isOwnerUser } from '@lib/owner'
 import { Cover, SectionTitle } from './ui'
 import {  deleteTodaysPick, getTodaysPick, putTodaysPick  } from '@lib/todaysPick'
 import type { DailyPick, UpsertTodaysPick } from '@lib/todaysPick'
@@ -64,15 +65,16 @@ export default function TodaySongBuckit() {
 	const [pickerOpen, setPickerOpen] = useState(false)
 	const [historyOpen, setHistoryOpen] = useState(false)
 	const [busy, setBusy] = useState(false)
-	// Owner hint — resolved CLIENT-side only (isLoggedIn touches localStorage,
-	// which is undefined during SSR). The server's require_owner is the real gate;
-	// this just hides inert buttons from logged-out visitors. Until mounted we
-	// render as a non-owner (no buttons) — fine, since status is 'loading' then.
+	// Owner hint — resolved CLIENT-side only (token/localStorage are undefined
+	// during SSR). The server's require_owner is the real gate; isOwnerUser()
+	// (cached getMe → OWNER_HANDLE) keeps the controls off MEMBER screens too —
+	// isLoggedIn alone showed members buttons that 403'd (audit 2026-07-14).
+	// Until resolved we render as a non-owner (no buttons) — fail-closed.
 	const [isOwner, setIsOwner] = useState(false)
 
 	useEffect(() => {
-		setIsOwner(isLoggedIn())
 		let alive = true
+		void isOwnerUser().then(v => alive && setIsOwner(v))
 		void getTodaysPick().then((p) => {
 			if (!alive)
 				return

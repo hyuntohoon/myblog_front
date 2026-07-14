@@ -17,6 +17,7 @@ import type { PlaybackTarget } from '@lib/spotifyPlayback'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { artistHref } from '@lib/entityLinks'
 import { isLoggedIn } from '@lib/auth'
+import { isOwnerUser } from '@lib/owner'
 import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
@@ -334,6 +335,10 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
   // FEAT-pocket-buckit-viewers Track A — reverse-DnD drop highlight (a board member
   // hovering this drawer). The accept-gate mirrors the board's General/Artist rule.
   const [dropHot, setDropHot] = useState(false)
+  // Streaming ▶ is owner-only in substance (single owner-minted playback token,
+  // server require_owner) — hide it from members instead of 403ing on click
+  // (audit 2026-07-14). Same signal picks the footer's "my page" target.
+  const [isOwner, setIsOwner] = useState(false)
   const posRef = useRef<DrawerPos | null>(null)
   posRef.current = pos // mirror so the resize handler reads fresh pos without an impure updater
   const seed = useRef({ index, inspect: design.inspect }) // captured at mount for the cascade
@@ -347,6 +352,14 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
     const t = setTimeout(() => setNotice(null), 5000)
     return () => clearTimeout(t)
   }, [notice])
+
+  useEffect(() => {
+    let alive = true
+    void isOwnerUser().then(v => alive && setIsOwner(v))
+    return () => {
+      alive = false
+    }
+  }, [])
 
   // place on open: the persisted per-bucket position (re-clamped to the live viewport
   // so a stale off-screen coord is corrected) or a cascade default. Runs once per panel
@@ -587,16 +600,20 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
             <Cover label={a.title} size={26} />
             <span className="serif" style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>
             <span className="tgt-meta">{a.itemType === 'album' ? a.artist : (ITEM_TYPE_LABEL[a.itemType] ?? a.itemType)}</span>
-            <button type="button" className="pb-play" title="재생 (Spotify Premium)" aria-label={`${a.title} 재생`} onClick={() => onPlay(a)}>
-              <svg width={sc(9)} height={sc(9)} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
-            </button>
+            {isOwner && (
+              <button type="button" className="pb-play" title="재생 (Spotify Premium)" aria-label={`${a.title} 재생`} onClick={() => onPlay(a)}>
+                <svg width={sc(9)} height={sc(9)} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+              </button>
+            )}
           </div>
         ))}
           {bucket.albums.length === 0 && <span className="sans" style={{ fontSize: sc(11), color: 'var(--color-faded)' }}>비어 있음 — 드롭 영역으로 유지</span>}
       </div>
       )}
       {notice && <div className="pb-playnote" role="status">{notice}</div>}
-      <a className="btn" href="/profile" style={{ display: 'block', textAlign: 'center', padding: `${sc(7)} 0`, fontSize: sc(10), marginTop: sc(10), textDecoration: 'none', borderColor: 'color-mix(in srgb, var(--bucket-accent) 40%, var(--color-border))' }}>전체 버킷 페이지 열기 ↗</a>
+      {/* per-role target (audit 2026-07-14): members manage buckets on their own
+          member page — /profile is the owner dashboard until profile-merge PR3. */}
+      <a className="btn" href={isOwner ? '/profile/?tab=bucket' : '/members/?me&tab=bucket'} style={{ display: 'block', textAlign: 'center', padding: `${sc(7)} 0`, fontSize: sc(10), marginTop: sc(10), textDecoration: 'none', borderColor: 'color-mix(in srgb, var(--bucket-accent) 40%, var(--color-border))' }}>전체 버킷 페이지 열기 ↗</a>
     </div>
   )
 }

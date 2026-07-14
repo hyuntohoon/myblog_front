@@ -87,15 +87,17 @@ export async function fetchMemberNowPlaying(handle: string): Promise<MemberNowPl
 }
 
 /**
- * The signed-in member's own id (to find "my review" in a public list). null
- *  when logged out / unprovisioned. Rides the edge_guard GET proxy + lazy-create.
+ * The signed-in member's own handle (to find "my review" in a public list —
+ *  handle-keyed since audit 2026-07-14, prepping the removal of the Cognito-sub
+ *  `author.id` from the public review contract). null when logged out /
+ *  unprovisioned. Rides the edge_guard GET proxy + lazy-create.
  */
-export async function fetchMyId(): Promise<string | null> {
+export async function fetchMyHandle(): Promise<string | null> {
 	const res = await apiFetch(`${BASE}/api/me`)
 	if (!res || !res.ok)
 		return null
 	const me = (await res.json()) as components['schemas']['Backend_MeResponse']
-	return me.id ?? null
+	return me.handle ?? null
 }
 
 /** Public: member index (build-time getStaticPaths for /members/[handle]). */

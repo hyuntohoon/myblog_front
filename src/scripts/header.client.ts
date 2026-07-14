@@ -1,5 +1,6 @@
 // src/scripts/header.client.ts
 import { goLogin, isLoggedIn, logout } from '../lib/auth.ts'
+import { isOwnerUser } from '../lib/owner.ts'
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null
 const loginBtn = $('#login-btn')
@@ -12,8 +13,16 @@ function syncAuthUI() {
 	if (logged) {
 		loginBtn?.classList.add('hidden')
 		logoutBtn?.classList.remove('hidden')
-		writeLink?.classList.remove('hidden')
 		profileLink?.classList.remove('hidden')
+		// Owner-only affordances (audit 2026-07-14): post multi-user any member
+		// is "logged in", so the write entry gates on the owner signal (cached
+		// getMe → OWNER_HANDLE; fail-closed → members never see it), and the
+		// avatar targets the member's own page — the owner keeps /profile (the
+		// writer/lyrics workflow lives there until profile-merge PR3).
+		void isOwnerUser().then((owner) => {
+			writeLink?.classList.toggle('hidden', !owner)
+			profileLink?.setAttribute('href', owner ? '/profile' : '/members/?me')
+		})
 	}
 	else {
 		loginBtn?.classList.remove('hidden')
@@ -30,7 +39,8 @@ syncAuthUI()
 // The Login button opens a small menu instead of redirecting straight to the
 // hosted UI. Each option deep-links to an IdP (data-idp → identity_provider);
 // the empty one falls through to the hosted UI (email + enabled IdPs). Login
-// always lands back on home via the shared /admin/callback.
+// returns to the pre-login page via the shared /admin/callback (goLogin
+// captures returnTo; no capture → home).
 const loginMenu = $('#login-menu')
 
 function setLoginMenu(open: boolean) {

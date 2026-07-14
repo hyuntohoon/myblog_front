@@ -33,6 +33,7 @@ const LS_ID = 'id_token'
 const LS_REFRESH = 'refresh_token'
 const SS_VERIFIER = 'pkce_verifier'
 const SS_STATE = 'oauth_state'
+const SS_RETURN_TO = 'auth_return_to'
 
 // ─────────────────────────── Helpers ────────────────────────────
 
@@ -79,7 +80,9 @@ export function getAuthHeader(): Record<string, string> {
 export type IdentityProvider = 'Google' | 'Kakao'
 
 /**
- * 로그인 시작. 로그인 완료 후에는 항상 홈(`/`)으로 이동한다(콜백 처리에서 결정).
+ * 로그인 시작. 로그인 완료 후에는 로그인 직전 페이지로 돌아간다(콜백 처리에서
+ * `consumeReturnTo()`로 결정; 캡처가 없으면 홈 — multi-user surface audit
+ * 2026-07-14: 항상 홈으로 보내던 동작은 평가하려던 앨범 등 원래 의도를 잃었다).
  * @param force true이면 매번 로그인 폼 강제(prompt=login)
  * @param identityProvider 지정 시 해당 IdP(Google/Kakao) 동의 화면으로 바로 딥링크
  *   (`identity_provider`). 콜백은 기존 /admin/callback을 그대로 재사용한다.
@@ -92,6 +95,15 @@ export async function goLogin(force: boolean = false, identityProvider?: Identit
 			COGNITO_DOMAIN,
 		)
 	}
+
+	// Capture the pre-login location (same-origin path only) so the callback can
+	// return the user to what they were doing. The callback's retry goLogin runs
+	// ON /admin/callback — skip capture there so the earlier value survives.
+	try {
+		if (!location.pathname.startsWith('/admin/callback'))
+			sessionStorage.setItem(SS_RETURN_TO, location.pathname + location.search + location.hash)
+	}
+	catch { /* sessionStorage unavailable — login still works, lands on home */ }
 
 	const { verifier, challenge } = await makePkce()
 	sessionStorage.setItem(SS_VERIFIER, verifier)
@@ -119,8 +131,24 @@ params.identity_provider = identityProvider
 }
 
 /**
+ * 로그인 직전에 캡처해 둔 되돌아갈 경로를 꺼내고(1회성) 검증한다. 같은
+ * origin의 절대 경로(`/...`)만 허용 — `//host` 형태의 protocol-relative
+ * 오픈 리다이렉트를 차단한다. 없거나 검증 실패면 홈.
+ */
+export function consumeReturnTo(): string {
+	try {
+		const v = sessionStorage.getItem(SS_RETURN_TO)
+		sessionStorage.removeItem(SS_RETURN_TO)
+		if (v && v.startsWith('/') && !v.startsWith('//'))
+			return v
+	}
+	catch { /* ignore */ }
+	return '/'
+}
+
+/**
  * 콜백 처리: code → 토큰 교환 및 저장. 이동은 호출부(callback.client.ts)가
- * 담당한다(로그인 후 항상 홈으로).
+ * 담당한다(캡처된 returnTo, 없으면 홈).
  */
 export async function handleCallback() {
 	const qs = new URLSearchParams(location.search)

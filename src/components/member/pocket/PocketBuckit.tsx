@@ -1,6 +1,7 @@
 // FEAT-pocket-buckit Step 1 — the site-wide island. Mounted once in layout.astro
-// (client:only). Owner-only in v1 (the bucket read needs a Cognito JWT); anonymous
-// visitors get nothing until the Step-5 public-page sign-in handoff lands.
+// (client:only). Signed-in members only (the bucket read needs a Cognito JWT and
+// is per-user since multi-user P2 — each member sees their OWN buckets here);
+// anonymous visitors get nothing. Streaming ▶ inside the tray stays owner-only.
 import type { PbOpenStateDetail } from '@lib/pocketBuckit/events'
 import { useEffect, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'

@@ -1,5 +1,5 @@
 // src/scripts/callback.client.ts
-import { goLogin, handleCallback } from '../lib/auth'
+import { consumeReturnTo, goLogin, handleCallback } from '../lib/auth'
 
 function log(m: string) {
 	console.log(m)
@@ -33,8 +33,10 @@ async function run() {
 		await handleCallback()
 
 		log('✅ 로그인 완료. 이동합니다…')
-		// 로그인 후에는 항상 홈으로 이동한다.
-		location.replace('/')
+		// 로그인 직전 페이지로 복귀(goLogin이 캡처, consumeReturnTo가 1회성
+		// 소비+경로 검증). 캡처가 없으면 홈 — 무조건 홈은 원래 의도(평가하려던
+		// 앨범 등)를 잃는다(audit 2026-07-14).
+		location.replace(consumeReturnTo())
 	}
  catch (e: any) {
 		console.error(e)

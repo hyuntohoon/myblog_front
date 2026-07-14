@@ -1,10 +1,11 @@
 ---
 // /buckets — a dedicated, discoverable entry point to the 평론 버킷 management
-// surface. The board genuinely needs the surrounding /profile state (auth guard,
-// the member's reviews for the rating chips, the album-detail slide-over), so
-// rather than duplicate that, this static page redirects to the profile bucket
-// tab. The `?tab=bucket` deeplink (handled in ProfileApp) lands directly on it.
-const target = '/profile/?tab=bucket'
+// surface. Redirects to the signed-in user's OWN member page bucket tab
+// (audit 2026-07-14: the old /profile/?tab=bucket target sent members to the
+// owner dashboard; /members/?me resolves self at runtime and its SelfDashboard
+// hosts the same BucketBoard — works for the owner too). The `?tab=bucket`
+// deeplink lands directly on it; not logged in → goLogin via the ?me path.
+const target = '/members/?me&tab=bucket'
 ---
 
 <!doctype html>
