@@ -841,9 +841,11 @@ export interface paths {
         };
         /**
          * Member Now Playing
-         * @description The member's public now-playing. Reads only the worker-written
-         *     lastfm_recent_tracks cache (rule #9 — never a synchronous Last.fm call).
-         *     404 for an unknown handle; is_playing=false covers both 'not connected'
+         * @description The member's public now-playing, source-merged across the worker-written
+         *     lastfm_recent_tracks + spotify_member_now_playing caches (rule #9 — never a
+         *     synchronous provider call). Carries provenance: `source`, and for Last.fm
+         *     picks `source_username` ("via Last.fm @x" — unverified-username transparency,
+         *     OQ7). 404 for an unknown handle; is_playing=false covers both 'not connected'
          *     and 'nothing playing' so a member's integration status stays private —
          *     the profile page hides the section unless is_playing is true.
          */
@@ -1975,6 +1977,35 @@ export interface components {
             members?: components["schemas"]["Backend_MemberSummary"][];
         };
         /**
+         * MemberNowPlayingResponse
+         * @description Public member now-playing (GET /api/members/{handle}/now-playing).
+         *
+         *     Extends the self-scoped Last.fm shape with provenance (2026-07-14 audit,
+         *     RFC OQ7): Last.fm connects are unverified usernames, so the public surface
+         *     must say where the data comes from — `source_username` carries the Last.fm
+         *     username ONLY while playing via Last.fm ("via Last.fm @x"). Spotify rows
+         *     are OAuth-proven, so source='spotify' needs no username. Both fields stay
+         *     None when nothing is playing (미연동 ≡ idle — integration-status privacy).
+         */
+        Backend_MemberNowPlayingResponse: {
+            /** Album */
+            album?: string | null;
+            /** Artist */
+            artist?: string | null;
+            /** Image Url */
+            image_url?: string | null;
+            /** Is Playing */
+            is_playing: boolean;
+            /** Played At */
+            played_at?: string | null;
+            /** Source */
+            source?: ("lastfm" | "spotify") | null;
+            /** Source Username */
+            source_username?: string | null;
+            /** Track */
+            track?: string | null;
+        };
+        /**
          * MemberProfileResponse
          * @description Public profile at /members/{handle}: identity + newest-first review feed.
          */
@@ -2331,6 +2362,11 @@ export interface components {
         /**
          * ReviewAuthor
          * @description The public reviewer identity embedded in an album's review list.
+         *
+         *     Deliberately NO `id`: users.id IS the Cognito sub, and the old field
+         *     published every reviewer's sub on an unauthenticated endpoint (2026-07-14
+         *     audit F4.3). `handle` is unique — clients identify authors (incl. "my
+         *     review") by handle.
          */
         Backend_ReviewAuthor: {
             /** Avatar Url */
@@ -2339,8 +2375,6 @@ export interface components {
             display_name: string;
             /** Handle */
             handle: string;
-            /** Id */
-            id: string;
         };
         /** ReviewedAlbumResponse */
         Backend_ReviewedAlbumResponse: {
@@ -4881,7 +4915,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Backend_LastfmNowPlayingResponse"];
+                    "application/json": components["schemas"]["Backend_MemberNowPlayingResponse"];
                 };
             };
             /** @description Validation Error */

@@ -66,12 +66,15 @@ export async function fetchMemberProfile(handle: string): Promise<MemberProfile 
 	}
 }
 
-export type MemberNowPlaying = components['schemas']['Backend_LastfmNowPlayingResponse']
+export type MemberNowPlaying = components['schemas']['Backend_MemberNowPlayingResponse']
 
 /**
- * Public: a member's Last.fm now-playing (DB cache read). Returns null on any
- * failure or when nothing is playing — the profile hides the section entirely
- * (미연동 and idle are indistinguishable by design; integration status is private).
+ * Public: a member's now-playing (DB cache read; Last.fm + Spotify merged
+ * server-side, `source`/`source_username` carry provenance while playing —
+ * Last.fm connects are unverified usernames, so the surface says where the
+ * data comes from). Returns null on any failure or when nothing is playing —
+ * the profile hides the section entirely (미연동 and idle are indistinguishable
+ * by design; integration status is private).
  */
 export async function fetchMemberNowPlaying(handle: string): Promise<MemberNowPlaying | null> {
 	try {
