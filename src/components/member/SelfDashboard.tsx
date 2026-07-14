@@ -17,24 +17,27 @@
 //     AlbumDetail degrade their post-linked actions (보기 → album overlay; no
 //     수정/삭제).
 //
-// Deliberately excluded until PR3: lyrics viewer/sheet overlays (the dock).
-// No onOpenLyrics is passed, and NowPlaying / LikedBoard / AlbumDetail hide
-// their 가사 entries when the handler is absent, so nothing renders dead.
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { ReactNode } from 'react'
 import type { MemberReview as PublicMemberReview } from '../album/reviews.api'
-import type { NpStyle } from './NowPlaying'
+import type { LyricsOpenTarget, NpStyle } from './NowPlaying'
+import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { OWNER_HANDLE } from '@lib/member'
 import { AlbumDetail } from './AlbumDetail'
 import { BucketBoard } from './BucketBoard'
 import { DENSITY_KEY, DENSITY_OPTS, NP_STYLE_KEY, NP_STYLE_OPTS, readPref, TabPanel } from './dashboardShared'
+import { LyricsSheet } from './lyrics/LyricsSheet'
+import { LyricsViewer } from './lyrics/LyricsViewer'
 import { OverviewDash } from './OverviewDash'
 import { ReviewsTab } from './ReviewsTab'
 import { SpotifyIntegrationTab } from './SpotifyIntegrationTab'
 import { StatsTab } from './StatsTab'
 import '@styles/member.css'
 import '@styles/research.css'
+
+interface LiveLyrics { kind: 'live', trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null }
+interface StaticLyrics { kind: 'static', trackId: string, meta?: LyricsSheetMeta }
 
 // Stable empty list so downstream useMemo deps don't churn per render while
 // the owner JSON (or the public profile feed) is still loading.
@@ -129,6 +132,42 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 	const [density] = useState(() => readPref(DENSITY_KEY, DENSITY_OPTS.map(o => o.v), 'regular'))
 
 	const [detail, setDetail] = useState<DetailTarget | null>(null)
+	// FEAT-lyrics-viewer overlay state (merge PR3 — this dashboard owns the
+	// overlay mounts; component map). Two entries share one mount:
+	//  - dynamic entry: NowPlaying's 가사 tap → live track id + one-shot
+	//    position, refresh enabled.
+	//  - debug entry: `?lyrics=<spotify_track_id>` — no playback binding, no
+	//    refresh. Closing strips the param so a reload doesn't reopen it.
+	// Two viewers share one overlay slot (discriminated by `kind`):
+	//  - live   → the immersive LyricsViewer (NowPlaying tap: live track id +
+	//             one-shot position, refresh enabled).
+	//  - static → the LyricsSheet (FEAT-lyrics-sheet): a bright reading document
+	//             for review writing. TrackRow `lyrics` actions (AlbumDetail
+	//             tracklist / memo window / LikedBoard) + the `?lyrics=` debug
+	//             entry, all non-live (no playback binding). `meta` carries the
+	//             header identity the reads don't (title/artist/album/cover).
+	const [lyrics, setLyrics] = useState<LiveLyrics | StaticLyrics | null>(() => {
+		if (typeof window === 'undefined')
+			return null
+		try {
+			const id = new URLSearchParams(window.location.search).get('lyrics')
+			return id ? { kind: 'static', trackId: id } : null
+		}
+		catch {
+			return null
+		}
+	})
+	const openLyrics = (t: LyricsOpenTarget) => setLyrics({ kind: 'live', trackId: t.trackId, progressMs: t.progressMs, progressAtMs: t.progressAtMs, durationMs: t.durationMs, albumCoverUrl: t.albumCoverUrl, track: t.track, artist: t.artist })
+	const openStaticLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => setLyrics({ kind: 'static', trackId: spotifyTrackId, meta })
+	const closeLyrics = () => {
+		setLyrics(null)
+		try {
+			const url = new URL(window.location.href)
+			url.searchParams.delete('lyrics')
+			window.history.replaceState(null, '', url)
+		}
+		catch { /* ignore */ }
+	}
 	// Latest in-session memo edits keyed by bucket-item id — same stale-snapshot
 	// merge as ProfileApp (see its memoEdits comment / AlbumDetail.useBucketMemo).
 	const memoEdits = useRef<Map<string, { note: string | null, prepTonight: boolean }>>(new Map())
@@ -141,10 +180,10 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 	}
 
 	const panels: { id: string, node: ReactNode }[] = [
-		{ id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => onSelectTab('bucket')} reviews={reviews} /> },
+		{ id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => onSelectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} /> },
 		{ id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> },
 		{ id: 'bucket', node: <BucketBoard onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
-		{ id: 'stats', node: <StatsTab onOpen={openDetail} /> },
+		{ id: 'stats', node: <StatsTab onOpen={openDetail} onOpenLyrics={openStaticLyrics} /> },
 		{ id: 'integration', node: <SpotifyIntegrationTab /> },
 	]
 
@@ -155,7 +194,9 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 					<TabPanel key={p.id} active={p.id === tab}>{p.node}</TabPanel> :
 					null
 			))}
-			{detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} />}
+			{detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} onOpenLyrics={openStaticLyrics} />}
+			{lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} canRefresh onClose={closeLyrics} />}
+			{lyrics?.kind === 'static' && <LyricsSheet key={lyrics.trackId} spotifyTrackId={lyrics.trackId} meta={lyrics.meta} onClose={closeLyrics} />}
 		</div>
 	)
 }
