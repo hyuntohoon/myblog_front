@@ -1,7 +1,7 @@
 /* ============================================================
    FEAT-album-research-notes Step 5 — shared research-note styling.
-   Loaded on BOTH /profile (BucketBoard slide-over) and /write (margin rail)
-   via an explicit import in profile.astro + write-layout.astro. Uses only the
+   Loaded on BOTH the member dashboard (BucketBoard slide-over) and /write (margin rail)
+   via explicit imports in SelfDashboard + write-layout.astro. Uses only the
    global --color-* / --font-* tokens so it is namespace-agnostic across the
    two surfaces. Editorial register: serif body, mono labels, muted dot
    vocabulary, brand-red accent used sparingly.
@@ -304,7 +304,7 @@
 
 /* ============================================================
    BucketBoard surfaces — per-bucket research-mode segmented control + the
-   per-cover badge/checkbox overlays. (/profile only; harmless on /write.)
+   per-cover badge/checkbox overlays. (Member dashboard only; harmless on /write.)
    ============================================================ */
 .rsh-seg {
 	display: inline-flex;
@@ -373,7 +373,7 @@
 
 /* ════════════════════════════════════════════════════════════════════
    Structured reading view (NoteBody) — shared by the /write split doc and the
-   /profile bucket reading modal so both render the note identically. Ported
+   member bucket reading modal so both render the note identically. Ported
    from the writer reading view to --color-* (global) tokens; loaded on both
    pages. The writer aliases (--ink etc.) equal these, so /write is unchanged.
    ════════════════════════════════════════════════════════════════════ */
@@ -494,7 +494,7 @@
 .rsh-qbtn:focus-visible { opacity: 1; transform: none; }
 .rsh-qbtn:hover { border-color: var(--color-accent); color: var(--color-accent); }
 
-/* ── bucket research reading modal (/profile) — large centered reading view ── */
+/* ── member bucket research reading modal — large centered reading view ── */
 .rsh-modal-scrim {
 	position: fixed;
 	inset: 0;

@@ -34,12 +34,10 @@ export function isOwnerUser(): Promise<boolean> {
 }
 
 /**
- * The signed-in user's own profile surface: the owner keeps the /profile
- * dashboard (lyrics dock + writer workflow live there until profile-merge
- * PR3); members get their runtime member page.
+ * The signed-in user's unified member self-dashboard.
  */
 export const MEMBER_SELF_URL = '/members/?me'
 
-export async function selfPageHref(): Promise<string> {
-	return (await isOwnerUser()) ? '/profile' : MEMBER_SELF_URL
+export function selfPageHref(): string {
+	return MEMBER_SELF_URL
 }

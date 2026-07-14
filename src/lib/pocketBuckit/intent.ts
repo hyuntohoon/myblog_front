@@ -18,7 +18,7 @@
 // while logged out) carry `reviewTargetId` (the posts-table DB id). Playback (queue)
 // and snapshot adds are NOT stashed: the queue toggle lives inside the picker sheet
 // (unreachable logged-out — a track intent resumes as a plain track add), and the
-// snapshot source (/profile analysis) is a logged-in-only surface whose frozen
+// snapshot source (member analysis) is a logged-in-only surface whose frozen
 // payload would violate the thin-descriptor rule.
 
 export const POCKET_INTENT_KEY = 'pb:resume'

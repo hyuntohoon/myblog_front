@@ -1,5 +1,5 @@
 // FEAT-member-dashboard Step 5 — typed client for the nested review-bucket API.
-// The /profile 평론 버킷 board persists here, replacing Step 1's localStorage seed.
+// The member 평론 버킷 board persists here, replacing Step 1's localStorage seed.
 // GET /api/buckets returns a nested tree (only roots at the top level, every
 // bucket's descendants inlined as `children`); the new PUT /{id}/move reparents +
 // repositions a bucket (cycle prevention is enforced server-side). Mutations go

@@ -136,7 +136,7 @@ export function usePocket(): PocketContextValue {
 export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   const [design, setDesignState] = useState<PocketBuckitDesign>(POCKET_DESIGN_DEFAULTS)
   // The bucket tree is no longer local state — it lives in the shared, user-scoped,
-  // sessionStorage-backed bucketStore so the tray, /profile board, and library share one
+  // sessionStorage-backed bucketStore so the tray, member board, and library share one
   // source and a same-tab navigation reuses the cache instead of refetching.
   const store = useBucketStore()
   const buckets = store.tree ?? EMPTY_BUCKETS

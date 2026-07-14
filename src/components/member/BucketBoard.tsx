@@ -1877,13 +1877,13 @@ ids.push(a.albumId)
 }))
     return ids
   }, [normalTree])
-  // Pause the 4s research-status self-poll while this tab is hidden (ProfileApp
-  // keeps the board mounted). An empty id-set makes the hook clear its map and
-  // stop the poll; it re-arms with a fresh tick when the tab becomes active.
+  // Pause the 4s research-status self-poll while this dashboard tab is hidden
+  // (SelfDashboard keeps the board mounted). An empty id-set clears the map and
+  // stops the poll; it re-arms with a fresh tick when the tab becomes active.
   const researchStatus = useResearchStatusMap(active ? researchAlbumIds : NO_RESEARCH_IDS)
 
   // Load the real tree on mount via the shared store (SWR: reuses the cache the tray may
-  // already have filled — often zero extra fetches on /profile). Store load errors sync
+  // already have filled — often zero extra fetches on the member dashboard). Store load errors sync
   // into the local error flag.
   useEffect(() => {
     void bucketStore.ensureFresh()

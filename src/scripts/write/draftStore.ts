@@ -1,7 +1,7 @@
 // Per-album draft persistence for /write.
 //
 // Before: one localStorage slot (`lowfreq-draft`) held the whole draft, so
-// switching the subject album (⌘K pick, or arriving via /profile ?album=) kept
+// switching the subject album (⌘K pick, or arriving from the member dashboard) kept
 // the previous album's body/title — the old text "followed" you onto the new
 // album. Now each subject gets its OWN slot, keyed by album id (artist id for
 // artist subjects, a shared `__none__` slot for no-subject/essay drafts), plus

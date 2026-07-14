@@ -177,7 +177,7 @@
 
 /* ── FEAT-pocket-buckit-viewers Track B — per-drawer Card Viewer ───────────────
    The bucket window toggles list ⇄ a board-style square-cover member grid. All tile
-   styles are self-supplied here (member.css is /profile-only — the site-wide drawer
+   styles are self-supplied here (member.css is dashboard-only — the site-wide drawer
    must not depend on it); only the site-wide global `.cover`/`.cover img` is reused. */
 .pb-scope .pb-viewtoggle { flex: 0 0 auto; display: inline-grid; place-items: center;
   width: calc(24px * var(--pb-scale)); height: calc(24px * var(--pb-scale)); border-radius: calc(6px * var(--pb-scale));

@@ -5,7 +5,7 @@
 // loaded via offset pagination (≤1000-row ceiling); the row table / hero /
 // facets / decade / likes-flow are liked-only, while the analysis charts carry a
 // 좋아요/재생 source toggle (LikedAnalysis). Row actions: 작품 상세 (onOpen) ·
-// 가사 (shared TrackRow → ProfileApp lyrics mount, list view) · 평론 버킷에 담기
+// 가사 (shared TrackRow → dashboard lyrics mount, list view) · 평론 버킷에 담기
 // (reuses BucketPickerSheet + buckets.ts) · 평론 쓰기 (/write).
 import type { DetailTarget } from '@lib/member'
 import type { SavedTrack } from './analysis.api'
@@ -356,7 +356,7 @@ function Toast({ msg }: { msg: string }) {
 
 // ── board ─────────────────────────────────────────────────────────────────
 export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget) => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
-	// List rows gain the 가사 column only when ProfileApp's viewer mount is wired.
+	// List rows gain the 가사 column only when the dashboard viewer mount is wired.
 	const cols = lkCols(onOpenLyrics != null)
 	const [rows, setRows] = useState<LikedRowVM[] | null>(null)
 	const [loadError, setLoadError] = useState(false)

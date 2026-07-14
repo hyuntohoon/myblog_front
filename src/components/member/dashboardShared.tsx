@@ -1,7 +1,5 @@
-// Shared pieces between the /profile dashboard (ProfileApp) and the
-// /members/[handle] self-view dashboard (SelfDashboard) — profile→member merge
-// PR1 (FEAT-multi-user-accounts OQ5 Option 1). Kept tiny and dependency-free so
-// importing it never drags one host's heavy tabs into the other's chunk.
+// Shared pieces for the member self-dashboard. Kept tiny and dependency-free
+// so importing it never drags the heavy tab implementations into another chunk.
 import type { ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
 

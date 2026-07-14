@@ -2,8 +2,8 @@
  * Member dashboard data adapter (Step 1, frontend shell).
  *
  * The single seam between the dashboard islands and their data. Today:
- *   - REVIEWS + profile STATS are real (derived from the blog content
- *     collection, server-side in profile.astro).
+ *   - owner reviews are real (derived from the build-time blog collection and
+ *     fetched by SelfDashboard from the static reviews endpoint).
  *   - everything else returns SAMPLE data (lib/member.sample.ts), shown with a
  *     "샘플" badge in the UI.
  *
@@ -17,7 +17,7 @@ export type { BucketNode, DistItem, LibraryStatus, NowPlaying, SampleAlbum, Samp
 
 export type MemberReviewType = '앨범 리뷰' | '칼럼' | '트랙 리뷰'
 
-/** JSON-safe review shape passed from profile.astro to the island. */
+/** JSON-safe review shape consumed by the member dashboard. */
 export interface MemberReview {
 	slug: string
 	/**

@@ -8,7 +8,7 @@
 // endpoint) is not engaged. The token already carries `user-read-playback-state`.
 //
 // This is a ONE-SHOT read: fired by an explicit user action (entry tap / manual
-// refresh / 동기화), once on /profile entry (FEAT-nowplaying-live-sync,
+// refresh / 동기화), once on member-dashboard entry (FEAT-nowplaying-live-sync,
 // owner-only authed page) to overlay the stale snapshot, and once per detected
 // end-of-track by the lyrics viewer (auto re-sync — a single event-driven read,
 // still never polled). `progressMs` + `readAtMs` seed the viewer's clock

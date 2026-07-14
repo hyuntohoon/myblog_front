@@ -1,6 +1,6 @@
 // Member dashboard — album detail / memo modal (centered).
 //
-// Opened from /profile surfaces via ProfileApp.openDetail. The experience is
+// Opened from member-dashboard surfaces via SelfDashboard's openDetail handler. The experience is
 // derived from where it was opened (DetailTarget.writable) and whether the album
 // already has a published review (matched against `reviews` by albumId):
 //   · memo  — a writable 평론 버킷 album with no review yet AND a bucket-item handle
@@ -49,7 +49,7 @@ export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics
   // "Published" here means a real post page exists. Runtime member rating rows
   // (merge PR2) carry slug '' — they must NOT hijack the memo/edit decision, or
   // a member who merely rated a bucket album would lose the MemoWindow
-  // authoring path. Owner/build-time rows always carry a slug, so /profile is
+  // authoring path. Owner/build-time rows always carry a slug, so the owner dashboard is
   // unaffected. (Informational surfaces — rating chips, 평론 tab — still show
   // slug-less rows; only this matcher is post-gated.)
   const published = album.albumId ? reviews.find(r => r.slug !== '' && r.albumIds.includes(album.albumId!)) : undefined
@@ -309,7 +309,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
 
   // FEAT-lyrics-sheet PR 2 — the memo window is the sheet's dock host. A track
   // opens the sheet docked into the reserved right column (desktop) or as a
-  // plain float (mobile). The sheet lives here (not in ProfileApp) so tearing /
+  // plain float (mobile). The sheet lives here so tearing /
   // docking never crosses a remount boundary and reloads its lyrics.
   const mobile = useIsMobileHost()
   const [sheet, setSheet] = useState<{ trackId: string, meta?: LyricsSheetMeta } | null>(null)

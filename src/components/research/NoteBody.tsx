@@ -1,6 +1,6 @@
 // Shared sectioned research-note body — splitSections + sticky pill nav +
 // per-section collapsible rendering (the structured reading view). Reused by the
-// /write split doc (ResearchDoc) and the /profile bucket reading modal so both
+// /write split doc (ResearchDoc) and the member bucket reading modal so both
 // surfaces render the note identically. Styles live in the shared research.css
 // (rsh-nav / rsh-sec* / rsh-prose.rsh-doc) so they apply on both pages.
 import { useMemo, useRef, useState } from 'react'

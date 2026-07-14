@@ -4,7 +4,7 @@
 // on public pages too — unlike PocketBuckit, which returns null when logged out.
 // Opens on the `ent:open-album` window event (lib/entityEvents): any surface
 // (public review, home tiles, search) dispatches it via openAlbum(). Member
-// surfaces keep their own writable AlbumDetail modal (ProfileApp onOpen) — this
+// surfaces keep their own writable AlbumDetail modal (SelfDashboard's onOpen) — this
 // overlay is read-only: no lyrics affordance (onOpenLyrics omitted = privacy),
 // no memo/edit. Closes on ESC/scrim/✕ and on SPA navigation.
 import type { OpenAlbumDetail } from '@lib/entityEvents'

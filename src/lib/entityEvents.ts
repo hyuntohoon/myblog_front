@@ -5,7 +5,7 @@
 // ANY surface — public review page, home tiles, search — opens the read-only
 // album window by calling this, with no knowledge of the overlay or of member
 // types. The member-context writable modal (memo/edit) is a SEPARATE path
-// (ProfileApp's onOpen(DetailTarget)); this event is inherently read-only, so
+// (SelfDashboard's openDetail(DetailTarget)); this event is inherently read-only, so
 // it deliberately carries only public primitives — never a DetailTarget.
 //
 // Payload carries display identity (title/artist/cover/year) as well as the DB

@@ -1,5 +1,5 @@
 // Cross-island window-event bridge names for the My Buckit board ⇄ Pocket Buckit
-// tray. The board (/profile ProfileApp island) and the tray (PocketBuckit island)
+// tray. The board (SelfDashboard island) and the tray (PocketBuckit island)
 // are two independent React roots with NO shared context, so they communicate via
 // window CustomEvents — the established convention (see ReviewTrackAdder's
 // PB_ADD_TRACK_EVENT). Defining the names here once keeps the two .tsx bundles in

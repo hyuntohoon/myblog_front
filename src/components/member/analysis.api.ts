@@ -1,4 +1,4 @@
-// FEAT-genre-artist-distribution Step 6 — typed client for the /profile 분석 버킷.
+// FEAT-genre-artist-distribution Step 6 — typed client for the member 분석 버킷.
 // Two co-equal sources (좋아요 saved tracks / 재생 play history) return the SAME
 // DistributionResponse shape, so the chart is source-agnostic (통일성). All reads
 // ride the edge_guard GET proxy; classify is a Cognito-JWT POST that only enqueues

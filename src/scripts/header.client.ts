@@ -14,14 +14,13 @@ function syncAuthUI() {
 		loginBtn?.classList.add('hidden')
 		logoutBtn?.classList.remove('hidden')
 		profileLink?.classList.remove('hidden')
+		profileLink?.setAttribute('href', '/members/?me')
 		// Owner-only affordances (audit 2026-07-14): post multi-user any member
 		// is "logged in", so the write entry gates on the owner signal (cached
-		// getMe → OWNER_HANDLE; fail-closed → members never see it), and the
-		// avatar targets the member's own page — the owner keeps /profile (the
-		// writer/lyrics workflow lives there until profile-merge PR3).
+		// getMe → OWNER_HANDLE; fail-closed → members never see it). Every
+		// avatar targets the unified member self-dashboard.
 		void isOwnerUser().then((owner) => {
 			writeLink?.classList.toggle('hidden', !owner)
-			profileLink?.setAttribute('href', owner ? '/profile' : '/members/?me')
 		})
 	}
 	else {

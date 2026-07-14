@@ -1,5 +1,5 @@
 // FEAT-album-research-notes Step 5 — the shared research-note panel, used by
-// BOTH the BucketBoard cover slide-over (/profile) and the /write margin rail.
+// BOTH the member BucketBoard cover slide-over and the /write margin rail.
 // The note belongs to the album, so both surfaces drive the same store
 // (lib/research.ts, keyed by album_id) — open it in one place and the other
 // reflects it. Styled with the global --color-* tokens + .rsh-* classes
