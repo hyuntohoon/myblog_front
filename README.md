@@ -1,6 +1,6 @@
 # myblog_front
 
-> **MyBlog + Music Review** 프로젝트의 프론트엔드 — Astro 기반 정적 사이트 + 관리자 글쓰기 UI
+> **MyBlog + Music Review** 프로젝트의 프론트엔드 — Astro 기반 정적 사이트 + 멤버(회원) 서피스 + 오너 글쓰기 UI
 
 🔗 **전체 프로젝트 README:** [MyBlog + Music Review](https://github.com/hyuntohoon/myblog_front#관련-리포지토리)
 
@@ -8,7 +8,7 @@
 
 ## 개요
 
-사용자에게 보여지는 블로그 정적 사이트와 관리자 글쓰기 화면을 담당합니다. Astro로 빌드된 정적 페이지는 S3에 배포되고 CloudFront를 통해 서빙됩니다.
+공개 정적 사이트(에디토리얼·카탈로그·회원 프로필)와 멤버 기능(가입·평가·버킷·연동·설정), 오너 글쓰기 화면을 담당합니다. Astro로 빌드된 정적 페이지는 S3에 배포되고 CloudFront를 통해 서빙됩니다.
 
 ---
 
@@ -20,13 +20,19 @@
 - 음악 검색 — DB-first 검색 UI, 필요 시 Sync 버튼으로 Spotify 최신 후보 확인
 - 트랙 클릭 → 앨범 상세(DB) 이동
 
-**관리자 (글쓰기 + 회원 대시보드)**
+**회원 (Google/Kakao 가입, FEAT-multi-user-accounts)**
 
-- Cognito 인증 후 글 작성 화면 진입 (`/write`, `/drafts`)
-- 에디터에서 앨범·아티스트 검색 및 연결, 평점(0~5, 0.5 단위) 입력
-- 임시저장 / 발행 / 발행글 편집 · 아카이브 · 복원(restore) · 삭제
-- 평론 작성 전 단계 to-review 큐 (`/reviews/queue`) — 칸반 버킷, 드래그앤드롭 우선순위, 인라인 작성/발행 (FEAT-review-bucket-board). 회원 대시보드 Step 5 에서 `/profile→bucket` 으로 통합되며 본 페이지는 은퇴 예정.
-- 회원 대시보드 (`/profile`) — 5탭(개요·평론·평론 버킷·라이브러리·통계), 실 데이터 + 샘플 라벨링, 중첩 버킷 보드, 시각/밀도 설정 (FEAT-member-dashboard Step 1 shipped, Step 2+ 진행 중)
+- 로그인 팝오버(카카오/Google/이메일) → Cognito PKCE; 로그인 후 원래 보던 페이지로 복귀 (returnTo)
+- 앨범 오버레이에서 0.5 단위 평가+코멘트 (`AlbumRatingBlock`, 비로그인 시 로그인 CTA)
+- 회원 서피스 `/members/` — 디렉터리(평가한 회원), `?u=<handle>` 런타임 프로필(배포 불필요), `?me` 본인; 정적 `/members/[handle]` 은 SEO 프리빌드. 본인 확인 시 SelfDashboard 탭(개요·평론·My Buckit·분석 버킷·연동)
+- `/settings/` — 핸들·표시명 편집, Last.fm/Spotify 연동, 계정 삭제; `/privacy` 개인정보처리방침
+- 공개 컬렉션 `/collection` — 회원들이 공개로 설정한 버킷, 소유자 귀속(@handle) 표시
+
+**오너 (글쓰기 + 대시보드)**
+
+- Cognito 인증 후 글 작성 화면 진입 (`/write`, `/drafts`) — 오너 전용 (`isOwnerUser()` UI 게이트 + 서버 `require_owner`)
+- 에디터에서 앨범·아티스트 검색 및 연결, 평점(0~5, 0.5 단위) 입력, 임시저장/발행/아카이브/복원/삭제
+- 오너 대시보드 (`/profile`) — 개요·평론·My Buckit·분석 버킷·연동 탭 (profile-merge PR3 에서 `/members/?me` 로 은퇴 예정)
 
 ---
 
@@ -37,7 +43,7 @@
 | 프레임워크 | Astro 5 + React 19 (island) |
 | 배포       | S3 + CloudFront             |
 | CI/CD      | GitHub Actions              |
-| 인증       | AWS Cognito (관리자 글쓰기) |
+| 인증       | AWS Cognito (회원 로그인 — Google/Kakao IdP + 이메일; 오너 글쓰기) |
 | 타입 계약  | `docs/contracts/openapi.json` → `pnpm generate:types` → `src/lib/api.gen.ts` |
 
 ---
