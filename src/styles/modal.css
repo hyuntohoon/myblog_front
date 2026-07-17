@@ -1,0 +1,155 @@
+/* ============================================================
+   Search-modal shell (qb-*) — SURFACE-AGNOSTIC.
+
+   Extracted from member/layout.css. These rules used to live under
+   member.css, which is dashboard-only (imported by SelfDashboard +
+   pages/collection.astro). The home-page islands TodaySongPicker /
+   TodayPickHistory also render .qb-modal markup, so on the home page the
+   modal shell shipped with ZERO styles — the .gs-row results rendered
+   (search.css is site-wide via layout.astro) but the scrim, the dialog box
+   and the scroll container did not, dumping the modal into the page flow.
+
+   Any consumer must import this file directly (React islands can:
+   `import '@styles/modal.css'` — Astro emits a per-page chunk). Do NOT rely
+   on member.css to supply it. Same posture as pocket.css, which self-supplies
+   for the same reason.
+
+   Tokens (--color-*, --space-*, --font-*, --z-panel) come from global.css.
+   Result rows use the shared .gs-row atom (search.css).
+   ============================================================ */
+
+/* ── modal shell ─────────────────────────────────────────────────────────── */
+.qb-modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-panel);
+  display: grid;
+  place-items: start center;
+  padding: clamp(var(--space-6), 10vh, 140px) var(--space-4) var(--space-6);
+  background: rgba(10, 9, 8, 0.5);
+  backdrop-filter: blur(2px);
+  animation: qb-fade 0.16s ease;
+}
+@keyframes qb-fade { from { opacity: 0; } to { opacity: 1; } }
+.qb-modal {
+  width: min(560px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 30px 80px -24px rgba(0, 0, 0, 0.6);
+  animation: qb-pop 0.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes qb-pop { from { opacity: 0; transform: translateY(8px) scale(0.99); } to { opacity: 1; transform: none; } }
+.qb-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--color-border-soft);
+}
+.qb-modal-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-faded);
+  margin: 0;
+}
+.qb-modal-title { font-family: var(--font-serif); font-size: var(--text-xl); font-weight: 500; margin: 4px 0 0; }
+.qb-modal-close {
+  width: 28px; height: 28px;
+  display: grid; place-items: center;
+  font-size: var(--text-base);
+  color: var(--color-faded);
+  background: none; border: 1px solid var(--color-border-soft); border-radius: 4px;
+  cursor: pointer;
+}
+.qb-modal-close:hover { color: var(--color-text); border-color: var(--color-border); }
+.qb-modal-searchrow { display: flex; gap: var(--space-2); padding: var(--space-4) var(--space-5) 0; }
+.qb-modal-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0 var(--space-3);
+}
+.qb-modal-search-icon { color: var(--color-faded); font-size: var(--text-md); }
+.qb-modal-search-input {
+  flex: 1;
+  font-family: var(--font-serif);
+  font-size: var(--text-md);
+  color: var(--color-text);
+  background: none;
+  border: none;
+  padding: var(--space-3) 0;
+  outline: none;
+}
+.qb-modal-search-clear { color: var(--color-faded); background: none; border: none; cursor: pointer; font-size: var(--text-sm); }
+.qb-modal-search-btn, .qb-modal-spotify-btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 var(--space-3);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.qb-modal-search-btn { color: #fff; background: var(--color-text); border: 1px solid var(--color-text); }
+.qb-modal-spotify-btn { color: var(--color-spotify); background: none; border: 1px solid color-mix(in srgb, var(--color-spotify) 50%, transparent); }
+.qb-modal-spotify-btn:disabled, .qb-modal-search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.qb-modal-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-subtle);
+  margin: var(--space-3) var(--space-5) 0;
+}
+.qb-modal-results {
+  margin-top: var(--space-3);
+  padding: 0 var(--space-3) var(--space-4);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qb-modal-empty {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-faded);
+  text-align: center;
+  padding: var(--space-8);
+}
+.qb-modal-more {
+  margin-top: 4px;
+  padding: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-subtle);
+  background: none;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.qb-modal-more:hover { background: var(--color-paper); border-color: var(--color-text); }
+.qb-modal-more:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── --add variant: a focused search overlay, larger than the shared confirm
+   dialogs that also use .qb-modal. Scoped via --add so the small delete/publish
+   confirms (own inline max-width) are unaffected. Background page scroll is
+   locked in JS; only .qb-modal-results scrolls. Used by AddAlbumModal,
+   AddArtistModal and TodaySongPicker. ─────────────────────────────────────── */
+.qb-modal-scrim--add { padding-top: clamp(var(--space-4), 4vh, 48px); }
+.qb-modal--add { width: min(760px, 94vw); max-height: 86vh; }
+.qb-modal--add .qb-modal-search-input { font-size: 16px; }
+.qb-modal--add .qb-modal-results { flex: 1; min-height: 360px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .qb-modal, .qb-modal-scrim { animation: none; }
+}

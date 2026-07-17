@@ -4,13 +4,20 @@
    .scrim/.slideover/.sample/.iconbtn + type helpers) live in global.css.
    This file re-exports the member-only modules:
 
+     ../modal.css            — qb-* search-modal shell (SHARED, not member-only)
      ./member/widgets.css    — 크레이트 갤러리 bucket tiles + trash dock
      ./member/animations.css — entrance / equalizer keyframes
-     ./member/layout.css     — profile shell, modals, picker sheet, lyrics
+     ./member/layout.css     — profile shell, picker sheet, lyrics
 
    Imported by SelfDashboard + pages/collection.astro.
+
+   NOTE: modal.css is NOT member-only — the home islands (TodaySongPicker /
+   TodayPickHistory) use the same qb-* markup and import it directly, since
+   member.css never loads outside the dashboard. It is re-exported here only so
+   the dashboard's own modal consumers keep working unchanged.
    ============================================================ */
 
+@import './modal.css';
 @import './member/widgets.css';
 @import './member/animations.css';
 @import './member/layout.css';
