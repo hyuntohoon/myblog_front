@@ -798,6 +798,75 @@ export interface paths {
         patch: operations["update_me_api_me_patch"];
         trace?: never;
     };
+    "/api/me/release-feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Release Feed */
+        get: operations["get_release_feed_api_me_release_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/tracked-artists": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tracked Artists */
+        get: operations["list_tracked_artists_api_me_tracked_artists_get"];
+        put?: never;
+        /** Add Tracked Artists */
+        post: operations["add_tracked_artists_api_me_tracked_artists_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/tracked-artists/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Tracked Artists */
+        post: operations["preview_tracked_artists_api_me_tracked_artists_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/tracked-artists/{artist_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Tracked Artist */
+        delete: operations["delete_tracked_artist_api_me_tracked_artists__artist_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/members": {
         parameters: {
             query?: never;
@@ -1403,6 +1472,18 @@ export interface components {
             album_id: string;
             /** Note */
             note?: string | null;
+        };
+        /** AddTrackedArtistsRequest */
+        Backend_AddTrackedArtistsRequest: {
+            /** Artist Ids */
+            artist_ids?: string[];
+        };
+        /** AddTrackedArtistsResponse */
+        Backend_AddTrackedArtistsResponse: {
+            /** Added */
+            added: number;
+            /** Already Tracked */
+            already_tracked: number;
         };
         /** AlbumBrief */
         Backend_AlbumBrief: {
@@ -2303,6 +2384,41 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** ReleaseFeedItem */
+        Backend_ReleaseFeedItem: {
+            /**
+             * Artist Id
+             * Format: uuid
+             */
+            artist_id: string;
+            /** Artist Name */
+            artist_name: string;
+            /**
+             * Release Date
+             * Format: date
+             */
+            release_date: string;
+            /** Release Type */
+            release_type?: string | null;
+            /** Spotify Album Id */
+            spotify_album_id?: string | null;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /**
+             * Trust
+             * @enum {string}
+             */
+            trust: "확정" | "예정" | "불확실";
+        };
+        /** ReleaseFeedResponse */
+        Backend_ReleaseFeedResponse: {
+            /** Recent */
+            recent?: components["schemas"]["Backend_ReleaseFeedItem"][];
+            /** Upcoming */
+            upcoming?: components["schemas"]["Backend_ReleaseFeedItem"][];
+        };
         /** ReorderBucket */
         Backend_ReorderBucket: {
             /** Id */
@@ -2765,6 +2881,50 @@ export interface components {
             id: string;
             /** Title */
             title: string;
+        };
+        /** TrackedArtistCandidate */
+        Backend_TrackedArtistCandidate: {
+            /** Already Tracked */
+            already_tracked: boolean;
+            /**
+             * Artist Id
+             * Format: uuid
+             */
+            artist_id: string;
+            /** Name */
+            name: string;
+            /** Photo Url */
+            photo_url?: string | null;
+        };
+        /** TrackedArtistPreviewRequest */
+        Backend_TrackedArtistPreviewRequest: {
+            /**
+             * Bucket Id
+             * Format: uuid
+             */
+            bucket_id: string;
+        };
+        /** TrackedArtistPreviewResponse */
+        Backend_TrackedArtistPreviewResponse: {
+            /** Candidates */
+            candidates?: components["schemas"]["Backend_TrackedArtistCandidate"][];
+        };
+        /** TrackedArtistResponse */
+        Backend_TrackedArtistResponse: {
+            /**
+             * Added At
+             * Format: date-time
+             */
+            added_at: string;
+            /**
+             * Artist Id
+             * Format: uuid
+             */
+            artist_id: string;
+            /** Name */
+            name: string;
+            /** Photo Url */
+            photo_url?: string | null;
         };
         /** UnclassifiedBreakdown */
         Backend_UnclassifiedBreakdown: {
@@ -4835,6 +4995,153 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_MeResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_release_feed_api_me_release_feed_get: {
+        parameters: {
+            query?: {
+                state?: "upcoming" | "recent" | "all";
+                category?: "album" | "single" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ReleaseFeedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tracked_artists_api_me_tracked_artists_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_TrackedArtistResponse"][];
+                };
+            };
+        };
+    };
+    add_tracked_artists_api_me_tracked_artists_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AddTrackedArtistsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AddTrackedArtistsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_tracked_artists_api_me_tracked_artists_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_TrackedArtistPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_TrackedArtistPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_tracked_artist_api_me_tracked_artists__artist_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artist_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
