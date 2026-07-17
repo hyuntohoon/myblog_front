@@ -14,6 +14,11 @@ import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ResultRow, SourceTag } from '@components/search/atoms'
 import type { UpsertTodaysPick } from '@lib/todaysPick'
+// The qb-* modal shell. This island renders on the HOME page, which never loads
+// member.css — without this import the scrim/dialog/scroll-container ship
+// unstyled and the modal collapses into the page flow. Row visuals (.gs-row)
+// come from search.css, already site-wide via layout.astro.
+import '@styles/modal.css'
 
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
 

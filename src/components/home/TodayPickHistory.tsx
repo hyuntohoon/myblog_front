@@ -9,10 +9,33 @@ import { useScrollLock } from '@lib/useScrollLock'
 import { Cover } from './ui'
 import {  getTodaysPickHistory } from '@lib/todaysPick'
 import type { DailyPick } from '@lib/todaysPick'
+// qb-* modal shell — home page never loads member.css. See TodaySongPicker.
+import '@styles/modal.css'
 
 interface Props {
 	onClose: () => void
 }
+
+// Row visuals for the history agenda. These .tsp-history-* classes were used by
+// the markup below since Step 6 but never actually defined in any stylesheet —
+// the rows rendered as a bare bulleted <ul>. Self-contained here (same posture
+// as TodaySongBuckit's SCOPED_CSS) rather than in member.css, which the home
+// page never loads. min-width:0 on the flex children is load-bearing: real pick
+// titles are long and nowrap, and without it they blow the modal open.
+const HISTORY_CSS = `
+.tsp-history-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.tsp-history-row{display:flex;align-items:center;gap:12px;padding:6px 8px;border-radius:4px}
+.tsp-history-row:hover{background:var(--color-paper)}
+.tsp-history-date{flex:0 0 auto;width:34px;font-size:11px;letter-spacing:.02em;color:var(--color-faded);text-align:right}
+.tsp-history-open{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:0;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:opacity .16s}
+.tsp-history-open:hover{opacity:.78}
+.tsp-history-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:4px}
+.tsp-history-meta{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.tsp-history-meta>span{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tsp-history-meta>.serif{font-size:15px;line-height:1.25;color:var(--color-text)}
+.tsp-history-artist{font-size:11.5px;letter-spacing:.02em;color:var(--color-subtle)}
+@media (prefers-reduced-motion:reduce){.tsp-history-open{transition:none}}
+`
 
 function fmtDate(iso: string): string {
 	// pick_date is a date-only ISO (YYYY-MM-DD). Render as M.D.
@@ -49,6 +72,7 @@ export default function TodayPickHistory({ onClose }: Props) {
 	return (
 		<div className="qb-modal-scrim qb-modal-scrim--add" onClick={onClose} role="presentation">
 			<div ref={modalRef} className="qb-modal qb-modal--add" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="지난 추천곡">
+				<style>{HISTORY_CSS}</style>
 				<header className="qb-modal-head">
 					<div>
 						<p className="qb-modal-kicker">오늘의 곡</p>
