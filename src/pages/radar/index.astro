@@ -1,0 +1,25 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import ReleaseRadar from '@components/releases/ReleaseRadar'
+
+// /radar — 발매 레이더 (FEAT-personal-release-tracking Step 5). The
+// member-scoped personal release feed: tracked artists only, upcoming as an
+// appears-only-when-present strip, recent 30 d as the default surface.
+// Static shell + one React island (all data client-side via apiFetch/JWT);
+// personal content → noIndex. Shares the release display core with /releases.
+---
+
+<Layout>
+  <Seo
+	slot="seo"
+	title="발매 레이더"
+	description="내가 추적하는 아티스트의 발매 예고와 확정 발매만 모아 보는 개인 발매 피드."
+	noIndex
+  />
+
+  <SkipNavContent>
+    <ReleaseRadar client:load />
+  </SkipNavContent>
+</Layout>
