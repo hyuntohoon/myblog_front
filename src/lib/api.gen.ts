@@ -1421,6 +1421,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/todays-pick/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pick Queue
+         * @description List staged picks newest-first. This read is owner-only in-Lambda.
+         */
+        get: operations["get_pick_queue_api_todays_pick_queue_get"];
+        put?: never;
+        /**
+         * Add To Pick Queue
+         * @description Stage a track; re-adding the same track_id is a successful no-op.
+         */
+        post: operations["add_to_pick_queue_api_todays_pick_queue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/todays-pick/queue/{queue_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete From Pick Queue
+         * @description Remove a staged pick.
+         */
+        delete: operations["delete_from_pick_queue_api_todays_pick_queue__queue_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/todays-pick/queue/{queue_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Promote From Pick Queue
+         * @description Atomically post a staged pick as today's pick and consume the queue row.
+         */
+        post: operations["promote_from_pick_queue_api_todays_pick_queue__queue_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1472,6 +1536,27 @@ export interface components {
             album_id: string;
             /** Note */
             note?: string | null;
+        };
+        /** AddToPickQueueRequest */
+        Backend_AddToPickQueueRequest: {
+            /**
+             * Album Id
+             * Format: uuid
+             */
+            album_id: string;
+            /** Artist */
+            artist: string;
+            /** Cover Url */
+            cover_url?: string | null;
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Track Id
+             * Format: uuid
+             */
+            track_id: string;
         };
         /** AddTrackedArtistsRequest */
         Backend_AddTrackedArtistsRequest: {
@@ -1838,6 +1923,28 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** DailyPickQueueItem */
+        Backend_DailyPickQueueItem: {
+            /** Album Id */
+            album_id: string;
+            /** Artist */
+            artist: string;
+            /** Cover Url */
+            cover_url?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /** Title */
+            title: string;
+            /** Track Id */
+            track_id: string;
         };
         /** DistItem */
         Backend_DistItem: {
@@ -6318,6 +6425,119 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_DailyPickItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pick_queue_api_todays_pick_queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DailyPickQueueItem"][];
+                };
+            };
+        };
+    };
+    add_to_pick_queue_api_todays_pick_queue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AddToPickQueueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DailyPickQueueItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_from_pick_queue_api_todays_pick_queue__queue_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promote_from_pick_queue_api_todays_pick_queue__queue_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_DailyPickItem"];
                 };
             };
             /** @description Validation Error */
