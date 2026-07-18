@@ -7,9 +7,8 @@
 // de-emphasized, the rest recessed.
 //
 // Navigation: vertical swipe/drag, direct tap-to-focus (+ arrow keys / wheel
-// as control equivalents). The dedicated prev/next rail was dropped in favor of
-// the auto/manual segmented toggle (FEAT-lyrics-auto-progression Step 1) —
-// manual nav stays available via swipe/keys/tap.
+// as control equivalents). The dedicated prev/next rail was dropped; manual
+// browsing stays available via swipe/keys/tap.
 //
 // The viewer does no LRC parsing and never falls back to raw text: rows the
 // normalization model hasn't made consumable arrive as availability !== 'ok'
@@ -24,14 +23,12 @@
 // FEAT-lyrics-auto-progression Step 1 REPEALS the prior manual-only non-goal:
 // the one-shot seed is now a continuous **clock estimate**. On open (and on
 // each re-sync) `readLivePlayback().progressMs` seeds `{ anchorMs, wallMs }`;
-// a ~250ms interval (auto mode only, paused while `document.hidden`) computes
+// a ~250ms interval (while following, paused while `document.hidden`) computes
 // `estimatedMs = anchorMs + (performance.now() - wallMs)` and advances `focus`
 // via `focusIndexForMs()` only when the index changes (minimal re-renders).
-// Manual nav (swipe/tap/keys) re-anchors against the jumped line's `start_ms`
-// so auto resumes from there; the ↻ re-sync re-seeds the continuous anchor.
-// Plain-only (non-trackable) rows open in manual-only with the toggle locked.
-// No backend / polling / SDK coupling — the position source is still the
-// existing one-shot REST read (D28 honored).
+// The ↻ re-sync re-seeds the continuous anchor. Plain-only (non-trackable)
+// rows never run the estimate. No backend / polling / SDK coupling — the
+// position source is still the existing one-shot REST read (D28 honored).
 //
 // FEAT-lyrics-end-resync extends the clock estimate two ways:
 // (1) Latency-anchored seeding — the anchor's wall instant is the moment the
@@ -50,6 +47,11 @@
 //     when the fresh position sits meaningfully before the end; idle/failed
 //     results and a player stuck reporting `playing` at ≈duration leave it
 //     disarmed, so neither a stopped nor a wedged player is ever hammered.
+//
+// FEAT-lyrics-viewer-controls Step 1 replaces [자동|수동] with follow/suspend:
+// browsing temporarily pauses the clock estimate without re-anchoring it, then
+// returns to the live line through either a countdown pill (A) or an un-dimmed
+// browse window with idle snap-back (D). Explicit line taps still re-anchor.
 //
 // FEAT-lyrics-translation Step 4: a 번역 toggle interleaves each segment's
 // `text_ko` dimmed under its original line (the focus/nav unit stays the
@@ -92,6 +94,10 @@ const SYNC_LEAD_MS = 300
  * estimate drift near the boundary.
  */
 const END_GRACE_MS = 1500
+/** Idle return delay for Behavior A's visible countdown pill. */
+const PILL_IDLE_MS = 4000
+/** Idle return delay for Behavior D's un-dimmed browse window. */
+const BROWSE_IDLE_MS = 3000
 
 type Phase =
 	| { k: 'loading' } |
@@ -189,9 +195,22 @@ function readStoredStyle(): LyvStyle {
   }
 }
 
+/** localStorage key for the follow-return behavior ('pill' | 'browse'). */
+const BEHAVIOR_KEY = 'lyv:behavior'
+type LyvBehavior = 'pill' | 'browse'
+
+function readStoredBehavior(): LyvBehavior {
+  try {
+    return localStorage.getItem(BEHAVIOR_KEY) === 'browse' ? 'browse' : 'pill'
+  }
+  catch {
+    return 'pill'
+  }
+}
+
 export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, canRefresh = false, onClose }: {
   spotifyTrackId: string
-  /** One-shot playback position from the dynamic entry; seeds the initial focus, never advances it. */
+  /** One-shot playback position from the dynamic entry; seeds the initial focus and continuous clock anchor. */
   initialProgressMs?: number | null
   /** Wall instant (performance.now() timeline) `initialProgressMs` was read at — anchors the estimate at read time, not load time. */
   initialProgressAtMs?: number | null
@@ -248,16 +267,62 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // the loaded phase; plain-only rows (trackable === false) are manual-only.
   const trackable = phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.trackable
 
-  // auto/manual mode (FEAT-lyrics-auto-progression Step 1). Defaults to 'auto'
-  // for trackable (synced) rows, 'manual' otherwise. The toggle is live; once
-  // the user picks manual it stays manual until they re-enable auto.
-  const [mode, setMode] = useState<'auto' | 'manual'>('manual')
-
   // Clock-estimate anchor: the playback position (ms) captured at the wall-clock
   // instant `wallMs` (performance.now()). estimatedMs = anchorMs + (now - wallMs).
   // Seeded on open (from initialProgressMs) and on each re-sync. `null` until a
-  // position is available — auto mode with a null anchor simply doesn't advance.
+  // position is available — follow with a null anchor simply doesn't advance.
   const anchor = useRef<{ ms: number, wallMs: number } | null>(null)
+
+  // Follow/suspend (FEAT-lyrics-viewer-controls Step 1): trackable rows follow
+  // the estimate by default. Browse input pauses that loop only while a live
+  // anchor exists; plain/no-seed rows retain today's unrestricted manual nav.
+  const [suspended, setSuspended] = useState(false)
+  const [behavior, setBehavior] = useState<LyvBehavior>(readStoredBehavior)
+  const [ringRestart, setRingRestart] = useState(0)
+  const suspendTimer = useRef<number | null>(null)
+
+  const clearSuspendTimer = () => {
+    if (suspendTimer.current == null)
+      return
+    window.clearTimeout(suspendTimer.current)
+    suspendTimer.current = null
+  }
+
+  // Return to the CURRENT estimated line without changing the anchor. Browse
+  // navigation deliberately never re-anchors: otherwise its temporary focus
+  // would erase the playback position this return needs to recover.
+  const returnToFollow = () => {
+    clearSuspendTimer()
+    const a = anchor.current
+    if (a && n > 0)
+      setFocus(focusIndexForMs(segs, a.ms + (performance.now() - a.wallMs) + SYNC_LEAD_MS))
+    setSuspended(false)
+  }
+
+  const armSuspend = () => {
+    // With no trackable clock seed there is no live position to return to, so
+    // navigation remains free and no suspend UI/timer is created.
+    if (!trackable || anchor.current == null)
+      return
+    clearSuspendTimer()
+    setSuspended(true)
+    if (behavior === 'pill')
+      setRingRestart(k => k + 1)
+    const idleMs = behavior === 'pill' ? PILL_IDLE_MS : BROWSE_IDLE_MS
+    suspendTimer.current = window.setTimeout(returnToFollow, idleMs)
+  }
+
+  const pickBehavior = (next: LyvBehavior) => {
+    // The interim switch is itself an explicit request to resume following;
+    // snap back before adopting the next behavior's timer/UI.
+    if (suspended)
+      returnToFollow()
+    setBehavior(next)
+    try {
+      localStorage.setItem(BEHAVIOR_KEY, next)
+    }
+    catch { /* private mode — the choice just doesn't persist */ }
+  }
 
   // Track length for end-of-track detection (FEAT-lyrics-end-resync). Seeded
   // by the dynamic entry, refreshed from every successful live read; null for
@@ -271,13 +336,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const endSynced = useRef(false)
 
   // Re-seed the anchor from a fresh playback position and (re)compute the
-  // focus from it. Centralizes the "position → anchor + focus" step shared by
-  // open, manual override, and re-sync. `readAtMs` is the wall instant the
+  // focus from it. Centralizes the "position → anchor + focus" step used by
+  // same-track re-sync. `readAtMs` is the wall instant the
   // position was read (defaults to now for callers without one).
   const applyAnchor = (progressMs: number | null, readAtMs?: number) => {
     if (progressMs == null)
       return
     anchor.current = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
+    clearSuspendTimer()
+    setSuspended(false)
     // Re-arm end detection only when the fresh position sits meaningfully
     // before the end. A same-track read still pinned inside the grace window
     // (a player stuck reporting `playing` at ≈duration) keeps the auto
@@ -308,6 +375,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const [loadSeq, setLoadSeq] = useState(0)
   useEffect(() => {
     let stale = false
+    clearSuspendTimer()
+    setSuspended(false)
     setPhase({ k: 'loading' })
     setFocus(0)
     anchor.current = null
@@ -318,10 +387,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         if (stale)
           return
         setPhase({ k: 'ready', data })
-        // Default the mode from the loaded row: synced (trackable) → auto,
-        // plain-only → manual. A user choice persists across an in-place
-        // re-sync of the SAME track; a track swap re-derives the default.
-        setMode(data.trackable ? 'auto' : 'manual')
         // A finished translation shows by default (owner decision 2026-07-06);
         // the 번역 toggle can still hide it. Re-derived per loaded track.
         setShowKo(data.availability === 'ok' && data.translation?.status === 'done')
@@ -330,7 +395,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         // Seed BOTH the initial focus and the continuous clock anchor from the
         // one-shot position, anchored at the instant it was READ — the lyrics
         // load that just finished no longer eats into sync. Without timestamps
-        // (plain) there is nothing to anchor — auto mode simply won't advance.
+        // (plain) there is nothing to anchor — follow simply won't advance.
         if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
           anchor.current = seed
           endSynced.current = false
@@ -345,6 +410,10 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       stale = true
     }
   }, [trackId, loadSeq])
+
+  // The suspend timer is the only delayed work added by Step 1; never leave it
+  // alive after the full-screen viewer unmounts.
+  useEffect(() => () => clearSuspendTimer(), [])
 
   // Manual refresh / re-sync (dynamic entry only): ONE live playback read per
   // tap. Track changed → swap segments (the load effect seeds focus + anchor
@@ -373,10 +442,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         }
         else {
           // Same track → re-seed the CONTINUOUS anchor from the fresh position
-          // (previously a one-shot focus only). If the user had dropped to
-          // manual, a successful re-sync of a synced track stays in their
-          // chosen mode but the anchor is freshened either way so toggling
-          // back to auto resumes from reality, not a stale estimate.
+          // (previously a one-shot focus only). A successful re-sync also exits
+          // suspend so the freshly corrected position resumes following.
           applyAnchor(r.progressMs, r.readAtMs)
         }
       }
@@ -417,24 +484,21 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
   }
 
-  // Move focus by either an explicit index (tap) or an updater (step). Any
-  // manual nav also RE-ANCHORS the clock estimate against the jumped-to line's
-  // `start_ms` so auto-advance resumes from the heard line, not the stale
-  // estimate — this is the drift-correction mechanism (FEAT-lyrics-auto-
-  // progression Step 1). A line with no `start_ms` (plain row in a mixed row,
-  // or a gap) leaves the anchor untouched (best-effort).
-  const moveFocusTo = (next: number | ((f: number) => number)) => {
-    setFocus((f) => {
-      const nf = typeof next === 'function' ? next(f) : next
-      const start = segs[nf]?.start_ms
-      if (start != null)
-        anchor.current = { ms: start, wallMs: performance.now() }
-      return nf
-    })
+  // Explicit line taps are the ONLY manual navigation that re-anchors: tapping
+  // chooses a new playback-relative starting line and resumes follow from it.
+  // Browse steps below move visual focus only, preserving the live anchor that
+  // idle/pill return needs. Untimed lines leave the anchor unchanged (best effort).
+  const moveFocusTo = (next: number) => {
+    const start = segs[next]?.start_ms
+    if (start != null)
+      anchor.current = { ms: start, wallMs: performance.now() }
+    clearSuspendTimer()
+    setSuspended(false)
+    setFocus(next)
   }
 
   const step = (delta: number) => {
-    moveFocusTo(f => Math.max(0, Math.min(n - 1, f + delta)))
+    setFocus(f => Math.max(0, Math.min(n - 1, f + delta)))
   }
 
   // Keep the focused segment at ~42% viewport height by translating the whole
@@ -513,18 +577,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     return () => window.removeEventListener('resize', onResize)
   }, [focus, n])
 
-  // Clock-estimate auto-advance (FEAT-lyrics-auto-progression Step 1).
-  // In `auto` mode, advance `focus` to the segment the estimated playback
-  // position falls in — but only when the index actually changes, so the loop
-  // itself never causes a re-render (focus is the only driver). Paused while
-  // the tab is hidden (the estimate keeps ticking in wall-clock, so on resume
-  // it jumps to the right line without catching up frame-by-frame) and in
-  // manual mode. Reads `anchor`/`segs`/`n`/`mode` from refs captured at tick
-  // time via the closure-over-state pattern below.
+  // Clock-estimate follow (FEAT-lyrics-viewer-controls Step 1). Advance focus
+  // to the estimated playback segment only when its index changes. Suspend
+  // tears down the interval entirely; the anchor keeps aging in wall-clock so
+  // return snaps directly to the current line rather than catching up steps.
+  // Hidden tabs remain paused and catch up the same way when visible again.
   useEffect(() => {
-    if (!trackable || n === 0)
-      return
-    if (mode !== 'auto')
+    if (!trackable || suspended || n === 0)
       return
     // No position seed yet (e.g. a static/debug entry has no playback binding)
     // — nothing to estimate from. The loop will start mattering once a re-sync
@@ -552,7 +611,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     tick()
     const id = window.setInterval(tick, ESTIMATE_INTERVAL_MS)
     return () => window.clearInterval(id)
-  }, [mode, trackable, n, segs, canRefresh, durationMs])
+  }, [trackable, suspended, n, segs, canRefresh, durationMs])
 
   // Vertical swipe/drag = manual navigation (touch-action: none on the scroll
   // area hands touch pans to us). Dragging up (finger/pointer moves up) reads
@@ -582,6 +641,11 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       }
       catch { /* pointer already released — drag still tracks via bubbling */ }
     }
+    // Idle = no input at all, so EVERY moved event extends the window (like
+    // wheel) — extending only on applied line steps would let the return fire
+    // under a finger resting mid-drag.
+    if (d.moved)
+      armSuspend()
     const want = Math.trunc(-dy / DRAG_STEP)
     if (want !== d.applied) {
       step(want - d.applied)
@@ -596,6 +660,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // free-scroll surface; focus motion is the only scroll).
   const wheelAcc = useRef(0)
   const onWheel = (e: WheelEvent<HTMLDivElement>) => {
+    // Wheel streams are synthetic browse input already; every event extends
+    // suspend even when accumulated delta has not crossed a line yet.
+    armSuspend()
     wheelAcc.current += e.deltaY
     if (Math.abs(wheelAcc.current) >= WHEEL_STEP) {
       step(Math.sign(wheelAcc.current))
@@ -606,10 +673,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      armSuspend()
       step(1)
     }
     else if (e.key === 'ArrowUp') {
       e.preventDefault()
+      armSuspend()
       step(-1)
     }
   }
@@ -636,7 +705,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 
   return (
     <div className="scrim lyv-scrim" role="dialog" aria-modal="true" aria-label="가사 뷰어">
-      <div ref={panelRef} className="lyv-panel" data-lyv-style={lyvStyle} onKeyDown={onKeyDown}>
+      <div
+	ref={panelRef}
+	className="lyv-panel"
+	data-lyv-style={lyvStyle}
+	data-lyv-browse={suspended && behavior === 'browse' ? '' : undefined}
+	onKeyDown={onKeyDown}
+      >
         {/*
           Album-blur backdrop (FEAT-lyrics-auto-progression Step 2). The real
           cover as a CSS background-image + filter: blur() — CORS-free (no pixel
@@ -651,6 +726,16 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}
         />
         <div className="lyv-bg-overlay" aria-hidden="true" />
+        {suspended && behavior === 'pill' && (
+          <button type="button" className="lyv-return" onClick={returnToFollow}>
+            <svg className="lyv-return-ring" viewBox="0 0 20 20" aria-hidden="true">
+              <circle className="lyv-return-ring-track" cx="10" cy="10" r="8" />
+              {/* duration from PILL_IDLE_MS so tuning the idle constant can't drift from the ring */}
+              <circle key={ringRestart} className="lyv-return-ring-progress" cx="10" cy="10" r="8" style={{ animationDuration: `${PILL_IDLE_MS}ms` }} />
+            </svg>
+            ↩ 현재 줄로
+          </button>
+        )}
         <div className="lyv-head">
           <div className="lyv-head-id">
             <span className="lyv-eyebrow mono">
@@ -770,32 +855,31 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
             </div>
             <div className="lyv-rail">
               {/*
-                auto / manual segmented toggle (FEAT-lyrics-auto-progression
-                Step 1, OQ2 — replaces the prev/next rail; manual nav stays via
-                swipe/drag/tap/arrow-keys). Plain-only (non-trackable) rows lock
-                to manual: auto has no timestamp source to estimate from.
+                Interim switch until the Step 2 ⚙ popover absorbs the rail.
+                Plain rows hide it because they have no follow state to return to.
               */}
-              <div className="lyv-mode" role="group" aria-label="재생 진행 모드">
-                <button
+              {trackable && (
+                <div className="lyv-mode" role="group" aria-label="복귀 방식">
+                  <button
 	type="button"
-	className={mode === 'auto' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
-	onClick={() => trackable && setMode('auto')}
-	disabled={!trackable}
-	aria-pressed={mode === 'auto'}
-	aria-label="자동 진행"
-                >
-                  자동
-                </button>
-                <button
+	className={behavior === 'pill' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
+	onClick={() => pickBehavior('pill')}
+	aria-pressed={behavior === 'pill'}
+	aria-label="복귀 방식: 필"
+                  >
+                    필
+                  </button>
+                  <button
 	type="button"
-	className={mode === 'manual' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
-	onClick={() => setMode('manual')}
-	aria-pressed={mode === 'manual'}
-	aria-label="수동 진행"
-                >
-                  수동
-                </button>
-              </div>
+	className={behavior === 'browse' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
+	onClick={() => pickBehavior('browse')}
+	aria-pressed={behavior === 'browse'}
+	aria-label="복귀 방식: 브라우즈"
+                  >
+                    브라우즈
+                  </button>
+                </div>
+              )}
               {/* viewer style variant (owner request 2026-07-06): 블러 = the
                   centered album-blur look, 플랫 = the Apple-Music-like
                   left-aligned flat wash. Persisted per browser. */}
@@ -823,7 +907,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                 the focus position is still announced.
               */}
               <span className="lyv-sr-only" aria-live="polite">
-                {`${focus + 1} / ${n}`}
+                {`${focus + 1} / ${n}${suspended ? ' · 따라가기 일시정지' : ''}`}
               </span>
             </div>
           </>
