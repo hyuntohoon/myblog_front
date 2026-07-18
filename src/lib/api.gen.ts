@@ -2039,6 +2039,8 @@ export interface components {
             last_synced_at?: string | null;
             /** Provider */
             provider: string;
+            /** Scope */
+            scope?: string | null;
             /** Status */
             status: string;
             /** Username */

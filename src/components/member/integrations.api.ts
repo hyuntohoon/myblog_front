@@ -52,7 +52,8 @@ export async function getLastfmNowPlaying(): Promise<LastfmNowPlaying | null> {
 
 export const SPOTIFY_REDIRECT_URI = 'https://www.ratemymusic.blog/settings/spotify/callback'
 const SPOTIFY_AUTHORIZE_URL = 'https://accounts.spotify.com/authorize'
-const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-recently-played'
+const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-recently-played user-read-playback-state user-modify-playback-state'
+const SPOTIFY_PLAYBACK_SCOPES = ['user-read-playback-state', 'user-modify-playback-state']
 const SS_SPOTIFY_STATE = 'spotify_connect_state'
 
 /**
@@ -64,6 +65,12 @@ const SPOTIFY_CLIENT_ID = (import.meta.env.PUBLIC_SPOTIFY_CLIENT_ID ?? '') as st
 
 export function spotifyConnectAvailable(): boolean {
 	return SPOTIFY_CLIENT_ID.length > 0
+}
+
+/** Whether the stored grant is missing a scope required for player controls. */
+export function spotifyGrantNeedsReconsent(scope: string | null | undefined): boolean {
+	const grantedScopes = new Set((scope ?? '').split(/\s+/).filter(Boolean))
+	return SPOTIFY_PLAYBACK_SCOPES.some(requiredScope => !grantedScopes.has(requiredScope))
 }
 
 /**
