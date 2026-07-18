@@ -22,6 +22,7 @@ import type { components } from '@lib/api.gen'
 import { useEffect, useState } from 'react'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { artistHref, openAlbum } from '@lib/entityLinks'
+import HomeStrip from './HomeStrip'
 import { Cover, SectionTitle } from './ui'
 
 type NewReleaseItem = components['schemas']['Music_NewReleaseItem']
@@ -33,8 +34,6 @@ const LIMIT = 12
 // Hover / scroll states inline styles can't reach. Scoped to `.nrl-mod`
 // (same strip idiom as TodayAlbumBuckit's `.otd-mod`).
 const SCOPED_CSS = `
-.nrl-mod .nrl-strip{display:flex;gap:clamp(14px,2vw,20px);overflow-x:auto;scroll-snap-type:x proximity;padding:2px 2px 14px;margin:0 -2px;scrollbar-width:none}
-.nrl-mod .nrl-strip::-webkit-scrollbar{height:0}
 .nrl-mod .nrl-card{flex:0 0 auto;width:clamp(128px,32vw,150px);scroll-snap-align:start;min-width:0}
 .nrl-mod .nrl-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
 .nrl-mod .nrl-cover-wrap{position:relative;display:block;transition:transform .18s}
@@ -134,9 +133,9 @@ export default function NewReleasesCard() {
 						<a className="nrl-cal mono" style={{ fontSize: 11, letterSpacing: '.06em', whiteSpace: 'nowrap' }} href="/releases/">캘린더 →</a>
 					)}
 				/>
-				<div className="nrl-strip">
+				<HomeStrip>
 					{items.map(it => <CardItem key={it.album_id} it={it} />)}
-				</div>
+				</HomeStrip>
 			</div>
 		</section>
 	)
