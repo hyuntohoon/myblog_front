@@ -7,7 +7,7 @@ import type { Me } from './me.api'
 import { useEffect, useMemo, useState } from 'react'
 import { logout } from '@lib/auth'
 import { deleteMe, getMe, HANDLE_RE, HandleTakenError, OwnerUndeletableError, updateMe } from './me.api'
-import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable } from './integrations.api'
+import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable, spotifyGrantNeedsReconsent } from './integrations.api'
 import type { Integration } from './integrations.api'
 import { SectionTitle } from './ui'
 
@@ -157,6 +157,7 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 
 	if (conn) {
 		const needsReauth = conn.status === 'reauth'
+		const needsPlaybackReconsent = conn.status === 'connected' && spotifyGrantNeedsReconsent(conn.scope)
 		const statusLabel = needsReauth ?
 			'다시 연결이 필요해요 — 재생 기록을 읽지 못하고 있어요' :
 			conn.status === 'connected' ? '연결됨' : conn.status
@@ -166,9 +167,14 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 					<span className="kicker">Spotify</span>
 					<span className="meta" style={{ textTransform: 'none', color: needsReauth ? 'var(--color-accent)' : 'var(--color-subtle)' }}>{statusLabel}</span>
 				</div>
+				{needsPlaybackReconsent && (
+					<span className="meta" style={{ padding: '8px 10px', color: 'var(--color-accent)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', textTransform: 'none' }}>
+						재연동 필요 — 다시 연결하면 프로필의 플레이어에서 재생/일시정지 컨트롤을 쓸 수 있어요.
+					</span>
+				)}
 				<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
 					{error && <span className="meta" role="alert" style={{ color: 'var(--color-accent)', textTransform: 'none' }}>{error}</span>}
-					{needsReauth && <button type="button" className="btn btn-solid" disabled={busy} onClick={onAuthorize}>다시 연결</button>}
+					{(needsReauth || needsPlaybackReconsent) && <button type="button" className="btn btn-solid" disabled={busy} onClick={onAuthorize}>다시 연결</button>}
 					<button type="button" className="btn" disabled={busy} onClick={onDisconnect}>{busy ? '해제 중…' : '연결 해제'}</button>
 				</div>
 			</div>
@@ -178,7 +184,7 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 			<p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)' }}>
-				Spotify 계정을 연결하면 최근 들은 곡과 지금 재생 중인 곡이 프로필에 나타나요. 재생 기록 읽기 권한만 요청해요.
+				Spotify 계정을 연결하면 최근 들은 곡과 지금 재생 중인 곡이 프로필에 나타나요. 재생 기록 읽기와 재생 컨트롤 권한을 요청해요.
 			</p>
 			<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
 				{!available && <span className="meta" style={{ textTransform: 'none' }}>연결 준비 중이에요</span>}
