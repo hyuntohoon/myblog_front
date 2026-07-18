@@ -18,7 +18,7 @@ import { openAlbum } from '@lib/entityEvents'
 import { isPlaceholderIdentity } from '@lib/member'
 import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
 import { getMe } from './me.api'
-import { Cover, Stars } from './ui'
+import { AlbumArt, Cover, SectionTitle, Stars } from './ui'
 
 // Bundle guard: the dashboard (and everything it drags in — BucketBoard,
 // OverviewDash, LikedBoard, member.css …) loads only after isSelf is confirmed
@@ -105,7 +105,7 @@ function NowPlayingStrip({ np }: { np: MemberNowPlaying }) {
 						</span>
 					)}
 				</div>
-				<div className="serif italic" style={{ fontSize: 17, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
+				<div className="serif italic" style={{ fontSize: 17, fontWeight: 500, lineHeight: 'var(--leading-tight)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
 				<div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
 					{[np.artist, np.album].filter(Boolean).join(' — ')}
 				</div>
@@ -188,12 +188,13 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	const activeNavId = dashActive ? tab : RATINGS_TAB
 
 	return (
-		<div style={{ maxWidth: dashActive ? 1200 : 760, margin: '0 auto', padding: '32px 20px 80px' }}>
+		<div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 20px 80px' }}>
+			{/* D4 (RFC-ui-surface-unification): container fixed 1200 — no width jump between tabs; public list reads in a 680 column. */}
 			<header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
 				<Avatar url={avatar} name={name} />
 				<div style={{ minWidth: 0 }}>
-					{!placeholder && <h1 className="serif italic" style={{ fontSize: 26, fontWeight: 500, margin: 0, lineHeight: 1.15 }}>{name}</h1>}
-					<div className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', marginTop: placeholder ? 0 : 6 }}>
+					{!placeholder && <h1 className="serif italic" style={{ fontSize: 26, fontWeight: 500, margin: 0, lineHeight: 'var(--leading-tight)' }}>{name}</h1>}
+					<div className="mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--color-faded)', marginTop: placeholder ? 0 : 6 }}>
 						@
 {handle}
 						{profile && (
@@ -232,15 +233,15 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 			)}
 
 			{!dashActive && (
-				<>
+				<div style={{ maxWidth: 680 }}>
 					{np && <NowPlayingStrip np={np} />}
 
-					<section style={{ marginTop: 30, paddingTop: 20, borderTop: isSelf ? 'none' : '1px solid var(--color-border-soft)' }}>
-						<div className="meta" style={{ marginBottom: 14 }}>평가한 앨범</div>
+					<section style={{ marginTop: 34 }}>
+						<SectionTitle title="평가한 앨범" />
 
 						{state === 'loading' && <div className="meta">불러오는 중…</div>}
-						{state === 'missing' && <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>존재하지 않는 사용자입니다.</div>}
-						{state === 'ok' && reviews.length === 0 && <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>아직 남긴 평가가 없습니다.</div>}
+						{state === 'missing' && <div className="sans" style={{ fontSize: 'var(--text-base)', color: 'var(--color-subtle)' }}>존재하지 않는 사용자입니다.</div>}
+						{state === 'ok' && reviews.length === 0 && <div className="sans" style={{ fontSize: 'var(--text-base)', color: 'var(--color-subtle)' }}>아직 남긴 평가가 없습니다.</div>}
 
 						<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
 							{reviews.map(r => (
@@ -249,36 +250,30 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 										type="button"
 										onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
 										title={r.album_title}
-										style={{ flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+										style={{ width: 64, flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
 									>
-										<img
-											src={r.album_cover_url ?? ''}
-											alt={r.album_title}
-											width={64}
-											height={64}
-											style={{ borderRadius: 3, objectFit: 'cover', background: 'var(--color-border-soft)', display: 'block' }}
-										/>
+										<AlbumArt url={r.album_cover_url} label={r.album_title} size={64} />
 									</button>
 									<div style={{ minWidth: 0, flex: 1 }}>
 										<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
 											<button
 												type="button"
 												onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
-												className="serif"
-												style={{ fontSize: 16, fontWeight: 500, padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+												className="serif italic"
+												style={{ fontSize: 'var(--text-md)', fontWeight: 500, lineHeight: 'var(--leading-snug)', padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}
 											>
 												{r.album_title}
 											</button>
 											<Stars score={Number(r.rating)} size={14} />
-											<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+											<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
 										</div>
-										{r.comment && <p className="sans" style={{ margin: '4px 0 0', fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.5 }}>{r.comment}</p>}
+										{r.comment && <p className="sans" style={{ margin: '4px 0 0', fontSize: 'var(--text-base)', color: 'var(--color-subtle)', lineHeight: 'var(--leading-normal)' }}>{r.comment}</p>}
 									</div>
 								</li>
 							))}
 						</ul>
 					</section>
-				</>
+				</div>
 			)}
 
 			{/* Mounted after first dashboard-tab visit, then kept mounted (hidden via

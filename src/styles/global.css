@@ -115,6 +115,19 @@
 	--on-accent: #fff;
 }
 
+/* ─── Leading scale ───
+   Line-height tokens (RFC-ui-surface-unification Step 1). Each value is the
+   most frequent inline line-height in its band, so substitution is visually
+   inert. Plain :root on purpose — inside @theme, Tailwind v4 (a) prunes any
+   token with no var() reference yet (--leading-relaxed vanished from the
+   build) and (b) would override the leading-* utility namespace. */
+:root {
+	--leading-tight:   1.15;  /* headings / single-line titles */
+	--leading-snug:    1.2;   /* card titles */
+	--leading-normal:  1.5;   /* body copy */
+	--leading-relaxed: 1.6;   /* reading prose */
+}
+
 /* ─── Dark-mode overrides ─── */
 @layer theme {
 	:root {
