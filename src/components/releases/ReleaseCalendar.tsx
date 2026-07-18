@@ -313,7 +313,7 @@ export default function ReleaseCalendar() {
 			<p className="rcal-foot mono">
 				관측 소스 — MB: MusicBrainz 릴리스 그룹 · iTunes: 프리오더 룩업 · SP: Spotify 카탈로그 확정.
 				<br />
-				★ 확정 항목은 앨범 상세로 열리고, 아티스트명은 아티스트 허브로 이동합니다.
+				★ 확정은 카탈로그 확인 상태이며, 연결된 항목은 앨범 상세로 열립니다. 아티스트명은 아티스트 허브로 이동합니다.
 			</p>
 		</div>
 	)

@@ -99,6 +99,30 @@ function groupByDate(items: FeedItem[]): ReleaseDayGroup[] {
 	return out
 }
 
+function FeedLedger({ items }: { items: FeedItem[] }) {
+	const days = groupByDate(items)
+	return days.map((day, i) => {
+		// The rolling 30 d window straddles a month boundary; a bare day numeral
+		// would be ambiguous, so mark each crossing inside the category ledger.
+		const prev = days[i - 1]
+		const crossed = prev && prev.date.slice(0, 7) !== day.date.slice(0, 7)
+		return (
+			<Fragment key={day.date}>
+				{crossed && <div className="rr-month mono">{`${Number(day.date.slice(5, 7))}월 · ${MONTH_EN[Number(day.date.slice(5, 7)) - 1]}`}</div>}
+				<LedgerDay day={day} past={false} />
+			</Fragment>
+		)
+	})
+}
+
+function trackedSummary(status: 'loading' | 'ok' | 'error', tracked: TrackedArtist[] | null): string {
+	if (status === 'loading')
+		return '추적 아티스트 불러오는 중…'
+	if (status === 'error')
+		return '추적 목록을 불러오지 못했습니다'
+	return `추적 아티스트 ${tracked?.length ?? 0}명`
+}
+
 function Avatar({ url, name, className }: { url: string | null | undefined, name: string, className?: string }) {
 	return url ?
 		<img className={className} src={url} alt="" loading="lazy" /> :
@@ -135,9 +159,9 @@ function ManagePanel({ tracked, onChanged }: {
 		})
 	}, [])
 
-	const addArtists = useCallback(async (ids: string[], label: string) => {
+	const addArtists = useCallback(async (ids: string[], label: string): Promise<boolean> => {
 		if (ids.length === 0 || busy)
-			return
+			return false
 		setBusy(true)
 		setStatus('추가 중…')
 		try {
@@ -147,15 +171,16 @@ function ManagePanel({ tracked, onChanged }: {
 			})
 			if (res?.status === 429) {
 				setStatus('오늘 추가 한도에 도달했어요 — 내일 다시 시도해 주세요.')
-				return
+				return false
 			}
 			if (!res || !res.ok) {
 				setStatus('추가에 실패했습니다. 잠시 후 다시 시도해 주세요.')
-				return
+				return false
 			}
 			const j = await res.json() as { added?: number, already_tracked?: number }
 			setStatus(`${label}: ${j.added ?? 0}명 추가${j.already_tracked ? ` · ${j.already_tracked}명은 이미 추적 중` : ''}`)
 			onChanged()
+			return true
 		}
 		finally {
 			setBusy(false)
@@ -277,7 +302,10 @@ function ManagePanel({ tracked, onChanged }: {
 							className="mono"
 							disabled={busy || picked.size === 0}
 							onClick={() => {
-								void addArtists([...picked], '버킷 가져오기').then(() => setCands(null))
+								void addArtists([...picked], '버킷 가져오기').then((ok) => {
+									if (ok)
+										setCands(null)
+								})
 							}}
 						>
 							{`선택한 ${picked.size}명 추적`}
@@ -321,6 +349,7 @@ export default function ReleaseRadar() {
 	const [feed, setFeed] = useState<FeedResponse | null>(null)
 	const [feedStatus, setFeedStatus] = useState<'loading' | 'ok' | 'error'>('loading')
 	const [tracked, setTracked] = useState<TrackedArtist[] | null>(null)
+	const [trackedStatus, setTrackedStatus] = useState<'loading' | 'ok' | 'error'>('loading')
 	const [manageOpen, setManageOpen] = useState(false)
 	const [retryTick, setRetryTick] = useState(0)
 
@@ -335,8 +364,14 @@ export default function ReleaseRadar() {
 		])
 		if (feedRes?.ok)
 			setFeed(await feedRes.json() as FeedResponse)
-		if (trackedRes?.ok)
+		if (trackedRes?.ok) {
 			setTracked(await trackedRes.json() as TrackedArtist[])
+			setTrackedStatus('ok')
+		}
+		else {
+			setTracked(null)
+			setTrackedStatus('error')
+		}
 		setFeedStatus(feedRes?.ok ? 'ok' : 'error')
 	}, [])
 
@@ -344,6 +379,7 @@ export default function ReleaseRadar() {
 		if (!authed)
 			return
 		setFeedStatus('loading')
+		setTrackedStatus('loading')
 		void loadAll()
 	}, [authed, loadAll, retryTick])
 
@@ -356,7 +392,22 @@ export default function ReleaseRadar() {
 
 	const upcoming = feed?.upcoming ?? []
 	const recent = feed?.recent ?? []
-	const recentDays = useMemo(() => groupByDate(recent), [recent])
+	const upcomingAlbums = upcoming.filter(ev => ev.release_type === 'album' || ev.release_type === 'ep')
+	const upcomingSingles = upcoming.filter(ev => ev.release_type === 'single')
+	const upcomingOther = upcoming.filter(ev => ev.release_type !== 'album' && ev.release_type !== 'ep' && ev.release_type !== 'single')
+	const recentAlbums = recent.filter(ev => ev.release_type === 'album' || ev.release_type === 'ep')
+	const recentSingles = recent.filter(ev => ev.release_type === 'single')
+	const recentOther = recent.filter(ev => ev.release_type !== 'album' && ev.release_type !== 'ep' && ev.release_type !== 'single')
+	const upcomingSections: Array<{ label: string, items: FeedItem[] }> = [
+		{ label: 'Albums & EPs', items: upcomingAlbums },
+		{ label: 'Singles', items: upcomingSingles },
+		{ label: '기타', items: upcomingOther },
+	]
+	const recentSections: Array<{ label: string, items: FeedItem[] }> = [
+		{ label: 'Albums & EPs', items: recentAlbums },
+		{ label: 'Singles', items: recentSingles },
+		{ label: '기타', items: recentOther },
+	]
 
 	return (
 		<div className="rcal-wrap">
@@ -385,9 +436,21 @@ export default function ReleaseRadar() {
 			{authed && (
 				<>
 					<div className="rr-manage-head" style={{ marginTop: 30 }}>
-						<span className="t mono">{tracked ? `추적 아티스트 ${tracked.length}명` : '추적 아티스트'}</span>
-						<button type="button" className="mono" onClick={() => setManageOpen(o => !o)}>
-							{manageOpen ? '관리 닫기 ×' : '아티스트 관리 +'}
+						<span className="t mono">{trackedSummary(trackedStatus, tracked)}</span>
+						<button
+							type="button"
+							className="mono"
+							disabled={trackedStatus === 'loading'}
+							onClick={() => {
+								if (trackedStatus === 'error') {
+									setTrackedStatus('loading')
+									void loadAll()
+									return
+								}
+								setManageOpen(o => !o)
+							}}
+						>
+							{trackedStatus === 'error' ? '다시 불러오기' : manageOpen ? '관리 닫기 ×' : '아티스트 관리 +'}
 						</button>
 					</div>
 					{manageOpen && tracked && <ManagePanel tracked={tracked} onChanged={() => void loadAll()} />}
@@ -400,7 +463,7 @@ export default function ReleaseRadar() {
 						</div>
 					)}
 
-					{feedStatus === 'ok' && tracked && tracked.length === 0 && (
+					{feedStatus === 'ok' && trackedStatus === 'ok' && tracked && tracked.length === 0 && (
 						<p className="rcal-note mono">
 							아직 추적하는 아티스트가 없습니다 — 위에서 아티스트를 추가하면 발매 소식이 여기 모입니다.
 						</p>
@@ -413,37 +476,35 @@ export default function ReleaseRadar() {
 								<span className="m-num serif italic">예정</span>
 								<span className="m-meta mono">{`UPCOMING · ${upcoming.length}`}</span>
 							</div>
-							<div className="rr-strip">
-								{upcoming.map(ev => <EventCard key={`${ev.artist_id}:${ev.title}`} ev={ev as ReleaseEventLike} showDate />)}
-							</div>
+							{upcomingSections.map(({ label, items }) => items.length > 0 && (
+								<Fragment key={label}>
+									<p className="rr-sub mono">{label}</p>
+									<div className="rr-strip">
+										{items.map(ev => <EventCard key={`${ev.artist_id}:${ev.title}`} ev={ev as ReleaseEventLike} showDate />)}
+									</div>
+								</Fragment>
+							))}
 						</section>
 					)}
 
-					{feedStatus === 'ok' && tracked && tracked.length > 0 && (
+					{feedStatus === 'ok' && (trackedStatus !== 'ok' || (tracked && tracked.length > 0)) && (
 						<section aria-label="최근 발매">
 							<div className="rr-sec">
 								<span className="m-num serif italic">최근 발매</span>
 								<span className="m-meta mono">{`LAST 30 DAYS · ${recent.length}`}</span>
 							</div>
-							{recent.length === 0 ?
-								(
-									<p className="rcal-note mono">
-										최근 30일 안에 추적 아티스트의 발매가 없었습니다.
-										{upcoming.length === 0 && ' 발표된 예정 발매도 아직 없어요 — 아티스트를 더 추가해 보세요.'}
-									</p>
-								) :
-								recentDays.map((day, i) => {
-									// The rolling 30 d window always straddles a month boundary —
-									// a bare day numeral would be ambiguous, so mark the crossing.
-									const prev = recentDays[i - 1]
-									const crossed = prev && prev.date.slice(0, 7) !== day.date.slice(0, 7)
-									return (
-										<Fragment key={day.date}>
-											{crossed && <div className="rr-month mono">{`${Number(day.date.slice(5, 7))}월 · ${MONTH_EN[Number(day.date.slice(5, 7)) - 1]}`}</div>}
-											<LedgerDay day={day} past={false} />
-										</Fragment>
-									)
-								})}
+							{recent.length === 0 && (
+								<p className="rcal-note mono">
+									최근 30일 안에 추적 아티스트의 발매가 없었습니다.
+									{upcoming.length === 0 && ' 발표된 예정 발매도 아직 없어요 — 아티스트를 더 추가해 보세요.'}
+								</p>
+							)}
+							{recent.length > 0 && recentSections.map(({ label, items }) => items.length > 0 && (
+								<Fragment key={label}>
+									<p className="rr-sub mono">{label}</p>
+									<FeedLedger items={items} />
+								</Fragment>
+							))}
 						</section>
 					)}
 				</>
@@ -452,7 +513,7 @@ export default function ReleaseRadar() {
 			<p className="rcal-foot mono">
 				관측 소스 — MusicBrainz 릴리스 그룹 · iTunes 프리오더 · Spotify 카탈로그 확정.
 				<br />
-				예정/불확실 배지는 아직 카탈로그로 확인되지 않은 발표라는 뜻입니다. ★ 확정 항목은 앨범 상세로 열립니다.
+				예정/불확실 배지는 아직 카탈로그로 확인되지 않은 발표라는 뜻입니다. ★ 확정은 카탈로그 확인 상태이며, 연결된 항목은 앨범 상세로 열립니다.
 			</p>
 		</div>
 	)

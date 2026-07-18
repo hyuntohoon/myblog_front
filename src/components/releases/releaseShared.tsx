@@ -207,6 +207,11 @@ export function isOpenable(ev: ReleaseEventLike): boolean {
 	return ev.status === 'released' && !!ev.spotify_album_id
 }
 
+/** Confirmation is a trust/display fact, not the same as overlay capability. */
+export function isConfirmed(ev: ReleaseEventLike): boolean {
+	return ev.trust === '확정' || ev.status === 'released' || !!ev.spotify_album_id
+}
+
 export function warmReleased(ev: ReleaseEventLike): void {
 	if (!isOpenable(ev))
 		return
@@ -238,7 +243,7 @@ export function EventMeta({ ev }: { ev: ReleaseEventLike }) {
 	const src = sourcesLabel(ev.sources)
 	return (
 		<>
-			{isOpenable(ev) && <span className="confirmed mono">★ 확정</span>}
+			{isConfirmed(ev) && <span className="confirmed mono">★ 확정</span>}
 			<TrustBadge trust={ev.trust} />
 			{tag && <span className={`tag mono${ev.release_type === 'album' ? ' album' : ''}`}>{tag}</span>}
 			{src && <span className="src mono">{src}</span>}
@@ -264,7 +269,9 @@ export function EventRow({ ev }: { ev: ReleaseEventLike }) {
 					</button>
 				) :
 				<span className={`ev-title serif italic${sm ? ' sm' : ''}`}>{ev.title}</span>}
-			<a className="ev-artist mono" href={artistHref(ev.artist_id)} title={`${ev.artist_name} 아티스트`}>{ev.artist_name}</a>
+			<a className="ev-artist mono" href={artistHref(ev.artist_id)} title={`${ev.artist_name} 아티스트`}>
+				{ev.trust ? `추적: ${ev.artist_name}` : ev.artist_name}
+			</a>
 			<span className="ev-meta"><EventMeta ev={ev} /></span>
 		</div>
 	)
@@ -296,7 +303,9 @@ export function EventCard({ ev, showDate = false }: { ev: ReleaseEventLike, show
 					</button>
 				) :
 				<span className="c-title serif italic">{ev.title}</span>}
-			<a className="c-artist mono" href={artistHref(ev.artist_id)} title={`${ev.artist_name} 아티스트`}>{ev.artist_name}</a>
+			<a className="c-artist mono" href={artistHref(ev.artist_id)} title={`${ev.artist_name} 아티스트`}>
+				{ev.trust ? `추적: ${ev.artist_name}` : ev.artist_name}
+			</a>
 			<div className="c-meta"><EventMeta ev={ev} /></div>
 		</article>
 	)
