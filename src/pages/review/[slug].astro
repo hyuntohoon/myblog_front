@@ -10,6 +10,7 @@ import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import Aside from '@components/aside.astro'
 import Playground from '@components/playground.astro'
 import ReviewHero from '@components/review-hero.astro'
+import ReviewJsonLd from '@components/review-jsonld.astro'
 import PartialStars from '@components/partial-stars.astro'
 import { AddToBucketMenu } from '@components/member/pocket/AddToBucketMenu'
 import ReviewTrackAdder from '@components/member/pocket/ReviewTrackAdder'
@@ -86,6 +87,8 @@ const recordLabel = post.musicReview?.label ?? null
     <meta name="article:published_time" content={isoDateFormat(post.date)} />
     <meta name="article:modified_time" content={isoDateFormat(post.lastUpdated)} />
     <meta name="article:section" content={post.category} />
+    {/* SEO-review-structured-data Step 1: Review+MusicAlbum JSON-LD, review pages only */}
+    {isReview && <ReviewJsonLd post={post} />}
   </Seo>
 
   <SkipNavContent>
