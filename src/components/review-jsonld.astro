@@ -1,0 +1,55 @@
+---
+/**
+ * SEO-review-structured-data Step 1 — schema.org Review + MusicAlbum JSON-LD.
+ * Build-time only, emitted from /review/[slug] behind its isReview gate.
+ * Rating-less reviews omit reviewRating (still valid Review markup); posts
+ * without a linked album title emit nothing (Review requires itemReviewed).
+ */
+import type { CollectionEntry } from 'astro:content'
+import { SITE } from '@constants'
+import { isoDateFormat } from '@utils'
+
+export interface Props {
+  post: CollectionEntry<'blog'>['data']
+}
+
+const { post } = Astro.props
+
+const albumName = post.musicReview?.title ?? null
+const cover = post.albumCover || post.image || post.musicReview?.cover?.src
+
+const jsonLd: Record<string, unknown> = {
+  '@context': 'https://schema.org',
+  '@type': 'Review',
+  'author': { '@type': 'Person', 'name': SITE.defaultAuthor },
+  'datePublished': isoDateFormat(post.date),
+}
+if (post.description)
+  jsonLd.reviewBody = post.description
+// OQ1 default: native scale — bestRating follows ratingScale (Google normalizes).
+if (post.rating != null) {
+  jsonLd.reviewRating = {
+    '@type': 'Rating',
+    'ratingValue': post.rating,
+    'bestRating': post.ratingScale,
+    'worstRating': 0,
+  }
+}
+
+const itemReviewed: Record<string, unknown> = {
+  '@type': 'MusicAlbum',
+  'name': albumName,
+}
+if (post.musicReview?.artists?.length)
+  itemReviewed.byArtist = post.musicReview.artists.map(name => ({ '@type': 'MusicGroup', name }))
+if (cover)
+  itemReviewed.image = new URL(cover, SITE.url).toString()
+if (post.musicReview?.releaseDate)
+  itemReviewed.datePublished = isoDateFormat(post.musicReview.releaseDate).slice(0, 10)
+jsonLd.itemReviewed = itemReviewed
+
+// Escape `<` so user content can never close the script tag early.
+const json = JSON.stringify(jsonLd).replace(/</g, '\\u003C')
+---
+
+{albumName && <script type="application/ld+json" set:html={json} is:inline />}
