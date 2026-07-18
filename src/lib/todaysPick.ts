@@ -10,6 +10,8 @@ const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
 export type DailyPick = components['schemas']['Backend_DailyPickItem']
 export type UpsertTodaysPick = components['schemas']['Backend_UpsertTodaysPickRequest']
+export type DailyPickQueueItem = components['schemas']['Backend_DailyPickQueueItem']
+export type AddToPickQueue = components['schemas']['Backend_AddToPickQueueRequest']
 
 /** Today's pick, or null on a no-pick day. Public (edge_guard). */
 export async function getTodaysPick(): Promise<DailyPick | null> {
@@ -59,4 +61,41 @@ export async function deleteTodaysPick(): Promise<boolean> {
 	const res = await apiFetch(`${BASE}/api/todays-pick`, { method: 'DELETE' })
 	// 204 = removed; 404 = nothing posted today. Treat 404 as "already empty".
 	return !!res && (res.status === 204 || res.status === 404)
+}
+
+// ── staging queue (FEAT-todays-pick-queue Step 4) ────────────────────────────
+// Owner-only INCLUDING the GET (require_owner in-Lambda, Cognito JWT at the API
+// Gateway) — every call goes through apiFetch so the Bearer token is attached.
+
+/** Staged picks, newest-first (server-ordered). null = request failed. */
+export async function getPickQueue(): Promise<DailyPickQueueItem[] | null> {
+	const res = await apiFetch(`${BASE}/api/todays-pick/queue`)
+	if (!res || !res.ok)
+		return null
+	return (await res.json()) as DailyPickQueueItem[]
+}
+
+/** Stage a track. Re-adding the same track_id is a server-side no-op (returns the existing row). */
+export async function addToPickQueue(payload: AddToPickQueue): Promise<DailyPickQueueItem | null> {
+	const res = await apiFetch(`${BASE}/api/todays-pick/queue`, {
+		method: 'POST',
+		body: JSON.stringify(payload),
+	})
+	if (!res || !res.ok)
+		return null
+	return (await res.json()) as DailyPickQueueItem
+}
+
+/** Remove a staged pick. 404 = already gone — treat as removed. */
+export async function removeFromPickQueue(queueId: string): Promise<boolean> {
+	const res = await apiFetch(`${BASE}/api/todays-pick/queue/${encodeURIComponent(queueId)}`, { method: 'DELETE' })
+	return !!res && (res.status === 204 || res.status === 404)
+}
+
+/** Post a staged pick as today's pick; the queue row is consumed atomically. */
+export async function promoteFromPickQueue(queueId: string): Promise<DailyPick | null> {
+	const res = await apiFetch(`${BASE}/api/todays-pick/queue/${encodeURIComponent(queueId)}/promote`, { method: 'POST' })
+	if (!res || !res.ok)
+		return null
+	return (await res.json()) as DailyPick
 }

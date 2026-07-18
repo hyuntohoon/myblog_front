@@ -140,6 +140,50 @@
 .qb-modal-more:hover { background: var(--color-paper); border-color: var(--color-text); }
 .qb-modal-more:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── picker tabs + row side-actions (TodaySongPicker 검색/큐 —
+   FEAT-todays-pick-queue Step 4). The .gs-row is itself a <button> (RowAction),
+   so per-row secondary actions cannot nest inside it — .qb-pickrow lays the row
+   and its side buttons out as flex siblings instead. ──────────────────────── */
+.qb-modal-tabs { display: flex; gap: var(--space-2); padding: var(--space-4) var(--space-5) 0; }
+.qb-modal-tab {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-soft);
+  background: none;
+  color: var(--color-subtle);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.qb-modal-tab:hover { color: var(--color-text); border-color: var(--color-border); }
+.qb-modal-tab.is-active { color: #fff; background: var(--color-text); border-color: var(--color-text); }
+.qb-modal-tab-count { opacity: 0.75; margin-left: 5px; }
+.qb-pickrow { display: flex; align-items: stretch; gap: 6px; }
+.qb-pickrow > .gs-row { flex: 1; min-width: 0; }
+.qb-pickrow-side {
+  flex: 0 0 auto;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border-soft);
+  background: none;
+  color: var(--color-subtle);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.qb-pickrow-side:hover { color: var(--color-text); border-color: var(--color-border); background: var(--color-paper); }
+.qb-pickrow-side--primary { color: var(--color-text); border-color: var(--color-border); }
+.qb-pickrow-side--primary:hover { color: #fff; background: var(--color-text); border-color: var(--color-text); }
+.qb-pickrow-side--danger:hover { color: #c0392b; border-color: color-mix(in srgb, #c0392b 40%, var(--color-border-soft)); background: none; }
+.qb-pickrow-side:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── --add variant: a focused search overlay, larger than the shared confirm
    dialogs that also use .qb-modal. Scoped via --add so the small delete/publish
    confirms (own inline max-width) are unaffected. Background page scroll is

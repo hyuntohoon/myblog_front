@@ -106,6 +106,13 @@ export default function TodaySongBuckit() {
 		return false
 	}
 
+	// Queue promote already posted the pick server-side (atomic with the queue-row
+	// delete) — just adopt the returned pick and close, same finish as handlePick.
+	function handlePromoted(saved: DailyPick) {
+		setPick(saved)
+		setPickerOpen(false)
+	}
+
 	async function handleDelete() {
 		setBusy(true)
 		try {
@@ -155,7 +162,7 @@ export default function TodaySongBuckit() {
 					<button type="button" className="tsp-btn" onClick={() => setPickerOpen(true)}>곡 올리기 +</button>
 				</div>
 			)}
-			{pickerOpen && <TodaySongPicker onPick={handlePick} onClose={() => setPickerOpen(false)} />}
+			{pickerOpen && <TodaySongPicker onPick={handlePick} onPromoted={handlePromoted} onClose={() => setPickerOpen(false)} />}
 			{historyOpen && <TodayPickHistory onClose={() => setHistoryOpen(false)} />}
 		</section>
 	)
