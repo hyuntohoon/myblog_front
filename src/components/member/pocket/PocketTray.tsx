@@ -15,6 +15,7 @@ import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import type { PlaybackTarget } from '@lib/spotifyPlayback'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isLoggedIn } from '@lib/auth'
 import { isOwnerUser } from '@lib/owner'
@@ -532,15 +533,19 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
             const typeLabel = ITEM_TYPE_LABEL[a.itemType] ?? a.itemType
             // const (not a.artistId) so the narrowing survives into the onClick closure
             const artistId = isArtist ? a.artistId : null
+            const albumId = isAlbum ? a.albumId : null
             return (
               <div
 	key={a.itemId}
 	className="pb-card"
 	data-artist={isArtist || undefined}
 	{...dragBind(a)}
-                // an artist member navigates to its /artist/[id] hub (mirrors the board);
-                // album/other members have no in-island detail surface → click is a no-op.
-	onClick={artistId != null ? () => window.location.assign(artistHref(artistId)) : undefined}
+                // Surface rule: album → shared read-only overlay; artist → hub.
+	onClick={artistId != null ?
+                  () => window.location.assign(artistHref(artistId)) :
+                  albumId != null ?
+                    () => openAlbum({ albumId, title: a.title, artist: a.artist ?? undefined, cover: a.cover ?? null }) :
+                    undefined}
 	title={isAlbum ? `${a.title} — ${a.artist}` : a.title}
               >
                 <div style={{ position: 'relative' }}>
@@ -571,8 +576,10 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
         ) :
         (
       <div style={{ display: 'flex', flexDirection: 'column', gap: sc(7), maxHeight: sc(220), overflowY: 'auto' }}>
-        {bucket.albums.slice(0, 8).map(a => (
-          <div
+        {bucket.albums.slice(0, 8).map((a) => {
+          const albumId = a.itemType === 'album' ? a.albumId : null
+          return (
+            <div
 	key={a.itemId}
             // FEAT-my-buckit-artist Step 6 — drag this tray item onto a visible board
             // bucket. The payload mirrors the board's AlbumChip member-drag DndItem so
@@ -595,18 +602,21 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
             }}
 	onDragEnd={() => window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT))}
 	style={{ display: 'flex', alignItems: 'center', gap: sc(9), cursor: 'grab' }}
-          >
+            >
             {editMode && <button type="button" className="pb-minus" title="버킷에서 제거 (원본은 유지)" onClick={() => void removeItem(bucket.id, a.itemId, a.albumId, a.title)}>−</button>}
             <Cover label={a.title} size={26} />
-            <span className="serif" style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>
+            {albumId ?
+              <button type="button" className="serif" onClick={() => openAlbum({ albumId, title: a.title, artist: a.artist ?? undefined, cover: a.cover ?? null })} style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}>{a.title}</button> :
+              <span className="serif" style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>}
             <span className="tgt-meta">{a.itemType === 'album' ? a.artist : (ITEM_TYPE_LABEL[a.itemType] ?? a.itemType)}</span>
             {isOwner && (
               <button type="button" className="pb-play" title="재생 (Spotify Premium)" aria-label={`${a.title} 재생`} onClick={() => onPlay(a)}>
                 <svg width={sc(9)} height={sc(9)} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
               </button>
             )}
-          </div>
-        ))}
+            </div>
+          )
+        })}
           {bucket.albums.length === 0 && <span className="sans" style={{ fontSize: sc(11), color: 'var(--color-faded)' }}>비어 있음 — 드롭 영역으로 유지</span>}
       </div>
       )}
