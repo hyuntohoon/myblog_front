@@ -21,6 +21,7 @@
 // opens with the live `item.id` + position — the snapshot stores no track id. A
 // tap that discovers playback has stopped hides the entry instead of opening.
 import { useEffect, useRef, useState } from 'react'
+import { openAlbum } from '@lib/entityEvents'
 import { readLivePlayback } from './lyrics/playback.api'
 import type { LivePlayback } from './lyrics/playback.api'
 import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
@@ -120,6 +121,23 @@ function NpCover({ url, label, size, radius = 4 }: { url?: string | null, label:
   return <Cover label={label} size={size} radius={radius} />
 }
 
+function AlbumTextLink({ id, title, artist, cover }: { id?: string | null, title?: string | null, artist?: string | null, cover?: string | null }) {
+  if (!id || !title)
+    return <>{title}</>
+  return <button type="button" onClick={() => openAlbum({ albumId: id, title, artist: artist ?? undefined, cover })} style={{ padding: 0, border: 'none', background: 'none', font: 'inherit', color: 'inherit', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)' }}>{title}</button>
+}
+
+function AlbumCoverLink({ id, title, artist, cover, label, size, radius = 4 }: { id?: string | null, title?: string | null, artist?: string | null, cover?: string | null, label: string, size: number, radius?: number }) {
+  const art = <NpCover url={cover} label={label} size={size} radius={radius} />
+  if (!id)
+    return art
+  return (
+    <button type="button" aria-label="앨범 정보 열기" onClick={() => openAlbum({ albumId: id, title: title ?? undefined, artist: artist ?? undefined, cover })} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', display: 'block', flex: '0 0 auto' }}>
+      {art}
+    </button>
+  )
+}
+
 /**
  * Shared fetch — the worker-fed snapshot, overlaid by a one-shot live read.
  * Snapshot and live read fire in parallel on mount; a decisive live result
@@ -142,6 +160,7 @@ function useNowPlaying() {
       return
     liveWonRef.current = true
     if (r.state === 'playing') {
+      // RFC Step 4 contract: the one-shot live chain does not supply album_id yet.
       setNp({
         is_playing: true,
         track: r.track,
@@ -330,7 +349,7 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics }: NpSh
     return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} />
   return (
     <div className="panel" style={{ padding: narrow ? 14 : 18, display: 'flex', gap: narrow ? 14 : 18, alignItems: 'center' }}>
-      <NpCover url={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={narrow ? 64 : 88} radius={4} />
+      <AlbumCoverLink id={np.album_id} title={np.album} artist={np.artist} cover={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={narrow ? 64 : 88} radius={4} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, rowGap: 6, marginBottom: 6 }}>
           <Equalizer playing h={12} />
@@ -342,7 +361,9 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics }: NpSh
         </div>
         <div className="serif italic" style={{ fontSize: narrow ? 18 : 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
         <div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {[np.artist, np.album].filter(Boolean).join(' — ')}
+          {np.artist}
+          {np.artist && np.album ? ' — ' : null}
+          <AlbumTextLink id={np.album_id} title={np.album} artist={np.artist} cover={np.album_cover_url} />
         </div>
       </div>
     </div>
@@ -371,7 +392,7 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics }: NpSh
         live ?
           (
               <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
-                <NpCover url={live.album_cover_url} label={live.album ?? live.track ?? '?'} size={50} radius={3} />
+                <AlbumCoverLink id={live.album_id} title={live.album} artist={live.artist} cover={live.album_cover_url} label={live.album ?? live.track ?? '?'} size={50} radius={3} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: 8, rowGap: 4, alignItems: 'center' }}>
                     <span style={{ whiteSpace: 'nowrap' }}>● 재생 중</span>
@@ -393,14 +414,14 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics }: NpSh
         {recent == null && <div className="meta" style={{ padding: '4px 8px' }}>불러오는 중…</div>}
         {recent != null && recent.length === 0 && <div className="meta" style={{ padding: '4px 8px' }}>기록이 없습니다</div>}
         {(recent ?? []).slice(0, 6).map((it, i) => (
-          <div key={it.album_id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
+          <button type="button" key={it.album_id} onClick={() => openAlbum({ albumId: it.album_id, title: it.album?.title, artist: (it.album?.artist_names ?? []).join(', ') || undefined, cover: it.album?.cover_url })} style={{ display: 'flex', gap: 12, alignItems: 'center', width: '100%', border: 'none', background: 'none', padding: 8, cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'inherit', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
             <NpCover url={it.album?.cover_url} label={it.album?.title ?? '?'} size={32} radius={2} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.album?.title}</div>
               <div className="sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it.album?.artist_names ?? []).join(', ')}</div>
             </div>
             <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.04em', whiteSpace: 'nowrap', flex: '0 0 auto' }}>{fmtSince(it.last_played_at)}</span>
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -440,7 +461,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: Np
   return (
     <div className="panel" style={{ padding: 0, overflow: 'hidden', borderTop: '2px solid var(--color-text)', borderBottom: '2px solid var(--color-text)', borderLeft: '0', borderRight: '0', borderRadius: 0, background: 'var(--color-bg)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: narrow ? 14 : 22, padding: narrow ? 16 : 24 }}>
-        <NpCover url={live ? live.album_cover_url : (latest?.album?.cover_url ?? null)} label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={narrow ? 84 : 116} radius={4} />
+        <AlbumCoverLink id={live ? live.album_id : latest?.album_id} title={live ? live.album : latest?.album_name} artist={live ? live.artist : latest?.artist_name} cover={live ? live.album_cover_url : (latest?.album?.cover_url ?? null)} label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={narrow ? 84 : 116} radius={4} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="kicker" style={{ marginBottom: 8, display: 'flex', flexWrap: 'wrap', gap: 10, rowGap: 6, alignItems: 'center' }}>
             <span style={{ whiteSpace: 'nowrap', color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
@@ -455,7 +476,9 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: Np
                 <>
                   <div className="serif italic" style={titleStyle}>{live.track}</div>
                   <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: narrow ? 12 : 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {[live.artist, live.album].filter(Boolean).join(' — ')}
+                    {live.artist}
+                    {live.artist && live.album ? ' — ' : null}
+                    <AlbumTextLink id={live.album_id} title={live.album} artist={live.artist} cover={live.album_cover_url} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: narrow ? 22 : 30, marginBottom: narrow ? 8 : 14 }}>
                     {Array.from({ length: 32 }).map((_, i) => (
@@ -481,7 +504,9 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: Np
                   <>
                     <div className="serif italic" style={titleStyle}>{latest.track_name}</div>
                     <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginBottom: narrow ? 12 : 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {[latest.artist_name, latest.album_name].filter(Boolean).join(' — ')}
+                      {latest.artist_name}
+                      {latest.artist_name && latest.album_name ? ' — ' : null}
+                      <AlbumTextLink id={latest.album_id} title={latest.album_name} artist={latest.artist_name} cover={latest.album?.cover_url} />
                     </div>
                   </>
                 ) :

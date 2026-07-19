@@ -135,9 +135,20 @@ const recordLabel = post.musicReview?.label ?? null
           <!-- Album hero -->
           <section class="lfq-hero">
             <div class="lfq-hero-cover">
-              {cover ?
-                <img src={cover} alt={albumTitle ?? post.title} loading="eager" /> :
-                <div class="lfq-hero-placeholder">{(albumTitle ?? post.title).slice(0, 2).toUpperCase()}</div>}
+              {/* RFC-ui-surface-unification decision 8: public/read surfaces open the
+                  shared overlay (openAlbum). Gated on the DB album id — without it the
+                  cover stays a plain image. */}
+              {heroAlbumId ?
+                (
+                  <button type="button" class="lfq-open" data-album-id={heroAlbumId} data-album-title={albumTitle ?? post.title} data-album-cover={cover ?? ''} data-album-artist={artistText ?? ''} data-album-year={releaseYear ?? ''} aria-label="앨범 정보 열기">
+                    {cover ?
+                      <img src={cover} alt={albumTitle ?? post.title} loading="eager" /> :
+                      <div class="lfq-hero-placeholder">{(albumTitle ?? post.title).slice(0, 2).toUpperCase()}</div>}
+                  </button>
+                ) :
+                cover ?
+                  <img src={cover} alt={albumTitle ?? post.title} loading="eager" /> :
+                  <div class="lfq-hero-placeholder">{(albumTitle ?? post.title).slice(0, 2).toUpperCase()}</div>}
             </div>
             <div class="lfq-hero-meta">
               {(recordLabel || releaseYear) && (
@@ -156,7 +167,15 @@ const recordLabel = post.musicReview?.label ?? null
                   </p>
                 ) :
                 (artistText && <p class="lfq-hero-artist">{artistText}</p>)}
-              {albumTitle && <h2 class="lfq-hero-album"><em>{albumTitle}</em></h2>}
+              {albumTitle && (
+                <h2 class="lfq-hero-album">
+                  {heroAlbumId ?
+                    (
+                      <button type="button" class="lfq-open lfq-open-title" data-album-id={heroAlbumId} data-album-title={albumTitle} data-album-cover={cover ?? ''} data-album-artist={artistText ?? ''} data-album-year={releaseYear ?? ''} aria-label="앨범 정보 열기"><em>{albumTitle}</em></button>
+                    ) :
+                    <em>{albumTitle}</em>}
+                </h2>
+              )}
               {genres.length > 0 && (
                 <p class="lfq-hero-genre">{genres.join(' · ')}</p>
               )}
@@ -617,6 +636,27 @@ const recordLabel = post.musicReview?.label ?? null
     overflow-wrap: anywhere;
   }
   .lfq-hero-album em { font-style: italic; }
+  /* Album-open buttons (cover + title): unset keeps the wrapped markup's look;
+     the title gets the artist-link hover affordance. */
+  .lfq-open {
+    all: unset;
+    cursor: pointer;
+    display: block;
+  }
+  .lfq-open:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  .lfq-hero-cover .lfq-open {
+    width: 100%;
+    height: 100%;
+  }
+  .lfq-open-title {
+    transition: color 0.14s;
+  }
+  .lfq-open-title:hover {
+    color: var(--color-accent);
+  }
   .lfq-hero-genre {
     margin: 0;
     font-family: var(--font-mono);
@@ -775,4 +815,22 @@ const recordLabel = post.musicReview?.label ?? null
   // which the browser can't execute (no fetch ever fired).
   import '../../scripts/albumDetail.client.ts'
   import '../../scripts/albumDetail.fetch.client.ts'
+</script>
+
+<script>
+  // RFC-ui-surface-unification decision 8 — the hero cover/title open the shared
+  // read-only album overlay (openAlbum → layout.astro's AlbumOverlay). Same
+  // astro:page-load lifecycle as the 편집-link script above.
+  import { openAlbum } from '../../lib/entityEvents'
+
+  document.addEventListener('astro:page-load', () => {
+    document.querySelectorAll<HTMLButtonElement>('.lfq-open').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const { albumId, albumTitle, albumArtist, albumCover, albumYear } = btn.dataset
+        if (!albumId)
+          return
+        openAlbum({ albumId, title: albumTitle, artist: albumArtist || undefined, cover: albumCover || null, year: albumYear ? Number(albumYear) : null })
+      })
+    })
+  })
 </script>
