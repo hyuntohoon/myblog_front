@@ -16,6 +16,7 @@
  */
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { artistHref, openAlbum } from '@lib/entityLinks'
+import { resolveDbAlbumId } from '@lib/spotifyCatalog'
 
 /**
  * Structural event shape both data sources satisfy: the public calendar's
@@ -186,22 +187,9 @@ export function sourcesLabel(sources: string[] | undefined): string {
 // ── released → album overlay ────────────────────────────────────────────────
 // The event carries a spotify_album_id; the overlay's detail fetch is DB-id
 // based (lib/albumDetail), so resolve via /albums/by-spotify first (same
-// pattern as TodaySongPicker). On resolve failure we still open the overlay
-// with the display identity — it degrades to a header-only window.
-const dbIdCache = new Map<string, Promise<string | null>>()
-
-function resolveDbAlbumId(spotifyId: string): Promise<string | null> {
-	const hit = dbIdCache.get(spotifyId)
-	if (hit)
-		return hit
-	const base = import.meta.env.PUBLIC_API_URL as string
-	const p = fetch(`${base}/api/music/albums/by-spotify/${encodeURIComponent(spotifyId)}`)
-		.then(r => (r.ok ? r.json() as Promise<{ album?: { id?: string } }> : null))
-		.then(j => j?.album?.id ?? null)
-		.catch(() => null)
-	dbIdCache.set(spotifyId, p)
-	return p
-}
+// pattern as TodaySongPicker; resolver shared via @lib/spotifyCatalog since
+// member-player Step 3). On resolve failure we still open the overlay with the
+// display identity — it degrades to a header-only window.
 
 export function isOpenable(ev: ReleaseEventLike): boolean {
 	return ev.status === 'released' && !!ev.spotify_album_id

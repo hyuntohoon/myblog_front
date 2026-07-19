@@ -8,14 +8,16 @@
 // endpoint) is not engaged. The token already carries `user-read-playback-state`.
 //
 // This is a ONE-SHOT read: fired by an explicit user action (entry tap / manual
-// refresh / 동기화), once on member-dashboard entry (FEAT-nowplaying-live-sync,
-// owner-only authed page) to overlay the stale snapshot, and once per detected
-// end-of-track by the lyrics viewer (auto re-sync — a single event-driven read,
-// still never polled). `progressMs` + `readAtMs` seed the viewer's clock
-// estimate; `durationMs` is what lets the viewer detect the track ending. The
-// `playing` state also carries display metadata (track/artist/album/cover) so
-// the now-playing card can render the live moment without a second request.
-import { isOwnerUser } from '@lib/owner'
+// refresh / 동기화), once on member-dashboard entry (FEAT-nowplaying-live-sync)
+// to overlay the stale snapshot, and once per detected end-of-track by the
+// lyrics viewer (auto re-sync — a single event-driven read, still never
+// polled). `progressMs` + `readAtMs` seed the viewer's clock estimate;
+// `durationMs` is what lets the viewer detect the track ending. The `playing`
+// state also carries display metadata (track/artist/album/cover — plus the raw
+// Spotify artist/album ids, member-player Step 3, resolved lazily to catalog
+// ids by consumers) so the now-playing card can render the live moment without
+// a second request. Per-member since member-player Step 2/3: the token mint is
+// row-scoped to the signed-in member, so the former owner gate is gone.
 import { getStreamingToken } from '@lib/spotifyPlayback'
 
 const PLAYER_URL = 'https://api.spotify.com/v1/me/player'
@@ -36,7 +38,11 @@ export type LivePlayback =
 		durationMs: number | null
 		track: string | null
 		artist: string | null
+		/** Spotify artist ids+names (catalog resolution is the consumer's job). */
+		artists: Array<{ id: string, name: string }>
 		album: string | null
+		/** Spotify album id (catalog resolution is the consumer's job). */
+		albumSpotifyId: string | null
 		albumCoverUrl: string | null
 	} |
 	{ state: 'idle' } |
@@ -54,10 +60,6 @@ export type LivePlayback =
  *   transient failure.
  */
 export async function readLivePlayback(): Promise<LivePlayback> {
-  // The v1 token is owner-only; mirror require_owner before touching its route.
-  if (!await isOwnerUser())
-    return { state: 'unavailable' }
-
   const tok = await getStreamingToken()
   if (!tok.ok)
     return { state: 'unavailable' }
@@ -83,8 +85,9 @@ export async function readLivePlayback(): Promise<LivePlayback> {
       type?: string
       duration_ms?: number | null
       name?: string | null
-      artists?: Array<{ name?: string | null } | null> | null
+      artists?: Array<{ id?: string | null, name?: string | null } | null> | null
       album?: {
+        id?: string | null
         name?: string | null
         images?: Array<{ url?: string | null, width?: number | null } | null> | null
       } | null
@@ -100,6 +103,8 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   const item = body?.item
   if (!body?.is_playing || !item?.id || item.type !== 'track')
     return { state: 'idle' }
+  const namedArtists = (item.artists ?? [])
+    .flatMap(a => (a?.id && a?.name ? [{ id: a.id, name: a.name }] : []))
   const artist = (item.artists ?? [])
     .map(a => a?.name)
     .filter((n): n is string => Boolean(n))
@@ -119,7 +124,9 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     durationMs: typeof item.duration_ms === 'number' ? item.duration_ms : null,
     track: item.name ?? null,
     artist: artist || null,
+    artists: namedArtists,
     album: item.album?.name ?? null,
+    albumSpotifyId: item.album?.id ?? null,
     albumCoverUrl: cover?.url ?? null,
   }
 }

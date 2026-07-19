@@ -27,6 +27,7 @@ const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string | undefined
 const TOKEN_PATH = '/api/playback/spotify-token'
 const RESOLVE_PATH = '/api/playback/resolve'
 const SDK_SRC = 'https://sdk.scdn.co/spotify-player.js'
+const PLAYER_BASE = 'https://api.spotify.com/v1/me/player'
 
 // ── provider-neutral identity ────────────────────────────────────────────────
 // Membership stores ISRC / artist+title, resolved to a provider id at play time
@@ -37,11 +38,14 @@ export type PlaybackTarget =
 
 // ── streaming-capability state (generic, NOT owner-specific) ──────────────────
 //   ready        — a live token + a connected Premium device (post-provisioning)
-//   dormant      — the token route returned 503 (owner has not provisioned yet)
+//   dormant      — the token route returned 503 (playback not configured server-side)
+//   disconnected — the token route returned 404: this member has no connected
+//                  Spotify integration (member-player Step 2 mint contract —
+//                  also what a revoked row returns after its first 502)
 //   unauthorized — caller is not signed in (no token mint attempted)
 //   unsupported  — non-Premium / the SDK could not initialise a device
-//   error        — a transient token/network failure
-export type StreamingStatus = 'ready' | 'dormant' | 'unauthorized' | 'unsupported' | 'error'
+//   error        — a transient token/network/provider failure
+export type StreamingStatus = 'ready' | 'dormant' | 'disconnected' | 'unauthorized' | 'unsupported' | 'error'
 
 export interface PlaybackOutcome {
   status: StreamingStatus
@@ -51,21 +55,23 @@ export interface PlaybackOutcome {
 
 type TokenResult =
 	| { ok: true, token: string, expiresAt: number } |
-	{ ok: false, status: Exclude<StreamingStatus, 'ready'> }
+	{ ok: false, status: Exclude<StreamingStatus, 'ready'>, httpStatus?: number }
 
 // ── token seam (the single swappable source) ──────────────────────────────────
 let cachedToken: { token: string, expiresAt: number } | null = null
+let inflightMint: Promise<TokenResult> | null = null
 
 /**
  * Acquire a short-lived Spotify streaming access token.
  *
- * v1: server-minted, single-owner — a plain authed GET (NOT `apiFetch`, so a
- * play click never triggers the refresh→`goLogin` redirect; a play button must
- * never navigate the page away). An anonymous caller short-circuits to
- * `unauthorized` WITHOUT a network call, so a public review page never mints a
- * token for a visitor.
- *
- * FUTURE: a per-listener variant swaps only this function body.
+ * Per-member since member-player Step 2 (the route mints from the caller's own
+ * row-scoped refresh token; the owner path is a special case server-side) — a
+ * plain authed GET (NOT `apiFetch`, so a play click never triggers the
+ * refresh→`goLogin` redirect; a play button must never navigate the page
+ * away). An anonymous caller short-circuits to `unauthorized` WITHOUT a
+ * network call, so a public review page never mints a token for a visitor.
+ * Concurrent callers (card mount + live read fire together) share one in-flight
+ * mint instead of racing two.
  */
 export async function getStreamingToken(): Promise<TokenResult> {
   if (!isLoggedIn())
@@ -77,6 +83,19 @@ export async function getStreamingToken(): Promise<TokenResult> {
   if (!BASE)
     return { ok: false, status: 'error' }
 
+  if (inflightMint)
+    return inflightMint
+
+  inflightMint = mintOnce()
+  try {
+    return await inflightMint
+  }
+  finally {
+    inflightMint = null
+  }
+}
+
+async function mintOnce(): Promise<TokenResult> {
   let res: Response
   try {
     res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...getAuthHeader() } })
@@ -86,11 +105,15 @@ export async function getStreamingToken(): Promise<TokenResult> {
   }
 
   if (res.status === 503)
-    return { ok: false, status: 'dormant' }
+    return { ok: false, status: 'dormant', httpStatus: 503 }
+  // 404 = this member has no connected ('connected'-status) Spotify integration
+  // (member-player Step 2 route contract) — a capability state, not an error.
+  if (res.status === 404)
+    return { ok: false, status: 'disconnected', httpStatus: 404 }
   if (res.status === 401 || res.status === 403)
-    return { ok: false, status: 'unauthorized' }
+    return { ok: false, status: 'unauthorized', httpStatus: res.status }
   if (!res.ok)
-    return { ok: false, status: 'error' }
+    return { ok: false, status: 'error', httpStatus: res.status }
 
   let body: SpotifyStreamingTokenResponse
   try {
@@ -223,6 +246,7 @@ async function resolveProviderUri(target: PlaybackTarget): Promise<string> {
 
 const STATUS_MESSAGE: Record<Exclude<StreamingStatus, 'ready'>, string> = {
   dormant: 'Spotify Premium 재생이 아직 연결되지 않았어요. 소유자가 스트리밍을 설정하면 켜집니다.',
+  disconnected: 'Spotify를 연동하면 재생할 수 있어요. 설정에서 연결해 주세요.',
   unauthorized: '로그인 후 Spotify Premium이 연결되면 재생할 수 있어요.',
   unsupported: 'Spotify Premium 계정이 필요해요. (미리듣기는 추후 지원)',
   error: '재생 토큰을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
@@ -290,6 +314,56 @@ export async function requestPlayback(target: PlaybackTarget): Promise<PlaybackO
     return { status: 'error', message: messageFor('error') }
   }
   return { status: 'ready', message: '재생을 시작했어요.' }
+}
+
+// ── Connect remote transport (member-player Step 3, D1 full tier) ─────────────
+// Client-side `PUT /v1/me/player/{play|pause|seek}` against the member's ACTIVE
+// device (Spotify Connect remote — no device_id, no SDK download). Same
+// sanctioned pattern as the calls above: the only server hit is the async token
+// mint (rule #9 holds). Callers run the 403-probe capability model (owner
+// decision 5): `no-capability` (403 Premium/scope, 404 no active device)
+// degrades the session to the fallback tier.
+
+export type PlayerCommand =
+	| { kind: 'play' } |
+	{ kind: 'pause' } |
+	{ kind: 'seek', positionMs: number }
+
+export type PlayerCommandOutcome =
+	| { ok: true } |
+	{ ok: false, reason: 'no-capability' } |
+	{ ok: false, reason: 'token', status: Exclude<StreamingStatus, 'ready'>, httpStatus?: number } |
+	{ ok: false, reason: 'transient' }
+
+/** One transport command to the member's active device. Never throws. */
+export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerCommandOutcome> {
+  const url = cmd.kind === 'seek' ?
+    `${PLAYER_BASE}/seek?position_ms=${Math.max(0, Math.round(cmd.positionMs))}` :
+    `${PLAYER_BASE}/${cmd.kind}`
+  // Up to two attempts: a 401 mid-session means the minted token aged out
+  // server-side despite the 5s cache skew — drop the cache and re-mint once.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = await getStreamingToken()
+    if (!tok.ok)
+      return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus }
+    let res: Response
+    try {
+      res = await fetch(url, { method: 'PUT', headers: { Authorization: `Bearer ${tok.token}` } })
+    }
+    catch {
+      return { ok: false, reason: 'transient' }
+    }
+    if (res.ok)
+      return { ok: true }
+    if (res.status === 401 && attempt === 0) {
+      cachedToken = null
+      continue
+    }
+    if (res.status === 403 || res.status === 404)
+      return { ok: false, reason: 'no-capability' }
+    return { ok: false, reason: 'transient' }
+  }
+  return { ok: false, reason: 'transient' }
 }
 
 /** Tear down the connected player + clear the in-memory token/device caches. */
