@@ -61,9 +61,11 @@
 //
 // FEAT-lyrics-auto-progression Step 2 is visual-only (album-blur backdrop +
 // always-dark + large sans-serif typography); it lives in the `.lyv-*` CSS.
+import type { ClockAnchor } from '@lib/clockEstimate'
 import type { KeyboardEvent, PointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { estimateMs } from '@lib/clockEstimate'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { getLyrics, requestTranslation } from './lyrics.api'
@@ -267,11 +269,11 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // the loaded phase; plain-only rows (trackable === false) are manual-only.
   const trackable = phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.trackable
 
-  // Clock-estimate anchor: the playback position (ms) captured at the wall-clock
-  // instant `wallMs` (performance.now()). estimatedMs = anchorMs + (now - wallMs).
+  // Clock-estimate anchor (shared idiom in @lib/clockEstimate since
+  // member-player Step 3): position `ms` captured at wall instant `wallMs`.
   // Seeded on open (from initialProgressMs) and on each re-sync. `null` until a
   // position is available — follow with a null anchor simply doesn't advance.
-  const anchor = useRef<{ ms: number, wallMs: number } | null>(null)
+  const anchor = useRef<ClockAnchor | null>(null)
 
   // Follow/suspend (FEAT-lyrics-viewer-controls Step 1): trackable rows follow
   // the estimate by default. Browse input pauses that loop only while a live
@@ -295,7 +297,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     clearSuspendTimer()
     const a = anchor.current
     if (a && n > 0)
-      setFocus(focusIndexForMs(segs, a.ms + (performance.now() - a.wallMs) + SYNC_LEAD_MS))
+      setFocus(focusIndexForMs(segs, estimateMs(a) + SYNC_LEAD_MS))
     setSuspended(false)
   }
 
@@ -352,13 +354,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
       endSynced.current = false
     if (n > 0)
-      setFocus(focusIndexForMs(segs, progressMs + SYNC_LEAD_MS + (performance.now() - anchor.current.wallMs)))
+      setFocus(focusIndexForMs(segs, estimateMs(anchor.current) + SYNC_LEAD_MS))
   }
 
   // One-shot initial-focus seed (position + the wall instant it was read at):
   // consumed exactly once by the next load (open with position, or a refresh
   // that swapped tracks), then cleared.
-  const pendingSeed = useRef<{ ms: number, wallMs: number } | null>(
+  const pendingSeed = useRef<ClockAnchor | null>(
     initialProgressMs != null ? { ms: initialProgressMs, wallMs: initialProgressAtMs ?? performance.now() } : null,
   )
 
@@ -594,7 +596,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       const a = anchor.current
       if (!a)
         return
-      const estimatedMs = a.ms + (performance.now() - a.wallMs) + SYNC_LEAD_MS
+      const estimatedMs = estimateMs(a) + SYNC_LEAD_MS
       // End-of-track auto re-sync (FEAT-lyrics-end-resync): once the estimate
       // runs past the track length + grace, fire ONE automatic refresh — next
       // track playing swaps the lyrics in place, idle keeps the view with the
