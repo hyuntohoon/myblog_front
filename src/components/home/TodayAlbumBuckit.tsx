@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from 'react'
 import { artistHref, openAlbum } from '@lib/entityLinks'
+import HomeStrip from './HomeStrip'
 import { Cover, SectionTitle } from './ui'
 
 interface OtdArtist { id: string, name: string, spotify_id: string | null }
@@ -37,8 +38,7 @@ function pad(n: number) {
 
 // Hover / scroll states inline styles can't reach. Scoped to `.otd-mod`.
 const SCOPED_CSS = `
-.otd-mod .otd-strip{display:flex;gap:clamp(14px,2vw,20px);overflow-x:auto;scroll-snap-type:x proximity;padding:2px 2px 14px;margin:0 -2px;scrollbar-width:none}
-.otd-mod .otd-strip::-webkit-scrollbar{height:0}
+.otd-mod .otd-skel{display:flex;gap:clamp(14px,2vw,20px);overflow:hidden;padding:2px 2px 14px;margin:0 -2px}
 .otd-mod .otd-card{flex:0 0 auto;width:clamp(128px,32vw,150px);scroll-snap-align:start;min-width:0}
 .otd-mod .otd-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
 .otd-mod .otd-cover-wrap{position:relative;display:block;transition:transform .18s}
@@ -78,7 +78,7 @@ function Card({ it }: { it: OtdItem }) {
 
 function Skeleton() {
   return (
-    <div className="otd-strip" aria-hidden="true" style={{ pointerEvents: 'none' }}>
+    <div className="otd-skel" aria-hidden="true" style={{ pointerEvents: 'none' }}>
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} className="otd-card">
           <span style={{ display: 'block', width: '100%', aspectRatio: '1 / 1', borderRadius: 4, background: 'var(--color-border-soft)' }} />
@@ -134,9 +134,9 @@ export default function TodayAlbumBuckit() {
       {status === 'loading' ?
         <Skeleton /> :
 (
-        <div className="otd-strip">
+        <HomeStrip>
           {data!.items.map(it => <Card key={it.album_id} it={it} />)}
-        </div>
+        </HomeStrip>
       )}
     </section>
   )
