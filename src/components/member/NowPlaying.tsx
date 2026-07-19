@@ -421,6 +421,8 @@ function useNowPlaying() {
     })
     return () => {
       onRef.current = false
+      if (noteTimer.current != null)
+        window.clearTimeout(noteTimer.current)
     }
   }, [])
   return { np, state, sync, syncing, moment, paused, tier, reconnect, note, playPause, seek }
