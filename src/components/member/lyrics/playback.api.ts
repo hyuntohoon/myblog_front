@@ -44,6 +44,12 @@ export type LivePlayback =
 		/** Spotify album id (catalog resolution is the consumer's job). */
 		albumSpotifyId: string | null
 		albumCoverUrl: string | null
+		/**
+		 * Active Connect device name (member-player Step 4 "playing elsewhere"
+		 * hint) — comes free with the same `GET /me/player` body, so the hint
+		 * refreshes exactly when the one-shot fires (D28: never polled).
+		 */
+		deviceName: string | null
 	} |
 	{ state: 'idle' } |
 	{ state: 'unavailable' }
@@ -80,6 +86,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   let body: {
     is_playing?: boolean
     progress_ms?: number | null
+    device?: { name?: string | null } | null
     item?: {
       id?: string
       type?: string
@@ -128,5 +135,6 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     album: item.album?.name ?? null,
     albumSpotifyId: item.album?.id ?? null,
     albumCoverUrl: cover?.url ?? null,
+    deviceName: body.device?.name?.trim() || null,
   }
 }
