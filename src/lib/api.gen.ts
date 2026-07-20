@@ -2501,6 +2501,8 @@ export interface components {
         };
         /** ReleaseFeedItem */
         Backend_ReleaseFeedItem: {
+            /** Album Id */
+            album_id?: string | null;
             /**
              * Artist Id
              * Format: uuid
@@ -2508,6 +2510,8 @@ export interface components {
             artist_id: string;
             /** Artist Name */
             artist_name: string;
+            /** Cover Url */
+            cover_url?: string | null;
             /**
              * Release Date
              * Format: date
