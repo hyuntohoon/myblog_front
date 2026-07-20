@@ -850,6 +850,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/tracked-artists/spotify-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Spotify Followed Artists
+         * @description Owner-only (FEAT-for-you-releases Step 2): the worker reads the OWNER's
+         *     Spotify bootstrap token, so an open member route would copy the owner's
+         *     follows into another member's tracked list. Rule #9: this only ENQUEUES —
+         *     the worker pages /me/following, snapshot-imports catalog matches, and
+         *     catalog-ingests the rest (same independence contract as the Buckit import).
+         */
+        post: operations["import_spotify_followed_artists_api_me_tracked_artists_spotify_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/tracked-artists/{artist_id}": {
         parameters: {
             query?: never;
@@ -2730,6 +2754,11 @@ export interface components {
              * @default false
              */
             needs_reauth: boolean;
+        };
+        /** SpotifyFollowImportResponse */
+        Backend_SpotifyFollowImportResponse: {
+            /** Queued */
+            queued: boolean;
         };
         /** SpotifyLibraryAlbumState */
         Backend_SpotifyLibraryAlbumState: {
@@ -5257,6 +5286,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_spotify_followed_artists_api_me_tracked_artists_spotify_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_SpotifyFollowImportResponse"];
                 };
             };
         };
