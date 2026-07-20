@@ -52,9 +52,12 @@ export async function getLastfmNowPlaying(): Promise<LastfmNowPlaying | null> {
 
 export const SPOTIFY_REDIRECT_URI = 'https://www.ratemymusic.blog/settings/spotify/callback'
 const SPOTIFY_AUTHORIZE_URL = 'https://accounts.spotify.com/authorize'
-const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-recently-played user-read-playback-state user-modify-playback-state'
+const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-recently-played user-read-playback-state user-modify-playback-state user-library-read user-library-modify'
 const SPOTIFY_PLAYBACK_SCOPES = ['user-read-playback-state', 'user-modify-playback-state']
+const SPOTIFY_LIBRARY_SCOPES = ['user-library-read', 'user-library-modify']
 const SS_SPOTIFY_STATE = 'spotify_connect_state'
+
+export type SpotifyScopeGeneration = 'none' | 'legacy' | 'playback' | 'library'
 
 /**
  * Spotify OAuth client id — public by design (it rides the authorize URL).
@@ -71,6 +74,23 @@ export function spotifyConnectAvailable(): boolean {
 export function spotifyGrantNeedsReconsent(scope: string | null | undefined): boolean {
 	const grantedScopes = new Set((scope ?? '').split(/\s+/).filter(Boolean))
 	return SPOTIFY_PLAYBACK_SCOPES.some(requiredScope => !grantedScopes.has(requiredScope))
+}
+
+/** Whether the stored grant is missing either Liked Songs permission. */
+export function spotifyGrantLacksLibraryScopes(scope: string | null | undefined): boolean {
+	const grantedScopes = new Set((scope ?? '').split(/\s+/).filter(Boolean))
+	return SPOTIFY_LIBRARY_SCOPES.some(requiredScope => !grantedScopes.has(requiredScope))
+}
+
+/** Human-guide generation derived only from the stored OAuth scope string. */
+export function spotifyScopeGeneration(scope: string | null | undefined, connected: boolean): SpotifyScopeGeneration {
+	if (!connected)
+		return 'none'
+	if (spotifyGrantNeedsReconsent(scope))
+		return 'legacy'
+	if (spotifyGrantLacksLibraryScopes(scope))
+		return 'playback'
+	return 'library'
 }
 
 /**

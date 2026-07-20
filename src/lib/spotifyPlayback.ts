@@ -28,6 +28,10 @@ const TOKEN_PATH = '/api/playback/spotify-token'
 const RESOLVE_PATH = '/api/playback/resolve'
 const SDK_SRC = 'https://sdk.scdn.co/spotify-player.js'
 const PLAYER_BASE = 'https://api.spotify.com/v1/me/player'
+const LIBRARY_TRACKS = 'https://api.spotify.com/v1/me/tracks'
+
+/** Cross-island signal emitted after a Connect target starts successfully. */
+export const MYBLOG_PLAYBACK_CHANGED = 'myblog:playback-changed'
 
 // ── provider-neutral identity ────────────────────────────────────────────────
 // Membership stores ISRC / artist+title, resolved to a provider id at play time
@@ -327,7 +331,9 @@ export async function requestPlayback(target: PlaybackTarget): Promise<PlaybackO
 export type PlayerCommand =
 	| { kind: 'play' } |
 	{ kind: 'pause' } |
-	{ kind: 'seek', positionMs: number }
+	{ kind: 'seek', positionMs: number } |
+	{ kind: 'next' } |
+	{ kind: 'previous' }
 
 export type PlayerCommandOutcome =
 	| { ok: true } |
@@ -340,6 +346,7 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
   const url = cmd.kind === 'seek' ?
     `${PLAYER_BASE}/seek?position_ms=${Math.max(0, Math.round(cmd.positionMs))}` :
     `${PLAYER_BASE}/${cmd.kind}`
+  const method = cmd.kind === 'next' || cmd.kind === 'previous' ? 'POST' : 'PUT'
   // Up to two attempts: a 401 mid-session means the minted token aged out
   // server-side despite the 5s cache skew — drop the cache and re-mint once.
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -348,7 +355,7 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
       return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus }
     let res: Response
     try {
-      res = await fetch(url, { method: 'PUT', headers: { Authorization: `Bearer ${tok.token}` } })
+      res = await fetch(url, { method, headers: { Authorization: `Bearer ${tok.token}` } })
     }
     catch {
       return { ok: false, reason: 'transient' }
@@ -361,6 +368,147 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
     }
     if (res.status === 403 || res.status === 404)
       return { ok: false, reason: 'no-capability' }
+    return { ok: false, reason: 'transient' }
+  }
+  return { ok: false, reason: 'transient' }
+}
+
+// ── Connect target play (member-player Step 6b) ─────────────────────────────
+// Unlike requestPlayback(), this remote-controls the member's already-active
+// Spotify Connect device. It never loads the Web Playback SDK and deliberately
+// omits device_id.
+
+export type ConnectPlayOutcome =
+	| { ok: true } |
+	{ ok: false, reason: 'no-active-device' } |
+	{ ok: false, reason: 'no-capability' } |
+	{ ok: false, reason: 'unresolvable' } |
+	{ ok: false, reason: 'token', status: Exclude<StreamingStatus, 'ready'>, httpStatus?: number } |
+	{ ok: false, reason: 'transient' }
+
+/** Play a catalog album/track on the active Connect device. Never throws. */
+export async function sendConnectPlay(target: PlaybackTarget): Promise<ConnectPlayOutcome> {
+  // Short-circuit before both the token mint and catalog resolve for visitors.
+  if (!isLoggedIn())
+    return { ok: false, reason: 'token', status: 'unauthorized' }
+
+  const firstToken = await getStreamingToken()
+  if (!firstToken.ok)
+    return { ok: false, reason: 'token', status: firstToken.status, httpStatus: firstToken.httpStatus }
+
+  let uri: string
+  try {
+    uri = await resolveProviderUri(target)
+  }
+  catch {
+    return { ok: false, reason: 'unresolvable' }
+  }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = attempt === 0 ? firstToken : await getStreamingToken()
+    if (!tok.ok)
+      return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus }
+    let res: Response
+    try {
+      res = await fetch(`${PLAYER_BASE}/play`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${tok.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(target.kind === 'album' ? { context_uri: uri } : { uris: [uri] }),
+      })
+    }
+    catch {
+      return { ok: false, reason: 'transient' }
+    }
+    if (res.ok) {
+      if (typeof window !== 'undefined')
+        window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+      return { ok: true }
+    }
+    if (res.status === 401 && attempt === 0) {
+      cachedToken = null
+      continue
+    }
+    if (res.status === 403)
+      return { ok: false, reason: 'no-capability' }
+    if (res.status === 404)
+      return { ok: false, reason: 'no-active-device' }
+    return { ok: false, reason: 'transient' }
+  }
+  return { ok: false, reason: 'transient' }
+}
+
+// ── Liked Songs (member-player Step 6d) ─────────────────────────────────────
+// Library permission is intentionally separate from the Premium transport
+// capability. Spotify Free accounts may save tracks, so a library 403 has its
+// own outcome and must never degrade player controls.
+
+type LibraryFailure =
+	| { ok: false, reason: 'library-scope-missing' } |
+	{ ok: false, reason: 'token', status: Exclude<StreamingStatus, 'ready'>, httpStatus?: number } |
+	{ ok: false, reason: 'transient' }
+
+export type TrackLikedOutcome = { ok: true, liked: boolean } | LibraryFailure
+export type SetTrackLikedOutcome = { ok: true } | LibraryFailure
+
+/** Read one Spotify track's saved state. Never throws. */
+export async function getTrackLiked(trackId: string): Promise<TrackLikedOutcome> {
+  const url = `${LIBRARY_TRACKS}/contains?ids=${encodeURIComponent(trackId)}`
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = await getStreamingToken()
+    if (!tok.ok)
+      return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus }
+    let res: Response
+    try {
+      res = await fetch(url, { headers: { Authorization: `Bearer ${tok.token}` } })
+    }
+    catch {
+      return { ok: false, reason: 'transient' }
+    }
+    if (res.ok) {
+      try {
+        const values = (await res.json()) as boolean[]
+        return { ok: true, liked: values[0] === true }
+      }
+      catch {
+        return { ok: false, reason: 'transient' }
+      }
+    }
+    if (res.status === 401 && attempt === 0) {
+      cachedToken = null
+      continue
+    }
+    if (res.status === 403)
+      return { ok: false, reason: 'library-scope-missing' }
+    return { ok: false, reason: 'transient' }
+  }
+  return { ok: false, reason: 'transient' }
+}
+
+/** Optimistically-called save/remove mutation for one Spotify track. */
+export async function setTrackLiked(trackId: string, liked: boolean): Promise<SetTrackLikedOutcome> {
+  const url = `${LIBRARY_TRACKS}?ids=${encodeURIComponent(trackId)}`
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = await getStreamingToken()
+    if (!tok.ok)
+      return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus }
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: liked ? 'PUT' : 'DELETE',
+        headers: { Authorization: `Bearer ${tok.token}` },
+      })
+    }
+    catch {
+      return { ok: false, reason: 'transient' }
+    }
+    if (res.ok)
+      return { ok: true }
+    if (res.status === 401 && attempt === 0) {
+      cachedToken = null
+      continue
+    }
+    if (res.status === 403)
+      return { ok: false, reason: 'library-scope-missing' }
     return { ok: false, reason: 'transient' }
   }
   return { ok: false, reason: 'transient' }
