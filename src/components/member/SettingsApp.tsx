@@ -6,8 +6,9 @@
 import type { Me } from './me.api'
 import { useEffect, useMemo, useState } from 'react'
 import { logout } from '@lib/auth'
+import { readSpotifyCapabilityStanding } from '@lib/spotifyCapability'
 import { deleteMe, getMe, HANDLE_RE, HandleTakenError, OwnerUndeletableError, updateMe } from './me.api'
-import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable, spotifyGrantNeedsReconsent } from './integrations.api'
+import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
 import type { Integration } from './integrations.api'
 import { SectionTitle } from './ui'
 
@@ -30,6 +31,90 @@ function Field({ label, hint, children }: { label: string, hint?: string, childr
 			{children}
 			{hint && <span className="meta" style={{ textTransform: 'none', letterSpacing: '0.02em' }}>{hint}</span>}
 		</label>
+	)
+}
+
+interface GuideFeature {
+	label: string
+	standing: string
+	on: boolean
+}
+
+function IntegrationGuide({ standing, features, next }: { standing: string, features: GuideFeature[], next: string }) {
+	return (
+		<div style={{ marginTop: 2, padding: '13px 14px', border: '1px solid var(--color-border-soft)', borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+			<div className="kicker">이 연동으로 열리는 기능</div>
+			<div className="mono" style={{ fontSize: 10.5, letterSpacing: '0.03em', color: 'var(--color-faded)' }}>{standing}</div>
+			<div style={{ display: 'grid', gridTemplateColumns: 'minmax(128px, .8fr) minmax(0, 1.2fr)', gap: '7px 12px' }}>
+				{features.map(feature => (
+					<div key={feature.label} style={{ display: 'contents' }}>
+						<span className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)' }}>{feature.label}</span>
+						<span className="sans" style={{ fontSize: 12.5, color: feature.on ? 'var(--color-text)' : 'var(--color-faded)' }}>{feature.standing}</span>
+					</div>
+				))}
+			</div>
+			<div className="sans" style={{ borderTop: '1px solid var(--color-border-soft)', paddingTop: 9, fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-subtle)' }}>{next}</div>
+		</div>
+	)
+}
+
+function LastfmCapabilityGuide({ connected }: { connected: boolean }) {
+	return (
+		<IntegrationGuide
+			standing={`현재 상태 · ${connected ? '연결됨' : '연결 안 됨'}`}
+			features={[
+				{ label: '최근 재생 스냅샷', standing: connected ? '표시 전용' : '—', on: connected },
+				{ label: '라이브 바 · 가사', standing: 'Spotify 연동 필요', on: false },
+				{ label: '기기 안내 · 컨트롤', standing: 'Spotify 연동 필요', on: false },
+				{ label: 'Spotify 좋아요', standing: 'Spotify 연동 필요', on: false },
+			]}
+			next={connected ? 'Last.fm은 최근 재생 표시 전용이에요. 라이브 바·가사·컨트롤은 Spotify 연동으로 열려요.' : '연동하면 Last.fm 최근 재생 스냅샷을 표시해요. 라이브 기능은 Spotify 연동이 필요해요.'}
+		/>
+	)
+}
+
+const SCOPE_GENERATION_COPY = {
+	none: '없음',
+	legacy: '구스코프(재생 스코프 이전)',
+	playback: '재생 스코프 세대',
+	library: '좋아요 스코프 세대',
+} as const
+
+function SpotifyCapabilityGuide({ conn }: { conn: Integration | null }) {
+	const connected = conn?.status === 'connected'
+	const generation = spotifyScopeGeneration(conn?.scope, conn != null)
+	const modernPlayback = connected && (generation === 'playback' || generation === 'library')
+	const library = connected && generation === 'library'
+	const probe = readSpotifyCapabilityStanding()
+	const transportStanding = !modernPlayback ?
+		'—' :
+		probe.transport === 'available' ?
+'사용 가능(Premium 확인됨)' :
+			probe.transport === 'no-capability' ? '제한됨(Premium/기기 상태)' : 'Premium에서 가능 · 아직 확인 전'
+	const probeCopy = [
+		`컨트롤 ${probe.transport === 'available' ? '사용 가능' : probe.transport === 'no-capability' ? '제한 응답' : '확인 전'}`,
+		`좋아요 ${probe.library === 'available' ? '사용 가능' : probe.library === 'scope-missing' ? '권한 부족 응답' : '확인 전'}`,
+	].join(' · ')
+	const next = !connected ?
+		(conn ? '재동의하면 라이브 바·가사·기기 안내와 무료 계정에서도 가능한 좋아요가 열려요. 재생 컨트롤은 Premium 전용이에요.' : '연동하면 스냅샷·라이브 바·가사·기기 안내와 무료 계정에서도 가능한 좋아요가 열려요. 재생 컨트롤은 Premium 전용이에요.') :
+		generation === 'legacy' ?
+'재동의 한 번으로 기기 안내와 좋아요 권한까지 열려요. 좋아요는 무료 계정도 쓸 수 있고, 재생 컨트롤만 Premium 전용이에요.' :
+			generation === 'playback' ? '재동의하면 좋아요가 열려요. 좋아요는 무료 계정도 사용할 수 있어요.' : '현재 권한으로 모든 기능이 열려요. 재생 컨트롤만 Spotify Premium이 필요해요.'
+
+	return (
+		<IntegrationGuide
+			standing={`현재 상태 · ${connected ? '연결됨' : '연결 안 됨'} · 스코프 세대 ${SCOPE_GENERATION_COPY[generation]} · 마지막 probe ${probeCopy}`}
+			features={[
+				{ label: '스냅샷', standing: connected ? '사용 가능' : '—', on: connected },
+				{ label: '라이브 바', standing: connected ? '사용 가능' : '—', on: connected },
+				{ label: '재생/일시정지/seek', standing: transportStanding, on: probe.transport === 'available' && modernPlayback },
+				{ label: '기기 안내', standing: modernPlayback ? '사용 가능(무료 포함)' : '—', on: modernPlayback },
+				{ label: '가사 live', standing: connected ? '사용 가능' : '—', on: connected },
+				{ label: '다음·이전/지정 재생', standing: transportStanding, on: probe.transport === 'available' && modernPlayback },
+				{ label: '좋아요', standing: library ? '사용 가능(무료 포함)' : '—', on: library },
+			]}
+			next={next}
+		/>
 	)
 }
 
@@ -84,6 +169,7 @@ function LastfmConnect({ initial }: { initial: Integration | null }) {
 					<span className="mono" style={{ fontSize: 14 }}>{conn.username}</span>
 					<span className="meta" style={{ textTransform: 'none', color: isError ? 'var(--color-accent)' : 'var(--color-subtle)' }}>{`· ${statusLabel}`}</span>
 				</div>
+				<LastfmCapabilityGuide connected={conn.status === 'connected'} />
 				<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
 					{error && <span className="meta" role="alert" style={{ color: 'var(--color-accent)', textTransform: 'none' }}>{error}</span>}
 					<button type="button" className="btn" disabled={busy} onClick={onDisconnect}>{busy ? '해제 중…' : '연결 해제'}</button>
@@ -97,6 +183,7 @@ function LastfmConnect({ initial }: { initial: Integration | null }) {
 			<p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)' }}>
 				Last.fm 사용자 이름을 연결하면 최근 들은 곡이 프로필에 나타나요. OAuth 없이 공개 프로필만 읽어요.
 			</p>
+			<LastfmCapabilityGuide connected={false} />
 			<Field label="Last.fm 사용자 이름">
 				<input
 					className="mono"
@@ -158,6 +245,7 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 	if (conn) {
 		const needsReauth = conn.status === 'reauth'
 		const needsPlaybackReconsent = conn.status === 'connected' && spotifyGrantNeedsReconsent(conn.scope)
+		const needsLibraryReconsent = conn.status === 'connected' && spotifyGrantLacksLibraryScopes(conn.scope)
 		const statusLabel = needsReauth ?
 			'다시 연결이 필요해요 — 재생 기록을 읽지 못하고 있어요' :
 			conn.status === 'connected' ? '연결됨' : conn.status
@@ -172,9 +260,15 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 						재연동 필요 — 다시 연결하면 프로필의 플레이어에서 재생/일시정지 컨트롤을 쓸 수 있어요.
 					</span>
 				)}
+				{needsLibraryReconsent && (
+					<span className="meta" style={{ padding: '8px 10px', color: 'var(--color-accent)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', textTransform: 'none' }}>
+						좋아요 기능을 쓰려면 재동의가 필요해요 — 무료 계정도 재동의 후 좋아요를 쓸 수 있어요.
+					</span>
+				)}
+				<SpotifyCapabilityGuide conn={conn} />
 				<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
 					{error && <span className="meta" role="alert" style={{ color: 'var(--color-accent)', textTransform: 'none' }}>{error}</span>}
-					{(needsReauth || needsPlaybackReconsent) && <button type="button" className="btn btn-solid" disabled={busy} onClick={onAuthorize}>다시 연결</button>}
+					{(needsReauth || needsPlaybackReconsent || needsLibraryReconsent) && <button type="button" className="btn btn-solid" disabled={busy} onClick={onAuthorize}>다시 연결</button>}
 					<button type="button" className="btn" disabled={busy} onClick={onDisconnect}>{busy ? '해제 중…' : '연결 해제'}</button>
 				</div>
 			</div>
@@ -184,8 +278,9 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 	return (
 		<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 			<p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)' }}>
-				Spotify 계정을 연결하면 최근 들은 곡과 지금 재생 중인 곡이 프로필에 나타나요. 재생 기록 읽기와 재생 컨트롤 권한을 요청해요.
+				Spotify 계정을 연결하면 최근 들은 곡과 지금 재생 중인 곡이 프로필에 나타나요. 재생 기록·컨트롤과 좋아요 권한을 요청해요.
 			</p>
+			<SpotifyCapabilityGuide conn={null} />
 			<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
 				{!available && <span className="meta" style={{ textTransform: 'none' }}>연결 준비 중이에요</span>}
 				<button type="button" className="btn btn-solid" disabled={!available} onClick={onAuthorize}>Spotify 연결</button>

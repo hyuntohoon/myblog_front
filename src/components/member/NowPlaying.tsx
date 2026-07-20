@@ -42,7 +42,8 @@ import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
-import { getStreamingToken, sendPlayerCommand } from '@lib/spotifyPlayback'
+import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
+import { getStreamingToken, getTrackLiked, MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand, setTrackLiked } from '@lib/spotifyPlayback'
 import { readLivePlayback } from './lyrics/playback.api'
 import type { LivePlayback } from './lyrics/playback.api'
 import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
@@ -60,6 +61,7 @@ export type NpStyle = 'banner' | 'full' | 'list'
  * no active device) drops the session to `fallback` (403-probe model, D5).
  */
 type Tier = 'full' | 'fallback'
+type LikedState = 'unknown' | 'loading' | 'liked' | 'unliked' | 'scope-missing'
 
 /** The live playback moment the transport renders from (one-shot sourced). */
 interface LiveMoment {
@@ -230,10 +232,13 @@ function useNowPlaying() {
   // would collapse the card).
   const [paused, setPaused] = useState(false)
   const [tier, setTier] = useState<Tier>('fallback')
+  const [likedState, setLikedState] = useState<LikedState>('unknown')
   const [reconnect, setReconnect] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const busyRef = useRef(false)
   const controlBusyRef = useRef(false)
+  const libraryBusyRef = useRef(false)
+  const likedTrackRef = useRef<string | null>(null)
   const liveWonRef = useRef(false)
   const onRef = useRef(true)
   const noteTimer = useRef<number | null>(null)
@@ -246,6 +251,31 @@ function useNowPlaying() {
       if (onRef.current)
         setNote(null)
     }, 4000)
+  }
+
+  const loadLikedState = (trackId: string) => {
+    // Identity-keyed guard: every new track gets exactly one contains read;
+    // seek/sync confirmations for the same track never re-read library state.
+    if (likedTrackRef.current === trackId)
+      return
+    likedTrackRef.current = trackId
+    setLikedState('loading')
+    void getTrackLiked(trackId).then((r) => {
+      if (!onRef.current || likedTrackRef.current !== trackId)
+        return
+      if (r.ok) {
+        setLikedState(r.liked ? 'liked' : 'unliked')
+        rememberSpotifyLibraryProbe('available')
+      }
+      else if (r.reason === 'library-scope-missing') {
+        // Separate from transport degradation: Free accounts can like tracks.
+        setLikedState('scope-missing')
+        rememberSpotifyLibraryProbe('scope-missing')
+      }
+      else {
+        setLikedState('unknown')
+      }
+    })
   }
 
   const applyLive = (r: LivePlayback) => {
@@ -271,6 +301,7 @@ function useNowPlaying() {
         albumSpotifyId: r.albumSpotifyId,
         deviceName: r.deviceName,
       })
+      loadLikedState(r.trackId)
       setPaused(false)
       if (r.albumSpotifyId) {
         void resolveDbAlbumId(r.albumSpotifyId).then((id) => {
@@ -285,6 +316,8 @@ function useNowPlaying() {
       // snapshot claimed otherwise. Keep whatever fields are already there.
       setNp(prev => ({ ...(prev ?? {}), is_playing: false, updated_at: new Date().toISOString() }))
       setMoment(null)
+      likedTrackRef.current = null
+      setLikedState('unknown')
       setPaused(false)
     }
     setState('ready')
@@ -311,6 +344,7 @@ function useNowPlaying() {
     if (r.reason === 'no-capability') {
       // The 403-probe verdict (D5): this session can't control playback.
       setTier('fallback')
+      rememberSpotifyTransportProbe('no-capability')
       flashNote('이 계정/기기에선 재생 제어를 사용할 수 없어요')
       return
     }
@@ -337,6 +371,7 @@ function useNowPlaying() {
         handleControlFailure(r)
         return
       }
+      rememberSpotifyTransportProbe('available')
       if (paused) {
         // Resume: restart the clock from the frozen position.
         setMoment(m => (m?.anchor ? { ...m, anchor: { ms: m.anchor.ms, wallMs: performance.now() } } : m))
@@ -371,6 +406,7 @@ function useNowPlaying() {
         handleControlFailure(r)
         return
       }
+      rememberSpotifyTransportProbe('available')
       // Optimistic re-anchor at the seek target…
       setMoment(m => (m ? { ...m, anchor: { ms: target, wallMs: performance.now() } } : m))
       // …then the OQ2 confirmation one-shot (accepted 2026-07-19): the PUT
@@ -382,6 +418,59 @@ function useNowPlaying() {
     }
     finally {
       controlBusyRef.current = false
+    }
+  }
+
+  const skip = async (kind: 'next' | 'previous') => {
+    if (controlBusyRef.current)
+      return
+    controlBusyRef.current = true
+    try {
+      const r = await sendPlayerCommand({ kind })
+      if (!onRef.current)
+        return
+      if (!r.ok) {
+        handleControlFailure(r)
+        return
+      }
+      rememberSpotifyTransportProbe('available')
+      // POST has no body: exactly one one-shot read refreshes identity + anchor.
+      const live = await readLivePlayback()
+      if (onRef.current)
+        applyLive(live)
+    }
+    finally {
+      controlBusyRef.current = false
+    }
+  }
+
+  const toggleLiked = async () => {
+    const trackId = moment?.trackId
+    if (!trackId || libraryBusyRef.current || (likedState !== 'liked' && likedState !== 'unliked'))
+      return
+    const before = likedState
+    const nextLiked = likedState !== 'liked'
+    libraryBusyRef.current = true
+    setLikedState(nextLiked ? 'liked' : 'unliked')
+    try {
+      const r = await setTrackLiked(trackId, nextLiked)
+      if (!onRef.current || likedTrackRef.current !== trackId)
+        return
+      if (r.ok) {
+        rememberSpotifyLibraryProbe('available')
+        return
+      }
+      if (r.reason === 'library-scope-missing') {
+        setLikedState('scope-missing')
+        rememberSpotifyLibraryProbe('scope-missing')
+        return
+      }
+      // Optimistic rollback for token/network/provider failures.
+      setLikedState(before)
+      flashNote('좋아요 변경에 실패했어요. 잠시 후 다시 시도해 주세요')
+    }
+    finally {
+      libraryBusyRef.current = false
     }
   }
 
@@ -424,13 +513,23 @@ function useNowPlaying() {
         setReconnect(true)
       }
     })
+    const onPlaybackChanged = () => {
+      // Connect play succeeded elsewhere in the page. One event ⇒ one
+      // confirmation read; no timer or polling is introduced.
+      void readLivePlayback().then((r) => {
+        if (onRef.current)
+          applyLive(r)
+      })
+    }
+    window.addEventListener(MYBLOG_PLAYBACK_CHANGED, onPlaybackChanged)
     return () => {
       onRef.current = false
+      window.removeEventListener(MYBLOG_PLAYBACK_CHANGED, onPlaybackChanged)
       if (noteTimer.current != null)
         window.clearTimeout(noteTimer.current)
     }
   }, [])
-  return { np, state, sync, syncing, moment, paused, tier, reconnect, note, playPause, seek }
+  return { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }
 }
 
 /**
@@ -472,10 +571,13 @@ interface NpShared {
   moment: LiveMoment | null
   paused: boolean
   tier: Tier
+  likedState: LikedState
   reconnect: boolean
   note: string | null
   playPause: () => Promise<void>
   seek: (ms: number) => Promise<void>
+  skip: (kind: 'next' | 'previous') => Promise<void>
+  toggleLiked: () => Promise<void>
 }
 
 /* ── transport (member-player Step 3, direction A "hairline LCD") ──────────── */
@@ -501,13 +603,68 @@ function PlayPauseBtn({ paused, onClick, size }: { paused: boolean, onClick: () 
   )
 }
 
+function SkipBtn({ kind, onClick, size }: { kind: 'next' | 'previous', onClick: () => void, size: number }) {
+  const previous = kind === 'previous'
+  return (
+    <button
+	type="button"
+	onClick={onClick}
+	aria-label={previous ? '이전 곡' : '다음 곡'}
+	title={previous ? '이전 곡' : '다음 곡'}
+	style={{ width: size, height: size, border: 'none', background: 'none', display: 'grid', placeItems: 'center', cursor: 'pointer', flex: '0 0 auto', padding: 0, color: 'var(--color-text)' }}
+    >
+      <svg width={Math.round(size * 0.56)} height={Math.round(size * 0.48)} viewBox="0 0 14 12" aria-hidden="true">
+        {previous ?
+(
+          <>
+<rect width="2" height="12" fill="currentColor" />
+<path d="M13 0 3 6l10 6Z" fill="currentColor" />
+          </>
+        ) :
+(
+          <>
+<path d="M1 0l10 6L1 12Z" fill="currentColor" />
+<rect x="12" width="2" height="12" fill="currentColor" />
+          </>
+        )}
+      </svg>
+    </button>
+  )
+}
+
+function LikeBtn({ state, onClick, size }: { state: LikedState, onClick: () => void, size: number }) {
+  const available = state === 'liked' || state === 'unliked'
+  const liked = state === 'liked'
+  const style: React.CSSProperties = { width: size, height: size, border: 'none', background: 'none', display: 'grid', placeItems: 'center', flex: '0 0 auto', padding: 0, color: liked ? 'var(--color-accent)' : 'var(--color-text)', fontSize: Math.round(size * 0.62), lineHeight: 1, textDecoration: 'none', opacity: state === 'loading' || state === 'unknown' ? 0.38 : 1 }
+  if (state === 'scope-missing') {
+    return (
+      <a href="/members/?me&tab=integration" aria-label="좋아요 권한 재동의하기" title="좋아요 기능을 쓰려면 재동의가 필요해요" style={{ ...style, cursor: 'pointer', color: 'var(--color-faded)' }}>
+        ♡
+      </a>
+    )
+  }
+  return (
+    <button
+	type="button"
+	onClick={onClick}
+	disabled={!available}
+	aria-label={liked ? '좋아요 취소' : '좋아요'}
+	aria-pressed={available ? liked : undefined}
+	title={liked ? '좋아요 취소' : '좋아요'}
+	style={{ ...style, cursor: available ? 'pointer' : 'default' }}
+    >
+      {liked ? '♥' : '♡'}
+    </button>
+  )
+}
+
 /**
  * Hairline transport: [⏯] elapsed ── 2px hairline ── total. Renders nothing
  * without a position anchor + duration (the card then reads as before Step 3).
  * Full tier: button + click/keyboard seek + accent knob. Fallback tier:
  * display-only — controls hidden (not disabled, D1), the estimate still ticks.
  */
-function Transport({ moment, paused, tier, playPause, seek, note, micro = false, showButton = true }: {
+function Transport({ moment, paused, tier, playPause, seek, note, micro = false, showButton = true, showExtendedControls = false, likedState = 'unknown', skip, toggleLiked }: {
   moment: LiveMoment
   paused: boolean
   tier: Tier
@@ -516,6 +673,10 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
   note: string | null
   micro?: boolean
   showButton?: boolean
+  showExtendedControls?: boolean
+  likedState?: LikedState
+  skip?: (kind: 'next' | 'previous') => Promise<void>
+  toggleLiked?: () => Promise<void>
 }) {
   const est = useClockEstimate(moment.anchor, !paused, moment.durationMs)
   const barRef = useRef<HTMLDivElement>(null)
@@ -523,9 +684,8 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
   const noteLine = note ?
     <div className="mono" style={{ marginTop: 6, fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.03em' }}>{note}</div> :
     null
-  if (est == null || dur == null || dur <= 0)
-    return noteLine
-  const frac = Math.min(1, Math.max(0, est / dur))
+  const hasProgress = est != null && dur != null && dur > 0
+  const frac = hasProgress ? Math.min(1, Math.max(0, est / dur)) : 0
   const full = tier === 'full'
   const timeStyle = { fontSize: micro ? 9.5 : 10.5, color: 'var(--color-faded)', letterSpacing: '.03em', whiteSpace: 'nowrap' as const }
   const seekAt = (clientX: number) => {
@@ -534,42 +694,53 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
       return
     const r = el.getBoundingClientRect()
     if (r.width > 0)
-      void seek(((clientX - r.left) / r.width) * dur)
+      void seek(((clientX - r.left) / r.width) * (dur ?? 0))
   }
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: micro ? 8 : 10 }}>
-        {full && showButton && <PlayPauseBtn paused={paused} onClick={() => { void playPause() }} size={micro ? 24 : 30} />}
-        <span className="mono" style={timeStyle}>{fmtMs(est)}</span>
-        <div
+        {(full && showButton) || showExtendedControls ?
+          (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: micro ? 1 : 2, flex: '0 0 auto' }}>
+              {full && showExtendedControls && skip && <SkipBtn kind="previous" onClick={() => { void skip('previous') }} size={micro ? 22 : 26} />}
+              {full && showButton && <PlayPauseBtn paused={paused} onClick={() => { void playPause() }} size={micro ? 24 : 30} />}
+              {full && showExtendedControls && skip && <SkipBtn kind="next" onClick={() => { void skip('next') }} size={micro ? 22 : 26} />}
+              {showExtendedControls && toggleLiked && <LikeBtn state={likedState} onClick={() => { void toggleLiked() }} size={micro ? 23 : 27} />}
+            </span>
+          ) :
+null}
+        {hasProgress && <span className="mono" style={timeStyle}>{fmtMs(est)}</span>}
+        {hasProgress && (
+<div
 	ref={barRef}
 	role={full ? 'slider' : 'progressbar'}
 	aria-label="재생 위치"
 	aria-valuemin={0}
-	aria-valuemax={dur}
-	aria-valuenow={Math.round(est)}
-	aria-valuetext={`${fmtMs(est)} / ${fmtMs(dur)}`}
+	aria-valuemax={dur ?? 0}
+	aria-valuenow={Math.round(est ?? 0)}
+	aria-valuetext={`${fmtMs(est ?? 0)} / ${fmtMs(dur ?? 0)}`}
 	tabIndex={full ? 0 : undefined}
 	onClick={full ? e => seekAt(e.clientX) : undefined}
 	onKeyDown={full ?
             (e) => {
               if (e.key === 'ArrowLeft') {
                 e.preventDefault()
-                void seek(Math.max(0, est - 5000))
+                void seek(Math.max(0, (est ?? 0) - 5000))
               }
               else if (e.key === 'ArrowRight') {
                 e.preventDefault()
-                void seek(Math.min(dur, est + 5000))
+                void seek(Math.min(dur ?? 0, (est ?? 0) + 5000))
               }
             } :
             undefined}
 	style={{ position: 'relative', flex: 1, height: 14, display: 'flex', alignItems: 'center', cursor: full ? 'pointer' : 'default', minWidth: 0 }}
-        >
+>
           <span style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'var(--color-border-soft)' }} />
           <span style={{ position: 'absolute', left: 0, width: `${frac * 100}%`, height: 2, background: 'var(--color-text)' }} />
           {full && <span style={{ position: 'absolute', left: `${frac * 100}%`, transform: 'translateX(-50%)', width: 7, height: 7, borderRadius: '50%', background: 'var(--color-accent)' }} />}
-        </div>
-        <span className="mono" style={timeStyle}>{fmtMs(dur)}</span>
+</div>
+)}
+        {hasProgress && <span className="mono" style={timeStyle}>{fmtMs(dur)}</span>}
       </div>
       {noteLine}
     </div>
@@ -744,7 +915,7 @@ function IdleBox({ compact = false, iso, latest, onSync, syncing, reconnect = fa
 
 /* ── full variant ──────────────────────────────────────────────────────────── */
 
-function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, reconnect, note, playPause, seek }: NpShared) {
+function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }: NpShared) {
   const narrow = useNarrow()
   const onSync = () => {
     void sync()
@@ -774,7 +945,7 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment
           </div>
           {moment && (
             <div style={{ marginTop: narrow ? 10 : 12 }}>
-              <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} />
+              <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} />
             </div>
           )}
         </div>
@@ -855,7 +1026,7 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics, moment
 
 /* ── banner variant (overview default) ───────────────────────────────────────── */
 
-function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, reconnect, note, playPause, seek }: NpShared) {
+function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }: NpShared) {
   const narrow = useNarrow()
   const onSync = () => {
     void sync()
@@ -928,7 +1099,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
                       seek surface shrinks to ~60px, too small a touch target. */}
                   {moment && !narrow && (
                     <div style={{ marginBottom: 6 }}>
-                      <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} />
+                      <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} />
                     </div>
                   )}
                 </>
@@ -953,7 +1124,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
       </div>
       {live && moment && narrow && (
         <div style={{ padding: '0 16px 14px' }}>
-          <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} />
+          <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} />
         </div>
       )}
       {live && moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} />}
@@ -967,9 +1138,9 @@ export function NowPlaying({ variant, onOpenLyrics }: { variant: NpStyle, onOpen
   // remounts the variant component but must NOT re-fire the snapshot GET +
   // one-shot live Spotify read (they used to run per variant mount) — and the
   // capability tier / pause freeze / transport anchor survive the toggle too.
-  const { np, state, sync, syncing, moment, paused, tier, reconnect, note, playPause, seek } = useNowPlaying()
+  const { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked } = useNowPlaying()
   const latest = useLatestPlayed(state === 'ready' && !liveSnapshot(np))
-  const shared: NpShared = { np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, reconnect, note, playPause, seek }
+  const shared: NpShared = { np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }
   if (variant === 'list')
     return <NowPlayingList {...shared} />
   if (variant === 'banner')
