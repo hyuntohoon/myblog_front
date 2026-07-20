@@ -57,6 +57,13 @@ export interface BoardAlbum {
   /** Advisory: this album already has a published review. */
   alreadyReviewed: boolean
   /**
+   * FEAT-bucket-identity Direction B: the posts-table DB id linked to this item
+   * (`review_bucket_items.post_id`) when a draft/post has been kicked off from
+   * the bucket, else null. Drives the rename-proof "작성 중" lifecycle tag and the
+   * review→bucket reverse join. Nullable: most items have no post linked yet.
+   */
+  postId: string | null
+  /**
    * FEAT-album-research-notes: per-item auto-research opt-in. Only meaningful
    * when the parent bucket's research_mode is 'selected' (the cover checkbox).
    */
@@ -183,6 +190,7 @@ function mapItem(it: ApiItem): BoardAlbum {
     cover: isArtist ? (ar?.photo_url ?? null) : (a?.cover_url ?? null),
     year: rel ? Number(String(rel).slice(0, 4)) || null : null,
     alreadyReviewed: it.already_reviewed ?? false,
+    postId: it.post_id ?? null,
     researchSelected: it.research_selected ?? false,
     note: it.note ?? null,
     prepTonight: it.prep_tonight ?? false,
