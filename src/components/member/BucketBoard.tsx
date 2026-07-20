@@ -29,6 +29,7 @@ import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_BOARD_DROP_EVENT, PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
+import { sendConnectPlay } from '@lib/spotifyPlayback'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
@@ -2745,6 +2746,43 @@ ids.push(a.albumId)
 	actions={(() => {
             const s = albumSheet
             const list: SheetAction[] = []
+            // FEAT-member-player 6b — the bucket-row "이 앨범 재생" entry (deferred
+            // here from front #302 by the file-ownership split). Connect
+            // active-device play with the member token; the play click is the only
+            // trigger (rule #9 — the sole server hit is the async token mint), and
+            // outcomes land in the board's transient toast.
+            if (s.album.albumId && s.album.itemType === 'album') {
+              const albumId = s.album.albumId
+              list.push({
+                label: '이 앨범 재생 ▶',
+                onClick: () => {
+                  setAlbumSheet(null)
+                  void sendConnectPlay({ kind: 'album', albumId, title: s.album.title }).then((r) => {
+                    if (r.ok) {
+                      setFlash('Spotify에서 앨범 재생을 시작했어요.')
+                      return
+                    }
+                    if (r.reason === 'no-active-device') {
+                      setFlash('재생 중인 Spotify 기기가 없어요. Spotify에서 먼저 재생을 시작해 주세요.')
+                      return
+                    }
+                    if (r.reason === 'no-capability') {
+                      setFlash('이 컨트롤은 Spotify Premium 계정에서 사용할 수 있어요.')
+                      return
+                    }
+                    if (r.reason === 'unresolvable') {
+                      setFlash('이 앨범은 Spotify에서 재생할 수 없어요.')
+                      return
+                    }
+                    if (r.reason === 'token' && r.status === 'disconnected') {
+                      setFlash('Spotify를 연동하면 이 앨범을 재생할 수 있어요.')
+                      return
+                    }
+                    setFlash('재생에 실패했어요. 잠시 후 다시 시도해 주세요.')
+                  })
+                },
+              })
+            }
             if (s.copySource || s.fromLib) {
               list.push({
                 label: '버킷에 추가',
