@@ -18,6 +18,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { reviewHref } from '@lib/entityLinks'
 import BrowseGenres from './BrowseGenres'
 import ByTheNumbers from './ByTheNumbers'
+import ForYouReleasesCard from './ForYouReleasesCard'
 import NewReleasesCard from './NewReleasesCard'
 import TodayAlbumBuckit from './TodayAlbumBuckit'
 import TodaySongBuckit from './TodaySongBuckit'
@@ -171,6 +172,9 @@ export default function EditorialHome({ bnm, reviews, stats }: Props) {
 			{/* FEAT-release-calendar A2 — self-wrapping (owns its Measure + top
 			    padding) so the empty/error state leaves the home layout untouched. */}
 			<NewReleasesCard />
+			{/* FEAT-for-you-releases Step 1 — members-only personalized strip;
+			    same self-wrapping degradation contract as NewReleasesCard. */}
+			<ForYouReleasesCard />
 			<Latest reviews={reviews} excludeSlug={feature?.slug} />
 			<Measure style={{ paddingTop: 56 }}><TodaySongBuckit /></Measure>
 			<Measure style={{ paddingTop: 56 }}><TodayAlbumBuckit /></Measure>
