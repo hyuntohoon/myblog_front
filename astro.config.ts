@@ -1,4 +1,5 @@
 // astro.config.mjs
+import { copyFile } from 'node:fs/promises'
 import mdx from '@astrojs/mdx'
 import react from '@astrojs/react'
 import sitemap from '@astrojs/sitemap'
@@ -119,6 +120,16 @@ export default defineConfig({
 				],
 			},
 		}),
+		// S3 website error_document is error.html (infra/s3.tf) — mirror Astro's
+		// 404.html so unknown URLs (including post-build artists) get the fallback shell.
+		{
+			name: 'error-html',
+			hooks: {
+				'astro:build:done': async ({ dir }) => {
+					await copyFile(new URL('404.html', dir), new URL('error.html', dir))
+				},
+			},
+		},
 	],
 
 	vite: {
