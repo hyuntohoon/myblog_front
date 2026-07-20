@@ -1,0 +1,19 @@
+---
+// RFC-ui-surface-unification Step 3, owner decision 11: the S3 website
+// error_document=error.html serves this for every missing key with status 404
+// (infra/s3.tf). /artist/{id} URLs get the runtime hub shell until the next
+// push-to-main build promotes new artists to real static pages; no CloudFront
+// change is involved.
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import NotFoundShell from '@components/notfound/NotFoundShell'
+import Seo from '@components/seo.astro'
+import Layout from '@layouts/layout.astro'
+import '../styles/artist.css'
+---
+
+<Layout>
+	<Seo slot="seo" forceTitle="페이지를 찾을 수 없습니다" description="요청한 페이지가 없습니다." noIndex />
+	<SkipNavContent>
+		<NotFoundShell client:only="react" />
+	</SkipNavContent>
+</Layout>
