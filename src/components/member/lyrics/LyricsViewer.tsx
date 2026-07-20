@@ -74,6 +74,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
+import { ArtistNames } from '../NowPlaying'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 
@@ -201,7 +202,7 @@ function readStoredStyle(): LyvStyle {
   }
 }
 
-export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, canRefresh = false, onClose }: {
+export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, initialArtists = [], canRefresh = false, onClose }: {
   spotifyTrackId: string
   /** One-shot playback position from the dynamic entry; seeds the initial focus and continuous clock anchor. */
   initialProgressMs?: number | null
@@ -214,6 +215,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   /** Track title / artist from the dynamic entry's live read (display only — the debug/static entries have none and hide the block). Re-sync refreshes them. */
   initialTrack?: string | null
   initialArtist?: string | null
+  /** Spotify artist ids/names from the live read; resolvable ids link to artist hubs. Re-sync refreshes them. */
+  initialArtists?: Array<{ id: string, name: string }>
   /** Show the manual-refresh control (dynamic entry only — the debug entry has no playback binding). */
   canRefresh?: boolean
   onClose: () => void
@@ -229,7 +232,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // entries have no cover and fall back to the neutral dark background.
   const [coverUrl, setCoverUrl] = useState<string | null>(initialAlbumCoverUrl)
   // Track title/artist for the header (live entry only; refreshed per re-sync).
-  const [meta, setMeta] = useState<{ track: string | null, artist: string | null }>({ track: initialTrack, artist: initialArtist })
+  const [meta, setMeta] = useState<{ track: string | null, artist: string | null, artists: Array<{ id: string, name: string }> }>({ track: initialTrack, artist: initialArtist, artists: initialArtists })
   // Viewer style variant: 'blur' = the Spotify-like centered album-blur look,
   // 'flat' = the Apple-Music-like left-aligned flat wash (owner request
   // 2026-07-06, reference screenshot). Persisted per browser.
@@ -437,7 +440,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         setNotice(null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
         setCoverUrl(r.albumCoverUrl)
-        setMeta({ track: r.track, artist: r.artist })
+        setMeta({ track: r.track, artist: r.artist, artists: r.artists })
         setDurationMs(r.durationMs)
         if (r.trackId !== trackId) {
           // Track changed → swap segments; the load effect seeds both focus
@@ -752,7 +755,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
             {meta.track && (
               <span className="lyv-title-block">
                 <span className="lyv-title">{meta.track}</span>
-                {meta.artist && <span className="lyv-artist">{meta.artist}</span>}
+                {(meta.artist || meta.artists.length > 0) && <span className="lyv-artist"><ArtistNames artists={meta.artists} text={meta.artist} /></span>}
               </span>
             )}
           </div>

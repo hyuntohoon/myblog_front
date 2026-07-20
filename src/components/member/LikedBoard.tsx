@@ -12,6 +12,7 @@ import type { SavedTrack } from './analysis.api'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { addBucketItem } from '@lib/buckets'
+import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { TrackRow } from '../shared/TrackRow'
 import { listSavedTracks } from './analysis.api'
@@ -34,6 +35,7 @@ export interface LikedRowVM {
 	id: string
 	track: string
 	artist: string
+	artistId: string | null
 	albumName: string
 	/** DB album id — present only for catalogued tracks (gates promote/detail). */
 	albumId: string | null
@@ -85,6 +87,7 @@ function toRow(t: SavedTrack): LikedRowVM {
 		id: t.spotify_track_id,
 		track: t.track_name,
 		artist: t.artist_name ?? '—',
+		artistId: t.artist_id ?? null,
 		albumName: t.album_name ?? album?.title ?? '—',
 		albumId: t.album_id ?? null,
 		cover: album?.cover_url ?? null,
@@ -310,7 +313,11 @@ function Card({ row, onOpen, onPromote }: {
 			</button>
 			<div style={{ minWidth: 0 }}>
 				<div className="serif" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.track}</div>
-				<div className="sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{row.artist}</div>
+				<div className="sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
+					{row.artistId ?
+						<a href={artistHref(row.artistId)} style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)' }}>{row.artist}</a> :
+						row.artist}
+				</div>
 			</div>
 			<div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid var(--color-border-soft)', paddingTop: 9 }}>
 				<span className="chip" style={{ pointerEvents: 'none', padding: '3px 7px', fontSize: 9.5 }}>{row.genre}</span>

@@ -15,6 +15,7 @@ import type { MemberNowPlaying, MemberProfile as Profile } from '../album/review
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { openAlbum } from '@lib/entityEvents'
+import { artistHref } from '@lib/entityLinks'
 import { isPlaceholderIdentity } from '@lib/member'
 import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
 import { getMe } from './me.api'
@@ -267,6 +268,13 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 											<Stars score={Number(r.rating)} size={14} />
 											<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
 										</div>
+										{r.artist_name && (
+											<div className="sans" style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--color-subtle)' }}>
+												{r.artist_id ?
+													<a href={artistHref(r.artist_id)} style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)' }}>{r.artist_name}</a> :
+													r.artist_name}
+											</div>
+										)}
 										{r.comment && <p className="sans" style={{ margin: '4px 0 0', fontSize: 'var(--text-base)', color: 'var(--color-subtle)', lineHeight: 'var(--leading-normal)' }}>{r.comment}</p>}
 									</div>
 								</li>

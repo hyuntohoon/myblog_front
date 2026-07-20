@@ -3,7 +3,8 @@
 // OQ5 resolved: overlay modal (not a /today page). Each row opens the album
 // overlay (openAlbum) — same dispatch as the home tile + TodayAlbumBuckit.
 import { useEffect, useRef, useState } from 'react'
-import { openAlbum } from '@lib/entityLinks'
+import { openAlbum } from '@lib/entityEvents'
+import { artistHref } from '@lib/entityLinks'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { Cover } from './ui'
@@ -27,14 +28,16 @@ const HISTORY_CSS = `
 .tsp-history-row{display:flex;align-items:center;gap:12px;padding:6px 8px;border-radius:4px}
 .tsp-history-row:hover{background:var(--color-paper)}
 .tsp-history-date{flex:0 0 auto;width:34px;font-size:11px;letter-spacing:.02em;color:var(--color-faded);text-align:right}
-.tsp-history-open{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:0;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:opacity .16s}
-.tsp-history-open:hover{opacity:.78}
-.tsp-history-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:4px}
+.tsp-history-open{flex:1;min-width:0;display:flex;align-items:center;gap:12px;color:inherit;text-align:left}
+.tsp-history-album-open{display:block;min-width:0;padding:0;background:none;border:0;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:opacity .16s}
+.tsp-history-album-open:hover{opacity:.78}
+.tsp-history-album-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:4px}
 .tsp-history-meta{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
-.tsp-history-meta>span{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tsp-history-meta>*{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tsp-history-meta>.serif{font-size:15px;line-height:1.25;color:var(--color-text)}
 .tsp-history-artist{font-size:11.5px;letter-spacing:.02em;color:var(--color-subtle)}
-@media (prefers-reduced-motion:reduce){.tsp-history-open{transition:none}}
+.tsp-history-meta>a{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--color-faded)}
+@media (prefers-reduced-motion:reduce){.tsp-history-album-open{transition:none}}
 `
 
 function fmtDate(iso: string): string {
@@ -89,17 +92,28 @@ export default function TodayPickHistory({ onClose }: Props) {
 							{items.map(p => (
 								<li key={p.id} className="tsp-history-row">
 									<span className="tsp-history-date mono">{fmtDate(p.pick_date)}</span>
-								<button
-									type="button"
-									className="tsp-history-open"
-									onClick={() => openAlbum({ albumId: p.album_id, title: p.title, artist: p.artist, cover: p.cover_url })}
-								>
-									<Cover label={p.title} src={p.cover_url} size={40} radius={3} />
-									<span className="tsp-history-meta">
-										<span className="serif italic">{p.title}</span>
-										<span className="tsp-history-artist mono">{p.artist}</span>
-									</span>
-								</button>
+									<div className="tsp-history-open">
+										<button
+											type="button"
+											className="tsp-history-album-open"
+											onClick={() => openAlbum({ albumId: p.album_id, title: p.title, artist: p.artist, cover: p.cover_url })}
+											aria-label={`${p.title} 앨범 상세 보기`}
+										>
+											<Cover label={p.title} src={p.cover_url} size={40} radius={3} />
+										</button>
+										<div className="tsp-history-meta">
+											<button
+												type="button"
+												className="tsp-history-album-open serif italic"
+												onClick={() => openAlbum({ albumId: p.album_id, title: p.title, artist: p.artist, cover: p.cover_url })}
+											>
+												{p.title}
+											</button>
+											{p.artist_id ?
+												<a href={artistHref(p.artist_id)} className="tsp-history-artist mono">{p.artist}</a> :
+												<span className="tsp-history-artist mono">{p.artist}</span>}
+										</div>
+									</div>
 								</li>
 							))}
 						</ul>

@@ -49,7 +49,7 @@ import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spo
 import type { NowPlaying as NowPlayingData, RecentlyListenedItem, RecentTrackItem } from './spotify.api'
 import { Cover, Equalizer } from './ui'
 
-export interface LyricsOpenTarget { trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null }
+export interface LyricsOpenTarget { trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null, artists: Array<{ id: string, name: string }> }
 export type OnOpenLyrics = (t: LyricsOpenTarget) => void
 
 export type NpStyle = 'banner' | 'full' | 'list'
@@ -583,7 +583,7 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
  * links — the rest stay plain text, so a dead click never exists. Without live
  * artists, falls back to the snapshot's plain artist string.
  */
-function ArtistNames({ artists, text }: { artists?: Array<{ id: string, name: string }>, text?: string | null }) {
+export function ArtistNames({ artists, text }: { artists?: Array<{ id: string, name: string }>, text?: string | null }) {
   const [ids, setIds] = useState<Record<string, string>>({})
   const list = artists ?? []
   const key = list.map(a => a.id).join(',')
@@ -678,7 +678,7 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
       const r = await readLivePlayback()
       if (r.state === 'playing') {
         setState('ready')
-        onOpen({ trackId: r.trackId, progressMs: r.progressMs, progressAtMs: r.readAtMs, durationMs: r.durationMs, albumCoverUrl: r.albumCoverUrl, track: r.track, artist: r.artist })
+        onOpen({ trackId: r.trackId, progressMs: r.progressMs, progressAtMs: r.readAtMs, durationMs: r.durationMs, albumCoverUrl: r.albumCoverUrl, track: r.track, artist: r.artist, artists: r.artists })
       }
       else if (r.state === 'idle') {
         setState('gone')
