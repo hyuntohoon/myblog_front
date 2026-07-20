@@ -1,20 +1,15 @@
 // FEAT-pocket-buckit Step 5b — Spotify Web Playback client.
 //
 // Design (owner-decided 2026-06-24, "A+"):
-//   - v1 streaming token is SINGLE-OWNER, SERVER-MINTED. The browser asks the
+//   - The streaming token is PER-MEMBER, SERVER-MINTED. The browser asks the
 //     backend (`GET /api/playback/spotify-token`, Cognito-JWT) for a short-lived
-//     access token minted from the owner's `streaming_refresh_token` in the
-//     `myblog/spotify` secret. (Provisioned 2026-06-25 — the route now returns 200;
-//     the live play path below is active for the owner on a Premium session.)
-//   - The SDK script + the token mint are LAZY: they fire ONLY inside an explicit
-//     `requestPlayback()` call (a real play action). Importing this module, the
-//     tray mount, an anonymous visitor, and a public review page must NEVER pull
-//     `spotify-player.js` or mint a token. (rule #9 — no synchronous Spotify call
-//     on a user-facing endpoint; the only server hit is the async token mint.)
-//   - FUTURE-READY SEAMS (no multi-user code built now): token acquisition lives
-//     behind the single `getStreamingToken()` function — a later per-listener
-//     OAuth flow (a new `spotifyAuth.ts`, NOT a change to Cognito `auth.ts`) swaps
-//     only that source, callers unchanged. Identity is provider-neutral
+//     token backed by that member's Spotify integration.
+//   - The SDK script remains lazy: it loads ONLY inside an explicit
+//     `requestPlayback()` action. The token is also used by one-shot dashboard
+//     reads and client-side remote calls, but never by a polling loop or a
+//     synchronous Spotify call on a backend user-facing endpoint (rule #9).
+//   - Token acquisition lives behind the single `getStreamingToken()` source,
+//     callers unchanged. Identity is provider-neutral
 //     (`PlaybackTarget`), resolved to a provider URI at play time via the
 //     `resolveProviderUri` seam. No `owner_id` / singleton assumption is baked in.
 import type { components } from '@lib/api.gen'
@@ -36,12 +31,13 @@ export type PlaybackTarget =
 	{ kind: 'track', trackId: string, title?: string, isrc?: string, artist?: string }
 
 // ── streaming-capability state (generic, NOT owner-specific) ──────────────────
-//   ready        — a live token + a connected Premium device (post-provisioning)
-//   dormant      — the token route returned 503 (owner has not provisioned yet)
+//   ready         — a live token + a connected Premium device (post-provisioning)
+//   dormant       — the token route returned 503 (server configuration missing)
+//   not_connected — the signed-in member has no Spotify integration
 //   unauthorized — caller is not signed in (no token mint attempted)
 //   unsupported  — non-Premium / the SDK could not initialise a device
 //   error        — a transient token/network failure
-export type StreamingStatus = 'ready' | 'dormant' | 'unauthorized' | 'unsupported' | 'error'
+export type StreamingStatus = 'ready' | 'dormant' | 'not_connected' | 'unauthorized' | 'unsupported' | 'error'
 
 export interface PlaybackOutcome {
   status: StreamingStatus
@@ -59,13 +55,11 @@ let cachedToken: { token: string, expiresAt: number } | null = null
 /**
  * Acquire a short-lived Spotify streaming access token.
  *
- * v1: server-minted, single-owner — a plain authed GET (NOT `apiFetch`, so a
+ * Per-member server mint — a plain authed GET (NOT `apiFetch`, so a
  * play click never triggers the refresh→`goLogin` redirect; a play button must
  * never navigate the page away). An anonymous caller short-circuits to
  * `unauthorized` WITHOUT a network call, so a public review page never mints a
  * token for a visitor.
- *
- * FUTURE: a per-listener variant swaps only this function body.
  */
 export async function getStreamingToken(): Promise<TokenResult> {
   if (!isLoggedIn())
@@ -85,6 +79,8 @@ export async function getStreamingToken(): Promise<TokenResult> {
     return { ok: false, status: 'error' }
   }
 
+  if (res.status === 404)
+    return { ok: false, status: 'not_connected' }
   if (res.status === 503)
     return { ok: false, status: 'dormant' }
   if (res.status === 401 || res.status === 403)
@@ -223,6 +219,7 @@ async function resolveProviderUri(target: PlaybackTarget): Promise<string> {
 
 const STATUS_MESSAGE: Record<Exclude<StreamingStatus, 'ready'>, string> = {
   dormant: 'Spotify Premium 재생이 아직 연결되지 않았어요. 소유자가 스트리밍을 설정하면 켜집니다.',
+  not_connected: 'Spotify 계정을 연결하면 재생할 수 있어요.',
   unauthorized: '로그인 후 Spotify Premium이 연결되면 재생할 수 있어요.',
   unsupported: 'Spotify Premium 계정이 필요해요. (미리듣기는 추후 지원)',
   error: '재생 토큰을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
@@ -233,7 +230,7 @@ function messageFor(status: Exclude<StreamingStatus, 'ready'>): string {
 }
 
 /**
- * The explicit play action — the ONLY entry that mints a token or loads the SDK.
+ * The explicit SDK play action — the only entry that loads the SDK.
  *
  * Order matters: token FIRST. In dormant v1 the 503 short-circuits BEFORE the SDK
  * is pulled, so a dormant play makes one async token call and no 1MB SDK download

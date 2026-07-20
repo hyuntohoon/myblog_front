@@ -1,17 +1,15 @@
 // Member dashboard — Now Playing (FEAT-member-dashboard Step 3, D5/D26).
 //
-// A READ-ONLY display, not a player: we hold only user-read scopes (no playback
-// control, D11). So: no play/pause, no live-ticking seek — just the current track
-// + an honest "동기화 …" line. When nothing is playing, a calm idle state. The
-// decorative equalizer animates only while is_playing. Three variants
-// (banner/full/list) share the same data; the list variant pairs it with
-// recently-listened albums.
+// The live overlay is a capability-tiered Spotify Connect remote: a successful
+// `/me/player` probe enables play/pause + seek, while older grants fall back to
+// progress-only display through `/currently-playing`. Control failures degrade
+// the session by response semantics; no product/account metadata is consulted.
 //
 // FEAT-nowplaying-live-sync — the worker-fed cache snapshot
 // (GET /api/library/now-playing, hourly cron, up to ~1h stale) is now only the
 // fallback: on mount the card also fires ONE `readLivePlayback()` and lets the
-// live moment win (playing → live card, idle → idle branch even if the snapshot
-// claimed playing; unavailable → snapshot as-is, no degradation). A 「동기화」
+// live moment win (playing/paused → live card, idle → idle branch even if the
+// snapshot claimed playing; unavailable → snapshot as-is). A 「동기화」
 // button re-fires the same one-shot read. Never polled.
 //
 // FEAT-lyrics-viewer Step 3 — the dynamic lyrics entry lives here, on the live
@@ -20,10 +18,16 @@
 // one-shot live playback read (token mint stays lazy, on the explicit action) and
 // opens with the live `item.id` + position — the snapshot stores no track id. A
 // tap that discovers playback has stopped hides the entry instead of opening.
+import type { KeyboardEvent, PointerEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { isLoggedIn } from '@lib/auth'
 import { openAlbum } from '@lib/entityEvents'
+import { estimatedMs } from './lyrics/clockEstimate'
+import type { ClockAnchor } from './lyrics/clockEstimate'
 import { readLivePlayback } from './lyrics/playback.api'
 import type { LivePlayback } from './lyrics/playback.api'
+import { pauseRemote, resumeRemote, seekRemote } from './playerRemote'
+import type { RemoteResult } from './playerRemote'
 import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
 import type { NowPlaying as NowPlayingData, RecentlyListenedItem, RecentTrackItem } from './spotify.api'
 import { Cover, Equalizer } from './ui'
@@ -32,6 +36,13 @@ export interface LyricsOpenTarget { trackId: string, progressMs: number | null, 
 export type OnOpenLyrics = (t: LyricsOpenTarget) => void
 
 export type NpStyle = 'banner' | 'full' | 'list'
+
+interface LiveMoment {
+	anchor: ClockAnchor | null
+	durationMs: number | null
+	paused: boolean
+	source: 'player' | 'currently-playing'
+}
 
 /**
  * Viewport-narrow flag (canonical 640px breakpoint) — drives the mobile size
@@ -141,7 +152,7 @@ function AlbumCoverLink({ id, title, artist, cover, label, size, radius = 4 }: {
 /**
  * Shared fetch — the worker-fed snapshot, overlaid by a one-shot live read.
  * Snapshot and live read fire in parallel on mount; a decisive live result
- * (`playing`/`idle`) wins regardless of arrival order, `unavailable` silently
+ * (`playing`/`paused`/`idle`) wins regardless of arrival order, `unavailable`
  * keeps the snapshot. `sync()` re-fires the live read (동기화 button); the
  * busyRef guard makes it single-flight. Lives in the NowPlaying wrapper (not
  * the variants) so a banner↔full↔list toggle re-renders without re-firing the
@@ -149,6 +160,7 @@ function AlbumCoverLink({ id, title, artist, cover, label, size, radius = 4 }: {
  */
 function useNowPlaying() {
   const [np, setNp] = useState<NowPlayingData | null>(null)
+  const [liveMoment, setLiveMoment] = useState<LiveMoment | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [syncing, setSyncing] = useState(false)
   const busyRef = useRef(false)
@@ -156,10 +168,12 @@ function useNowPlaying() {
   const onRef = useRef(true)
 
   const applyLive = (r: LivePlayback) => {
+    if (!onRef.current)
+      return
     if (r.state === 'unavailable')
       return
     liveWonRef.current = true
-    if (r.state === 'playing') {
+    if (r.state === 'playing' || r.state === 'paused') {
       // RFC Step 4 contract: the one-shot live chain does not supply album_id yet.
       setNp({
         is_playing: true,
@@ -169,11 +183,18 @@ function useNowPlaying() {
         album_cover_url: r.albumCoverUrl,
         updated_at: new Date().toISOString(),
       })
+      setLiveMoment({
+        anchor: r.progressMs != null ? { ms: r.progressMs, wallMs: r.readAtMs } : null,
+        durationMs: r.durationMs,
+        paused: r.state === 'paused',
+        source: r.source,
+      })
     }
     else {
       // Live says nothing is playing — force the idle branch even if the stale
       // snapshot claimed otherwise. Keep whatever fields are already there.
       setNp(prev => ({ ...(prev ?? {}), is_playing: false, updated_at: new Date().toISOString() }))
+      setLiveMoment(null)
     }
     setState('ready')
   }
@@ -215,7 +236,7 @@ function useNowPlaying() {
       onRef.current = false
     }
   }, [])
-  return { np, state, sync, syncing }
+  return { np, state, sync, syncing, liveMoment, setLiveMoment, applyLive }
 }
 
 /**
@@ -246,14 +267,216 @@ function useLatestPlayed(enabled: boolean): RecentTrackItem | null {
   return latest
 }
 
+/**
+ * Advance a display-only clock from a one-shot Spotify anchor. The 500ms
+ * interval performs no I/O: hidden documents stop rendering ticks, paused
+ * anchors stay frozen, and reaching the known duration tears the clock down
+ * without attempting an end-of-track refresh.
+ */
+function usePlayerClock(anchor: ClockAnchor | null, durationMs: number | null, paused: boolean): number | null {
+	const [clock, setClock] = useState<number | null>(anchor?.ms ?? null)
+	useEffect(() => {
+		if (!anchor) {
+			setClock(null)
+			return
+		}
+		const cap = durationMs ?? Number.POSITIVE_INFINITY
+		const clamp = (ms: number) => Math.max(0, Math.min(cap, ms))
+		if (paused) {
+			setClock(clamp(anchor.ms))
+			return
+		}
+
+		let interval: number | null = null
+		const tick = () => {
+			if (document.hidden)
+				return
+			const next = clamp(estimatedMs(anchor))
+			setClock(next)
+			if (durationMs != null && next >= durationMs && interval != null) {
+				window.clearInterval(interval)
+				interval = null
+			}
+		}
+		const onVisibility = () => {
+			if (!document.hidden)
+				tick()
+		}
+		tick()
+		if (durationMs == null || estimatedMs(anchor) < durationMs)
+			interval = window.setInterval(tick, 500)
+		document.addEventListener('visibilitychange', onVisibility)
+		return () => {
+			if (interval != null)
+				window.clearInterval(interval)
+			document.removeEventListener('visibilitychange', onVisibility)
+		}
+	}, [anchor, durationMs, paused])
+	if (!anchor)
+		return null
+	if (paused)
+		return Math.max(0, Math.min(durationMs ?? Number.POSITIVE_INFINITY, anchor.ms))
+	return clock
+}
+
+function fmtTime(ms: number): string {
+	const seconds = Math.floor(Math.max(0, ms) / 1000)
+	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+interface SpectralStripProps {
+	barCount: number
+	height: number
+	gap: number
+	clock: number | null
+	durationMs: number | null
+	paused: boolean
+	canSeek: boolean
+	onSeek: (positionMs: number) => void
+}
+
+/**
+ * Shared spectral playhead. Without both clock and duration it preserves the
+ * legacy decorative animation exactly; only the full capability tier receives
+ * slider semantics or pointer/keyboard handlers.
+ */
+function SpectralStrip({ barCount, height, gap, clock, durationMs, paused, canSeek, onSeek }: SpectralStripProps) {
+	const timed = clock != null && durationMs != null && durationMs > 0
+	const interactive = timed && canSeek
+	const position = clock ?? 0
+	const duration = durationMs ?? 0
+	const frac = timed ? Math.max(0, Math.min(1, position / duration)) : null
+	const seekAt = (clientX: number, el: HTMLDivElement) => {
+		if (!interactive)
+			return
+		const rect = el.getBoundingClientRect()
+		const x = Math.max(0, Math.min(rect.width, clientX - rect.left))
+		onSeek((x / rect.width) * duration)
+	}
+	const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+		if (!interactive || e.button !== 0)
+			return
+		e.currentTarget.setPointerCapture(e.pointerId)
+	}
+	const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+		if (!interactive)
+			return
+		seekAt(e.clientX, e.currentTarget)
+		if (e.currentTarget.hasPointerCapture(e.pointerId))
+			e.currentTarget.releasePointerCapture(e.pointerId)
+	}
+	const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+		if (!interactive || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight'))
+			return
+		e.preventDefault()
+		onSeek(Math.max(0, Math.min(duration, position + (e.key === 'ArrowLeft' ? -5000 : 5000))))
+	}
+	const style = { display: 'flex', alignItems: 'flex-end', gap, height, cursor: interactive ? 'pointer' : undefined, touchAction: interactive ? 'none' : undefined } as const
+	const bars = Array.from({ length: barCount }).map((_, i) => {
+		const played = frac == null || (i + 0.5) / barCount <= frac
+		const legacyAccent = i / barCount > 0.82
+		return (
+			<span
+				key={i}
+				className={played ? 'lf-eq-bar' : undefined}
+				style={{
+					flex: 1,
+					transformOrigin: 'bottom',
+					height: '100%',
+					background: played && legacyAccent ? 'var(--color-accent)' : 'var(--color-text)',
+					opacity: played ? (legacyAccent ? 1 : 0.65 - (i / barCount) * 0.25) : 0.15,
+					animationDuration: `${0.5 + (i % 5) * 0.16}s`,
+					animationDelay: `${i * 0.035}s`,
+					animationPlayState: frac != null && paused ? 'paused' : undefined,
+				}}
+			/>
+		)
+	})
+	if (!interactive)
+		return <div style={style}>{bars}</div>
+	return (
+		<div
+			role="slider"
+			aria-label="재생 위치"
+			aria-valuemin={0}
+			aria-valuemax={duration}
+			aria-valuenow={Math.round(position)}
+			tabIndex={0}
+			onPointerDown={onPointerDown}
+			onPointerUp={onPointerUp}
+			onKeyDown={onKeyDown}
+			style={style}
+		>
+			{bars}
+		</div>
+	)
+}
+
+type RemoteReason = Extract<RemoteResult, { ok: false }>['reason']
+
+const NOTICE_MESSAGE = {
+	'restricted': '이 Spotify 계정에서는 제어할 수 없어요 — 진행만 표시돼요',
+	'no-device': '활성 Spotify 기기가 없어요 — 기기에서 재생을 시작한 뒤 ↻',
+	'transient': '요청이 닿지 않았어요 — 다시 시도해 주세요',
+} as const satisfies Record<RemoteReason, string>
+
+function Transport({ clock, durationMs, paused, fullTier, busy, notice, source, buttonSize, onToggle }: {
+	clock: number | null
+	durationMs: number | null
+	paused: boolean
+	fullTier: boolean
+	busy: boolean
+	notice: RemoteReason | null
+	source: LiveMoment['source'] | null
+	buttonSize: number
+	onToggle: () => void
+}) {
+	const timed = clock != null && durationMs != null
+	if (!timed && !notice && source !== 'currently-playing')
+		return null
+	return (
+		<div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+			{timed && (
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+					{fullTier && (
+						<button
+							type="button"
+							className="iconbtn mono"
+							onClick={onToggle}
+							disabled={busy}
+							aria-label={paused ? '재생' : '일시정지'}
+							title={paused ? '재생' : '일시정지'}
+							style={{ width: buttonSize, height: buttonSize, fontSize: 12, lineHeight: 1, flex: '0 0 auto' }}
+						>
+							{paused ? '▶' : '⏸'}
+						</button>
+					)}
+					<span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{fmtTime(clock)}</span>
+					<span style={{ flex: 1 }} />
+					<span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>{fmtTime(durationMs)}</span>
+				</div>
+			)}
+			{notice && <span className="mono" role="status" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>{NOTICE_MESSAGE[notice]}</span>}
+			{source === 'currently-playing' && <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>재연동하면 재생 컨트롤을 쓸 수 있어요 — 설정 · 연동 탭에서 다시 연결</span>}
+		</div>
+	)
+}
+
 /** The wrapper-owned data bundle every variant renders from. */
 interface NpShared {
-  np: NowPlayingData | null
-  state: 'loading' | 'ready' | 'error'
-  sync: () => Promise<void>
-  syncing: boolean
-  latest: RecentTrackItem | null
-  onOpenLyrics?: OnOpenLyrics
+	np: NowPlayingData | null
+	state: 'loading' | 'ready' | 'error'
+	sync: () => Promise<void>
+	syncing: boolean
+	latest: RecentTrackItem | null
+	onOpenLyrics?: OnOpenLyrics
+	liveMoment: LiveMoment | null
+	clock: number | null
+	fullTier: boolean
+	controlBusy: boolean
+	notice: RemoteReason | null
+	onToggle: () => void
+	onSeek: (positionMs: number) => void
 }
 
 /**
@@ -277,7 +500,7 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
         setState('ready')
         onOpen({ trackId: r.trackId, progressMs: r.progressMs, progressAtMs: r.readAtMs, durationMs: r.durationMs, albumCoverUrl: r.albumCoverUrl, track: r.track, artist: r.artist })
       }
-      else if (r.state === 'idle') {
+      else if (r.state === 'idle' || r.state === 'paused') {
         setState('gone')
       }
       else {
@@ -338,44 +561,50 @@ function IdleBox({ compact = false, iso, latest, onSync, syncing }: { compact?: 
 
 /* ── full variant ──────────────────────────────────────────────────────────── */
 
-function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics }: NpShared) {
-  const narrow = useNarrow()
-  const onSync = () => {
-    void sync()
-  }
-  if (state === 'loading')
-    return <div className="panel" style={{ padding: 18 }}><span className="meta">불러오는 중…</span></div>
-  if (!np || !np.is_playing || !np.track)
-    return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} />
-  return (
-    <div className="panel" style={{ padding: narrow ? 14 : 18, display: 'flex', gap: narrow ? 14 : 18, alignItems: 'center' }}>
-      <AlbumCoverLink id={np.album_id} title={np.album} artist={np.artist} cover={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={narrow ? 64 : 88} radius={4} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, rowGap: 6, marginBottom: 6 }}>
-          <Equalizer playing h={12} />
-          <span className="kicker" style={{ color: 'var(--color-accent)', whiteSpace: 'nowrap' }}>NOW PLAYING</span>
-          <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, rowGap: 6, minWidth: 0 }}>
-            {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
-            <SyncControl iso={np.updated_at} onSync={onSync} syncing={syncing} />
-          </span>
-        </div>
-        <div className="serif italic" style={{ fontSize: narrow ? 18 : 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
-        <div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {np.artist}
-          {np.artist && np.album ? ' — ' : null}
-          <AlbumTextLink id={np.album_id} title={np.album} artist={np.artist} cover={np.album_cover_url} />
-        </div>
-      </div>
-    </div>
-  )
+function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, liveMoment, clock, fullTier, controlBusy, notice, onToggle, onSeek }: NpShared) {
+	const narrow = useNarrow()
+	const paused = liveMoment?.paused ?? false
+	const onSync = () => {
+		void sync()
+	}
+	if (state === 'loading')
+		return <div className="panel" style={{ padding: 18 }}><span className="meta">불러오는 중…</span></div>
+	if (!np || !np.is_playing || !np.track)
+		return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} />
+	return (
+		<div className="panel" style={{ padding: narrow ? 14 : 18, display: 'flex', gap: narrow ? 14 : 18, alignItems: 'center' }}>
+			<AlbumCoverLink id={np.album_id} title={np.album} artist={np.artist} cover={np.album_cover_url} label={np.album ?? np.track ?? '?'} size={narrow ? 64 : 88} radius={4} />
+			<div style={{ flex: 1, minWidth: 0 }}>
+				<div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, rowGap: 6, marginBottom: 6 }}>
+					<Equalizer playing={!paused} h={12} />
+					<span className="kicker" style={{ color: paused ? 'var(--color-faded)' : 'var(--color-accent)', whiteSpace: 'nowrap' }}>{paused ? '일시정지' : 'NOW PLAYING'}</span>
+					<span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, rowGap: 6, minWidth: 0 }}>
+						{onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
+						<SyncControl iso={np.updated_at} onSync={onSync} syncing={syncing} />
+					</span>
+				</div>
+				<div className="serif italic" style={{ fontSize: narrow ? 18 : 22, fontWeight: 500, letterSpacing: '-.01em', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{np.track}</div>
+				<div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', marginTop: 3, marginBottom: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+					{np.artist}
+					{np.artist && np.album ? ' — ' : null}
+					<AlbumTextLink id={np.album_id} title={np.album} artist={np.artist} cover={np.album_cover_url} />
+				</div>
+				<div style={{ marginBottom: 6 }}>
+					<SpectralStrip barCount={24} height={16} gap={2} clock={clock} durationMs={liveMoment?.durationMs ?? null} paused={paused} canSeek={fullTier} onSeek={onSeek} />
+				</div>
+				<Transport clock={clock} durationMs={liveMoment?.durationMs ?? null} paused={paused} fullTier={fullTier} busy={controlBusy} notice={notice} source={liveMoment?.source ?? null} buttonSize={24} onToggle={onToggle} />
+			</div>
+		</div>
+	)
 }
 
 /* ── list variant (now-playing + recently-listened albums) ───────────────────── */
 
-function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics }: NpShared) {
+function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics, liveMoment, clock, fullTier, controlBusy, notice, onToggle }: NpShared) {
   const onSync = () => {
     void sync()
   }
+	const paused = liveMoment?.paused ?? false
   const [recent, setRecent] = useState<RecentlyListenedItem[] | null>(null)
   useEffect(() => {
     let on = true
@@ -391,20 +620,33 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics }: NpSh
         <div style={{ padding: 16 }}><span className="meta">불러오는 중…</span></div> :
         live ?
           (
-              <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
+              <div style={{ position: 'relative', padding: 16, display: 'flex', gap: 14, alignItems: 'center', borderBottom: '1px solid var(--color-border-soft)' }}>
                 <AlbumCoverLink id={live.album_id} title={live.album} artist={live.artist} cover={live.album_cover_url} label={live.album ?? live.track ?? '?'} size={50} radius={3} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="kicker" style={{ color: 'var(--color-accent)', marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: 8, rowGap: 4, alignItems: 'center' }}>
-                    <span style={{ whiteSpace: 'nowrap' }}>● 재생 중</span>
+                  <div className="kicker" style={{ color: paused ? 'var(--color-faded)' : 'var(--color-accent)', marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: 8, rowGap: 4, alignItems: 'center' }}>
+                    <span style={{ whiteSpace: 'nowrap' }}>{paused ? '❚❚ 일시정지' : '● 재생 중'}</span>
+					{clock != null && liveMoment?.durationMs != null && <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: 0 }}>{`${fmtTime(clock)} / ${fmtTime(liveMoment.durationMs)}`}</span>}
                     <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8, rowGap: 4, minWidth: 0 }}>
                       {onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
+					{fullTier && (
+						<button type="button" className="iconbtn mono" onClick={onToggle} disabled={controlBusy} aria-label={paused ? '재생' : '일시정지'} title={paused ? '재생' : '일시정지'} style={{ width: 22, height: 22, fontSize: 10, lineHeight: 1, flex: '0 0 auto' }}>
+							{paused ? '▶' : '⏸'}
+						</button>
+					)}
                       <SyncControl iso={live.updated_at} onSync={onSync} syncing={syncing} />
                     </span>
                   </div>
                   <div className="serif italic" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.track}</div>
                   <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{live.artist}</div>
+						{notice && <div className="mono" role="status" style={{ marginTop: 3, fontSize: 10.5, color: 'var(--color-faded)' }}>{NOTICE_MESSAGE[notice]}</div>}
+						{liveMoment?.source === 'currently-playing' && <div className="mono" style={{ marginTop: 3, fontSize: 10.5, color: 'var(--color-faded)' }}>재연동하면 재생 컨트롤을 쓸 수 있어요 — 설정 · 연동 탭에서 다시 연결</div>}
                 </div>
-                <Equalizer playing h={16} />
+				<Equalizer playing={!paused} h={16} />
+				{clock != null && liveMoment?.durationMs != null && liveMoment.durationMs > 0 && (
+					<div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, background: 'var(--color-border-soft)' }}>
+						<span style={{ display: 'block', width: `${Math.max(0, Math.min(1, clock / liveMoment.durationMs)) * 100}%`, height: '100%', background: 'var(--color-accent)' }} />
+					</div>
+				)}
               </div>
             ) :
           <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} /></div>}
@@ -430,8 +672,9 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics }: NpSh
 
 /* ── banner variant (overview default) ───────────────────────────────────────── */
 
-function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: NpShared) {
+function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, liveMoment, clock, fullTier, controlBusy, notice, onToggle, onSeek }: NpShared) {
   const narrow = useNarrow()
+	const paused = liveMoment?.paused ?? false
   const onSync = () => {
     void sync()
   }
@@ -464,7 +707,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: Np
         <AlbumCoverLink id={live ? live.album_id : latest?.album_id} title={live ? live.album : latest?.album_name} artist={live ? live.artist : latest?.artist_name} cover={live ? live.album_cover_url : (latest?.album?.cover_url ?? null)} label={(live ? live.album ?? live.track : latest ? latest.album_name ?? latest.track_name : '—') ?? '—'} size={narrow ? 84 : 116} radius={4} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="kicker" style={{ marginBottom: 8, display: 'flex', flexWrap: 'wrap', gap: 10, rowGap: 6, alignItems: 'center' }}>
-            <span style={{ whiteSpace: 'nowrap', color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
+            <span style={{ whiteSpace: 'nowrap', color: paused ? 'var(--color-faded)' : live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{paused ? '일시정지' : live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, rowGap: 6, minWidth: 0 }}>
               {live && onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
               <SyncControl iso={np?.updated_at} onSync={onSync} syncing={syncing} />
@@ -480,23 +723,10 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: Np
                     {live.artist && live.album ? ' — ' : null}
                     <AlbumTextLink id={live.album_id} title={live.album} artist={live.artist} cover={live.album_cover_url} />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: narrow ? 22 : 30, marginBottom: narrow ? 8 : 14 }}>
-                    {Array.from({ length: 32 }).map((_, i) => (
-                      <span
-	key={i}
-	className="lf-eq-bar"
-	style={{
-                          flex: 1,
-                          transformOrigin: 'bottom',
-                          height: '100%',
-                          background: i / 32 > 0.82 ? 'var(--color-accent)' : 'var(--color-text)',
-                          opacity: i / 32 > 0.82 ? 1 : 0.65 - (i / 32) * 0.25,
-                          animationDuration: `${0.5 + (i % 5) * 0.16}s`,
-                          animationDelay: `${i * 0.035}s`,
-                        }}
-                      />
-                    ))}
-                  </div>
+						<div style={{ marginBottom: narrow ? 8 : 14 }}>
+					<SpectralStrip barCount={32} height={narrow ? 22 : 30} gap={3} clock={clock} durationMs={liveMoment?.durationMs ?? null} paused={paused} canSeek={fullTier} onSeek={onSeek} />
+						</div>
+						<Transport clock={clock} durationMs={liveMoment?.durationMs ?? null} paused={paused} fullTier={fullTier} busy={controlBusy} notice={notice} source={liveMoment?.source ?? null} buttonSize={26} onToggle={onToggle} />
                 </>
               ) :
             latest ?
@@ -522,15 +752,132 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics }: Np
 }
 
 export function NowPlaying({ variant, onOpenLyrics }: { variant: NpStyle, onOpenLyrics?: OnOpenLyrics }) {
-  // Data lives here, above the variant switch: toggling 배너/플레이어/리스트
-  // remounts the variant component but must NOT re-fire the snapshot GET +
-  // one-shot live Spotify read (they used to run per variant mount).
-  const { np, state, sync, syncing } = useNowPlaying()
-  const latest = useLatestPlayed(state === 'ready' && !liveSnapshot(np))
-  const shared: NpShared = { np, state, sync, syncing, latest, onOpenLyrics }
-  if (variant === 'list')
-    return <NowPlayingList {...shared} />
-  if (variant === 'banner')
-    return <NowPlayingBanner {...shared} />
-  return <NowPlayingFull {...shared} />
+	// Data and capability state live above the variant switch: changing the
+	// presentation must neither re-read Spotify nor reset a session degradation.
+	const { np, state, sync, syncing, liveMoment, setLiveMoment, applyLive } = useNowPlaying()
+	const [loggedIn, setLoggedIn] = useState(false)
+	const [degraded, setDegraded] = useState<'restricted' | 'no-device' | null>(null)
+	const [notice, setNotice] = useState<RemoteReason | null>(null)
+	const [controlBusy, setControlBusy] = useState(false)
+	const noticeTimer = useRef<number | null>(null)
+	const remoteBusy = useRef(false)
+	const noDeviceAt = useRef(0)
+	const clock = usePlayerClock(liveMoment?.anchor ?? null, liveMoment?.durationMs ?? null, liveMoment?.paused ?? false)
+
+	useEffect(() => {
+		setLoggedIn(isLoggedIn())
+	}, [])
+	useEffect(() => () => {
+		if (noticeTimer.current != null)
+			window.clearTimeout(noticeTimer.current)
+	}, [])
+	useEffect(() => {
+		if (degraded === 'no-device' && liveMoment?.source === 'player' && liveMoment.anchor && liveMoment.anchor.wallMs > noDeviceAt.current)
+			setDegraded(null)
+	}, [degraded, liveMoment])
+
+	const showNotice = (reason: RemoteReason) => {
+		setNotice(reason)
+		if (noticeTimer.current != null)
+			window.clearTimeout(noticeTimer.current)
+		noticeTimer.current = window.setTimeout(() => {
+			setNotice(null)
+			noticeTimer.current = null
+		}, 5000)
+	}
+	const applyRemoteFailure = (reason: RemoteReason) => {
+		showNotice(reason)
+		if (reason === 'restricted') {
+			setDegraded('restricted')
+		}
+		else if (reason === 'no-device') {
+			noDeviceAt.current = performance.now()
+			setDegraded(prev => prev === 'restricted' ? prev : 'no-device')
+		}
+	}
+	const fullTier = liveMoment != null && liveMoment.source === 'player' && loggedIn && degraded == null
+
+	const onToggle = async () => {
+		if (!fullTier || !liveMoment || remoteBusy.current)
+			return
+		remoteBusy.current = true
+		setControlBusy(true)
+		const wasPaused = liveMoment.paused
+		try {
+			const result = wasPaused ? await resumeRemote() : await pauseRemote()
+			if (!result.ok) {
+				applyRemoteFailure(result.reason)
+				return
+			}
+			setLiveMoment((prev) => {
+				if (!prev)
+					return prev
+				const rawMs = prev.anchor ? (wasPaused ? prev.anchor.ms : estimatedMs(prev.anchor)) : clock
+				const ms = rawMs == null ? null : Math.max(0, Math.min(prev.durationMs ?? Number.POSITIVE_INFINITY, rawMs))
+				return {
+					...prev,
+					anchor: ms == null ? null : { ms, wallMs: performance.now() },
+					paused: !wasPaused,
+				}
+			})
+		}
+		finally {
+			remoteBusy.current = false
+			setControlBusy(false)
+		}
+	}
+
+	const onSeek = async (positionMs: number) => {
+		if (!fullTier || !liveMoment || remoteBusy.current)
+			return
+		remoteBusy.current = true
+		setControlBusy(true)
+		const target = Math.max(0, Math.min(liveMoment.durationMs ?? Number.POSITIVE_INFINITY, Math.round(positionMs)))
+		// Optimistic re-anchor for instant feedback; a failed PUT restores the
+		// pre-seek anchor so the bar never keeps showing a position the device
+		// never reached.
+		const prevAnchor = liveMoment.anchor
+		setLiveMoment(prev => prev ? { ...prev, anchor: { ms: target, wallMs: performance.now() } } : prev)
+		try {
+			const result = await seekRemote(target)
+			if (!result.ok) {
+				setLiveMoment(prev => prev ? { ...prev, anchor: prevAnchor } : prev)
+				applyRemoteFailure(result.reason)
+				return
+			}
+			// OQ2: one successful seek produces exactly one event-driven re-anchor
+			// read. `applyLive` is the same path used by mount and ↻ synchronization.
+			applyLive(await readLivePlayback())
+		}
+		finally {
+			remoteBusy.current = false
+			setControlBusy(false)
+		}
+	}
+
+	const latest = useLatestPlayed(state === 'ready' && !liveSnapshot(np))
+	const shared: NpShared = {
+		np,
+		state,
+		sync,
+		syncing,
+		latest,
+		onOpenLyrics,
+		liveMoment,
+		clock,
+		fullTier,
+		controlBusy,
+		notice,
+		onToggle: () => {
+			void onToggle()
+		},
+		onSeek: (positionMs) => {
+			void onSeek(positionMs)
+		},
+	}
+	if (variant === 'list')
+		return <NowPlayingList {...shared} />
+	if (variant === 'banner')
+		return <NowPlayingBanner {...shared} />
+	return <NowPlayingFull {...shared} />
 }

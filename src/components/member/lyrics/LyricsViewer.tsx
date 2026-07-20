@@ -66,6 +66,8 @@ import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyr
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
+import { estimatedMs } from './clockEstimate'
+import type { ClockAnchor } from './clockEstimate'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 
@@ -271,7 +273,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // instant `wallMs` (performance.now()). estimatedMs = anchorMs + (now - wallMs).
   // Seeded on open (from initialProgressMs) and on each re-sync. `null` until a
   // position is available — follow with a null anchor simply doesn't advance.
-  const anchor = useRef<{ ms: number, wallMs: number } | null>(null)
+  const anchor = useRef<ClockAnchor | null>(null)
 
   // Follow/suspend (FEAT-lyrics-viewer-controls Step 1): trackable rows follow
   // the estimate by default. Browse input pauses that loop only while a live
@@ -295,7 +297,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     clearSuspendTimer()
     const a = anchor.current
     if (a && n > 0)
-      setFocus(focusIndexForMs(segs, a.ms + (performance.now() - a.wallMs) + SYNC_LEAD_MS))
+      setFocus(focusIndexForMs(segs, estimatedMs(a) + SYNC_LEAD_MS))
     setSuspended(false)
   }
 
@@ -352,13 +354,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
       endSynced.current = false
     if (n > 0)
-      setFocus(focusIndexForMs(segs, progressMs + SYNC_LEAD_MS + (performance.now() - anchor.current.wallMs)))
+      setFocus(focusIndexForMs(segs, estimatedMs(anchor.current) + SYNC_LEAD_MS))
   }
 
   // One-shot initial-focus seed (position + the wall instant it was read at):
   // consumed exactly once by the next load (open with position, or a refresh
   // that swapped tracks), then cleared.
-  const pendingSeed = useRef<{ ms: number, wallMs: number } | null>(
+  const pendingSeed = useRef<ClockAnchor | null>(
     initialProgressMs != null ? { ms: initialProgressMs, wallMs: initialProgressAtMs ?? performance.now() } : null,
   )
 
@@ -399,7 +401,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
           anchor.current = seed
           endSynced.current = false
-          setFocus(focusIndexForMs(data.segments, seed.ms + SYNC_LEAD_MS + (performance.now() - seed.wallMs)))
+          setFocus(focusIndexForMs(data.segments, estimatedMs(seed) + SYNC_LEAD_MS))
         }
       })
       .catch(() => {
@@ -447,7 +449,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           applyAnchor(r.progressMs, r.readAtMs)
         }
       }
-      else if (r.state === 'idle') {
+      else if (r.state === 'idle' || r.state === 'paused') {
         setNotice('지금 재생 중인 곡이 없어요')
       }
       else {
@@ -594,17 +596,17 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       const a = anchor.current
       if (!a)
         return
-      const estimatedMs = a.ms + (performance.now() - a.wallMs) + SYNC_LEAD_MS
+      const playbackMs = estimatedMs(a) + SYNC_LEAD_MS
       // End-of-track auto re-sync (FEAT-lyrics-end-resync): once the estimate
       // runs past the track length + grace, fire ONE automatic refresh — next
       // track playing swaps the lyrics in place, idle keeps the view with the
       // notice. Live entries only (`canRefresh`); armed once per anchor seed.
-      if (canRefresh && durationMs != null && !endSynced.current && estimatedMs >= durationMs + END_GRACE_MS) {
+      if (canRefresh && durationMs != null && !endSynced.current && playbackMs >= durationMs + END_GRACE_MS) {
         endSynced.current = true
         void refreshRef.current()
       }
       setFocus((f) => {
-        const nf = focusIndexForMs(segs, estimatedMs)
+        const nf = focusIndexForMs(segs, playbackMs)
         return nf !== f ? nf : f
       })
     }
