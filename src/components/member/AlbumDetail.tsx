@@ -25,6 +25,7 @@ import { reviewHref } from '@lib/entityLinks'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { AlbumDetailView, Header } from '../album/AlbumDetailView'
+import { GenreLink } from '../shared/GenreLink'
 import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
 import { LyricsSheet } from './lyrics/LyricsSheet'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
@@ -499,6 +500,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
 
 // ── minimal body (no real albumId — sample tracks / reviews) ─────────────────
 function MinimalBody({ album }: { album: DetailTarget }) {
+  const hasMeta = Boolean(album.track || album.genre || album.year)
   return (
     <>
       <Header cover={album.cover} title={album.track || album.album} artist={album.artist} meta={[]} kicker={album.track ? '트랙' : '앨범'} />
@@ -507,7 +509,17 @@ function MinimalBody({ album }: { album: DetailTarget }) {
           <Stars score={album.rating} size={18} /> :
           <span className="unrated">미평가</span>}
         <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)', marginTop: 10, lineHeight: 1.7 }}>
-          {[album.track ? `수록: ${album.album}` : null, album.genre || null, album.year ? `${album.year}년` : null].filter(Boolean).join(' · ') || '추가 정보 없음'}
+          {hasMeta ?
+            (
+              <>
+                {album.track && `수록: ${album.album}`}
+                {album.track && (album.genre || album.year) && ' · '}
+                {album.genre && <GenreLink label={album.genre} />}
+                {album.genre && album.year && ' · '}
+                {album.year && `${album.year}년`}
+              </>
+            ) :
+            '추가 정보 없음'}
         </div>
       </div>
     </>

@@ -3292,6 +3292,8 @@ export interface components {
              * @default 0
              */
             album_count: number;
+            /** Catalog Genres */
+            catalog_genres?: components["schemas"]["Music_CatalogGenreItem"][];
             /** Followers */
             followers?: number | null;
             /** Genres */
@@ -3451,6 +3453,17 @@ export interface components {
             title?: string | null;
             /** Track Number */
             track_number?: number | null;
+        };
+        /**
+         * CatalogGenreItem
+         * @description One taxonomy genre chip — label for display, slug for the /genres/?g=
+         *     deep link (RFC-ui-surface-unification Step 5).
+         */
+        Music_CatalogGenreItem: {
+            /** Label */
+            label: string;
+            /** Slug */
+            slug: string;
         };
         /** ExplainEntry */
         Music_ExplainEntry: {

@@ -15,8 +15,37 @@ import PartialStars from '@components/partial-stars.astro'
 import { AddToBucketMenu } from '@components/member/pocket/AddToBucketMenu'
 import ReviewTrackAdder from '@components/member/pocket/ReviewTrackAdder'
 import { getArtistNameMap, resolveArtistLinks } from '@lib/artistNames'
+import { genreMapHref } from '@lib/genres'
 
 export const prerender = true
+
+interface BuildGenreNode {
+  label: string
+  slug: string
+  children?: BuildGenreNode[]
+}
+
+// One build-module read for every generated review page. An offline build or API
+// blip degrades every genre label to its existing plain-text rendering.
+const genreSlugMapPromise = (async () => {
+  const labels = new Map<string, string>()
+  try {
+    const base = import.meta.env.PUBLIC_BACKEND_API_URL as string
+    const res = await fetch(`${base}/api/genres/tree`)
+    if (!res.ok)
+      return labels
+    const data = await res.json() as { genres?: BuildGenreNode[] }
+    const visit = (node: BuildGenreNode) => {
+      labels.set(node.label.toLocaleLowerCase(), node.slug)
+      node.children?.forEach(visit)
+    }
+    data.genres?.forEach(visit)
+  }
+  catch {
+    // offline build → genre labels stay plain text
+  }
+  return labels
+})()
 
 export async function getStaticPaths() {
   const entries = await getCollection('blog')
@@ -71,6 +100,13 @@ const genreLabel = genres[0] ?? post.category ?? ''
 // FEAT-genre-subgenres Step 3: editorial tier-1 sub-genre tags (the critic's
 // precise genre call) — distinct from the machine tier-0 album `genres` above.
 const subgenres = post.subgenres ?? []
+const genreSlugMap = await genreSlugMapPromise
+function genreHref(label: string) {
+  const slug = genreSlugMap.get(label.toLocaleLowerCase())
+  return slug ? genreMapHref(slug) : null
+}
+const genreLabelHref = genreLabel ? genreHref(genreLabel) : null
+const linkedSubgenres = subgenres.map(sg => ({ ...sg, href: genreHref(sg.label) }))
 const recordLabel = post.musicReview?.label ?? null
 ---
 
@@ -110,7 +146,9 @@ const recordLabel = post.musicReview?.label ?? null
           <!-- Header -->
           <header class="lfq-header">
             <div class="lfq-kicker">
-              {genreLabel && <span class="lfq-kicker-item lfq-kicker-accent">{genreLabel.toUpperCase()}</span>}
+              {genreLabel && (genreLabelHref ?
+                <a class="lfq-kicker-item lfq-kicker-accent" href={genreLabelHref}>{genreLabel.toUpperCase()}</a> :
+                <span class="lfq-kicker-item lfq-kicker-accent">{genreLabel.toUpperCase()}</span>)}
               {genreLabel && <span class="lfq-kicker-sep">·</span>}
               <span class="lfq-kicker-item">{publishedDate}</span>
               <span class="lfq-kicker-sep">·</span>
@@ -181,8 +219,10 @@ const recordLabel = post.musicReview?.label ?? null
               )}
               {subgenres.length > 0 && (
                 <ul class="lfq-hero-subgenres" aria-label="서브장르">
-                  {subgenres.map(sg => (
-                    <li class="lfq-subgenre-chip">{sg.label}</li>
+                  {linkedSubgenres.map(sg => (
+                    <li class="lfq-subgenre-chip">
+                      {sg.href ? <a class="lfq-subgenre-link" href={sg.href}>{sg.label}</a> : sg.label}
+                    </li>
                   ))}
                 </ul>
               )}
@@ -518,6 +558,11 @@ const recordLabel = post.musicReview?.label ?? null
     margin-bottom: 18px;
   }
   .lfq-kicker-accent { color: var(--color-accent); font-weight: 600; }
+  a.lfq-kicker-accent {
+    text-decoration-line: underline;
+    text-decoration-color: var(--color-faded);
+    text-underline-offset: 3px;
+  }
   .lfq-kicker-bnm {
     color: var(--color-bg);
     background: var(--color-accent);
@@ -686,6 +731,7 @@ const recordLabel = post.musicReview?.label ?? null
     border-radius: 999px;
     white-space: nowrap;
   }
+  .lfq-subgenre-link { color: inherit; text-decoration: none; }
   /* Accent-bordered score card (RFC: stars only, no number) */
   .lfq-score {
     margin-top: 8px;

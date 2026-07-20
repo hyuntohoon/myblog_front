@@ -107,6 +107,17 @@ export default function GenreMap() {
 		}
 	}, [])
 
+	useEffect(() => {
+		if (!doc)
+			return
+		const slug = new URLSearchParams(location.search).get('g')
+		if (!slug)
+			return
+		const match = Object.values(doc.nodes).find(node => node.slug === slug)
+		if (match)
+			onSelect(match.id)
+	}, [doc, onSelect])
+
 	const openPeek = useCallback((id: string) => {
 		setPeekId((cur) => {
 			if (cur)

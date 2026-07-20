@@ -3,10 +3,10 @@
  *
  * The honest version of a "community trends" block: no trending artists, no
  * votes, no play counts — just the genre distribution of the catalog as
- * share-bars (bar length ∝ album_count), each row linking into the filtered
+ * share-bars (bar length ∝ album_count), each row linking into the matching
  * review list. This is a COMPACT TEASER, not the full /genres Outliner: it
  * shows the top N genres by album_count and hands off to the real Genre Map
- * page (right-side "장르 맵 →") and to /reviews?genre=… per row.
+ * page (right-side "장르 맵 →") and its ego view per row.
  *
  * Data comes from the same source the /genres page uses — GET /api/genres/tree
  * via fetchGenreTree() — so there is one album_count source of truth. The
@@ -19,13 +19,14 @@
  */
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { fetchGenreTree } from '@lib/genres'
+import { fetchGenreTree, genreMapHref } from '@lib/genres'
 import type { GenreNode } from '@lib/genres'
 import { SectionTitle } from './ui'
 
 const TOP_N = 6
 
 interface GenreRow {
+	slug: string
 	label: string
 	count: number
 }
@@ -156,8 +157,8 @@ function Row({ g, i, max, total }: { g: GenreRow, i: number, max: number, total:
 		<a
 			className="bg-row"
 			data-rank={i}
-			href={`/reviews?genre=${encodeURIComponent(g.label)}`}
-			title={`${g.label} 리뷰 보기`}
+			href={genreMapHref(g.slug)}
+			title={`${g.label} 장르 맵 보기`}
 			style={{ ...rowStyle, ...(i === 0 ? { borderTop: 0 } : null) }}
 		>
 			<span
@@ -209,7 +210,7 @@ export default function BrowseGenres() {
 	const rows = useMemo<GenreRow[]>(() => {
 		return nodes
 			.filter(n => n.albumCount > 0)
-			.map(n => ({ label: n.label, count: n.albumCount }))
+			.map(n => ({ slug: n.slug, label: n.label, count: n.albumCount }))
 			.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
 			.slice(0, TOP_N)
 	}, [nodes])
