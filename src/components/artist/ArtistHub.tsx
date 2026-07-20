@@ -10,6 +10,7 @@ import type { ArtistReviewCard } from '../../lib/artistReviews'
 import type { AlbumListItem, ArtistHero, TopTrackItem } from '../../scripts/write/artistApi'
 import { fetchArtistAlbums, fetchArtistHero, fetchArtistTopTracks } from '../../scripts/write/artistApi'
 import { openAlbum, openTrackAlbum, reviewHref } from '@lib/entityLinks'
+import { genreMapHref } from '@lib/genres'
 import { Cover, SectionTitle, Stars } from '../home/ui'
 
 interface Props {
@@ -21,6 +22,14 @@ interface Props {
 	/** Album ids that have a review — excluded from the dimmed catalog. */
 	reviewedAlbumIds: string[]
 }
+
+type CatalogSort = 'popular' | 'latest' | 'title'
+
+const CATALOG_SORTS: { value: CatalogSort, label: string }[] = [
+	{ value: 'popular', label: '인기순' },
+	{ value: 'latest', label: '최신순' },
+	{ value: 'title', label: '제목순' },
+]
 
 function fmtFollowers(n: number | null | undefined): string | null {
 	if (n == null)
@@ -42,6 +51,7 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 	const [albums, setAlbums] = useState<AlbumListItem[]>([])
 	const [topTracks, setTopTracks] = useState<TopTrackItem[]>([])
 	const [status, setStatus] = useState<'loading' | 'ready' | 'notfound'>('loading')
+	const [catalogSort, setCatalogSort] = useState<CatalogSort>('popular')
 
 	useEffect(() => {
 		let alive = true
@@ -77,11 +87,39 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 	}
 
 	const displayName = hero?.name ?? name
-	const genres = hero?.genres ?? []
+	const catalogGenres = hero?.catalog_genres ?? []
+	const spotifyGenres = hero?.genres ?? []
 	const reviewed = new Set(reviewedAlbumIds)
 	// catalog = albums NOT yet reviewed (the reviewed ones live in the section above)
 	const catalog = albums.filter(a => !a.id || !reviewed.has(a.id))
+	if (catalogSort === 'latest') {
+		catalog.sort((a, b) => {
+			if (!a.release_date)
+				return b.release_date ? 1 : 0
+			if (!b.release_date)
+				return -1
+			return b.release_date.localeCompare(a.release_date)
+		})
+	}
+	else if (catalogSort === 'title') {
+		catalog.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
+	}
 	const hasReviews = reviews.length > 0
+	const sortControls = (
+		<div className="art-sort mono" role="group" aria-label="디스코그래피 정렬">
+			{CATALOG_SORTS.map(option => (
+				<button
+					key={option.value}
+					type="button"
+					className={catalogSort === option.value ? 'is-active' : ''}
+					aria-pressed={catalogSort === option.value}
+					onClick={() => setCatalogSort(option.value)}
+				>
+					{option.label}
+				</button>
+			))}
+		</div>
+	)
 
 	return (
 		<div className="art-root">
@@ -95,9 +133,11 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 				<div className="art-id-info">
 					<div className="art-id-kicker meta">아티스트</div>
 					<h1 className="art-id-name serif">{displayName}</h1>
-					{genres.length > 0 && (
+					{(catalogGenres.length > 0 || spotifyGenres.length > 0) && (
 						<div className="art-id-genres">
-							{genres.map(g => <span key={g} className="art-id-gchip">{g}</span>)}
+							{catalogGenres.length > 0 ?
+								catalogGenres.map(g => <a key={g.slug} className="art-id-gchip" href={genreMapHref(g.slug)}>{g.label}</a>) :
+								spotifyGenres.map(g => <span key={g} className="art-id-gchip">{g}</span>)}
 						</div>
 					)}
 					{hero && (
@@ -169,6 +209,7 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 				) :
 				(
 					<section className="art-block art-cov-empty">
+						<p className="art-cov-empty-kicker mono">THE CRITIC’S LENS</p>
 						<p className="art-cov-empty-lead">아직 이 아티스트의 평론이 없습니다.</p>
 						<p className="art-cov-empty-sub">
 							{displayName}
@@ -183,6 +224,7 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 					<SectionTitle
 						kicker={hasReviews ? 'Catalog · not yet reviewed' : 'Catalog'}
 						title="디스코그래피"
+						right={sortControls}
 					/>
 					{status === 'loading' ?
 						<div className="art-pending">불러오는 중…</div> :

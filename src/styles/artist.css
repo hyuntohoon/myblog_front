@@ -35,7 +35,7 @@
 }
 .art-id-photo img { width: 100%; height: 100%; object-fit: cover; }
 .art-letter {
-	font-family: Georgia, 'Times New Roman', serif;
+	font-family: var(--font-serif);
 	font-style: italic;
 	font-size: clamp(48px, 12cqw, 96px);
 	color: var(--color-faded);
@@ -46,7 +46,7 @@
 	font-size: clamp(38px, 6vw, 70px);
 	font-weight: 500;
 	letter-spacing: -.035em;
-	line-height: 1.0;
+	line-height: var(--leading-tight);
 	margin: 10px 0 0;
 	text-wrap: balance;
 	overflow-wrap: anywhere;
@@ -59,12 +59,15 @@
 	border: 1px solid var(--color-border);
 	padding: 6px 11px;
 	white-space: nowrap;
+	text-decoration: none;
+	transition: border-color .16s, color .16s;
 }
+a.art-id-gchip:hover { color: var(--color-accent); border-color: var(--color-accent); }
 .art-id-counts {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	font-size: 11.5px;
+	font-size: var(--text-xs);
 	letter-spacing: .08em;
 	text-transform: uppercase;
 	color: var(--color-subtle);
@@ -110,7 +113,7 @@
 	left: 10px;
 	bottom: 10px;
 	white-space: nowrap;
-	font-size: 10px;
+	font-size: var(--text-2xs);
 	letter-spacing: .1em;
 	text-transform: uppercase;
 	color: #fff;
@@ -123,7 +126,7 @@
 	font-size: clamp(19px, 2.2vw, 23px);
 	font-weight: 500;
 	letter-spacing: -.015em;
-	line-height: 1.16;
+	line-height: var(--leading-tight);
 	margin: 9px 0 0;
 	transition: color .18s;
 	text-wrap: pretty;
@@ -131,8 +134,8 @@
 .art-rev-card:hover .art-rev-title { color: var(--color-accent); }
 .art-rev-meta { margin-top: 8px; }
 .art-rev-pull {
-	font-size: 14.5px;
-	line-height: 1.55;
+	font-size: var(--text-md);
+	line-height: var(--leading-normal);
 	color: var(--color-faded);
 	margin: 11px 0 0;
 	max-width: 42ch;
@@ -147,7 +150,13 @@
 .art-cov-empty {
 	border-top: 1px solid var(--color-border-soft);
 	padding-top: clamp(20px, 3vw, 30px);
-	max-width: 640px;
+	max-width: 52ch;
+}
+.art-cov-empty-kicker {
+	font-size: var(--text-2xs);
+	letter-spacing: .1em;
+	color: var(--color-faded);
+	margin: 0 0 10px;
 }
 .art-cov-empty-lead {
 	font-size: clamp(20px, 2.6vw, 28px);
@@ -156,8 +165,8 @@
 	margin: 0;
 }
 .art-cov-empty-sub {
-	font-size: 15.5px;
-	line-height: 1.62;
+	font-size: var(--text-md);
+	line-height: var(--leading-relaxed);
 	color: var(--color-subtle);
 	margin: 12px 0 0;
 	max-width: 52ch;
@@ -172,6 +181,25 @@
 	align-items: start;
 }
 .art-disco-block { min-width: 0; }
+.art-sort {
+	display: inline-flex;
+	align-items: center;
+	gap: 12px;
+}
+.art-sort button {
+	appearance: none;
+	border: 0;
+	background: none;
+	padding: 0;
+	font: inherit;
+	font-size: var(--text-xs);
+	letter-spacing: .06em;
+	color: var(--color-faded);
+	cursor: pointer;
+	transition: color .16s;
+}
+.art-sort button:hover,
+.art-sort button.is-active { color: var(--color-text); }
 .art-disco-grid {
 	display: grid;
 	/* auto-fit + capped track + start-align so a lone release doesn't sit in a
@@ -205,7 +233,7 @@ button.art-disco-item {
 	font-size: var(--text-md);
 	font-weight: 500;
 	letter-spacing: -.01em;
-	line-height: 1.2;
+	line-height: var(--leading-snug);
 	margin: 11px 0 0;
 	text-wrap: pretty;
 }
@@ -214,7 +242,7 @@ button.art-disco-item {
 	flex-direction: column;
 	gap: 3px;
 	margin-top: 6px;
-	font-size: 10px;
+	font-size: var(--text-2xs);
 	letter-spacing: .05em;
 	text-transform: uppercase;
 	color: var(--color-faded);
@@ -240,7 +268,7 @@ button.art-disco-item {
 	width: 22px;
 }
 .art-tt-name {
-	font-size: 16px;
+	font-size: var(--text-md);
 	font-weight: 500;
 	letter-spacing: -.01em;
 	color: var(--color-text);
@@ -267,7 +295,7 @@ button.art-disco-item {
 
 .art-pending {
 	color: var(--color-subtle);
-	font-size: 14px;
+	font-size: var(--text-base);
 	padding: 24px 0;
 }
 

@@ -15,6 +15,7 @@ import { addBucketItem } from '@lib/buckets'
 import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { TrackRow } from '../shared/TrackRow'
+import { GenreLink } from '../shared/GenreLink'
 import { listSavedTracks } from './analysis.api'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { LikedAnalysis } from './LikedAnalysis'
@@ -320,7 +321,9 @@ function Card({ row, onOpen, onPromote }: {
 				</div>
 			</div>
 			<div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '1px solid var(--color-border-soft)', paddingTop: 9 }}>
-				<span className="chip" style={{ pointerEvents: 'none', padding: '3px 7px', fontSize: 9.5 }}>{row.genre}</span>
+				<span className="chip" style={{ cursor: 'default', padding: '3px 7px', fontSize: 9.5 }}>
+					{row.genre === '—' ? row.genre : <GenreLink label={row.genre} />}
+				</span>
 				<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{row.likedAt.slice(5)}</span>
 				<span style={{ marginLeft: 'auto' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>
 			</div>

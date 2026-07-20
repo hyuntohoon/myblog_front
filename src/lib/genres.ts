@@ -73,11 +73,45 @@ async function asJson<T>(res: Response | null): Promise<T> {
   return res.json() as Promise<T>
 }
 
+let genreTreePromise: Promise<GenreNode[]> | null = null
+
 /** GET /api/genres/tree — the full containment forest (public read). */
-export async function fetchGenreTree(): Promise<GenreNode[]> {
-  const res = await apiFetch(`${BASE}/api/genres/tree`, { method: 'GET' })
-  const data = await asJson<ApiTreeResponse>(res)
-  return (data.genres ?? []).map(mapNode)
+export function fetchGenreTree(): Promise<GenreNode[]> {
+  if (!genreTreePromise) {
+    genreTreePromise = apiFetch(`${BASE}/api/genres/tree`, { method: 'GET' })
+      .then(asJson<ApiTreeResponse>)
+      .then(data => (data.genres ?? []).map(mapNode))
+  }
+  return genreTreePromise
+}
+
+/** Read-only deep link to a genre's ego view. */
+export function genreMapHref(slug: string): string {
+  return `/genres/?g=${encodeURIComponent(slug)}`
+}
+
+let genreSlugMapPromise: Promise<Map<string, string>> | null = null
+
+function genreSlugMap(): Promise<Map<string, string>> {
+  if (!genreSlugMapPromise) {
+    genreSlugMapPromise = fetchGenreTree()
+      .then((forest) => {
+        const labels = new Map<string, string>()
+        const visit = (node: GenreNode) => {
+          labels.set(node.label.toLocaleLowerCase(), node.slug)
+          node.children.forEach(visit)
+        }
+        forest.forEach(visit)
+        return labels
+      })
+      .catch(() => new Map())
+  }
+  return genreSlugMapPromise
+}
+
+/** Resolve an exact, case-insensitive taxonomy label to its genre slug. */
+export async function resolveGenreSlug(label: string): Promise<string | null> {
+  return (await genreSlugMap()).get(label.toLocaleLowerCase()) ?? null
 }
 
 /**
