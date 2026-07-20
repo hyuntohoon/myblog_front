@@ -410,7 +410,7 @@
 	.lk-flow-grid { grid-template-columns: 1fr; }
 }
 
-/* ── 가사 뷰어 (Lyrics Viewer) — FEAT-lyrics-viewer-controls Step 1 ───────
+/* ── 가사 뷰어 (Lyrics Viewer) — FEAT-lyrics-viewer-controls Step 2 ───────
    Spotify-style: the viewer is ALWAYS dark regardless of site theme, with a
    full-bleed album-cover blur backdrop and large sans-serif focus-line
    typography (3-level emphasis: focus / near / far). Browse input temporarily
@@ -467,12 +467,12 @@
 	pointer-events: none;
 }
 
-/* Behavior A return control — floats above the rail, outside the moving list.
+/* Behavior A return control — floats near the panel foot, outside the moving list.
    The ring is CSS-clocked so suspend adds one timeout but no per-frame JS. */
 .lyv-return {
 	position: absolute;
 	left: 50%;
-	bottom: calc(68px + env(safe-area-inset-bottom));
+	bottom: calc(28px + env(safe-area-inset-bottom));
 	z-index: 4;
 	display: inline-flex;
 	align-items: center;
@@ -518,14 +518,14 @@
 .lyv-head,
 .lyv-note,
 .lyv-status,
-.lyv-body,
-.lyv-rail { position: relative; z-index: 1; }
+.lyv-body { position: relative; z-index: 1; }
 
 .lyv-head {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	padding: 8px 16px 4px;
+	z-index: 5;
 }
 /* eyebrow + track identity (title/artist from the live read; absent on the
    debug/static entries) */
@@ -567,8 +567,9 @@
 	color: rgba(255,255,255,0.55);
 }
 .lyv-btn {
-	width: 34px;
-	height: 34px;
+	width: 30px;
+	height: 30px;
+	flex: 0 0 auto;
 	display: grid;
 	place-items: center;
 	font-size: 13px;
@@ -583,16 +584,22 @@
 .lyv-btn:hover { color: #fff; border-color: rgba(255,255,255,0.5); }
 .lyv-btn:disabled { opacity: 0.3; cursor: default; }
 .lyv-btn:disabled:hover { color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.16); }
-.lyv-head-actions { display: flex; align-items: center; gap: 6px; }
+.lyv-head-actions { display: flex; align-items: center; gap: 8px; }
 .lyv-btn.is-refreshing { animation: lyv-spin 0.9s linear infinite; }
 @keyframes lyv-spin { to { transform: rotate(360deg); } }
 
-/* translation controls (FEAT-lyrics-translation Step 4) — a pill in the head
-   actions drives the request lifecycle; `is-on` marks the active 번역 toggle */
+/* Translation controls keep every lifecycle state in one compact head group;
+   `is-on` marks the active 번역 toggle. */
+.lyv-tr-cluster {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 30px;
+}
 .lyv-tr-btn {
-	height: 42px;
-	padding: 0 16px;
-	font-size: var(--text-xs);
+	height: 30px;
+	padding: 0 10px;
+	font-size: 10px;
 	letter-spacing: 0.1em;
 	color: var(--color-subtle);
 	background: none;
@@ -606,16 +613,159 @@
 .lyv-tr-btn:disabled:hover { color: var(--color-subtle); border-color: var(--color-border); }
 .lyv-tr-btn.is-on { color: var(--color-accent); border-color: var(--color-accent); }
 .lyv-tr-state {
-	font-size: var(--text-xs);
+	display: inline-flex;
+	align-items: center;
+	height: 30px;
+	font-size: 10px;
 	letter-spacing: 0.1em;
 	color: var(--color-faded);
-	padding: 0 6px;
+	padding: 0 4px;
 }
 .lyv-tr-origin {
 	font-size: 10px;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 	color: var(--color-faded);
+}
+.lyv-manual-note {
+	font-size: 11px;
+	letter-spacing: 0.08em;
+	color: rgba(255,255,255,0.5);
+	white-space: nowrap;
+}
+
+/* Header settings: an always-dark utility plate outside the moving list. */
+.lyv-settings-popover {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 16px;
+	z-index: 6;
+	width: 232px;
+	max-width: calc(100vw - 32px);
+	box-sizing: border-box;
+	padding: 12px;
+	color: #fff;
+	background: rgba(9,9,9,0.92);
+	border: 1px solid rgba(255,255,255,0.18);
+	border-radius: 12px;
+	box-shadow: 0 14px 38px rgba(0,0,0,0.38);
+	animation: lyv-settings-in 0.12s ease-out;
+}
+@keyframes lyv-settings-in {
+	from { opacity: 0; transform: translateY(-4px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+.lyv-settings-section + .lyv-settings-section {
+	margin-top: 13px;
+	padding-top: 12px;
+	border-top: 1px solid rgba(255,255,255,0.1);
+}
+.lyv-settings-eyebrow {
+	display: block;
+	margin-bottom: 8px;
+	font-size: 10px;
+	line-height: 1;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: rgba(255,255,255,0.5);
+}
+.lyv-settings-styles {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+.lyv-settings-style {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 6px 7px;
+	font-family: var(--font-sans);
+	color: rgba(255,255,255,0.68);
+	background: rgba(255,255,255,0.035);
+	border: 1.5px solid transparent;
+	border-radius: 9px;
+	cursor: pointer;
+	transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.lyv-settings-style:hover { color: #fff; background: rgba(255,255,255,0.07); }
+.lyv-settings-style.is-on {
+	color: #fff;
+	border-color: var(--color-accent);
+}
+.lyv-settings-preview {
+	width: 64px;
+	height: 40px;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 4px;
+	box-sizing: border-box;
+	padding: 0 10px;
+	border-radius: 7px;
+	overflow: hidden;
+}
+.lyv-settings-preview.is-blur {
+	align-items: center;
+	background: radial-gradient(circle at 42% 38%, #657486 0%, #34404d 36%, #111418 78%, #090909 100%);
+}
+.lyv-settings-preview.is-flat {
+	align-items: flex-start;
+	background: rgba(52,64,74,0.9);
+}
+.lyv-settings-preview > span {
+	display: block;
+	height: 2px;
+	border-radius: var(--radius-pill);
+	background: rgba(255,255,255,0.42);
+}
+.lyv-settings-preview > span:nth-child(1) { width: 28px; }
+.lyv-settings-preview > span:nth-child(2) { width: 38px; }
+.lyv-settings-preview > span:nth-child(3) { width: 23px; }
+.lyv-settings-preview.is-blur > span:nth-child(2) { background: rgba(255,255,255,0.95); }
+.lyv-settings-preview.is-flat > span:nth-child(1) { background: rgba(255,255,255,0.95); }
+.lyv-settings-style-label { font-size: 11px; line-height: 1; }
+.lyv-settings-returns {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+.lyv-settings-return {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 8px;
+	font-family: var(--font-sans);
+	color: rgba(255,255,255,0.78);
+	text-align: left;
+	background: transparent;
+	border: 0;
+	border-radius: 8px;
+	cursor: pointer;
+	transition: color 0.12s, background 0.12s;
+}
+.lyv-settings-return:hover { color: #fff; background: rgba(255,255,255,0.07); }
+.lyv-settings-return.is-on { color: #fff; background: rgba(255,255,255,0.12); }
+.lyv-settings-dot {
+	width: 7px;
+	height: 7px;
+	flex: 0 0 auto;
+	background: rgba(255,255,255,0.22);
+	border-radius: 50%;
+}
+.lyv-settings-return.is-on .lyv-settings-dot { background: var(--color-accent); }
+.lyv-settings-return-copy {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.lyv-settings-return-name { font-size: 12px; font-weight: 700; line-height: 1.2; }
+.lyv-settings-return-desc {
+	font-size: 11px;
+	line-height: 1.25;
+	color: rgba(255,255,255,0.48);
 }
 
 /* interleaved Korean translation under the original line — em-sized so it
@@ -799,41 +949,6 @@
 	margin-top: 5px;
 }
 
-/* Bottom rail — temporary return-behavior + viewer-style segmented controls;
-   Step 2 will absorb both into its settings popover. The position counter is
-   demoted to a screen-reader-only region in the JSX. */
-.lyv-rail {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 10px;
-	padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
-}
-
-/* shared segmented control — pill on a translucent dark plate */
-.lyv-mode {
-	display: inline-flex;
-	background: rgba(0,0,0,0.4);
-	border: 1px solid rgba(255,255,255,0.18);
-	border-radius: var(--radius-pill);
-	overflow: hidden;
-}
-.lyv-mode-btn {
-	font-family: var(--font-mono);
-	font-size: 10px;
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
-	color: rgba(255,255,255,0.6);
-	background: none;
-	border: none;
-	padding: 8px 16px;
-	cursor: pointer;
-	transition: color 0.15s, background 0.15s;
-}
-.lyv-mode-btn:hover:not(:disabled) { color: rgba(255,255,255,0.9); }
-.lyv-mode-btn.is-on { background: rgba(255,255,255,0.16); color: #fff; }
-.lyv-mode-btn:disabled { opacity: 0.3; cursor: default; }
-
 /* screen-reader-only — keeps the focus position announced without visual chrome */
 .lyv-sr-only {
 	position: absolute;
@@ -880,6 +995,7 @@
 	.lyv-bg { transition: none; }
 	.lyv-btn.is-refreshing { animation: none; }
 	.lyv-return-ring-progress { animation: none; }
+	.lyv-settings-popover { animation: none; }
 }
 
 /* ── LikedBoard list rows (shared TrackRow consumer) ─────────────────────────

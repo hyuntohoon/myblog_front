@@ -53,6 +53,10 @@
 // returns to the live line through either a countdown pill (A) or an un-dimmed
 // browse window with idle snap-back (D). Explicit line taps still re-anchor.
 //
+// FEAT-lyrics-viewer-controls Step 2 replaces the interim bottom rail with a
+// header ⚙ settings popover for style / return behavior and regroups the header
+// controls into a quieter actions cluster.
+//
 // FEAT-lyrics-translation Step 4: a 번역 toggle interleaves each segment's
 // `text_ko` dimmed under its original line (the focus/nav unit stays the
 // original segment), and a 번역 요청 button drives the request lifecycle
@@ -62,7 +66,7 @@
 // FEAT-lyrics-auto-progression Step 2 is visual-only (album-blur backdrop +
 // always-dark + large sans-serif typography); it lives in the `.lyv-*` CSS.
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { KeyboardEvent, PointerEvent, WheelEvent } from 'react'
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
@@ -268,6 +272,32 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // Whether the row carries timestamps auto-advance can consume. Computed from
   // the loaded phase; plain-only rows (trackable === false) are manual-only.
   const trackable = phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.trackable
+  const settingsReady = phase.k === 'ready' && phase.data.availability === 'ok' && n > 0
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsPopoverRef = useRef<HTMLDivElement>(null)
+  const settingsTriggerRef = useRef<HTMLButtonElement>(null)
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const isSettingsOpen = settingsOpen && settingsReady
+  // Nested dismissable: ESC closes settings first, then the viewer on the next
+  // press. Focus stays on the trigger while picking for live comparison.
+  useDismissable(isSettingsOpen, closeSettings, settingsPopoverRef, { trapFocus: false, autoFocus: false })
+  // Outside-pointerdown close (useDismissable doesn't cover outside-click).
+  useEffect(() => {
+    if (!isSettingsOpen)
+      return
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node
+      if (settingsPopoverRef.current?.contains(t) || settingsTriggerRef.current?.contains(t))
+        return
+      setSettingsOpen(false)
+    }
+    document.addEventListener('pointerdown', onDown, true)
+    return () => document.removeEventListener('pointerdown', onDown, true)
+  }, [isSettingsOpen])
+  useEffect(() => {
+    if (!settingsReady)
+      setSettingsOpen(false)
+  }, [settingsReady])
 
   // Clock-estimate anchor (shared idiom in @lib/clockEstimate since
   // member-player Step 3): position `ms` captured at wall instant `wallMs`.
@@ -315,7 +345,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   }
 
   const pickBehavior = (next: LyvBehavior) => {
-    // The interim switch is itself an explicit request to resume following;
+    // A settings change is itself an explicit request to resume following;
     // snap back before adopting the next behavior's timer/UI.
     if (suspended)
       returnToFollow()
@@ -621,13 +651,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // click that fires on pointerup so it can't double as tap-to-focus.
   const drag = useRef<{ y0: number, applied: number, moved: boolean } | null>(null)
   const suppressTap = useRef(false)
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0)
       return
     drag.current = { y0: e.clientY, applied: 0, moved: false }
     suppressTap.current = false
   }
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current
     if (!d)
       return
@@ -757,7 +787,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
             {phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
               translation?.status === 'done' ?
                 (
-                  <>
+                  <div className="lyv-tr-cluster">
                     {translation.origin === 'manual' && <span className="lyv-tr-origin mono">manual</span>}
                     <button
 	type="button"
@@ -767,25 +797,32 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                     >
                       번역
                     </button>
-                  </>
+                  </div>
                 ) :
                 koreanDominant ?
                   null :
                   translation?.status === 'requested' ?
-                    <span className="lyv-tr-state mono" role="status">요청됨</span> :
                     (
-                      <button
+                      <div className="lyv-tr-cluster">
+                        <span className="lyv-tr-state mono" role="status">요청됨</span>
+                      </div>
+                    ) :
+                    (
+                      <div className="lyv-tr-cluster">
+                        <button
 	type="button"
 	className="lyv-tr-btn mono"
 	disabled={requesting}
 	onClick={() => {
                           void requestTr()
                         }}
-                      >
-                        {translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
-                      </button>
+                        >
+                          {translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
+                        </button>
+                      </div>
                     )
             )}
+            {settingsReady && !trackable && <span className="lyv-manual-note mono">동기화 없음 — 수동</span>}
             {canRefresh && (
               <button
 	type="button"
@@ -799,8 +836,95 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                 ↻
               </button>
             )}
+            {settingsReady && (
+              <button
+	ref={settingsTriggerRef}
+	type="button"
+	className="lyv-btn"
+	onClick={() => setSettingsOpen(open => !open)}
+	aria-label="가사 화면 설정"
+	aria-expanded={isSettingsOpen}
+	aria-haspopup="dialog"
+              >
+                ⚙
+              </button>
+            )}
             <button type="button" className="lyv-btn" onClick={onClose} aria-label="닫기">✕</button>
           </div>
+          {isSettingsOpen && (
+            <div
+	ref={settingsPopoverRef}
+	className="lyv-settings-popover"
+	role="dialog"
+	aria-label="가사 화면 설정"
+	onKeyDown={e => e.stopPropagation()}
+            >
+              <section className="lyv-settings-section">
+                <span className="lyv-settings-eyebrow mono">스타일</span>
+                <div className="lyv-settings-styles" role="group" aria-label="가사 화면 스타일">
+                  <button
+	type="button"
+	className={lyvStyle === 'blur' ? 'lyv-settings-style is-on' : 'lyv-settings-style'}
+	onClick={() => pickStyle('blur')}
+	aria-pressed={lyvStyle === 'blur'}
+                  >
+                    <span className="lyv-settings-preview is-blur" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    <span className="lyv-settings-style-label">블러</span>
+                  </button>
+                  <button
+	type="button"
+	className={lyvStyle === 'flat' ? 'lyv-settings-style is-on' : 'lyv-settings-style'}
+	onClick={() => pickStyle('flat')}
+	aria-pressed={lyvStyle === 'flat'}
+                  >
+                    <span className="lyv-settings-preview is-flat" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    <span className="lyv-settings-style-label">플랫</span>
+                  </button>
+                </div>
+              </section>
+              {trackable && (
+                <section className="lyv-settings-section">
+                  <span className="lyv-settings-eyebrow mono">복귀</span>
+                  <div className="lyv-settings-returns" role="radiogroup" aria-label="복귀 방식">
+                    <button
+	type="button"
+	className={behavior === 'pill' ? 'lyv-settings-return is-on' : 'lyv-settings-return'}
+	role="radio"
+	aria-checked={behavior === 'pill'}
+	onClick={() => pickBehavior('pill')}
+                    >
+                      <span className="lyv-settings-dot" aria-hidden="true" />
+                      <span className="lyv-settings-return-copy">
+                        <span className="lyv-settings-return-name">필</span>
+                        <span className="lyv-settings-return-desc">↩ 필 · 4초 후 현재 줄로 자동 복귀</span>
+                      </span>
+                    </button>
+                    <button
+	type="button"
+	className={behavior === 'browse' ? 'lyv-settings-return is-on' : 'lyv-settings-return'}
+	role="radio"
+	aria-checked={behavior === 'browse'}
+	onClick={() => pickBehavior('browse')}
+                    >
+                      <span className="lyv-settings-dot" aria-hidden="true" />
+                      <span className="lyv-settings-return-copy">
+                        <span className="lyv-settings-return-name">브라우즈</span>
+                        <span className="lyv-settings-return-desc">딤 해제 탐색 · 3초 후 스냅백</span>
+                      </span>
+                    </button>
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
         </div>
 
         {notice && <div className="lyv-note mono" role="status">{notice}</div>}
@@ -855,63 +979,10 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                 </div>
               </div>
             </div>
-            <div className="lyv-rail">
-              {/*
-                Interim switch until the Step 2 ⚙ popover absorbs the rail.
-                Plain rows hide it because they have no follow state to return to.
-              */}
-              {trackable && (
-                <div className="lyv-mode" role="group" aria-label="복귀 방식">
-                  <button
-	type="button"
-	className={behavior === 'pill' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
-	onClick={() => pickBehavior('pill')}
-	aria-pressed={behavior === 'pill'}
-	aria-label="복귀 방식: 필"
-                  >
-                    필
-                  </button>
-                  <button
-	type="button"
-	className={behavior === 'browse' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
-	onClick={() => pickBehavior('browse')}
-	aria-pressed={behavior === 'browse'}
-	aria-label="복귀 방식: 브라우즈"
-                  >
-                    브라우즈
-                  </button>
-                </div>
-              )}
-              {/* viewer style variant (owner request 2026-07-06): 블러 = the
-                  centered album-blur look, 플랫 = the Apple-Music-like
-                  left-aligned flat wash. Persisted per browser. */}
-              <div className="lyv-mode" role="group" aria-label="가사 화면 스타일">
-                <button
-	type="button"
-	className={lyvStyle === 'blur' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
-	onClick={() => pickStyle('blur')}
-	aria-pressed={lyvStyle === 'blur'}
-                >
-                  블러
-                </button>
-                <button
-	type="button"
-	className={lyvStyle === 'flat' ? 'lyv-mode-btn is-on' : 'lyv-mode-btn'}
-	onClick={() => pickStyle('flat')}
-	aria-pressed={lyvStyle === 'flat'}
-                >
-                  플랫
-                </button>
-              </div>
-              {/*
-                Position counter (Step 2): visually dropped to match Spotify's
-                minimal chrome, kept as a screen-reader-only aria-live region so
-                the focus position is still announced.
-              */}
-              <span className="lyv-sr-only" aria-live="polite">
-                {`${focus + 1} / ${n}${suspended ? ' · 따라가기 일시정지' : ''}`}
-              </span>
-            </div>
+            {/* Position stays available to assistive tech without visual chrome. */}
+            <span className="lyv-sr-only" aria-live="polite">
+              {`${focus + 1} / ${n}${suspended ? ' · 따라가기 일시정지' : ''}`}
+            </span>
           </>
         )}
       </div>
