@@ -50,11 +50,13 @@
 //
 // FEAT-lyrics-viewer-controls Step 1 replaces [자동|수동] with follow/suspend:
 // browsing temporarily pauses the clock estimate without re-anchoring it, then
-// returns to the live line through either a countdown pill (A) or an un-dimmed
-// browse window with idle snap-back (D). Explicit line taps still re-anchor.
+// snaps back to the live line after idle (un-dimmed browse window). A floating
+// circular countdown shows the snap-back timer and returns immediately on tap
+// (keeper decision 2026-07-20: behavior D kept, A's pill removed — its ring
+// survives as the browse countdown). Explicit line taps still re-anchor.
 //
 // FEAT-lyrics-viewer-controls Step 2 replaces the interim bottom rail with a
-// header ⚙ settings popover for style / return behavior and regroups the header
+// header ⚙ settings popover for the backdrop style and regroups the header
 // controls into a quieter actions cluster.
 //
 // FEAT-lyrics-translation Step 4: a 번역 toggle interleaves each segment's
@@ -100,9 +102,7 @@ const SYNC_LEAD_MS = 300
  * estimate drift near the boundary.
  */
 const END_GRACE_MS = 1500
-/** Idle return delay for Behavior A's visible countdown pill. */
-const PILL_IDLE_MS = 4000
-/** Idle return delay for Behavior D's un-dimmed browse window. */
+/** Idle snap-back delay for the un-dimmed browse window (and its countdown ring). */
 const BROWSE_IDLE_MS = 3000
 
 type Phase =
@@ -201,19 +201,6 @@ function readStoredStyle(): LyvStyle {
   }
 }
 
-/** localStorage key for the follow-return behavior ('pill' | 'browse'). */
-const BEHAVIOR_KEY = 'lyv:behavior'
-type LyvBehavior = 'pill' | 'browse'
-
-function readStoredBehavior(): LyvBehavior {
-  try {
-    return localStorage.getItem(BEHAVIOR_KEY) === 'browse' ? 'browse' : 'pill'
-  }
-  catch {
-    return 'pill'
-  }
-}
-
 export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, canRefresh = false, onClose }: {
   spotifyTrackId: string
   /** One-shot playback position from the dynamic entry; seeds the initial focus and continuous clock anchor. */
@@ -309,7 +296,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // the estimate by default. Browse input pauses that loop only while a live
   // anchor exists; plain/no-seed rows retain today's unrestricted manual nav.
   const [suspended, setSuspended] = useState(false)
-  const [behavior, setBehavior] = useState<LyvBehavior>(readStoredBehavior)
   const [ringRestart, setRingRestart] = useState(0)
   const suspendTimer = useRef<number | null>(null)
 
@@ -338,22 +324,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       return
     clearSuspendTimer()
     setSuspended(true)
-    if (behavior === 'pill')
-      setRingRestart(k => k + 1)
-    const idleMs = behavior === 'pill' ? PILL_IDLE_MS : BROWSE_IDLE_MS
-    suspendTimer.current = window.setTimeout(returnToFollow, idleMs)
-  }
-
-  const pickBehavior = (next: LyvBehavior) => {
-    // A settings change is itself an explicit request to resume following;
-    // snap back before adopting the next behavior's timer/UI.
-    if (suspended)
-      returnToFollow()
-    setBehavior(next)
-    try {
-      localStorage.setItem(BEHAVIOR_KEY, next)
-    }
-    catch { /* private mode — the choice just doesn't persist */ }
+    // Every browse input extends the timer, so the ring restarts with it.
+    setRingRestart(k => k + 1)
+    suspendTimer.current = window.setTimeout(returnToFollow, BROWSE_IDLE_MS)
   }
 
   // Track length for end-of-track detection (FEAT-lyrics-end-resync). Seeded
@@ -741,7 +714,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	ref={panelRef}
 	className="lyv-panel"
 	data-lyv-style={lyvStyle}
-	data-lyv-browse={suspended && behavior === 'browse' ? '' : undefined}
+	data-lyv-browse={suspended ? '' : undefined}
 	onKeyDown={onKeyDown}
       >
         {/*
@@ -758,14 +731,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}
         />
         <div className="lyv-bg-overlay" aria-hidden="true" />
-        {suspended && behavior === 'pill' && (
-          <button type="button" className="lyv-return" onClick={returnToFollow}>
+        {suspended && (
+          <button type="button" className="lyv-return" onClick={returnToFollow} aria-label="현재 줄로 돌아가기">
             <svg className="lyv-return-ring" viewBox="0 0 20 20" aria-hidden="true">
               <circle className="lyv-return-ring-track" cx="10" cy="10" r="8" />
-              {/* duration from PILL_IDLE_MS so tuning the idle constant can't drift from the ring */}
-              <circle key={ringRestart} className="lyv-return-ring-progress" cx="10" cy="10" r="8" style={{ animationDuration: `${PILL_IDLE_MS}ms` }} />
+              {/* duration from BROWSE_IDLE_MS so tuning the idle constant can't drift from the ring */}
+              <circle key={ringRestart} className="lyv-return-ring-progress" cx="10" cy="10" r="8" style={{ animationDuration: `${BROWSE_IDLE_MS}ms` }} />
             </svg>
-            ↩ 현재 줄로
+            <span aria-hidden="true">↩</span>
           </button>
         )}
         <div className="lyv-head">
@@ -890,39 +863,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                   </button>
                 </div>
               </section>
-              {trackable && (
-                <section className="lyv-settings-section">
-                  <span className="lyv-settings-eyebrow mono">복귀</span>
-                  <div className="lyv-settings-returns" role="radiogroup" aria-label="복귀 방식">
-                    <button
-	type="button"
-	className={behavior === 'pill' ? 'lyv-settings-return is-on' : 'lyv-settings-return'}
-	role="radio"
-	aria-checked={behavior === 'pill'}
-	onClick={() => pickBehavior('pill')}
-                    >
-                      <span className="lyv-settings-dot" aria-hidden="true" />
-                      <span className="lyv-settings-return-copy">
-                        <span className="lyv-settings-return-name">필</span>
-                        <span className="lyv-settings-return-desc">↩ 필 · 4초 후 현재 줄로 자동 복귀</span>
-                      </span>
-                    </button>
-                    <button
-	type="button"
-	className={behavior === 'browse' ? 'lyv-settings-return is-on' : 'lyv-settings-return'}
-	role="radio"
-	aria-checked={behavior === 'browse'}
-	onClick={() => pickBehavior('browse')}
-                    >
-                      <span className="lyv-settings-dot" aria-hidden="true" />
-                      <span className="lyv-settings-return-copy">
-                        <span className="lyv-settings-return-name">브라우즈</span>
-                        <span className="lyv-settings-return-desc">딤 해제 탐색 · 3초 후 스냅백</span>
-                      </span>
-                    </button>
-                  </div>
-                </section>
-              )}
             </div>
           )}
         </div>

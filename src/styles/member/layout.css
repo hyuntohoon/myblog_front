@@ -414,8 +414,8 @@
    Spotify-style: the viewer is ALWAYS dark regardless of site theme, with a
    full-bleed album-cover blur backdrop and large sans-serif focus-line
    typography (3-level emphasis: focus / near / far). Browse input temporarily
-   suspends clock following, with either a countdown return pill or a readable
-   un-dimmed browse state. The list is NOT a free-scroll surface: the only
+   suspends clock following into a readable un-dimmed browse state with a
+   circular snap-back countdown. The list is NOT a free-scroll surface: the only
    scroll is synthetic focus-centering, so .lyv-scroll hides overflow and
    takes touch pans. */
 .lyv-scrim { justify-content: stretch; }
@@ -467,8 +467,10 @@
 	pointer-events: none;
 }
 
-/* Behavior A return control — floats near the panel foot, outside the moving list.
-   The ring is CSS-clocked so suspend adds one timeout but no per-frame JS. */
+/* Browse-mode return control — a circular countdown floating near the panel
+   foot, outside the moving list (keeper decision 2026-07-20: behavior D with
+   A's ring). Tap = immediate return; otherwise the ring clocks the snap-back.
+   CSS-clocked so suspend adds one timeout but no per-frame JS. */
 .lyv-return {
 	position: absolute;
 	left: 50%;
@@ -476,26 +478,28 @@
 	z-index: 4;
 	display: inline-flex;
 	align-items: center;
-	gap: 7px;
-	padding: 9px 14px;
+	justify-content: center;
+	width: 42px;
+	height: 42px;
+	padding: 0;
 	font-family: var(--font-sans);
-	font-size: 12px;
+	font-size: 15px;
 	font-weight: 700;
 	line-height: 1;
-	white-space: nowrap;
 	color: #fff;
 	background: rgba(9,9,9,0.82);
 	border: 1px solid rgba(255,255,255,0.3);
-	border-radius: var(--radius-pill);
+	border-radius: 50%;
 	box-shadow: 0 8px 26px rgba(0,0,0,0.35);
 	transform: translateX(-50%);
 	cursor: pointer;
 }
 .lyv-return:hover { border-color: rgba(255,255,255,0.65); }
 .lyv-return-ring {
-	width: 16px;
-	height: 16px;
-	flex: 0 0 auto;
+	position: absolute;
+	inset: 3px;
+	width: auto;
+	height: auto;
 	transform: rotate(-90deg);
 }
 .lyv-return-ring-track,
@@ -509,7 +513,7 @@
 	stroke-linecap: round;
 	stroke-dasharray: 50.27;
 	stroke-dashoffset: 0;
-	/* duration set inline from PILL_IDLE_MS (single source for the idle timing) */
+	/* duration set inline from BROWSE_IDLE_MS (single source for the idle timing) */
 	animation: lyv-countdown linear forwards;
 }
 @keyframes lyv-countdown { to { stroke-dashoffset: 50.27; } }
@@ -725,49 +729,6 @@
 .lyv-settings-preview.is-blur > span:nth-child(2) { background: rgba(255,255,255,0.95); }
 .lyv-settings-preview.is-flat > span:nth-child(1) { background: rgba(255,255,255,0.95); }
 .lyv-settings-style-label { font-size: 11px; line-height: 1; }
-.lyv-settings-returns {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-}
-.lyv-settings-return {
-	width: 100%;
-	display: flex;
-	align-items: center;
-	gap: 9px;
-	padding: 8px;
-	font-family: var(--font-sans);
-	color: rgba(255,255,255,0.78);
-	text-align: left;
-	background: transparent;
-	border: 0;
-	border-radius: 8px;
-	cursor: pointer;
-	transition: color 0.12s, background 0.12s;
-}
-.lyv-settings-return:hover { color: #fff; background: rgba(255,255,255,0.07); }
-.lyv-settings-return.is-on { color: #fff; background: rgba(255,255,255,0.12); }
-.lyv-settings-dot {
-	width: 7px;
-	height: 7px;
-	flex: 0 0 auto;
-	background: rgba(255,255,255,0.22);
-	border-radius: 50%;
-}
-.lyv-settings-return.is-on .lyv-settings-dot { background: var(--color-accent); }
-.lyv-settings-return-copy {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-	min-width: 0;
-}
-.lyv-settings-return-name { font-size: 12px; font-weight: 700; line-height: 1.2; }
-.lyv-settings-return-desc {
-	font-size: 11px;
-	line-height: 1.25;
-	color: rgba(255,255,255,0.48);
-}
-
 /* interleaved Korean translation under the original line — em-sized so it
    scales with the focus emphasis. SAME color as its original (inherit): the
    old --color-subtle gray was near-invisible on the dark backdrop (owner
