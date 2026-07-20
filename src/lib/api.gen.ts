@@ -1898,6 +1898,8 @@ export interface components {
             album_id: string;
             /** Artist */
             artist: string;
+            /** Artist Id */
+            artist_id?: string | null;
             /** Cover Url */
             cover_url?: string | null;
             /**
@@ -2228,6 +2230,10 @@ export interface components {
             album_id: string;
             /** Album Title */
             album_title: string;
+            /** Artist Id */
+            artist_id?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
             /** Comment */
             comment?: string | null;
             /**
@@ -2628,6 +2634,8 @@ export interface components {
             album_name?: string | null;
             /** Album Sid */
             album_sid?: string | null;
+            /** Artist Id */
+            artist_id?: string | null;
             /** Artist Name */
             artist_name?: string | null;
             /** Duration Ms */
@@ -3223,6 +3231,8 @@ export interface components {
         Music_AlbumItem: {
             /** Album Type */
             album_type?: string | null;
+            /** Artist Id */
+            artist_id?: string | null;
             /** Artist Name */
             artist_name?: string | null;
             /** Artist Spotify Id */

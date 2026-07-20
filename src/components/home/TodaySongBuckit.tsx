@@ -4,9 +4,9 @@
  * identity only (cover + title + artist — no impression text, owner decision).
  *
  * Clicking the cover/title opens the app-wide read-only album overlay
- * (ARCH-entity-interaction-unify · openAlbum, via the pick's album_id). The
- * artist is denormalized text (no DB id in the row), so it renders as a static
- * label, not an artist-hub link.
+ * (ARCH-entity-interaction-unify · openAlbum, via the pick's album_id). Step 4
+ * also carries the catalog artist_id at read time, so the artist label links to
+ * its hub when that id is present.
  *
  * Owner control is INLINE (OQ6 decision): the OWNER sees "올리기/바꾸기/삭제"
  * affordances right on the tile. The server's require_owner is the real gate
@@ -19,7 +19,8 @@
  * Self-contained styling mirrors TodayAlbumBuckit (scoped .tsp-mod <style>).
  */
 import { useEffect, useState } from 'react'
-import { openAlbum } from '@lib/entityLinks'
+import { openAlbum } from '@lib/entityEvents'
+import { artistHref } from '@lib/entityLinks'
 import { isOwnerUser } from '@lib/owner'
 import { Cover, SectionTitle } from './ui'
 import {  deleteTodaysPick, getTodaysPick, putTodaysPick  } from '@lib/todaysPick'
@@ -30,11 +31,13 @@ import TodayPickHistory from './TodayPickHistory'
 // Scoped hover/active rules (inline styles can't reach :hover). Keyed off .tsp-mod.
 const SCOPED_CSS = `
 .tsp-mod .tsp-card{display:flex;align-items:center;gap:clamp(14px,2.4vw,20px)}
-.tsp-mod .tsp-open{display:flex;align-items:center;gap:clamp(14px,2.4vw,20px);background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit;text-align:left;transition:opacity .16s}
-.tsp-mod .tsp-open:hover{opacity:.78}
-.tsp-mod .tsp-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;border-radius:6px}
+.tsp-mod .tsp-open{display:flex;align-items:center;gap:clamp(14px,2.4vw,20px);min-width:0;color:inherit;text-align:left}
+.tsp-mod .tsp-album-open{display:block;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit;text-align:left;transition:opacity .16s}
+.tsp-mod .tsp-album-open:hover{opacity:.78}
+.tsp-mod .tsp-album-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;border-radius:6px}
 .tsp-mod .tsp-title{display:block;margin:0 0 3px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tsp-mod .tsp-artist{display:block;color:var(--color-subtle);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tsp-mod a.tsp-artist{text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--color-faded)}
 .tsp-mod .tsp-actions{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;flex:0 0 auto}
 .tsp-mod .tsp-btn{font:inherit;font-size:12px;letter-spacing:.02em;padding:6px 11px;border-radius:999px;border:1px solid var(--color-border-soft);background:var(--color-bg);color:var(--color-subtle);cursor:pointer;transition:background .15s,color .15s,border-color .15s}
 .tsp-mod .tsp-btn:hover{color:var(--color-text);border-color:var(--color-border);background:var(--color-border-soft)}
@@ -44,7 +47,7 @@ const SCOPED_CSS = `
 .tsp-mod .tsp-empty-msg{color:var(--color-subtle);font-size:14px}
 .tsp-mod .tsp-history-link{background:none;border:0;padding:0;font:inherit;font-size:12px;letter-spacing:.02em;color:var(--color-subtle);cursor:pointer}
 .tsp-mod .tsp-history-link:hover{color:var(--color-text);text-decoration:underline}
-@media (prefers-reduced-motion:reduce){.tsp-mod .tsp-open{transition:none}}
+@media (prefers-reduced-motion:reduce){.tsp-mod .tsp-album-open{transition:none}}
 `
 
 function Skeleton() {
@@ -136,18 +139,29 @@ export default function TodaySongBuckit() {
 			{status === 'loading' && <Skeleton />}
 			{status === 'ready' && pick && (
 				<div className="tsp-card">
-					<button
-						type="button"
-						className="tsp-open"
-						title={`${pick.title} · 앨범 보기`}
-						onClick={() => openAlbum({ albumId: pick.album_id, title: pick.title, artist: pick.artist, cover: pick.cover_url })}
-					>
-						<Cover label={pick.title} src={pick.cover_url} size={88} radius={4} />
-						<span style={{ minWidth: 0 }}>
-							<span className="tsp-title serif italic" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.15, color: 'var(--color-text)' }}>{pick.title}</span>
-							<span className="tsp-artist mono" style={{ fontSize: 12.5, letterSpacing: '.02em' }}>{pick.artist}</span>
-						</span>
-					</button>
+					<div className="tsp-open">
+						<button
+							type="button"
+							className="tsp-album-open"
+							title={`${pick.title} · 앨범 보기`}
+							onClick={() => openAlbum({ albumId: pick.album_id, title: pick.title, artist: pick.artist, cover: pick.cover_url })}
+						>
+							<Cover label={pick.title} src={pick.cover_url} size={88} radius={4} />
+						</button>
+						<div style={{ minWidth: 0 }}>
+							<button
+								type="button"
+								className="tsp-album-open tsp-title serif italic"
+								onClick={() => openAlbum({ albumId: pick.album_id, title: pick.title, artist: pick.artist, cover: pick.cover_url })}
+								style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.15, color: 'var(--color-text)' }}
+							>
+								{pick.title}
+							</button>
+							{pick.artist_id ?
+								<a href={artistHref(pick.artist_id)} className="tsp-artist mono" style={{ fontSize: 12.5, letterSpacing: '.02em' }}>{pick.artist}</a> :
+								<span className="tsp-artist mono" style={{ fontSize: 12.5, letterSpacing: '.02em' }}>{pick.artist}</span>}
+						</div>
+					</div>
 					{isOwner && (
 						<span className="tsp-actions">
 							<button type="button" className="tsp-btn" onClick={() => setPickerOpen(true)} disabled={busy}>오늘 곡 바꾸기</button>

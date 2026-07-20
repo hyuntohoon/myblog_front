@@ -36,7 +36,7 @@ import { StatsTab } from './StatsTab'
 import '@styles/member.css'
 import '@styles/research.css'
 
-interface LiveLyrics { kind: 'live', trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null }
+interface LiveLyrics { kind: 'live', trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null, artists: Array<{ id: string, name: string }> }
 interface StaticLyrics { kind: 'static', trackId: string, meta?: LyricsSheetMeta }
 
 // Stable empty list so downstream useMemo deps don't churn per render while
@@ -157,7 +157,7 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 			return null
 		}
 	})
-	const openLyrics = (t: LyricsOpenTarget) => setLyrics({ kind: 'live', trackId: t.trackId, progressMs: t.progressMs, progressAtMs: t.progressAtMs, durationMs: t.durationMs, albumCoverUrl: t.albumCoverUrl, track: t.track, artist: t.artist })
+	const openLyrics = (t: LyricsOpenTarget) => setLyrics({ kind: 'live', trackId: t.trackId, progressMs: t.progressMs, progressAtMs: t.progressAtMs, durationMs: t.durationMs, albumCoverUrl: t.albumCoverUrl, track: t.track, artist: t.artist, artists: t.artists })
 	const openStaticLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => setLyrics({ kind: 'static', trackId: spotifyTrackId, meta })
 	const closeLyrics = () => {
 		setLyrics(null)
@@ -195,7 +195,7 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 					null
 			))}
 			{detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} onOpenLyrics={openStaticLyrics} />}
-			{lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} canRefresh onClose={closeLyrics} />}
+			{lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} initialArtists={lyrics.artists} canRefresh onClose={closeLyrics} />}
 			{lyrics?.kind === 'static' && <LyricsSheet key={lyrics.trackId} spotifyTrackId={lyrics.trackId} meta={lyrics.meta} onClose={closeLyrics} />}
 		</div>
 	)

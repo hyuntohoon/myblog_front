@@ -23,6 +23,7 @@ type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult'
 interface RawAlbum {
   id?: string | null
   title?: string | null
+  artist_id?: string | null
   artist_name?: string | null
   cover_url?: string | null
   release_date?: string | null
@@ -63,6 +64,7 @@ export interface AlbumHit {
   kind: 'album'
   id: string | null
   title: string
+  artistId: string | null
   artist: string | null
   cover: string | null
   year: string | null
@@ -105,6 +107,7 @@ function mapAlbums(arr: RawAlbum[] | null | undefined, source: HitSource): Album
     // Spotify-only hits have no DB id yet — resolve via /albums/by-spotify on pick.
     id: source === 'spotify' ? null : (a.id ?? null),
     title: a.title ?? '',
+    artistId: a.artist_id ?? null,
     artist: a.artist_name ?? null,
     cover: a.cover_url ?? null,
     year: a.release_date ? a.release_date.slice(0, 4) : null,
