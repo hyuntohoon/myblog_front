@@ -7,9 +7,13 @@
 // (frontmatter); the confirm dialog is portalled to <body> so it overlays the
 // full viewport regardless of the tab's transform/stacking context.
 import type { DetailTarget, MemberReview, MemberReviewType } from '@lib/member'
-import { useEffect, useState } from 'react'
+import type { BoardBucket } from '@lib/buckets'
+import type { ResearchStatus } from '@lib/research'
+import { useEffect, useMemo, useState } from 'react'
 import { openAlbum } from '@lib/entityEvents'
 import { reviewHref } from '@lib/entityLinks'
+import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
+import { fetchResearchStatusBatch } from '@lib/research'
 import { createPortal } from 'react-dom'
 import { REVIEW_TYPES } from '@lib/member'
 import { archivePost, listDrafts, readErrorDetail } from '../../scripts/write/api'
@@ -24,7 +28,26 @@ function fmtDate(iso: string): string {
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
 }
 
-function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: DetailTarget) => void, onDelete: (r: MemberReview) => void }) {
+// FEAT-bucket-identity Direction B — the dashboard tabs are URL-driven (?tab=<id>,
+// see MemberProfile's selectTab). There is no popstate bridge from a raw URL
+// change back into React state, so the review→bucket reverse link NAVIGATES to
+// ?tab=bucket (MemberProfile then re-reads its initial tab from the param on the
+// next load). Self-only by construction: ReviewsTab only mounts inside the
+// self-dashboard (MemberProfile gates it behind the authed self check), so this
+// never appears on a public /review/{slug} or another member's page.
+function boardTabHref(): string {
+  try {
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', 'bucket')
+    url.hash = ''
+    return `${url.pathname}${url.search}`
+  }
+  catch {
+    return '?tab=bucket'
+  }
+}
+
+function ReviewCard({ r, onOpen, onDelete, bucketName, hasResearch, boardHref }: { r: MemberReview, onOpen: (t: DetailTarget) => void, onDelete: (r: MemberReview) => void, bucketName?: string, hasResearch: boolean, boardHref: string }) {
   const isColumn = r.type === '칼럼'
   // Runtime album-review rows (member self-dashboard, merge PR2) have no MDX
   // post behind them: slug '' + no postId. Their actions degrade — 보기 opens
@@ -72,6 +95,15 @@ function ReviewCard({ r, onOpen, onDelete }: { r: MemberReview, onOpen: (t: Deta
         <p className="serif" style={{ margin: '8px 0 12px', fontSize: 14, color: 'var(--color-subtle)', lineHeight: 1.6, textWrap: 'pretty', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '3.2em' }}>{r.excerpt}</p>
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14, borderTop: '1px solid var(--color-border)', paddingTop: 12 }}>
           {r.rating != null ? <Stars score={r.rating} size={16} /> : <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', letterSpacing: '.08em', textTransform: 'uppercase' }}>칼럼</span>}
+          {/* FEAT-bucket-identity Direction B — reverse link to the source bucket /
+              research note (self-dashboard only). Quiet chips; both navigate to the
+              board tab where the album's cover + research panel live. */}
+          {(bucketName || hasResearch) && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              {bucketName && <a href={boardHref} className="chip" title={`버킷 · ${bucketName}`} style={{ textDecoration: 'none' }}>버킷</a>}
+              {hasResearch && <a href={boardHref} className="chip" title="조사 노트 보기" style={{ textDecoration: 'none' }}>조사 노트</a>}
+            </div>
+          )}
           {/* Keep 보기/수정/삭제 together: right-aligned on a wide row, and on a narrow
               phone the whole group wraps below the rating instead of pushing 삭제
               off-screen (it clipped past the viewport at <=360px). */}
@@ -139,6 +171,57 @@ export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpe
     }
   }, [])
 
+  // FEAT-bucket-identity Direction B — reverse link: review → source bucket +
+  // research note. Both joins are client-side and self-only (ReviewsTab mounts
+  // only inside the self-dashboard). The bucket tree comes from the SHARED
+  // bucketStore (read-only reuse — the board/tray's own source), ensured fresh
+  // once on mount (SWR-deduped, so usually zero extra fetches); research-note
+  // existence is album-keyed, resolved by ONE batched /api/research/status GET
+  // over the reviews' album ids. Any failure is quiet — the chips just stay
+  // hidden, never blocking the list.
+  const { tree } = useBucketStore()
+  useEffect(() => {
+    bucketStore.ensureFresh().catch(() => { /* quiet — reverse-link chips stay hidden */ })
+  }, [])
+  const { postBucketName, albumBucketName } = useMemo(() => {
+    const postBucketName = new Map<string, string>()
+    const albumBucketName = new Map<string, string>()
+    if (tree) {
+      const walk = (b: BoardBucket): void => {
+        for (const a of b.albums) {
+          if (a.postId != null && !postBucketName.has(a.postId))
+            postBucketName.set(a.postId, b.name)
+          if (a.albumId != null && !albumBucketName.has(a.albumId))
+            albumBucketName.set(a.albumId, b.name)
+        }
+        b.children.forEach(walk)
+      }
+      tree.forEach(walk)
+    }
+    return { postBucketName, albumBucketName }
+  }, [tree])
+  const reviewAlbumIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const r of list) {
+      for (const id of r.albumIds) {
+        if (id)
+          ids.add(id)
+}
+}
+    return [...ids]
+  }, [list])
+  const [researchStatus, setResearchStatus] = useState<Record<string, ResearchStatus>>({})
+  useEffect(() => {
+    let alive = true
+    fetchResearchStatusBatch(reviewAlbumIds)
+      .then(m => alive && setResearchStatus(m))
+      .catch(() => { /* quiet — research chip stays hidden */ })
+    return () => {
+      alive = false
+    }
+  }, [reviewAlbumIds])
+  const boardHref = useMemo(() => boardTabHref(), [])
+
   let view = type === '전체' ? list.slice() : list.filter(r => r.type === type)
   view = view.sort((a, b) => (sort === 'score' ? (b.rating ?? -1) - (a.rating ?? -1) : new Date(b.date).getTime() - new Date(a.date).getTime()))
 
@@ -190,7 +273,32 @@ export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpe
         {REVIEW_TYPES.map(g => <span key={g} className="chip" data-on={type === g} onClick={() => setType(g as TypeFilter)}>{g}</span>)}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {view.map(r => <ReviewCard key={r.slug || r.albumIds[0] || `${r.album}|${r.date}`} r={r} onOpen={onOpen} onDelete={setPending} />)}
+        {view.map((r) => {
+          // Match priority: item postId === review postId (canonical), else an
+          // album-id shared with any bucket item. Research note = album-keyed
+          // status 'done' (a note was produced).
+          let bucketName: string | undefined
+          if (r.postId && postBucketName.has(r.postId)) {
+            bucketName = postBucketName.get(r.postId)
+}
+          else {
+            const aid = r.albumIds.find(id => albumBucketName.has(id))
+            if (aid)
+              bucketName = albumBucketName.get(aid)
+          }
+          const hasResearch = r.albumIds.some(id => researchStatus[id] === 'done')
+          return (
+            <ReviewCard
+	key={r.slug || r.albumIds[0] || `${r.album}|${r.date}`}
+	r={r}
+	onOpen={onOpen}
+	onDelete={setPending}
+	bucketName={bucketName}
+	hasResearch={hasResearch}
+	boardHref={boardHref}
+            />
+          )
+        })}
         {view.length === 0 && <div className="panel" style={{ padding: 40, textAlign: 'center' }}><span className="meta">평론 없음</span></div>}
       </div>
       {pending != null && typeof document !== 'undefined' && createPortal(

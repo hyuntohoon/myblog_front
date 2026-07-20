@@ -38,7 +38,7 @@ import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
 import AddArtistModal from './AddArtistModal'
-import { getSpotifyLibraryState, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
+import { getSpotifyLibraryState, listListenedAlbums, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
 import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
 import { AlbumArt, SectionTitle } from './ui'
 
@@ -62,9 +62,10 @@ const RECENT_ID = '__recent__'
 const SLIB_KIND = 'spotify_library'
 // `review_buckets.kind` of the system "들을 것" queue. FEAT-pocket-buckit Step 6
 // (V31) folded the old `album_to_listen_items` table into this kind, so the front
-// no longer infers the to-listen bucket from its NAME (the /들을|예정/ heuristic in
-// crMeta below) — `kind` is the canonical, rename-proof signal. The name regex is
-// kept only as a fallback for user-named buckets that predate the system bucket.
+// no longer infers the to-listen bucket from its NAME — `kind` is the canonical,
+// rename-proof signal. crMeta tags this bucket 청취 예정 by kind (FEAT-bucket-
+// identity Direction B made every other tag rename-proof too, so the old name-
+// regex fallback for pre-system buckets is gone).
 const TOLISTEN_KIND = 'to_listen'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
@@ -399,38 +400,66 @@ function displayOrder(albums: BoardAlbum[], view: BucketView): string[] {
 }
 
 // ── status meta ───────────────────────────────────────────────────────────--
-// The single is_done column is the canonical "평론 완료". Other tags are inferred
-// from the bucket name so the default seed buckets read sensibly; renamed
-// buckets simply fall back to the neutral "버킷" tag.
-function crMeta(b: BoardBucket): { tag: string, urgent: boolean } {
+// FEAT-bucket-identity Direction B: the lifecycle tag is derived ONLY from typed
+// fields (is_done / item postId / item research_status), NEVER from the bucket's
+// free-text name — so renaming a bucket can no longer change its tag. Precedence
+// is most-advanced-wins: 완료 → 작성 중 → 조사 중 → 담음.
+//   · 완료      bucket.isDone (the single "평론 완료" column).
+//   · 작성 중   some item has a linked post (postId) that is not yet published
+//              as a review (alreadyReviewed false) — a draft/post is in flight.
+//   · 조사 중   some item is in the research phase (research engaged; see below).
+//   · 담음      otherwise — collected, nothing in motion.
+// The system to-listen bucket stays 청취 예정, tagged by its typed `kind` (also
+// rename-proof). There is NO rename-proof deadline/urgency field, so the old
+// name-regex accent (급한/마감) is dropped — accent now comes only from the
+// bucket's explicit editorial color.
+
+// Every album (item) in a bucket's subtree — direct members + all descendants —
+// so a parent bucket's lifecycle tag reflects the aggregate state of everything
+// nested under it, not just its own direct members.
+function collectItems(b: BoardBucket): BoardAlbum[] {
+  const out: BoardAlbum[] = []
+  const walk = (node: BoardBucket): void => {
+    out.push(...node.albums)
+    node.children.forEach(walk)
+  }
+  walk(b)
+  return out
+}
+
+// Research is "engaged" when a run is in flight OR has produced a note. The tag
+// marks the research PHASE, so a completed note (done) still counts — excluding
+// it would relabel a fully-researched album as merely 담음. A terminal failed run
+// yields no note, so it does not lift the bucket out of 담음.
+function isResearchEngaged(s: ResearchStatus | null): boolean {
+  return s === 'queued' || s === 'running' || s === 'done'
+}
+
+function crMeta(b: BoardBucket): { tag: string } {
   // Canonical: the system to-listen bucket is tagged by kind, not its name.
   if (b.kind === TOLISTEN_KIND)
-    return { tag: '청취 예정', urgent: false }
-  if (b.isDone || /완료/.test(b.name))
-    return { tag: '평론 완료', urgent: false }
-  if (/급한|마감/.test(b.name))
-    return { tag: '마감 임박', urgent: true }
-  if (/평론/.test(b.name))
-    return { tag: '평론 대기', urgent: false }
-  if (/들을|예정/.test(b.name))
-    return { tag: '청취 예정', urgent: false }
-  if (/들은/.test(b.name))
-    return { tag: '청취 완료', urgent: false }
-  return { tag: '버킷', urgent: false }
+    return { tag: '청취 예정' }
+  if (b.isDone)
+    return { tag: '완료' }
+  const items = collectItems(b)
+  if (items.some(a => a.postId != null && !a.alreadyReviewed))
+    return { tag: '작성 중' }
+  if (items.some(a => isResearchEngaged(a.researchStatus ?? null)))
+    return { tag: '조사 중' }
+  return { tag: '담음' }
 }
-// Effective accent color: an explicit user color wins, then urgency, then the
-// neutral ink (top level) / hairline (nested) default.
+// Effective accent color: an explicit user color wins, else the neutral ink (top
+// level) / hairline (nested) default. (Direction B dropped the old name-regex
+// urgency accent — no typed field encodes a deadline.)
 function crColor(b: BoardBucket, depth: number): string {
   if (b.color)
     return b.color
-  if (crMeta(b).urgent)
-    return 'var(--color-accent)'
   return depth ? 'var(--color-border)' : 'var(--color-text)'
 }
 
 function CrStatus({ b }: { b: BoardBucket }) {
   const m = crMeta(b)
-  const ink = b.color || (m.urgent ? 'var(--color-accent)' : 'var(--color-faded)')
+  const ink = b.color || 'var(--color-faded)'
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
       <span style={{ width: 6, height: 6, borderRadius: 6, background: ink, flex: '0 0 auto' }} />
@@ -499,7 +528,7 @@ function CoverResearchBadge({ status, active, onOpen }: { status: ResearchStatus
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
+function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, listened, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
   album: BoardAlbum
   bucketId: string
   /**
@@ -529,6 +558,12 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
    * the special library bucket; absent for every other surface.
    */
   libRow?: SpotifyLibraryAlbumState | null
+  /**
+   * FEAT-bucket-identity Direction B — this album is in the member's listened
+   * set AND not yet reviewed, so the cover shows the quiet "이미 들음 → 평론
+   * 가능" hint. Computed by the card from the board's listenedAlbumIds set.
+   */
+  listened?: boolean
   draggingId: string | null
   setDraggingId: (id: string | null) => void
   setDragKind: (k: DragKind) => void
@@ -675,6 +710,16 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
           {rated && score == null && (
             <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
           )}
+          {/* FEAT-bucket-identity Direction B — quiet "이미 들음 → 평론 가능" hint:
+              a small hollow ring at the bottom-right. Listened implies not-yet-
+              reviewed, so it never collides with the 평론함 badge or rating chips. */}
+          {listened && (
+            <span
+	title="이미 들음 → 평론 가능"
+	aria-label="이미 들음 — 평론 가능"
+	style={{ position: 'absolute', bottom: 6, right: 6, width: 10, height: 10, borderRadius: '50%', background: 'var(--color-bg)', border: '2px solid oklch(0.62 0.10 155)', boxShadow: '0 0 0 1px var(--color-bg)' }}
+            />
+          )}
           {research && (
             <CoverResearchBadge status={research.status} active={research.mode !== 'off'} onOpen={research.onOpen} />
           )}
@@ -755,6 +800,12 @@ interface SharedProps {
    * spotify_library bucket so its covers get source/state badges.
    */
   libState: Map<string, SpotifyLibraryAlbumState>
+  /**
+   * FEAT-bucket-identity Direction B — album_ids the member has already listened
+   * to, for the quiet "이미 들음 → 평론 가능" hint on not-yet-reviewed bucket
+   * covers. Empty until the one-shot mount fetch resolves (or on error).
+   */
+  listenedAlbumIds: Set<string>
   dropTarget: string | null
   setDropTarget: (fn: string | null | ((t: string | null) => string | null)) => void
   draggingId: string | null
@@ -831,15 +882,14 @@ function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: Ops): void {
   }
 }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, libState, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
   const [researching, setResearching] = useState(false)
   const [publicizing, setPublicizing] = useState(false)
   const [viewing, setViewing] = useState(false)
-  const m = crMeta(bucket)
   const accent = crColor(bucket, depth)
   const hot = dropTarget === bucket.id
   const isLib = bucket.kind === SLIB_KIND
@@ -925,6 +975,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, dropTarget,
 	rated={bucket.isDone && a.itemType === 'album'}
 	score={bucket.isDone && a.itemType === 'album' ? (ratings.get(a.albumId ?? '') ?? null) : null}
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
+	listened={a.albumId != null && listenedAlbumIds.has(a.albumId) && !a.alreadyReviewed}
 	fromLib={isLib}
 	isNew={newItemIds.has(a.itemId)}
 	onOpen={onOpen}
@@ -1061,7 +1112,7 @@ ops.openResearch(a.albumId, a.title)
                   setEditing(true)
                 }}
 	className="serif"
-	style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', color: bucket.color || (m.urgent ? 'var(--color-accent)' : 'var(--color-text)'), background: 'none', border: 'none', padding: 0, cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
+	style={{ fontSize: 17, fontWeight: 500, letterSpacing: '-0.01em', color: bucket.color || 'var(--color-text)', background: 'none', border: 'none', padding: 0, cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}
 	title="클릭하여 이름 변경"
               >
                 {bucket.name}
@@ -1627,6 +1678,15 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const [libState, setLibState] = useState<SpotifyLibraryState | null>(null)
   const [syncing, setSyncing] = useState(false)
 
+  // FEAT-bucket-identity Direction B — the member's cumulative listened-album set
+  // (album_id → "이미 들음"), fetched ONCE on mount to quietly hint which
+  // not-yet-reviewed bucket covers are primed for a review. The board only ever
+  // mounts on the self-dashboard (MemberProfile gates it behind the authed self
+  // check), so this is inherently own-view-only. Empty set on any error
+  // (401/404/network) — visitors/other-member views never reach this mount, and a
+  // transient failure simply leaves the covers un-hinted (never blocks the board).
+  const [listenedAlbumIds, setListenedAlbumIds] = useState<Set<string>>(() => new Set())
+
   // Per-bucket sort/group/filter (FEAT-bucket-organize). bucketId → BucketView,
   // seeded from + mirrored to localStorage so each bucket's view survives reload;
   // never touches server `position`. Each BucketCard reads/writes its own entry.
@@ -1913,6 +1973,7 @@ ids.push(a.albumId)
           cover: it.album?.cover_url ?? null,
           year: it.album?.release_date ? Number(String(it.album.release_date).slice(0, 4)) || null : null,
           alreadyReviewed: false,
+          postId: null,
           researchSelected: false,
         }))
         setRecent(mapped)
@@ -1937,6 +1998,28 @@ ids.push(a.albumId)
     getSpotifyLibraryState()
       .then(s => alive && setLibState(s))
       .catch(() => { /* non-fatal — board renders without badges */ })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  // FEAT-bucket-identity Direction B — fetch the listened-album archive ONCE on
+  // mount (no polling) for the "이미 들음 → 평론 가능" cover hint. Quiet no-op on
+  // any error: 401/404/network just leaves the set empty (no hint, never blocks).
+  useEffect(() => {
+    let alive = true
+    listListenedAlbums()
+      .then((items) => {
+        if (!alive)
+          return
+        const ids = new Set<string>()
+        for (const it of items) {
+          if (it.album_id)
+            ids.add(it.album_id)
+        }
+        setListenedAlbumIds(ids)
+      })
+      .catch(() => { /* non-fatal — covers render without the listened hint */ })
     return () => {
       alive = false
     }
@@ -2040,6 +2123,7 @@ ids.push(a.albumId)
             cover: src?.cover ?? null,
             year: src?.year ?? null,
             alreadyReviewed: src?.alreadyReviewed ?? false,
+            postId: src?.postId ?? null,
             researchSelected: false,
           })
         }
@@ -2409,7 +2493,7 @@ ids.push(a.albumId)
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
   // FEAT-my-buckit-artist Step 4: the tree narrowed by the board-level type filter.
   const visibleTree = pruneByType(normalTree, boardType)
 
