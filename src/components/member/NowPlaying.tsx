@@ -13,7 +13,9 @@
 // client-side (no extra read); seek re-anchors optimistically, then confirms
 // with ONE one-shot read (OQ2) — skipped while paused, since a paused player
 // reads as `idle` in the one-shot contract. D28 holds: never polled; the
-// estimate is wall-clock math off the last explicit read.
+// estimate is wall-clock math off the last explicit read. Step 4 adds the
+// Connect-style "Listening on <device>" bottom-edge hint (full/banner) from
+// the same one-shot body — see DeviceHintLine.
 //
 // FEAT-nowplaying-live-sync — the worker-fed cache snapshot
 // (GET /api/library/now-playing, hourly cron, up to ~1h stale) is only the
@@ -67,6 +69,8 @@ interface LiveMoment {
   durationMs: number | null
   artists: Array<{ id: string, name: string }>
   albumSpotifyId: string | null
+  /** Active Connect device name (Step 4 'playing elsewhere' hint), if known. */
+  deviceName: string | null
 }
 
 /**
@@ -265,6 +269,7 @@ function useNowPlaying() {
         durationMs: r.durationMs,
         artists: r.artists,
         albumSpotifyId: r.albumSpotifyId,
+        deviceName: r.deviceName,
       })
       setPaused(false)
       if (r.albumSpotifyId) {
@@ -630,6 +635,31 @@ function ReconnectLine() {
 }
 
 /**
+ * Connect-style 'playing elsewhere' device hint (member-player Step 4) — the
+ * quiet informational sibling of ReconnectLine in the same panel-bottom-edge
+ * slot (full/banner variants). The name comes free with the one-shot
+ * `GET /me/player` body, so it refreshes exactly when the existing ↻ sync (or
+ * a seek confirmation) fires — never polled (D28). Members without the
+ * playback-state scope never reach this: their live read fails before a
+ * moment exists, so the line is omitted by construction.
+ */
+function DeviceHintLine({ name }: { name: string }) {
+  return (
+    <div className="mono" style={{ borderTop: '1px solid var(--color-border-soft)', padding: '7px 16px 8px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)', display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+      <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+        <rect x="3" y="0.5" width="6" height="11" rx="1.2" fill="none" stroke="currentColor" />
+        <circle cx="6" cy="8.5" r="1.1" fill="currentColor" />
+      </svg>
+      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+        Listening on
+        {' '}
+        <span style={{ color: 'var(--color-subtle)' }}>{name}</span>
+      </span>
+    </div>
+  )
+}
+
+/**
  * The dynamic lyrics entry ("가사"). Rendered ONLY beside a live snapshot; the
  * tap performs the one-shot live read and opens on `playing`. Discovering the
  * snapshot went stale (live read = idle) hides the entry — active-playback-only,
@@ -749,6 +779,7 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment
           )}
         </div>
       </div>
+      {moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} />}
       {reconnect && tier === 'fallback' && <ReconnectLine />}
     </div>
   )
@@ -925,6 +956,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
           <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} />
         </div>
       )}
+      {live && moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} />}
       {reconnect && tier === 'fallback' && <ReconnectLine />}
     </div>
   )
