@@ -26,6 +26,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '@lib/api'
 import { goLogin, isLoggedIn } from '@lib/auth'
 import { listBuckets } from '@lib/buckets'
+import { isOwnerUser } from '@lib/owner'
 import { useMusicSearch } from '@lib/useMusicSearch'
 import type { ReleaseDayGroup, ReleaseEventLike } from './releaseShared'
 import { EventCard, LedgerDay, MONTH_EN, RELEASE_BASE_CSS } from './releaseShared'
@@ -142,8 +143,15 @@ function ManagePanel({ tracked, onChanged }: {
 	const [bucketId, setBucketId] = useState('')
 	const [cands, setCands] = useState<Candidate[] | null>(null)
 	const [picked, setPicked] = useState<Set<string>>(new Set())
+	// Owner-only affordance gate (multi-user rule: isLoggedIn() must never gate
+	// owner controls) — the server's provisioned_owner_id stays the real gate.
+	const [isOwner, setIsOwner] = useState(false)
 
 	const trackedIds = useMemo(() => new Set(tracked.map(t => t.artist_id)), [tracked])
+
+	useEffect(() => {
+		void isOwnerUser().then(setIsOwner)
+	}, [])
 
 	useEffect(() => {
 		void listBuckets().then((roots) => {
@@ -224,8 +232,50 @@ function ManagePanel({ tracked, onChanged }: {
 		}
 	}, [bucketId, busy])
 
+	const importSpotifyFollows = useCallback(async () => {
+		if (busy)
+			return
+		setBusy(true)
+		setStatus('Spotify 팔로우 가져오기를 시작하는 중…')
+		try {
+			const res = await apiFetch(`${BASE}/api/me/tracked-artists/spotify-import`, { method: 'POST' })
+			if (!res || !res.ok) {
+				setStatus('가져오기 시작에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+				return
+			}
+			const j = await res.json() as { queued?: boolean }
+			if (!j.queued) {
+				setStatus('가져오기 큐가 설정되지 않아 시작하지 못했습니다.')
+				return
+			}
+			// Async import (rule #9): catalog matches land within seconds; artists
+			// the worker has to catalog first ride the delayed re-import (~15 min).
+			setStatus('가져오는 중 — 카탈로그에 있는 아티스트는 곧 반영되고, 없는 아티스트는 수집 후 최대 15분 안에 자동 반영돼요.')
+			window.setTimeout(() => onChanged(), 8000)
+		}
+		finally {
+			setBusy(false)
+		}
+	}, [busy, onChanged])
+
 	return (
 		<div className="rr-manage">
+			{isOwner && (
+				<>
+					<p className="rr-sub mono">Spotify에서 가져오기</p>
+					<div className="rr-row">
+						<button
+							type="button"
+							className="mono"
+							disabled={busy}
+							onClick={() => void importSpotifyFollows()}
+						>
+							팔로우 아티스트 가져오기
+						</button>
+					</div>
+				</>
+			)}
+
 			<p className="rr-sub mono">아티스트 검색으로 추가</p>
 			<form
 				className="rr-row"
