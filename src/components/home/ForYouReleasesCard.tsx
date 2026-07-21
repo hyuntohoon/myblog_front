@@ -13,7 +13,9 @@
  * Auth: `isLoggedIn()` gate + plain fetch with `getAuthHeader()` — NOT
  * `apiFetch`, whose failed-refresh path redirects to login; a passive home
  * strip must never navigate the page away (same seam rationale as
- * spotifyPlayback.getStreamingToken).
+ * spotifyPlayback.getStreamingToken). A 401 (hourly token expiry in a stale
+ * tab) refreshes once via `refreshAccessToken()` and retries — refresh
+ * failure stays hidden, never redirects.
  *
  * Degradation is strict (NewReleasesCard contract): logged out, fetch failure,
  * non-200, or 0 items renders NOTHING — no skeleton, no reserved space.
@@ -21,7 +23,7 @@
 import type { components } from '@lib/api.gen'
 import { useEffect, useState } from 'react'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
-import { getAuthHeader, isLoggedIn } from '@lib/auth'
+import { getAuthHeader, isLoggedIn, refreshAccessToken } from '@lib/auth'
 import { artistHref, openAlbum } from '@lib/entityLinks'
 import HomeStrip from './HomeStrip'
 import { Cover, SectionTitle } from './ui'
@@ -106,13 +108,27 @@ export default function ForYouReleasesCard() {
 		if (!BASE || !isLoggedIn())
 			return
 		let alive = true
-		fetch(`${BASE}/api/me/release-feed?state=recent`, { headers: { ...getAuthHeader() } })
-			.then(r => (r.ok ? r.json() as Promise<ReleaseFeedResponse> : null))
-			.then((j) => {
-				if (alive && j && Array.isArray(j.recent) && j.recent.length > 0)
-					setItems(j.recent.slice(0, LIMIT))
-			})
-			.catch(() => {}) // hidden on failure — home keeps its prior layout
+		const url = `${BASE}/api/me/release-feed?state=recent`
+		const load = async () => {
+			let res = await fetch(url, { headers: { ...getAuthHeader() } })
+			// Stale-tab seam: access tokens expire hourly, and this strip
+			// deliberately bypasses apiFetch (a passive strip must never
+			// navigate). Without a retry the strip silently vanishes on any
+			// tab older than the token — refresh once and re-fetch; on refresh
+			// failure stay hidden, still no redirect.
+			if (res.status === 401) {
+				const refreshed = await refreshAccessToken()
+				if (!refreshed)
+					return
+				res = await fetch(url, { headers: { Authorization: `Bearer ${refreshed}` } })
+			}
+			if (!res.ok)
+				return
+			const j = await res.json() as ReleaseFeedResponse
+			if (alive && j && Array.isArray(j.recent) && j.recent.length > 0)
+				setItems(j.recent.slice(0, LIMIT))
+		}
+		load().catch(() => {}) // hidden on failure — home keeps its prior layout
 		return () => {
 			alive = false
 		}
