@@ -3,6 +3,8 @@ name: Deploy Front (S3+CF)
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 # Least privilege: default GITHUB_TOKEN is too broad; this workflow only reads this repo.
