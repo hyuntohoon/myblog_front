@@ -66,6 +66,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Unit tests
+        run: pnpm test
+
   deploy:
     needs: check
     # Production deploy is main-only. push already filters to main (on.push.branches), but
