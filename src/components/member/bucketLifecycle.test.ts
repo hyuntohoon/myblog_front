@@ -5,7 +5,7 @@
 // here — the assertions must not change.
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import { describe, expect, it } from 'vitest'
-import { collectItems, crMeta, isResearchEngaged, TOLISTEN_KIND } from './BucketBoard'
+import { collectItems, crMeta, isResearchEngaged, TOLISTEN_KIND } from '@lib/bucketLifecycle'
 
 function bucket(over: Partial<BoardBucket> = {}): BoardBucket {
   return {
