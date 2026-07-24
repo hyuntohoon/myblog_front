@@ -25,6 +25,9 @@ import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
+import { findBucket, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
+import type { DndItem } from '@lib/boardDnd'
+import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from '@lib/boardDnd'
 import { crMeta } from '@lib/bucketLifecycle'
 import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
@@ -44,24 +47,14 @@ import { getSpotifyLibraryState, listListenedAlbums, listRecentlyListened, syncS
 import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
 import { AlbumArt, SectionTitle } from './ui'
 
-// `copy` (with `albumId`) marks a drag originating from the pinned 최근 들은 앨범
-// strip: dropping it copies the album in (addBucketItem) instead of moving a
-// bucket item. Synthetic id; not a real review_bucket_items row.
-// `copy` (recent strip) and `fromLib` (the spotify_library bucket) both drop as a
-// COPY into a target bucket; `fromLib` additionally keeps `itemId`/`source` so it can
-// still be moved to the trash (only when source==='myblog_added' — a 기존/preexisting
-// album is never deletable). `albumId` is carried on every album drag so a drop INTO
-// the library bucket can copy by album id without a tree lookup.
-interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string | null, fromLib?: boolean, source?: string, trackId?: string | null, artistId?: string | null, srcItemType?: string }
 // Module-level drag payload (native DnD can't carry live object refs reliably).
+// The payload shape (`DndItem`) and the drop routing/acceptance rules live in
+// @lib/boardDnd; this component owns only the gesture wiring + this live ref.
 let dnd: DndItem | null = null
 type DragKind = 'album' | 'bucket' | null
 
 // Synthetic id of the read-only 최근 들은 앨범 strip (never persisted server-side).
 const RECENT_ID = '__recent__'
-// `review_buckets.kind` value of the single special Spotify-library bucket — it
-// is filtered out of the normal crate tree and rendered as its own section.
-const SLIB_KIND = 'spotify_library'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
 // Last-seen 최근 들은 앨범 strip, cached so it paints instantly on the next mount
@@ -126,20 +119,6 @@ function pruneByType(buckets: BoardBucket[], type: 'all' | 'general' | 'artist')
   }
   return out
 }
-function visit(buckets: BoardBucket[], fn: (b: BoardBucket) => void) {
-  for (const b of buckets) {
-    fn(b)
-    visit(b.children, fn)
-  }
-}
-function findBucket(buckets: BoardBucket[], id: string): BoardBucket | null {
-  let f: BoardBucket | null = null
-  visit(buckets, (b) => {
-    if (b.id === id)
-      f = b
-  })
-  return f
-}
 function removeBucketNode(buckets: BoardBucket[], id: string): BoardBucket | null {
   let removed: BoardBucket | null = null
   const rec = (arr: BoardBucket[]): boolean => {
@@ -157,14 +136,6 @@ function removeBucketNode(buckets: BoardBucket[], id: string): BoardBucket | nul
   }
   rec(buckets)
   return removed
-}
-function subtreeHas(bucket: BoardBucket, id: string): boolean {
-  let y = false
-  visit([bucket], (b) => {
-    if (b.id === id)
-      y = true
-  })
-  return y
 }
 function countAlbums(b: BoardBucket): number {
   let n = b.albums.length
@@ -787,52 +758,6 @@ interface AlbumSheet { album: BoardAlbum, bucketId: string, copySource: boolean,
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-// FEAT-pocket-buckit-viewers Track A — route a member/bucket drop onto a target bucket
-// using the board's ops. The SINGLE source of drop semantics: the BucketCard onDrop AND
-// the reverse-DnD PB_BOARD_DROP listener both call it, so a board member dropped on a
-// Pocket target (tray chip / open drawer) behaves IDENTICALLY to dropping it on the board
-// card — General add/move, Artist source-expansion (album/track → credited artists), the
-// Spotify-library copy/guard, and bucket-into-bucket — all reused verbatim, no fork.
-function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: Ops): void {
-  const isLib = target.kind === SLIB_KIND
-  // The sync-owned library bucket holds only albums — a track/null-album row has nothing
-  // to reconcile against Spotify, so reject it.
-  if (isLib && it.kind === 'album' && !it.albumId)
-    return
-  // Artist bucket: an artist member moves/adds in; an album/track SOURCE expands into its
-  // credited artists (the source row itself is never stored). A non-artist-bearing source
-  // no-ops (it is rejected at drag-over upstream, so it never reaches here in practice).
-  if (target.type === 'artist' && it.kind === 'album') {
-    if (it.srcItemType === 'artist') {
-      if (it.itemId && it.fromBucketId && it.fromBucketId !== target.id)
-        ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
-    }
-    else if (it.albumId) {
-      ops.expandSource(target.id, { albumId: it.albumId })
-    }
-    else if (it.trackId) {
-      ops.expandSource(target.id, { trackId: it.trackId })
-    }
-    return
-  }
-  // COPY when dropping into the library bucket, or the source is a copy/library item;
-  // otherwise a normal move/add. Bucket-into-bucket guarded against self / cycle.
-  const copyIn = isLib || it.copy || it.fromLib
-  if (it.kind === 'album' && copyIn && it.albumId) {
-    ops.copyAlbum(it.albumId, target.id)
-  }
-  else if (it.kind === 'album' && it.itemId && it.fromBucketId && it.fromBucketId !== target.id) {
-    // Same-bucket guard (mirrors the artist branch): dropping a member on its own
-    // bucket would otherwise persist a spurious reorder (PUT /api/buckets/reorder).
-    ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
-  }
-  else if (it.kind === 'bucket' && it.bucketId && it.bucketId !== target.id) {
-    const src = findBucket(ops.tree, it.bucketId)
-    if (!(src && subtreeHas(src, target.id)))
-      ops.moveBucketInto(it.bucketId, target.id)
-  }
-}
-
 function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
   const shared: SharedProps = { ops, onOpen, ratings, libState, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
   const [editing, setEditing] = useState(false)
@@ -875,29 +800,12 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
     }
   }
 
-  const canAcceptBucket = (): boolean => {
-    const it = dnd
-    if (!it || it.kind !== 'bucket')
-      return false
-    if (it.bucketId === bucket.id)
-      return false
-    const src = it.bucketId ? findBucket(ops.tree, it.bucketId) : null
-    return !(src && subtreeHas(src, bucket.id))
-  }
-  // FEAT-my-buckit-artist: an Artist bucket accepts only an artist member (move)
-  // or an album/track SOURCE that expands into its credited artists. A source
-  // bearing no artist (review/playback/snapshot tile) is rejected at drag-over —
-  // no glow, no optimistic insert. General buckets accept all (today's behavior).
-  const canAcceptAlbumDrag = (it: DndItem): boolean => {
-    if (bucket.type !== 'artist')
-      return true
-    return it.srcItemType === 'artist' || !!it.albumId || !!it.trackId
-  }
   const onDragOver = (e: React.DragEvent) => {
     const it = dnd
     if (!it)
       return
-    if ((it.kind === 'album' && canAcceptAlbumDrag(it)) || (it.kind === 'bucket' && canAcceptBucket())) {
+    // Acceptance rules live in @lib/boardDnd (pure, unit-tested).
+    if ((it.kind === 'album' && canAcceptAlbumDrag(bucket, it)) || (it.kind === 'bucket' && canAcceptBucketDrag(ops.tree, bucket, it))) {
       e.preventDefault()
       e.stopPropagation()
       setDropTarget(bucket.id)

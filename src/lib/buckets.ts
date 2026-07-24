@@ -554,3 +554,41 @@ export async function reorderItems(buckets: { id: string, item_ids: string[] }[]
   })
   await expectNoContent(res)
 }
+
+// ── bucket tree helpers (pure) ───────────────────────────────────────────────
+// Pure walkers over a BoardBucket[] tree, shared by BucketBoard and @lib/boardDnd
+// (REFACTOR-frontend-member-surface Step 4a extracted them here from BucketBoard
+// so the DnD-routing module can reuse them without importing the component).
+
+// `review_buckets.kind` value of the single special Spotify-library bucket — it
+// is filtered out of the normal crate tree and rendered as its own section.
+export const SLIB_KIND = 'spotify_library'
+
+// Pre-order walk of every bucket in the tree (each node then its descendants).
+export function visit(buckets: BoardBucket[], fn: (b: BoardBucket) => void): void {
+  for (const b of buckets) {
+    fn(b)
+    visit(b.children, fn)
+  }
+}
+
+// The bucket with `id` anywhere in the tree, or null.
+export function findBucket(buckets: BoardBucket[], id: string): BoardBucket | null {
+  let f: BoardBucket | null = null
+  visit(buckets, (b) => {
+    if (b.id === id)
+      f = b
+  })
+  return f
+}
+
+// True when `id` is `bucket` itself or any descendant — the cycle guard for a
+// bucket-into-bucket move (never nest a bucket under its own subtree).
+export function subtreeHas(bucket: BoardBucket, id: string): boolean {
+  let y = false
+  visit([bucket], (b) => {
+    if (b.id === id)
+      y = true
+  })
+  return y
+}
