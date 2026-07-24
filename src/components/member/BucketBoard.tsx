@@ -43,6 +43,8 @@ import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
 import AddArtistModal from './AddArtistModal'
+import { ActionSheet } from './ActionSheet'
+import type { SheetAction } from './ActionSheet'
 import { listRecentlyListened } from './spotify.api'
 import type { SpotifyLibraryAlbumState } from './spotify.api'
 import { useSpotifyLibrary } from './useSpotifyLibrary'
@@ -1453,45 +1455,6 @@ function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: T
 // Replaces drag-and-drop on touch devices (where onDragStart never fires). Each
 // row's onClick runs the SAME ops the drop handlers call. Dismissable on
 // backdrop tap / ESC.
-interface SheetAction { label: string, onClick: () => void, danger?: boolean }
-function ActionSheet({ title, subtitle, actions, onClose }: { title: string, subtitle?: string, actions: SheetAction[], onClose: () => void }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')
-        onClose()
-    }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
-  }, [onClose])
-  return createPortal(
-    <div className="bps-scrim" onClick={onClose} role="presentation">
-      <div className="bps-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
-        <div className="bps-head">
-          <div style={{ minWidth: 0 }}>
-            <div className="serif" style={{ fontSize: 17, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
-            {subtitle && <div className="mono" style={{ fontSize: 10.5, color: 'var(--color-subtle)', letterSpacing: '0.04em', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>}
-          </div>
-          <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기">✕</button>
-        </div>
-        <div className="bps-list">
-          {actions.map(a => (
-            <button
-	key={a.label}
-	type="button"
-	className="bps-item"
-	onClick={a.onClick}
-	style={a.danger ? { color: 'var(--color-accent)' } : undefined}
-            >
-              <span className="serif">{a.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
 // ── board ────────────────────────────────────────────────────────────────---
 // Stable empty id-set: passed to useResearchStatusMap when the bucket tab is
 // hidden so the hook clears its map + stops polling without thrashing the memo.
