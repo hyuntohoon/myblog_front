@@ -43,8 +43,9 @@ import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
 import AddArtistModal from './AddArtistModal'
-import { getSpotifyLibraryState, listListenedAlbums, listRecentlyListened, syncSpotifyLibrary } from './spotify.api'
-import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
+import { listRecentlyListened } from './spotify.api'
+import type { SpotifyLibraryAlbumState } from './spotify.api'
+import { useSpotifyLibrary } from './useSpotifyLibrary'
 import { AlbumArt, SectionTitle } from './ui'
 
 // Module-level drag payload (native DnD can't carry live object refs reliably).
@@ -1532,20 +1533,6 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const createMenuRef = useRef<HTMLDivElement>(null)
   useDismissable(createMenuOpen, () => setCreateMenuOpen(false), createMenuRef)
 
-  // FEAT-spotify-library-sync — the special bucket's sync state (banners + the
-  // per-album source/state map) and whether a manual sync is in flight.
-  const [libState, setLibState] = useState<SpotifyLibraryState | null>(null)
-  const [syncing, setSyncing] = useState(false)
-
-  // FEAT-bucket-identity Direction B — the member's cumulative listened-album set
-  // (album_id → "이미 들음"), fetched ONCE on mount to quietly hint which
-  // not-yet-reviewed bucket covers are primed for a review. The board only ever
-  // mounts on the self-dashboard (MemberProfile gates it behind the authed self
-  // check), so this is inherently own-view-only. Empty set on any error
-  // (401/404/network) — visitors/other-member views never reach this mount, and a
-  // transient failure simply leaves the covers un-hinted (never blocks the board).
-  const [listenedAlbumIds, setListenedAlbumIds] = useState<Set<string>>(() => new Set())
-
   // Per-bucket sort/group/filter (FEAT-bucket-organize). bucketId → BucketView,
   // seeded from + mirrored to localStorage so each bucket's view survives reload;
   // never touches server `position`. Each BucketCard reads/writes its own entry.
@@ -1763,14 +1750,6 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     return m
   }, [reviews])
 
-  // album_id → Spotify-library sync row, for the cover source/state badges.
-  const libAlbumMap = useMemo(() => {
-    const m = new Map<string, SpotifyLibraryAlbumState>()
-    for (const a of libState?.albums ?? [])
-      m.set(a.album_id, a)
-    return m
-  }, [libState])
-
   // Split the special spotify_library bucket out of the normal crate tree: it
   // renders as its own section below the recent strip, never inside the grid.
   // (Top-level only — the backend guarantees one such bucket at the root.)
@@ -1849,41 +1828,6 @@ ids.push(a.albumId)
     }
   }, [])
 
-  // Load the Spotify-library sync state (banners + per-album source/state map).
-  // Worker-fed; the GET never calls Spotify (rule #9). A transient failure just
-  // leaves the section unbadged — it never blocks the crate board.
-  useEffect(() => {
-    let alive = true
-    getSpotifyLibraryState()
-      .then(s => alive && setLibState(s))
-      .catch(() => { /* non-fatal — board renders without badges */ })
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  // FEAT-bucket-identity Direction B — fetch the listened-album archive ONCE on
-  // mount (no polling) for the "이미 들음 → 평론 가능" cover hint. Quiet no-op on
-  // any error: 401/404/network just leaves the set empty (no hint, never blocks).
-  useEffect(() => {
-    let alive = true
-    listListenedAlbums()
-      .then((items) => {
-        if (!alive)
-          return
-        const ids = new Set<string>()
-        for (const it of items) {
-          if (it.album_id)
-            ids.add(it.album_id)
-        }
-        setListenedAlbumIds(ids)
-      })
-      .catch(() => { /* non-fatal — covers render without the listened hint */ })
-    return () => {
-      alive = false
-    }
-  }, [])
-
   // Mirror the album count to localStorage so the overview's bucket shortcut
   // (lib/member.ts bucketCount(), read synchronously) matches the live board.
   useEffect(() => {
@@ -1906,38 +1850,11 @@ ids.push(a.albumId)
     await bucketStore.ensureFresh(true)
   }
 
-  // 동기화 — model on refreshRecent(): POST enqueues the worker reconcile (rule
-  // #9, no synchronous Spotify call), then POLL /spotify-library/state until
-  // last_synced_at advances past the pre-sync value (cap ~10 polls / ~20s), then
-  // refetch the board + state so the new badges/pulled albums paint. A
-  // 'debounced' response (a sync ran <30s ago) skips the poll. Best-effort: any
-  // failure just clears the spinner — the next mount/poll reconciles.
-  async function runLibrarySync() {
-    if (syncing)
-      return
-    setSyncing(true)
-    const before = libState?.last_synced_at ?? null
-    try {
-      const { status } = await syncSpotifyLibrary()
-      if (status === 'debounced') {
-        setLibState(await getSpotifyLibraryState())
-        return
-      }
-      for (let i = 0; i < 10; i++) {
-        await new Promise(r => setTimeout(r, 2000))
-        const next = await getSpotifyLibraryState()
-        setLibState(next)
-        if (next.last_synced_at && next.last_synced_at !== before) {
-          await refresh()
-          break
-        }
-      }
-    }
-    catch { /* non-fatal — clear the spinner, leave existing state in place */ }
-    finally {
-      setSyncing(false)
-    }
-  }
+  // FEAT-spotify-library-sync — the special bucket's sync surface (state banners,
+  // per-album badge map, listened-album hint, manual-sync poll) lives in a
+  // dedicated hook (REFACTOR Step 4b). It repaints the board via `refresh` once a
+  // real sync advances last_synced_at.
+  const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh)
 
   // Clear all drag state the instant a drop completes its op. Needed in addition
   // to the document-level reset above because card drop handlers stopPropagation
