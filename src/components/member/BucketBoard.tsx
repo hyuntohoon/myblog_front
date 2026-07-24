@@ -67,7 +67,10 @@ const SLIB_KIND = 'spotify_library'
 // rename-proof signal. crMeta tags this bucket 청취 예정 by kind (FEAT-bucket-
 // identity Direction B made every other tag rename-proof too, so the old name-
 // regex fallback for pre-system buckets is gone).
-const TOLISTEN_KIND = 'to_listen'
+// Exported for characterization tests (REFACTOR-frontend-member-surface Step 1).
+// Step 3 will relocate the lifecycle helpers to @lib; until then these named
+// exports let the test net pin their behavior in place. No behavior change.
+export const TOLISTEN_KIND = 'to_listen'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
 // Last-seen 최근 들은 앨범 strip, cached so it paints instantly on the next mount
@@ -418,7 +421,7 @@ function displayOrder(albums: BoardAlbum[], view: BucketView): string[] {
 // Every album (item) in a bucket's subtree — direct members + all descendants —
 // so a parent bucket's lifecycle tag reflects the aggregate state of everything
 // nested under it, not just its own direct members.
-function collectItems(b: BoardBucket): BoardAlbum[] {
+export function collectItems(b: BoardBucket): BoardAlbum[] {
   const out: BoardAlbum[] = []
   const walk = (node: BoardBucket): void => {
     out.push(...node.albums)
@@ -432,11 +435,11 @@ function collectItems(b: BoardBucket): BoardAlbum[] {
 // marks the research PHASE, so a completed note (done) still counts — excluding
 // it would relabel a fully-researched album as merely 담음. A terminal failed run
 // yields no note, so it does not lift the bucket out of 담음.
-function isResearchEngaged(s: ResearchStatus | null): boolean {
+export function isResearchEngaged(s: ResearchStatus | null): boolean {
   return s === 'queued' || s === 'running' || s === 'done'
 }
 
-function crMeta(b: BoardBucket): { tag: string } {
+export function crMeta(b: BoardBucket): { tag: string } {
   // Canonical: the system to-listen bucket is tagged by kind, not its name.
   if (b.kind === TOLISTEN_KIND)
     return { tag: '청취 예정' }
