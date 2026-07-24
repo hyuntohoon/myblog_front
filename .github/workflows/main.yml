@@ -145,3 +145,24 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CF_DIST_ID }} \
             --paths "/*"
+
+      # OPS-delivery-safety-gates Step 3 — post-deploy health smoke (health-only,
+      # no credentials). Content is already live in S3/CloudFront here, so this is
+      # detect-and-alert-fast + rollback trigger, NOT a pre-cutover gate. A red run
+      # means: roll back (re-run the previous green deploy, or restore the previous
+      # dist/ to S3 + invalidate). Retries absorb CloudFront invalidation lag.
+      - name: Post-deploy smoke (health)
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          URL="https://www.ratemymusic.blog/?_cb=${RUN_ID}"
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 15 -o /tmp/home.html "$URL" && grep -qi '<html' /tmp/home.html; then
+              echo "Front health OK."
+              exit 0
+            fi
+            echo "attempt $i: health not green yet, retrying in 5s…"
+            sleep 5
+          done
+          echo "::error::Front health smoke FAILED — homepage did not return HTML. Roll back the deploy."
+          exit 1
