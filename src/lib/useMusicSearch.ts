@@ -205,6 +205,16 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
   // CP-1: monotonic search-sequence guard — a slow earlier response must never
   // overwrite a newer query's results.
   const seqRef = useRef(0)
+  // REFACTOR Step 2: cancel the in-flight request when a newer one starts, so a
+  // superseded search-as-you-type fetch is aborted on the wire — not just dropped
+  // after it arrives (the seqRef guard). One ref covers all three network ops.
+  const abortRef = useRef<AbortController | null>(null)
+  const nextSignal = useCallback(() => {
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    return ac.signal
+  }, [])
 
   const typeParam = recallTypes.join(',')
 
@@ -221,6 +231,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     if (!q)
       return
     const seq = ++seqRef.current
+    const signal = nextSignal()
     setSource('db')
     setLoading(true)
     setStatus('')
@@ -230,6 +241,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     try {
       const r = await fetch(
         `${MUSIC}/api/music/search/unified?q=${encodeURIComponent(q)}&type=${typeParam}&limit=${pageLimit}&offset=0`,
+        { signal },
       )
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
@@ -247,14 +259,16 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
         setStatus('DB에 결과 없음')
     }
     catch {
-      if (seq === seqRef.current)
+      // An abort (superseded by a newer search) is not a failure — the seqRef
+      // guard already suppresses stale results; don't flash 검색 실패.
+      if (seq === seqRef.current && !signal.aborted)
         setStatus('검색 실패')
     }
     finally {
       if (seq === seqRef.current)
         setLoading(false)
     }
-  }, [query, typeParam, pageLimit])
+  }, [query, typeParam, pageLimit, nextSignal])
 
   const runSpotifySync = useCallback(async () => {
     const q = query.trim()
@@ -267,6 +281,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
       setSpotifyCooldown(false)
     }, SPOTIFY_COOLDOWN_MS)
     const seq = ++seqRef.current
+    const signal = nextSignal()
     setSource('spotify')
     setLoading(true)
     setStatus('Spotify 싱크 중…')
@@ -277,6 +292,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     try {
       const r = await apiFetch(
         `${MUSIC}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=${typeParam}&limit=20`,
+        { signal },
       )
       if (!r || !r.ok)
         throw new Error(`HTTP ${r?.status}`)
@@ -291,14 +307,16 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
       setStatus(total === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과')
     }
     catch {
-      if (seq === seqRef.current)
+      // apiFetch swallows an abort into a null return (→ HTTP undefined throw
+      // above); guard on the signal so a superseded sync doesn't flash a failure.
+      if (seq === seqRef.current && !signal.aborted)
         setStatus('Spotify 싱크 실패')
     }
     finally {
       if (seq === seqRef.current)
         setLoading(false)
     }
-  }, [query, typeParam])
+  }, [query, typeParam, nextSignal])
 
   const loadMore = useCallback(async (kind: SearchKind) => {
     const q = query.trim()
@@ -308,6 +326,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     // CP-4: pin the seq + query this load-more was started against; if either
     // changes before the response resolves, appending would corrupt the list.
     const seq = seqRef.current
+    const signal = nextSignal()
     setLoadingMore(kind)
     try {
       const params = new URLSearchParams({
@@ -317,7 +336,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
         offset: '0',
         [`${kind}_offset`]: String(offsets[kind]),
       })
-      const r = await fetch(`${MUSIC}/api/music/search/unified?${params.toString()}`)
+      const r = await fetch(`${MUSIC}/api/music/search/unified?${params.toString()}`, { signal })
       if (!r.ok)
         throw new Error(`HTTP ${r.status}`)
       const data = await r.json() as UnifiedSearchResult
@@ -347,13 +366,13 @@ mapArtists(data.artists, 'db') :
       setLastReturned(prev => ({ ...prev, [kind]: returned }))
     }
     catch {
-      if (seq === seqRef.current && query.trim() === q)
+      if (seq === seqRef.current && query.trim() === q && !signal.aborted)
         setStatus('추가 로드 실패')
     }
     finally {
       setLoadingMore(null)
     }
-  }, [query, typeParam, pageLimit, offsets, loadingMore, source])
+  }, [query, typeParam, pageLimit, offsets, loadingMore, source, nextSignal])
 
   const hasMore: Counts = {
     album: source === 'db' && lastReturned.album >= pageLimit ? 1 : 0,
