@@ -117,11 +117,9 @@ describe('apiFetch', () => {
     expect(mockGoLogin).not.toHaveBeenCalled()
   })
 
-  // CHARACTERIZATION of a current LIMITATION: apiFetch has no timeout/AbortSignal
-  // today. It does not create its own AbortController — it only forwards a caller
-  // signal. REFACTOR Step 2 will add a default timeout; this test documents the
-  // pre-Step-2 state and MUST be updated (not deleted) when Step 2 lands.
-  it('does not impose its own timeout today (no signal injected when caller omits one)', async () => {
+  // REFACTOR Step 2: apiFetch now bounds every call with a timeout — it injects
+  // its own AbortSignal even when the caller passes none.
+  it('injects an AbortSignal (its own timeout) even when the caller omits one', async () => {
     mockGetToken.mockReturnValue('tok')
     const fetchMock = vi.fn().mockResolvedValue(res(200))
     vi.stubGlobal('fetch', fetchMock)
@@ -129,7 +127,76 @@ describe('apiFetch', () => {
     await apiFetch('/api/x')
 
     const [, init] = fetchMock.mock.calls[0]
-    expect(init.signal).toBeUndefined()
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(init.signal.aborted).toBe(false)
+  })
+
+  it('aborts and returns null when the request exceeds the default timeout', async () => {
+    vi.useFakeTimers()
+    mockGetToken.mockReturnValue('tok')
+    // a fetch that only settles when its signal aborts (a wedged request)
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const p = apiFetch('/api/x')
+    await vi.advanceTimersByTimeAsync(15000)
+    const r = await p
+
+    expect(r).toBeNull()
+    expect(mockGoLogin).not.toHaveBeenCalled() // a timeout is not an auth failure
+    vi.useRealTimers()
+  })
+
+  it('honors a caller timeoutMs override', async () => {
+    vi.useFakeTimers()
+    mockGetToken.mockReturnValue('tok')
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const p = apiFetch('/api/x', { timeoutMs: 100 })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await p).toBeNull()
+    vi.useRealTimers()
+  })
+
+  it('cancels the request and returns null when a caller signal aborts', async () => {
+    mockGetToken.mockReturnValue('tok')
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ac = new AbortController()
+    const p = apiFetch('/api/x', { signal: ac.signal })
+    ac.abort()
+    const r = await p
+
+    expect(r).toBeNull()
+    expect(mockGoLogin).not.toHaveBeenCalled()
+  })
+
+  it('returns null immediately when the caller signal is already aborted', async () => {
+    mockGetToken.mockReturnValue('tok')
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        if (init?.signal?.aborted)
+          reject(new DOMException('aborted', 'AbortError'))
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const ac = new AbortController()
+    ac.abort()
+    const r = await apiFetch('/api/x', { signal: ac.signal })
+
+    expect(r).toBeNull()
   })
 })
 
