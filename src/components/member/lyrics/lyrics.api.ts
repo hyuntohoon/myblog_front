@@ -10,6 +10,7 @@ const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 export type LyricsResponse = components['schemas']['Backend_LyricsResponse']
 export type LyricsSegment = components['schemas']['Backend_LyricsSegment']
 export type LyricsTranslationInfo = components['schemas']['Backend_LyricsTranslationInfo']
+export type LyricsAnnotation = components['schemas']['Backend_LyricsAnnotation']
 
 /**
  * Fetch the normalized lyric segments for a Spotify track id.

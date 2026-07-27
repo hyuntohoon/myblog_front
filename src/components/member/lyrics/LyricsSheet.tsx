@@ -19,11 +19,21 @@
 //
 // Data + translation reuse the existing authenticated reads (GET
 // /api/lyrics/{id} + translation-request) — no backend change.
-import type { CSSProperties, PointerEvent, ReactNode, RefObject } from 'react'
-import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
+import type { CSSProperties, PointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
+import type { AnnoStyle, LineMark } from './annotations'
+import type { LyricsAnnotation, LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
+import {
+  buildLineMarks,
+  drawerItems,
+  drawerMark,
+  lineClasses,
+  readAnnoStyle,
+  spanLength,
+  writeAnnoStyle,
+} from './annotations'
 import { getLyrics, requestTranslation } from './lyrics.api'
 
 /** Header pointer handlers — the sheet's grab handle (move / tear). */
@@ -58,6 +68,83 @@ type Phase =
 	| { k: 'loading' } |
 	{ k: 'error' } |
 	{ k: 'ready', data: LyricsResponse }
+
+/** Screen-reader label for a marked line — announces the range, per the design record. */
+function markLabel(mark: LineMark): string {
+	const a = mark.anno
+	const n = spanLength(a)
+	const range = n <= 1 ?
+		`${(a.start_i ?? 0) + 1}행` :
+		`${(a.start_i ?? 0) + 1}행부터 ${(a.end_i ?? 0) + 1}행까지 ${n}행`
+	const repeat = a.status === 'repeated' && a.occurrences > 1 ? `, 곡에서 ${a.occurrences}번 반복` : ''
+	const disputed = a.disputed ? ', 이견 있음' : ''
+	const paired = mark.sharedBy > 1 ? `, 이 줄을 주장하는 해설 ${mark.sharedBy}개` : ''
+	return `해설, ${range}${repeat}${disputed}${paired}`
+}
+
+/**
+ * The `N행` / 반복 tail that sits at the end of a range.
+ *
+ * Every label is built as ONE interpolated string. Splitting `{n}` and `행` across
+ * JSX lines makes the compiler join them with a space — "12 행", "곡에서 2 번 나옵니다" —
+ * which is what the formatter does if the text is left inline.
+ */
+function MarkTail({ mark }: { mark: LineMark }) {
+	const n = spanLength(mark.anno)
+	const repeats = mark.anno.status === 'repeated' && mark.anno.occurrences > 1
+	return (
+		<>
+			{n > 1 && <span className="lys-tail mono">{`${n}행`}</span>}
+			{repeats && <span className="lys-echo mono">{`×${mark.anno.occurrences}`}</span>}
+			{mark.sharedBy > 1 && <span className="lys-dual mono">{`해설 ${mark.sharedBy}`}</span>}
+		</>
+	)
+}
+
+/**
+ * One opened annotation. The Korean body is the body a reader sees; the original is
+ * secondary and collapsed. A withheld translation says so rather than showing nothing.
+ */
+function AnnoNote({ anno, paired }: { anno: LyricsAnnotation, paired: boolean }) {
+	const withheld = anno.translation_status !== 'done'
+	return (
+		<div className="lys-note">
+			<div className="lys-note-head mono">
+				<span>해설</span>
+				<span className={anno.votes_total < 0 ? 'v neg' : 'v'}>
+					{`${anno.votes_total > 0 ? '+' : ''}${anno.votes_total}표`}
+				</span>
+			</div>
+			{anno.status === 'repeated' && anno.occurrences > 1 && (
+				<p className="lys-note-flag mono">
+					{`이 구간은 곡에서 ${anno.occurrences}번 나옵니다 — 번호는 첫 등장에만 붙습니다`}
+				</p>
+			)}
+			{anno.disputed && (
+				<p className="lys-note-flag is-warn mono">
+					{`득표 ${anno.votes_total} — 커뮤니티에서 반박된 해석입니다`}
+				</p>
+			)}
+			{paired && <p className="lys-note-flag mono">겹친 줄 — 이 줄을 주장하는 해설이 둘입니다</p>}
+			{withheld ?
+				(
+					<p className="lys-note-body">
+						{anno.translation_status === 'stale' ?
+							'원문이 바뀌어 한국어 해설을 다시 만들어야 합니다.' :
+							'한국어 해설이 아직 준비되지 않았습니다.'}
+					</p>
+				) :
+				<p className="lys-note-body">{anno.body_ko}</p>}
+			<details>
+				<summary className="mono">원문 보기</summary>
+				<p className="lys-note-src">{anno.fragment}</p>
+				{anno.genius_url && (
+					<a className="lys-note-link mono" href={anno.genius_url} target="_blank" rel="noreferrer noopener">Genius에서 보기</a>
+				)}
+			</details>
+		</div>
+	)
+}
 
 /**
  * Korean-dominant source detection (mirror of LyricsViewer OQ3): ≥50% Hangul
@@ -136,6 +223,8 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 }) {
 	const [phase, setPhase] = useState<Phase>({ k: 'loading' })
 	const [mode, setMode] = useState<Mode>(readMode)
+	const [annoStyle, setAnnoStyle] = useState<AnnoStyle>(readAnnoStyle)
+	const [openIds, setOpenIds] = useState<number[]>([])
 	const [showKo, setShowKo] = useState(false)
 	const [trOverride, setTrOverride] = useState<LyricsTranslationInfo | null>(null)
 	const [requesting, setRequesting] = useState(false)
@@ -180,6 +269,24 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 	const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
 	const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
 	const stanzas = useMemo(() => toStanzas(segs), [segs])
+
+	// Annotations ride the same payload. They are present even when availability is
+	// not "ok" — a track can carry commentary and no synced lyrics at all.
+	const annotations = (phase.k === 'ready' ? phase.data.annotations : null) ?? []
+	const lineMarks = useMemo(() => buildLineMarks(annotations), [annotations])
+	const drawer = useMemo(() => drawerItems(annotations), [annotations])
+
+	const pickAnnoStyle = (v: AnnoStyle) => {
+		setAnnoStyle(v)
+		writeAnnoStyle(v)
+	}
+
+	/** Opening a shared line opens every claim on it — see the containment fallback. */
+	const toggleAnno = (mark: LineMark) => {
+		const ids = mark.claims.map(a => a.id)
+		const same = ids.length === openIds.length && ids.every(i => openIds.includes(i))
+		setOpenIds(same ? [] : ids)
+	}
 
 	const requestTr = async () => {
 		if (requesting)
@@ -253,6 +360,18 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 						<button type="button" className={mode === 'doc' ? 'on' : ''} aria-pressed={mode === 'doc'} onClick={() => pickMode('doc')}>문서</button>
 						<button type="button" className={mode === 'liner' ? 'on' : ''} aria-pressed={mode === 'liner'} onClick={() => pickMode('liner')}>라이너</button>
 					</span>
+					{/* Highlight treatment is the ONE annotation axis exposed. Marker density
+					    runs 9.5%–64.7% per track, so no fixed treatment is right across it;
+					    long spans and overlap have single answers and stay fixed rules.
+					    Shown only when this track actually has annotations. */}
+					{mode === 'doc' && annotations.length > 0 && (
+						<span className="lys-seg" role="group" aria-label="주석 강조">
+							<button type="button" className={annoStyle === 'm0' ? 'on' : ''} aria-pressed={annoStyle === 'm0'} onClick={() => pickAnnoStyle('m0')} title="칠하기">칠</button>
+							<button type="button" className={annoStyle === 'm1' ? 'on' : ''} aria-pressed={annoStyle === 'm1'} onClick={() => pickAnnoStyle('m1')} title="밑줄 — 밀집한 곡에 적합">밑줄</button>
+							<button type="button" className={annoStyle === 'm2' ? 'on' : ''} aria-pressed={annoStyle === 'm2'} onClick={() => pickAnnoStyle('m2')} title="여백만 — 가사를 가장 방해하지 않음">여백</button>
+							<button type="button" className={annoStyle === 'm3' ? 'on' : ''} aria-pressed={annoStyle === 'm3'} onClick={() => pickAnnoStyle('m3')} title="열었을 때만 — 강조를 희소하게">열림</button>
+						</span>
+					)}
 					{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
 						translation?.status === 'done' ?
 							(
@@ -291,17 +410,70 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 				{phase.k === 'ready' && n === 0 && <div className="lys-status">{emptyText}</div>}
 
 				{phase.k === 'ready' && n > 0 && mode === 'doc' && (
-					<div className="lys-doc">
-						{segs.map(s => (
-							s.text === '' ?
-								<div key={s.i} className="lys-gap" aria-hidden="true">· · ·</div> :
-								(
-									<p key={s.i} className="lys-line">
+					<div className={`lys-doc lys-anno-${annoStyle}`}>
+						{segs.map((s) => {
+							if (s.text === '')
+								return <div key={s.i} className="lys-gap" aria-hidden="true">· · ·</div>
+
+							const mark = lineMarks.get(s.i)
+							const cls = ['lys-line', ...lineClasses(mark, openIds)].join(' ')
+							const open = mark && mark.claims.some(a => openIds.includes(a.id))
+							return (
+								<div key={s.i}>
+									<p
+										className={cls}
+										{...(mark && {
+											role: 'button',
+											tabIndex: 0,
+											'aria-expanded': !!open,
+											'aria-label': markLabel(mark),
+											onClick: () => toggleAnno(mark),
+											onKeyDown: (e: ReactKeyboardEvent) => {
+												if (e.key === 'Enter' || e.key === ' ') {
+													e.preventDefault()
+													toggleAnno(mark)
+												}
+											},
+										})}
+									>
+										{mark && <span className="lys-brk" aria-hidden="true" />}
 										<span className="lys-orig serif">{s.text}</span>
+										{mark && mark.pos !== 'middle' && mark.pos !== 'start' && <MarkTail mark={mark} />}
 										{showKo && s.text_ko && s.text_ko !== s.text && <span className="lys-ko">{s.text_ko}</span>}
 									</p>
-								)
-						))}
+									{/* The note opens inline under its own range: this column is 320–560px,
+									    so there is no margin for it to sit beside. */}
+									{open && mark.claims.filter(a => openIds.includes(a.id)).map(a => (
+										<AnnoNote key={a.id} anno={a} paired={mark.sharedBy > 1} />
+									))}
+								</div>
+							)
+						})}
+					</div>
+				)}
+
+				{phase.k === 'ready' && mode === 'doc' && drawer.length > 0 && (
+					<div className="lys-anno-drawer">
+						<h3 className="mono">가사에 못 붙은 주석</h3>
+						<p className="lys-anno-why">
+							Genius 원문에는 있지만 우리 가사에는 없는 구절입니다. 가사가 다시 매칭되면
+							저절로 본문에 붙습니다.
+						</p>
+						<ol>
+							{drawer.map((a, idx) => (
+								<li key={a.id}>
+									<button
+										type="button"
+										aria-expanded={openIds.includes(a.id)}
+										onClick={() => setOpenIds(openIds.includes(a.id) ? [] : [a.id])}
+									>
+										<span className="mk mono">{drawerMark(idx)}</span>
+										<span className="tx">{a.fragment}</span>
+									</button>
+									{openIds.includes(a.id) && <AnnoNote anno={a} paired={false} />}
+								</li>
+							))}
+						</ol>
 					</div>
 				)}
 
