@@ -22,6 +22,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/buckets/nightly-grow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Nightly Grow
+         * @description FIX-nightly-draft-identity: grow-once for the 03:00 draft agent.
+         *
+         *     After creating a draft the nightly job must mark the source memo processed
+         *     (stamp post_id + clear prep_tonight) or the same album is regenerated every
+         *     night and 409s forever. The generic item PATCH cannot do it — it is
+         *     member-scoped and the agent owns no buckets (404 by design, per #133). This
+         *     narrow route is the replacement: the caller names an album and the draft it
+         *     created; the service touches ONLY the owner's checked memos for that album
+         *     (owner pinned from settings, never the request body) and refuses to stamp
+         *     anything but a draft. Idempotent — a repeat call returns grown=0.
+         */
+        post: operations["nightly_grow_api_buckets_nightly_grow_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buckets/public": {
         parameters: {
             query?: never;
@@ -2305,6 +2334,33 @@ export interface components {
             /** Position */
             position: number;
         };
+        /**
+         * NightlyGrowRequest
+         * @description FIX-nightly-draft-identity: the nightly draft agent's grow-once call.
+         *
+         *     After delivering a draft the 03:00 job marks the source memo processed. It
+         *     cannot use the generic item PATCH (member-scoped; the agent owns no buckets →
+         *     404 by design), so this request names only the album and the created draft.
+         *     The server derives WHOSE items to touch from OWNER_SUB — never from this
+         *     body — so the agent identity cannot become an impersonation primitive.
+         */
+        Backend_NightlyGrowRequest: {
+            /**
+             * Album Id
+             * Format: uuid
+             */
+            album_id: string;
+            /**
+             * Post Id
+             * Format: uuid
+             */
+            post_id: string;
+        };
+        /** NightlyGrowResponse */
+        Backend_NightlyGrowResponse: {
+            /** Grown */
+            grown: number;
+        };
         /** NowPlayingResponse */
         Backend_NowPlayingResponse: {
             /** Album */
@@ -3759,6 +3815,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_BucketResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    nightly_grow_api_buckets_nightly_grow_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_NightlyGrowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_NightlyGrowResponse"];
+                };
+            };
+            /** @description post_id does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description post_id is not a draft */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
