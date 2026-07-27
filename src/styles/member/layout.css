@@ -1107,17 +1107,25 @@
 .lys-retry:hover { border-color: var(--color-accent); }
 
 /* ── 조판 A: 대역 문서 ── */
-.lys-line { margin: 0 0 4px; }
+.lys-line { margin: 0 0 6px; }
 .lys-orig {
 	display: block;
 	font-size: var(--text-md);
-	line-height: 1.5;
+	line-height: 1.55;
 	color: var(--color-text);
+	/* Hanging indent. Measured on 20,041 prod lyric lines: median 30 chars, p75 41 —
+	   about a third of them already wrap inside this column, and more once the type
+	   grows. Indenting the wrapped remainder is what keeps a continuation from
+	   reading as the next lyric line. */
+	padding-left: 1.15em;
+	text-indent: -1.15em;
 }
 .lys-ko {
 	display: block;
-	font-size: var(--text-sm);
-	line-height: 1.55;
+	/* Body text, not a chip — --text-sm (12px) is the chip/label step and was too
+	   small for sustained Korean reading. */
+	font-size: 13px;
+	line-height: 1.6;
 	color: var(--color-faded);
 	padding: 2px 0 0 13px;
 	border-left: 2px solid var(--color-border-soft);
@@ -1230,12 +1238,17 @@
 .lys-sheet.is-docked .lys-head { flex-direction: column; align-items: stretch; gap: 10px; padding: 16px 18px 12px 22px; }
 .lys-sheet.is-docked .lys-actions { justify-content: flex-start; }
 
-/* docked column is narrower than a float sheet — tighten the typography so the
-   lines don't wrap raggedly (mirrors the prototype's docked scale). */
-.lys-sheet.is-docked .lys-orig { font-size: 14px; }
-.lys-sheet.is-docked .lys-ko { font-size: 11.5px; }
-.lys-sheet.is-docked .lys-stanza-o { font-size: 13.5px; }
-.lys-sheet.is-docked .lys-stanza-k { font-size: 11px; }
+/* The docked column is the surface these lyrics are actually read on — it is what
+   opens from a bucket's album modal — and it had the SMALLEST type in the app
+   (14 / 11.5px against the float sheet's 15 / 12). Shrinking to avoid wrapping was
+   not buying anything: at 14px in this 272px measure, 30.3% of real lyric lines
+   already wrapped, and 15.5px only takes that to 36.8% (20,041 prod lines).
+   Six points of extra wrapping is a good trade for legible text, and the hanging
+   indent above is what makes the wrapping readable. */
+.lys-sheet.is-docked .lys-orig { font-size: 15.5px; }
+.lys-sheet.is-docked .lys-ko { font-size: 13px; }
+.lys-sheet.is-docked .lys-stanza-o { font-size: 15px; }
+.lys-sheet.is-docked .lys-stanza-k { font-size: 12.5px; }
 .lys-sheet.is-docked .lys-liner-art { width: 48px; height: 48px; }
 
 /* dim laid over the memo card once the sheet tears off & floats, so the free
