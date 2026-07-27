@@ -2149,8 +2149,55 @@ export interface components {
              */
             total: number;
         };
+        /** LyricsAnnotation */
+        Backend_LyricsAnnotation: {
+            /** Body Ko */
+            body_ko?: string | null;
+            /** Body Source Lang */
+            body_source_lang?: string | null;
+            /**
+             * Disputed
+             * @default false
+             */
+            disputed: boolean;
+            /** End I */
+            end_i?: number | null;
+            /** Fragment */
+            fragment: string;
+            /** Genius Url */
+            genius_url?: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Occurrences
+             * @default 0
+             */
+            occurrences: number;
+            /** Ordinal */
+            ordinal: number;
+            /** Start I */
+            start_i?: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unique" | "partial" | "repeated" | "section" | "unmatched";
+            /**
+             * Translation Status
+             * @default pending
+             * @enum {string}
+             */
+            translation_status: "pending" | "done" | "failed" | "stale";
+            /**
+             * Votes Total
+             * @default 0
+             */
+            votes_total: number;
+        };
         /** LyricsResponse */
         Backend_LyricsResponse: {
+            /** Annotations */
+            annotations?: components["schemas"]["Backend_LyricsAnnotation"][];
             /**
              * Availability
              * @enum {string}
