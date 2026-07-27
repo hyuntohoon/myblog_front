@@ -1275,6 +1275,144 @@
    sheet is docked, so it sits left of the reserved slot. */
 .memo-dock-main { display: contents; }
 .has-dock .memo-dock-main { display: block; position: relative; flex: 1 1 auto; min-width: 0; padding: 26px 34px 28px; }
+/* ══ Genius annotations — FEAT-lyrics-annotations Thread 1 ═════════════════════
+   Rules from docs/design/lyrics-annotations/README.md → "The render spec".
+   The direction is the Genius house style, but its #FFF06A is a screaming yellow
+   on this site's warm cream ground, so the highlight is pulled toward the paper
+   it sits on. The RULES are the spec's; only the hue is the product's. */
+.lys-doc {
+	--lys-hl:      #f6e08a;   /* fill, on cream */
+	--lys-hl-soft: #f8eec2;
+	--lys-hl-edge: #c9a83a;   /* bracket + rule */
+	--lys-hl-ink:  #2a2413;   /* text ON the fill */
+	--lys-echo:    #bdb4a0;   /* the quiet repeat marker */
+}
+
+/* This site switches theme with a data-theme ATTRIBUTE, not prefers-color-scheme
+   (global.css: `@custom-variant dark (&:where([data-theme=dark], …))`). A media
+   query here would follow the OS while the rest of the page follows the toggle,
+   and the two only look correct while they happen to agree. */
+[data-theme='dark'] .lys-doc {
+	/* Dark is not a token swap. The fill shifts to amber, the rule needs more
+	   punch on a near-black ground, and the ink on the fill inverts — see below. */
+	--lys-hl:      #d9b32b;
+	--lys-hl-soft: #3a3208;
+	--lys-hl-edge: #b8991f;
+	--lys-hl-ink:  #17150e;
+	--lys-echo:    #6a6252;
+}
+
+.lys-line { position: relative; }
+.lys-mark { cursor: pointer; border-radius: 2px; }
+.lys-mark:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+/* Range bracket in the gutter. On a long span this is the ONLY thing joining the
+   two filled ends, so it is load-bearing rather than decoration. */
+.lys-brk {
+	position: absolute; left: -2px; top: 2px; bottom: 2px; width: 5px;
+	border-left: 2px solid var(--lys-hl-edge);
+	border-top: 2px solid transparent; border-bottom: 2px solid transparent;
+}
+.lys-mark.is-start .lys-brk { border-top-color: var(--lys-hl-edge); border-top-left-radius: 2px; }
+.lys-mark.is-end   .lys-brk { border-bottom-color: var(--lys-hl-edge); border-bottom-left-radius: 2px; }
+
+.lys-tail, .lys-echo, .lys-dual {
+	margin-left: 6px; font-size: 10px; color: var(--color-faded);
+	font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.lys-echo, .lys-dual { border: 1px solid var(--color-border); border-radius: 999px; padding: 0 5px; }
+
+/* ── treatments ───────────────────────────────────────────────────────────── */
+/* M0 fill — the chosen house. Correct at the album average (34.1% of lines). */
+.lys-anno-m0 .lys-mark { background: var(--lys-hl); color: var(--lys-hl-ink); }
+/* M1 rule — for dense tracks; the fill is spent only on the open annotation. */
+.lys-anno-m1 .lys-mark { box-shadow: inset 0 -1px 0 var(--lys-hl-edge); }
+/* M2 margin only — the text is untouched; the gutter carries the affordance. */
+.lys-anno-m2 .lys-mark:hover { background: var(--lys-hl-soft); }
+/* M3 reveal on open — yellow made rare by construction. */
+.lys-anno-m3 .lys-mark { box-shadow: inset 0 -1px 0 var(--color-border-soft); }
+.lys-anno-m3 .lys-brk { opacity: 0; }
+.lys-anno-m3 .lys-mark:hover .lys-brk, .lys-anno-m3 .lys-mark.is-open .lys-brk { opacity: 1; }
+
+/* The open annotation always gets the fill, whatever the treatment. */
+.lys-doc .lys-mark.is-open { background: var(--lys-hl); color: var(--lys-hl-ink); box-shadow: inset 3px 0 0 var(--lys-hl-edge); }
+
+/* Ink on the fill. `color` on the marked line alone does nothing: .lys-orig and
+   .lys-ko each set their own colour and override inheritance, so in dark mode the
+   near-white lyric sat on amber at 1.63:1 and the Korean line at 1.73:1. The
+   children have to be named, under exactly the conditions where the fill lands —
+   m0 (or open), and never on a long-span middle or a disputed line, because those
+   two are the cases that keep the page's own ground. */
+.lys-anno-m0 .lys-mark:not(.is-long-mid):not(.is-disputed) .lys-orig,
+.lys-doc .lys-mark.is-open:not(.is-long-mid):not(.is-disputed) .lys-orig {
+	color: var(--lys-hl-ink);
+}
+.lys-anno-m0 .lys-mark:not(.is-long-mid):not(.is-disputed) .lys-ko,
+.lys-doc .lys-mark.is-open:not(.is-long-mid):not(.is-disputed) .lys-ko {
+	color: var(--lys-hl-ink);
+	opacity: 0.78;                     /* still secondary, but legible on the fill */
+	border-left-color: var(--lys-hl-edge);
+}
+.lys-anno-m0 .lys-mark:not(.is-long-mid):not(.is-disputed) :is(.lys-tail, .lys-echo, .lys-dual),
+.lys-doc .lys-mark.is-open:not(.is-long-mid):not(.is-disputed) :is(.lys-tail, .lys-echo, .lys-dual) {
+	color: var(--lys-hl-ink);
+	border-color: color-mix(in srgb, var(--lys-hl-ink) 35%, transparent);
+}
+
+/* Long spans (4+ segments): ends only. At 12 a full fill takes two whole stanzas
+   and the highlight becomes the page's ground instead of its emphasis. */
+.lys-doc .lys-mark.is-long-mid { background: transparent; color: inherit; box-shadow: none; }
+
+/* Disputed: negative votes NEVER receive the fill, in any treatment — the site
+   would read as agreeing with a reading the community rejected. */
+.lys-doc .lys-mark.is-disputed { background: transparent; color: inherit; box-shadow: inset 0 -1px 0 var(--color-accent); }
+.lys-doc .lys-mark.is-disputed .lys-brk { border-left-color: var(--color-accent); }
+
+/* A repeat echo is marked but never numbered. */
+.lys-doc .lys-mark.is-repeated.is-long-mid { box-shadow: inset 0 -1px 0 var(--lys-echo); }
+
+/* Two claims meeting on one line: a doubled gutter rule, so the overlap is visible
+   and not merely handled. 3 of 201 lines, never three at once. */
+.lys-doc .lys-mark.is-shared .lys-brk { border-left-width: 3px; }
+.lys-doc .lys-mark.is-shared::before {
+	content: ""; position: absolute; left: 3px; top: 2px; bottom: 2px;
+	border-left: 1px solid var(--lys-hl-edge); opacity: 0.6;
+}
+
+/* ── the note, inline under its own range ─────────────────────────────────────
+   This column is 320–560px wide, so there is no margin for the note to sit
+   beside — the spec's narrow-layout rule is the only one that applies here. */
+.lys-note {
+	margin: 6px 0 12px 12px; padding: 12px 14px;
+	background: var(--color-paper); border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-sm); display: grid; gap: 8px;
+}
+.lys-note-head { display: flex; justify-content: space-between; font-size: var(--text-2xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-faded); }
+.lys-note-head .v.neg { color: var(--color-accent); }
+.lys-note-flag { margin: 0; font-size: var(--text-2xs); color: var(--color-subtle); background: var(--lys-hl-soft); padding: 5px 7px; border-radius: 3px; }
+.lys-note-flag.is-warn { background: none; border: 1px solid var(--color-accent); color: var(--color-accent); }
+.lys-note-body { margin: 0; font-size: 13.5px; line-height: 1.7; color: var(--color-text); }
+.lys-note details { border-top: 1px solid var(--color-border-soft); padding-top: 7px; }
+.lys-note summary { cursor: pointer; font-size: var(--text-2xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-faded); }
+.lys-note summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.lys-note-src { margin: 7px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--color-subtle); }
+.lys-note-link { display: inline-block; margin-top: 6px; font-size: var(--text-2xs); color: var(--color-accent); }
+
+/* ── drawer: annotations that never reached the text ──────────────────────── */
+.lys-anno-drawer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-border-soft); display: grid; gap: 10px; }
+.lys-anno-drawer h3 { margin: 0; font-size: var(--text-2xs); letter-spacing: 0.09em; text-transform: uppercase; color: var(--color-faded); font-weight: 500; }
+.lys-anno-why { margin: 0; font-size: var(--text-xs); color: var(--color-faded); line-height: 1.55; }
+.lys-anno-drawer ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+.lys-anno-drawer li > button {
+	width: 100%; display: grid; grid-template-columns: 20px 1fr; gap: 8px; align-items: start;
+	padding: 9px 10px; background: none; text-align: left; cursor: pointer;
+	border: 1px solid var(--color-border-soft); border-radius: var(--radius-sm);
+}
+.lys-anno-drawer li > button:hover { background: var(--color-paper); }
+.lys-anno-drawer li > button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.lys-anno-drawer .mk { font-size: 12px; color: var(--color-accent); }
+.lys-anno-drawer .tx { font-size: 13px; color: var(--color-subtle); line-height: 1.5; }
+
 .lys-dock-slot {
 	position: relative;
 	flex: 0 0 auto;
