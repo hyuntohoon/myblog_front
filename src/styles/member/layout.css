@@ -1092,6 +1092,8 @@
 .lys-body { flex: 1; overflow-y: auto; padding: 20px 24px 28px; }
 
 .lys-status { padding: 30px 4px; color: var(--color-subtle); font-size: var(--text-md); }
+.lys-status p { margin: 0; }
+.lys-status-sub { margin-top: 6px !important; font-size: var(--text-sm); color: var(--color-faded); line-height: 1.55; }
 .lys-retry {
 	margin-top: 12px;
 	font-size: var(--text-xs);
