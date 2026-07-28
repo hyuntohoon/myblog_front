@@ -13,6 +13,7 @@
  * home — the main stays clear/general (owner direction 2026-06-16). See
  * docs/rfcs/FEAT-bucket-identity.md + FEAT-home-redesign-v2.
  */
+import type { components } from '@lib/api.gen'
 import type { ReviewCard } from '@lib/reviews'
 import type { CSSProperties, ReactNode } from 'react'
 import { reviewHref } from '@lib/entityLinks'
@@ -51,6 +52,8 @@ interface Props {
 	stats: Stats
 	/** Passed by index.astro; unused on the reader-first home. */
 	draftCount?: number
+	/** Build-time 새 앨범 snapshot (FIX-home-module-cls) — lets the strip SSR. */
+	newReleases?: components['schemas']['Music_NewReleaseItem'][]
 }
 
 function pad(n: number) {
@@ -164,16 +167,19 @@ function Latest({ reviews, excludeSlug }: { reviews: ReviewCard[], excludeSlug?:
 	)
 }
 
-export default function EditorialHome({ bnm, reviews, stats }: Props) {
+export default function EditorialHome({ bnm, reviews, stats, newReleases }: Props) {
 	const feature = toFeature(bnm, reviews)
 	return (
 		<div className="bk-page">
 			{feature ? <Hero feature={feature} /> : <ColdStart />}
 			{/* FEAT-release-calendar A2 — self-wrapping (owns its Measure + top
-			    padding) so the empty/error state leaves the home layout untouched. */}
-			<NewReleasesCard />
-			{/* FEAT-for-you-releases Step 1 — members-only personalized strip;
-			    same self-wrapping degradation contract as NewReleasesCard. */}
+			    padding). Seeded with the build-time snapshot so it SSRs instead of
+			    inserting itself post-hydration (FIX-home-module-cls). */}
+			<NewReleasesCard initial={newReleases} />
+			{/* FEAT-for-you-releases Step 1 — members-only personalized strip.
+			    Self-wrapping; renders NOTHING until an authed fetch returns items,
+			    then inserts (it cannot be build-seeded — per-member data). Known
+			    residual CLS for logged-in visitors (FIX-home-module-cls). */}
 			<ForYouReleasesCard />
 			<Latest reviews={reviews} excludeSlug={feature?.slug} />
 			<Measure style={{ paddingTop: 56 }}><TodaySongBuckit /></Measure>

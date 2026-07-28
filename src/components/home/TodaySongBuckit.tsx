@@ -92,10 +92,10 @@ export default function TodaySongBuckit() {
 		}
 	}, [])
 
-	// Hide on error — the home degrades silently (same posture as TodayAlbumBuckit).
-	if (status === 'error')
-		return null
-	// No pick + not owner: hide entirely (RFC — quiet on no-pick days for visitors).
+	// No pick + not owner: hide entirely (RFC — quiet on no-pick days for
+	// visitors). A fetch ERROR keeps the skeleton instead of unmounting the
+	// SSR'd section — same no-collapse posture as TodayAlbumBuckit
+	// (FIX-home-module-cls).
 	if (status === 'ready' && !pick && !isOwner)
 		return null
 
@@ -136,7 +136,7 @@ export default function TodaySongBuckit() {
 				title="오늘의 곡"
 				right={<button type="button" className="tsp-history-link" onClick={() => setHistoryOpen(true)}>지난 추천곡 →</button>}
 			/>
-			{status === 'loading' && <Skeleton />}
+			{(status === 'loading' || status === 'error') && <Skeleton />}
 			{status === 'ready' && pick && (
 				<div className="tsp-card">
 					<div className="tsp-open">

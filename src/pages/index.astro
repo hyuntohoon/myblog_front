@@ -1,6 +1,8 @@
 ---
+import type { components } from '@lib/api.gen'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import EditorialHome from '@components/home/EditorialHome'
+import { NRL_LIMIT, NRL_WINDOW_DAYS } from '@components/home/NewReleasesCard'
 import PocketResume from '@components/member/pocket/PocketResume'
 import Seo from '@components/seo.astro'
 import Layout from '@layouts/layout.astro'
@@ -53,12 +55,40 @@ const stats = {
   lastUpdated: reviews[0] ? fmtDate(reviews[0].date) : '—',
 }
 const draftCount = entries.filter(e => e.data.draft).length
+
+// FIX-home-module-cls — fetch the 새 앨범 strip at build time so the section is
+// part of the static HTML instead of inserting itself after hydration (the
+// insert was the largest layout shift on the mobile home). The island still
+// re-fetches on load and swaps items in place (cards share one geometry, so
+// the swap moves nothing); if this build-time fetch fails the prop stays empty
+// and the module falls back to the old insert-on-fetch behavior.
+type NewReleaseItem = components['schemas']['Music_NewReleaseItem']
+let newReleases: NewReleaseItem[] = []
+try {
+  const base = import.meta.env.PUBLIC_API_URL as string
+  // 20s: no user is waiting, and the first hit after a quiet period can land
+  // on a cold music Lambda.
+  const res = await fetch(`${base}/api/music/feed/new-releases?days=${NRL_WINDOW_DAYS}&limit=${NRL_LIMIT}`, { signal: AbortSignal.timeout(20_000) })
+  if (res.ok) {
+    const j = await res.json()
+    if (Array.isArray(j?.items))
+      newReleases = j.items
+  }
+  else {
+    console.warn(`[home] build-time new-releases fetch got ${res.status} — strip will fall back to client-side insert`)
+  }
+}
+catch (err) {
+  // best-effort: an unreachable API at build time must not fail the build,
+  // but it must be loud in the build log — a silent miss un-ships the CLS fix.
+  console.warn(`[home] build-time new-releases fetch failed (${err}) — strip will fall back to client-side insert`)
+}
 ---
 
 <Layout>
   <Seo slot="seo" forceTitle="buckit" />
   <SkipNavContent>
-    <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} />
+    <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} newReleases={newReleases} />
   </SkipNavContent>
   {/* FEAT-pocket-buckit Step 5 — completes a logged-out "add to bucket" after the
       Cognito callback redirects here. Renders nothing unless a fresh intent exists. */}

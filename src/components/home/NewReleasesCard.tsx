@@ -11,9 +11,18 @@
  * name routes to the artist hub (artistHref). Covers prefetch album detail on
  * pointer intent (lib/albumDetail) so the overlay opens warm.
  *
- * Degradation is strict for this module: fetch failure, non-200, or 0 items
- * renders NOTHING — no skeleton, no reserved space (the Measure wrapper lives
- * inside this component so a null render leaves the home layout untouched).
+ * Layout stability (FIX-home-module-cls): index.astro fetches the same feed at
+ * build time and passes it as `initial`, so the section ships inside the
+ * static HTML — mounting it after hydration was the largest layout shift on
+ * the mobile home. The runtime fetch still runs and swaps items in place
+ * (every card shares one fixed geometry, so a swap moves nothing), and a
+ * failed or empty runtime response keeps whatever is already on screen —
+ * this module never removes itself once rendered. Only when the build-time
+ * fetch also came up empty does it fall back to the old contract: render
+ * NOTHING until a successful non-empty response, then insert. Accepted
+ * staleness tradeoff: on cached HTML from an old build with the runtime
+ * fetch failing, the "최근 30일" label can sit over a snapshot that many
+ * days older — a stable stale strip beats a mid-read collapse.
  *
  * The `★ 평론` accent chip marks a release by an artist this site has
  * reviewed (`reviewed_artist`), echoing the hero's ★ Best New Music mark.
@@ -28,8 +37,9 @@ import { Cover, SectionTitle } from './ui'
 type NewReleaseItem = components['schemas']['Music_NewReleaseItem']
 type NewReleasesResult = components['schemas']['Music_NewReleasesResult']
 
-const WINDOW_DAYS = 30
-const LIMIT = 12
+// Shared with index.astro's build-time fetch so both requests stay identical.
+export const NRL_WINDOW_DAYS = 30
+export const NRL_LIMIT = 12
 
 // Hover / scroll states inline styles can't reach. Scoped to `.nrl-mod`
 // (same strip idiom as TodayAlbumBuckit's `.otd-mod`).
@@ -96,26 +106,28 @@ function CardItem({ it }: { it: NewReleaseItem }) {
 	)
 }
 
-export default function NewReleasesCard() {
-	const [items, setItems] = useState<NewReleaseItem[] | null>(null)
+export default function NewReleasesCard({ initial }: { initial?: NewReleaseItem[] }) {
+	// Seeded from the build-time snapshot (SSR renders the full strip); the
+	// runtime fetch below only ever replaces items in place.
+	const [items, setItems] = useState<NewReleaseItem[] | null>(initial && initial.length > 0 ? initial : null)
 
 	useEffect(() => {
 		let alive = true
 		const base = import.meta.env.PUBLIC_API_URL as string
-		fetch(`${base}/api/music/feed/new-releases?days=${WINDOW_DAYS}&limit=${LIMIT}`)
+		fetch(`${base}/api/music/feed/new-releases?days=${NRL_WINDOW_DAYS}&limit=${NRL_LIMIT}`)
 			.then(r => (r.ok ? r.json() as Promise<NewReleasesResult> : null))
 			.then((j) => {
 				if (alive && j && Array.isArray(j.items) && j.items.length > 0)
 					setItems(j.items)
 			})
-			.catch(() => {}) // hidden on failure — home keeps its prior layout
+			.catch(() => {}) // keep whatever is on screen — never remove a rendered strip
 		return () => {
 			alive = false
 		}
 	}, [])
 
-	// Render NOTHING until a successful, non-empty feed response (no skeleton —
-	// the home must degrade to exactly its prior layout).
+	// Nothing from build AND nothing from runtime yet: render NOTHING (legacy
+	// degradation — the home keeps its prior layout rather than a dead skeleton).
 	if (!items)
 		return null
 
@@ -124,7 +136,7 @@ export default function NewReleasesCard() {
 			<style>{SCOPED_CSS}</style>
 			<div style={{ maxWidth: 'var(--home-measure)', margin: '0 auto', padding: '56px clamp(16px, 4vw, 30px) 0' }}>
 				<SectionTitle
-					kicker={`NEW · 최근 ${WINDOW_DAYS}일`}
+					kicker={`NEW · 최근 ${NRL_WINDOW_DAYS}일`}
 					title="새 앨범"
 					right={(
 						// Entry point to /releases/ (FEAT-release-calendar Step 7). Lives
