@@ -8,10 +8,14 @@
  * shows the top N genres by album_count and hands off to the real Genre Map
  * page (right-side "장르 맵 →") and its ego view per row.
  *
- * Data comes from the same source the /genres page uses — GET /api/genres/tree
- * via fetchGenreTree() — so there is one album_count source of truth. The
- * catalog can be larger than the published review set; that's expected and the
- * footer says so. Adapted from the Claude Design "장르로 탐색" share-bar module.
+ * Data comes from GET /api/genres/roots via fetchGenreRoots() — the tier-0
+ * slim shape (slug/label/albumCount only). Server-side it is the same
+ * list_tree() the /genres page reads, so there is one album_count source of
+ * truth; the slim wire shape exists because the full /tree ships ~742 KB
+ * decoded of edges + definitions this teaser never reads
+ * (PERF-home-genre-payload). The catalog can be larger than the published
+ * review set; that's expected and the footer says so. Adapted from the Claude
+ * Design "장르로 탐색" share-bar module.
  *
  * Self-contained: static styling is inline (matching BnmHero), and the hover /
  * transition rules that inline styles can't express ride a single scoped
@@ -19,8 +23,8 @@
  */
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { fetchGenreTree, genreMapHref } from '@lib/genres'
-import type { GenreNode } from '@lib/genres'
+import { fetchGenreRoots, genreMapHref } from '@lib/genres'
+import type { GenreRootSlim } from '@lib/genres'
 import { SectionTitle } from './ui'
 
 const TOP_N = 6
@@ -183,16 +187,16 @@ function Row({ g, i, max, total }: { g: GenreRow, i: number, max: number, total:
 }
 
 export default function BrowseGenres() {
-	const [nodes, setNodes] = useState<GenreNode[]>([])
+	const [nodes, setNodes] = useState<GenreRootSlim[]>([])
 	const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
 
 	useEffect(() => {
 		let alive = true
-		fetchGenreTree()
-			.then((tree) => {
+		fetchGenreRoots()
+			.then((roots) => {
 				if (!alive)
 					return
-				setNodes(tree)
+				setNodes(roots)
 				setStatus('ready')
 			})
 			.catch(() => {
