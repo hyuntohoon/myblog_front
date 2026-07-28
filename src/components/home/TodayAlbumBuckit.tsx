@@ -7,8 +7,9 @@
  *
  * Clicking a cover opens the app-wide read-only album overlay
  * (ARCH-entity-interaction-unify · openAlbum); the artist name routes to the
- * artist hub (artistHref). The section HIDES itself on empty/error, so the home
- * degrades to its prior layout — no runtime dependency for the rest of the page.
+ * artist hub (artistHref). The section hides itself only on a confirmed-empty
+ * response; a fetch error keeps the placeholder so the SSR'd layout never
+ * collapses under the reader (FIX-home-module-cls).
  *
  * Self-contained: static styling is inline (matching the home modules) and the
  * hover/scroll rules ride a single scoped <style> keyed off `.otd-mod`.
@@ -38,7 +39,7 @@ function pad(n: number) {
 
 // Hover / scroll states inline styles can't reach. Scoped to `.otd-mod`.
 const SCOPED_CSS = `
-.otd-mod .otd-skel{display:flex;gap:clamp(14px,2vw,20px);overflow:hidden;padding:2px 2px 14px;margin:0 -2px}
+.otd-mod .otd-skel{display:flex;gap:clamp(14px,2vw,20px);overflow-x:auto;padding:2px 2px 14px;margin:0 -2px}
 .otd-mod .otd-card{flex:0 0 auto;width:clamp(128px,32vw,150px);scroll-snap-align:start;min-width:0}
 .otd-mod .otd-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
 .otd-mod .otd-cover-wrap{position:relative;display:block;transition:transform .18s}
@@ -76,14 +77,26 @@ function Card({ it }: { it: OtdItem }) {
   )
 }
 
+/**
+ * Placeholder cards borrow the real card's classes and font styles so the
+ * loading → ready swap moves nothing (FIX-home-module-cls; same principle as
+ * BrowseGenres' skeleton): the title/artist rows are real line boxes with a
+ * tinted inline bar riding the baseline, not free-height blocks.
+ */
 function Skeleton() {
+  // Bar heights (0.72em/0.78em) must stay under the font's ascent: an empty
+  // inline-block's baseline is its bottom edge, so a taller bar would push
+  // the line box past the real text's and break the parity.
+  const bar = (width: string, height: string) => (
+    <span style={{ display: 'inline-block', width, height, borderRadius: 3, background: 'var(--color-border-soft)' }} />
+  )
   return (
     <div className="otd-skel" aria-hidden="true" style={{ pointerEvents: 'none' }}>
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} className="otd-card">
           <span style={{ display: 'block', width: '100%', aspectRatio: '1 / 1', borderRadius: 4, background: 'var(--color-border-soft)' }} />
-          <span style={{ display: 'block', width: '78%', height: 11, borderRadius: 3, background: 'var(--color-border-soft)', margin: '10px 0 6px' }} />
-          <span style={{ display: 'block', width: '52%', height: 9, borderRadius: 3, background: 'var(--color-border-soft)' }} />
+          <span className="otd-title serif italic" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15 }}>{bar('78%', '0.72em')}</span>
+          <span className="otd-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }}>{bar('52%', '0.78em')}</span>
         </div>
       ))}
     </div>
@@ -119,9 +132,11 @@ export default function TodayAlbumBuckit() {
     }
   }, [])
 
-  // Hide on error or empty — the home degrades to its prior layout.
-  if (status === 'error')
-    return null
+  // Empty is the only state that removes the section (an honest, rare
+  // collapse — the catalog usually has releases for any month/day). A fetch
+  // ERROR keeps the skeleton instead of unmounting: transient Lambda
+  // failures were yanking ~250px out of the viewport mid-read
+  // (FIX-home-module-cls), and a quiet placeholder beats that jump.
   if (status === 'ready' && (!data || data.items.length === 0))
     return null
 
@@ -131,13 +146,13 @@ export default function TodayAlbumBuckit() {
     <section className="otd-mod">
       <style>{SCOPED_CSS}</style>
       <SectionTitle kicker={dateLabel ? `이 날 · ${dateLabel}` : '이 날, 발매'} title="오늘, 이 앨범들" />
-      {status === 'loading' ?
-        <Skeleton /> :
-(
-        <HomeStrip>
-          {data!.items.map(it => <Card key={it.album_id} it={it} />)}
-        </HomeStrip>
-      )}
+      {status === 'ready' && data ?
+        (
+          <HomeStrip>
+            {data.items.map(it => <Card key={it.album_id} it={it} />)}
+          </HomeStrip>
+        ) :
+        <Skeleton />}
     </section>
   )
 }

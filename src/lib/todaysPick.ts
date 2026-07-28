@@ -13,20 +13,22 @@ export type UpsertTodaysPick = components['schemas']['Backend_UpsertTodaysPickRe
 export type DailyPickQueueItem = components['schemas']['Backend_DailyPickQueueItem']
 export type AddToPickQueue = components['schemas']['Backend_AddToPickQueueRequest']
 
-/** Today's pick, or null on a no-pick day. Public (edge_guard). */
+/**
+ * Today's pick, or null on a no-pick day. Public (edge_guard).
+ *
+ * THROWS on transport failure / non-200 — the caller must be able to tell "the
+ * owner posted nothing today" (hide the section) from "the read failed" (hold
+ * the reserved space). Collapsing both into null let a transient 5xx yank the
+ * section out from under the reader (FIX-home-module-cls).
+ */
 export async function getTodaysPick(): Promise<DailyPick | null> {
 	// Plain fetch — this is a public read; apiFetch would attempt token refresh
 	// + goLogin on a 401 that a logged-out visitor never triggers anyway, but
 	// keeping the public read token-free is clearer and matches TodayAlbumBuckit.
-	try {
-		const res = await fetch(`${BASE}/api/todays-pick`)
-		if (!res.ok)
-			return null
-		return (await res.json()) as DailyPick | null
-	}
-	catch {
-		return null
-	}
+	const res = await fetch(`${BASE}/api/todays-pick`)
+	if (!res.ok)
+		throw new Error(`todays-pick ${res.status}`)
+	return (await res.json()) as DailyPick | null
 }
 
 /** Date-desc history of past picks. Public (edge_guard). */
