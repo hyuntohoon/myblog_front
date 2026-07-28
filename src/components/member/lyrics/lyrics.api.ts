@@ -12,6 +12,14 @@ export type LyricsSegment = components['schemas']['Backend_LyricsSegment']
 export type LyricsTranslationInfo = components['schemas']['Backend_LyricsTranslationInfo']
 export type LyricsAnnotation = components['schemas']['Backend_LyricsAnnotation']
 
+/** 403 from the owner-only lyrics read — a state, not a failure. */
+export class LyricsForbiddenError extends Error {
+  constructor() {
+    super('lyrics are owner-only')
+    this.name = 'LyricsForbiddenError'
+  }
+}
+
 /**
  * Fetch the normalized lyric segments for a Spotify track id.
  *
@@ -25,6 +33,11 @@ export async function getLyrics(spotifyTrackId: string): Promise<LyricsResponse>
     throw new Error('network error (no response)')
   if (res.status === 404)
     return { availability: 'unavailable', normalizer_version: 0, trackable: false }
+  // Owner-only since 2026-07-28. A signed-in member reaching this is expected, not
+  // exceptional — the corpus and its Genius commentary are the owner's research
+  // data — so it reads as a state the sheet can render, never as a thrown error.
+  if (res.status === 403)
+    throw new LyricsForbiddenError()
   if (!res.ok)
     throw new Error(`HTTP ${res.status}`)
   return res.json() as Promise<LyricsResponse>
