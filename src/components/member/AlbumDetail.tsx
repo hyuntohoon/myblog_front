@@ -425,6 +425,15 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
                     // the memo window replaced the shared TrackRow, so its rows
                     // had no 가사 affordance). Without an id there is nothing to
                     // query, so the row stays a plain read-only line.
+                    //
+                    // ⚠️ TWIN of components/shared/TrackRow.tsx. These rows are
+                    // deliberately NOT that component: here the whole row is the
+                    // button, which suits a narrow memo window and which TrackRow
+                    // cannot express. So **a track-row change made there does not
+                    // reach this list, and one made here does not reach the album
+                    // modal or LikedBoard** — check both. Both end at the same
+                    // LyricsSheet via SelfDashboard's openStaticLyrics.
+                    // docs/frontend/component-map.md → "Track-click behavior".
                     const sid = t.spotify_id
                     const len = t.duration_sec != null ? fmtTime(t.duration_sec) : ''
                     const no = String(t.track_no ?? 0).padStart(2, '0')
