@@ -85,6 +85,36 @@ export function fetchGenreTree(): Promise<GenreNode[]> {
   return genreTreePromise
 }
 
+type ApiRootsResponse = components['schemas']['Backend_GenreRootsResponse']
+
+/** Tier-0 genre reduced to what the homepage share-bars render. */
+export interface GenreRootSlim {
+  slug: string
+  label: string
+  albumCount: number
+}
+
+let genreRootsPromise: Promise<GenreRootSlim[]> | null = null
+
+/**
+ * GET /api/genres/roots — tier-0 slug/label/albumCount only (public read).
+ * PERF-home-genre-payload: the homepage share-bars need exactly these three
+ * fields; the full /tree ships ~742 KB decoded of edges + definitions the
+ * home never reads. /genres and the writer keep using fetchGenreTree().
+ */
+export function fetchGenreRoots(): Promise<GenreRootSlim[]> {
+  if (!genreRootsPromise) {
+    genreRootsPromise = apiFetch(`${BASE}/api/genres/roots`, { method: 'GET' })
+      .then(asJson<ApiRootsResponse>)
+      .then(data => (data.genres ?? []).map(g => ({
+        slug: g.slug,
+        label: g.label,
+        albumCount: g.album_count ?? 0,
+      })))
+  }
+  return genreRootsPromise
+}
+
 /** Read-only deep link to a genre's ego view. */
 export function genreMapHref(slug: string): string {
   return `/genres/?g=${encodeURIComponent(slug)}`

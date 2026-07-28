@@ -223,6 +223,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/genres/roots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Genre Roots
+         * @description Tier-0 slim shape for the homepage share-bars (PERF-home-genre-payload).
+         *     Same list_tree() source of truth as /tree — the saving is payload, not
+         *     query: no edges, no definition_md, no children recursion.
+         */
+        get: operations["genre_roots_api_genres_roots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/genres/tree": {
         parameters: {
             query?: never;
@@ -2075,6 +2097,29 @@ export interface components {
             position: number;
             /** Slug */
             slug: string;
+        };
+        /**
+         * GenreRootSlim
+         * @description Tier-0 genre reduced to what the homepage share-bars render
+         *     (PERF-home-genre-payload, audit E-1). The full tree ships 742 KB decoded —
+         *     dominated by the 2,064-entry `edges` array and per-node `definition_md` —
+         *     of which `/` reads exactly these three fields.
+         */
+        Backend_GenreRootSlim: {
+            /**
+             * Album Count
+             * @default 0
+             */
+            album_count: number;
+            /** Label */
+            label: string;
+            /** Slug */
+            slug: string;
+        };
+        /** GenreRootsResponse */
+        Backend_GenreRootsResponse: {
+            /** Genres */
+            genres: components["schemas"]["Backend_GenreRootSlim"][];
         };
         /** GenreTreeResponse */
         Backend_GenreTreeResponse: {
@@ -4268,6 +4313,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    genre_roots_api_genres_roots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_GenreRootsResponse"];
                 };
             };
         };
