@@ -7,11 +7,43 @@
 /* ─── Custom dark-mode variant ─── */
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
+/*
+	─── FIX-home-font-cls: metric-matched Hangul fallbacks ───
+	Noto Serif KR arrives late on mobile and its Hangul advance (0.998em/char)
+	is ~12% wider than the pre-swap system fallback, so every Korean paragraph
+	rewraps when it lands (0.22 of the 0.24 home CLS). These faces scale the
+	local sans to the same advance + vertical metrics so the swap no longer
+	moves layout. Values are measured, not nominal: size-adjust = Noto/Apple SD
+	Gothic Neo Hangul width ratio; ascent/descent = Noto's 1.15em/0.29em ÷
+	size-adjust. The Hangul-only unicode-range keeps Latin on Newsreader/Georgia.
+	Windows (Malgun Gothic) is left unmatched on purpose — no measurable
+	desktop CLS, and unverifiable metrics would be a guess.
+*/
+@font-face {
+	font-family: 'Noto Serif KR Fallback';
+	src: local('Apple SD Gothic Neo'), local('AppleSDGothicNeo-Regular');
+	size-adjust: 111.68%;
+	ascent-override: 102.98%;
+	descent-override: 25.97%;
+	line-gap-override: 0%;
+	unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF;
+}
+/* Android ships no Korean serif; its Noto Sans CJK shares Noto Serif KR's
+   1.0em Hangul grid, so only the vertical metrics need pinning. */
+@font-face {
+	font-family: 'Noto Serif KR Fallback Android';
+	src: local('Noto Sans KR'), local('Noto Sans CJK KR'), local('NotoSansCJKkr-Regular'), local('NotoSansKR-Regular');
+	ascent-override: 115%;
+	descent-override: 29%;
+	line-gap-override: 0%;
+	unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF;
+}
+
 /* ─── Design Tokens ─── */
 @theme {
 	/* Typography */
 	--font-sans:  var(--font-plex-sans);
-	--font-serif: 'Newsreader', 'Noto Serif KR', Georgia, serif;
+	--font-serif: 'Newsreader', 'Noto Serif KR', 'Noto Serif KR Fallback', 'Noto Serif KR Fallback Android', Georgia, serif;
 	--font-mono:  'IBM Plex Mono', ui-monospace, monospace;
 
 	/* Light — warm cream editorial palette (Lowfreq-inspired) */

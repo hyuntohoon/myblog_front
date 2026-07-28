@@ -8,7 +8,7 @@
    ============================================================ */
 
 .rsh {
-	--rsh-kr-serif: 'Noto Serif KR', 'Newsreader', Georgia, serif;
+	--rsh-kr-serif: 'Noto Serif KR', 'Noto Serif KR Fallback', 'Noto Serif KR Fallback Android', 'Newsreader', Georgia, serif;
 	color: var(--color-text);
 }
 
