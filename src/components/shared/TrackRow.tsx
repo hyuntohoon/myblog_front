@@ -19,6 +19,16 @@
 //     LikedBoard); the ACTIONS — what a row can do — are what this component
 //     unifies, matching the `search/atoms.tsx` `RowAction` idea promoted to
 //     compound actions.
+//
+// ⚠️ TWIN: `member/AlbumDetail.tsx` MemoWindow renders its own `memo-trow` rows
+// with their own 가사 entry, and does NOT use this component. It is not pending
+// cleanup — its whole row is the button, which this component cannot express
+// (the closest thing, `actions.open`, means "open the album", not "open lyrics").
+// The consequence is real though: **a change to the track row here does not reach
+// the memo window.** That gap is how the bucket tracklist lost its 가사 affordance
+// once already. Merging them needs `TrackRowActions` widened to express a
+// whole-row lyrics target, which is an RFC OQ2 product decision, not a refactor.
+// Registered in docs/frontend/component-map.md → "Track-click behavior".
 import type { CSSProperties, ReactNode } from 'react'
 
 export interface TrackRowOpen {
