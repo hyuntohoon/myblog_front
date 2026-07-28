@@ -499,7 +499,11 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
         <LyricsSheet key={sheet.trackId} spotifyTrackId={sheet.trackId} meta={sheet.meta} onClose={closeSheet} /> :
         (
             <>
-              <div className={`lys-float-dim${dock.docked ? '' : ' is-shown'}`} aria-hidden="true" />
+              {/* The dim only shows WHILE the tear drag is in flight. It used to
+                  stay up for as long as the sheet floated, which made a torn-off
+                  sheet a modal over the memo — the opposite of why you tear it
+                  off. Two windows side by side is the point; both stay readable. */}
+              <div className={`lys-float-dim${dock.dragging && !dock.docked ? ' is-shown' : ''}`} aria-hidden="true" />
               <DockableLyricsSheet key={sheet.trackId} spotifyTrackId={sheet.trackId} meta={sheet.meta} onClose={closeSheet} hostRef={cardRef} dock={dock} patch={patchDock} />
             </>
           ))}
