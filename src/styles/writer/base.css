@@ -17,7 +17,7 @@
   --serif:    var(--font-serif);
   --sans:     var(--font-sans);
   --mono:     var(--font-mono);
-  --kr-serif: 'Noto Serif KR', 'Newsreader', Georgia, serif;
+  --kr-serif: 'Noto Serif KR', 'Noto Serif KR Fallback', 'Noto Serif KR Fallback Android', 'Newsreader', Georgia, serif;
 }
 
 /* ────────── RESET ────────── */
