@@ -19,7 +19,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { LyricsSheetContent } from './LyricsSheet'
 
-const DOCK_W = 320 // reserved dock-slot width == docked sheet width
+// Fallback only. The real width is `--lys-dock-w` on the memo shell, which
+// varies with the 보통/크게/최대 size setting — read at call time so the CSS
+// remains the single source and the two cannot disagree.
+const DOCK_W = 320
 const TEAR_PX = 70 // resistance threshold before the sheet tears off
 const RESIST = 0.35 // follow ratio while still attached
 const TILT_MAX = 2 // ± degrees of velocity tilt while gliding
@@ -47,35 +50,89 @@ export function DockableLyricsSheet({ spotifyTrackId, meta, onClose, hostRef, do
 	patch: (p: Partial<DockState>) => void
 }) {
 	const panelRef = useRef<HTMLDivElement>(null)
-	useDismissable(true, onClose, panelRef)
+	// Focus is trapped only while DOCKED. Torn off, the sheet is a second window
+	// beside the memo rather than a layer over it, and trapping Tab inside it
+	// makes the memo — the thing you tore the sheet off to write in — unreachable
+	// from the keyboard. Escape still closes either way.
+	useDismissable(true, onClose, panelRef, { trapFocus: dock.docked, autoFocus: dock.docked })
 	const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 	const { docked, freePos } = dock
 
 	/* ── geometry (viewport coords — the panel is position:fixed) ───────────── */
+	const dockW = useCallback(() => {
+		const host = hostRef.current
+		if (!host)
+			return DOCK_W
+		const v = Number.parseFloat(getComputedStyle(host).getPropertyValue('--lys-dock-w'))
+		return Number.isFinite(v) && v > 0 ? v : DOCK_W
+	}, [hostRef])
 	const dockRect = useCallback((): Rect | null => {
 		const m = hostRef.current?.getBoundingClientRect()
 		if (!m)
 			return null
-		return { left: m.right - DOCK_W, top: m.top, width: DOCK_W, height: m.height }
-	}, [hostRef])
+		const w = dockW()
+		return { left: m.right - w, top: m.top, width: w, height: m.height }
+	}, [hostRef, dockW])
+	const FLOAT_W = 720 // preferred free-floating width
+	const SIDE_MIN_W = 380 // below this a side-by-side column is not worth having
 	const floatSize = () => ({
-		width: Math.min(560, window.innerWidth - 80),
-		height: Math.min(window.innerHeight - 100, 760),
+		width: Math.min(FLOAT_W, window.innerWidth - 80),
+		height: Math.min(window.innerHeight - 64, 900),
 	})
-	const centerRect = (): Rect => {
+
+	/**
+	 * Where a torn-off sheet lands: BESIDE the memo, not over it.
+	 *
+	 * It used to centre on the viewport, which put it on top of the memo — so the
+	 * only way to read both was to drag it away first. Preferring the gap to the
+	 * memo's right (then its left) means tearing off gives you the two-window
+	 * layout immediately. Falls back to centred when neither side has room.
+	 */
+	const restRect = (): Rect => {
 		const s = floatSize()
-		return { left: (window.innerWidth - s.width) / 2, top: Math.max(24, (window.innerHeight - s.height) / 2), ...s }
+		const m = hostRef.current?.getBoundingClientRect()
+		const centred = {
+			left: (window.innerWidth - s.width) / 2,
+			top: Math.max(24, (window.innerHeight - s.height) / 2),
+			...s,
+		}
+		if (!m)
+			return centred
+		const top = Math.max(MARGIN, Math.min(m.top, window.innerHeight - s.height - MARGIN))
+		// Fit the sheet to whatever gap exists rather than demanding the full
+		// preferred width. At 최대 the memo is 1380px, so on a 1440 screen a fixed
+		// 720 never fits and the sheet fell back to centred — on top of the memo,
+		// which is the one place tearing it off is meant to get it out of.
+		const right = window.innerWidth - m.right - MARGIN * 2
+		const left = m.left - MARGIN * 2
+		const gap = Math.max(right, left)
+		if (gap >= SIDE_MIN_W) {
+			const width = Math.min(s.width, gap)
+			return right >= left ?
+				{ left: m.right + MARGIN, top, width, height: s.height } :
+				{ left: m.left - width - MARGIN, top, width, height: s.height }
+		}
+		return centred
 	}
 	const clampPos = (left: number, top: number, w: number, h: number) => ({
 		left: Math.max(MARGIN, Math.min(window.innerWidth - w - MARGIN, left)),
 		top: Math.max(MARGIN, Math.min(window.innerHeight - h - MARGIN, top)),
 	})
+	/**
+	 * Is the pointer over the dock slot itself?
+	 *
+	 * The right edge is bounded. Without it the slot was a half-plane — every x
+	 * past `right - DOCK_W - 28` counted, so dragging the sheet anywhere to the
+	 * right of the memo re-docked it instead of letting it float there, which is
+	 * exactly where a second window wants to go on a wide screen.
+	 */
 	const inSlot = (x: number, y: number) => {
 		const m = hostRef.current?.getBoundingClientRect()
 		if (!m)
 			return false
-		return x >= m.right - DOCK_W - 28 && y >= m.top - 28 && y <= m.bottom + 28
+		return x >= m.right - dockW() - 28 && x <= m.right + 28 &&
+			y >= m.top - 28 && y <= m.bottom + 28
 	}
 
 	const apply = (r: Partial<Rect>) => {
@@ -107,7 +164,7 @@ export function DockableLyricsSheet({ spotifyTrackId, meta, onClose, hostRef, do
 		}
 		else {
 			const s = floatSize()
-			const pos = freePos ? clampPos(freePos.left, freePos.top, s.width, s.height) : centerRect()
+			const pos = freePos ? clampPos(freePos.left, freePos.top, s.width, s.height) : restRect()
 			apply({ ...s, ...pos })
 		}
 		if (instant) {

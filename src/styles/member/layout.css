@@ -195,9 +195,9 @@
   max-width: 1140px;
   padding: 26px 34px 28px;
 }
-.memo-modal-lg.size-m { max-width: 900px; }
-.memo-modal-lg.size-l { max-width: 1140px; }
-.memo-modal-lg.size-xl { max-width: 1380px; }
+.memo-modal-lg.size-m { max-width: 900px; --lys-dock-w: 340px; }
+.memo-modal-lg.size-l { max-width: 1140px; --lys-dock-w: 440px; }
+.memo-modal-lg.size-xl { max-width: 1380px; --lys-dock-w: 560px; }
 
 .memo-lg-bar { display: flex; align-items: center; gap: 12px; padding-right: 40px; margin-bottom: 18px; }
 
@@ -1415,10 +1415,14 @@
 .lys-anno-drawer .mk { font-size: 12px; color: var(--color-accent); }
 .lys-anno-drawer .tx { font-size: 13px; color: var(--color-subtle); line-height: 1.5; }
 
+/* The docked sheet's width tracks the memo's size setting. It was pinned at
+   320px, so 최대 (1380px) still read lyrics through a 320px straw — the memo grew
+   and the sheet did not. DockableLyricsSheet reads this same custom property for
+   its geometry, so the two cannot drift. */
 .lys-dock-slot {
 	position: relative;
 	flex: 0 0 auto;
-	width: 320px;
+	width: var(--lys-dock-w, 320px);
 	align-self: stretch;
 	transition: width 0.42s cubic-bezier(0.22, 0.85, 0.25, 1);
 }
