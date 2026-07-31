@@ -45,6 +45,9 @@ import AddAlbumModal from './AddAlbumModal'
 import AddArtistModal from './AddArtistModal'
 import { ActionSheet } from './ActionSheet'
 import type { SheetAction } from './ActionSheet'
+import { ENT_ALBUM_STATE_CHANGED, notifyAlbumStateChanged } from '@lib/entityEvents'
+import type { AlbumStateChangedDetail } from '@lib/entityEvents'
+import { fetchMyAlbumStates, putMyAlbumState } from '../album/reviews.api'
 import { listRecentlyListened } from './spotify.api'
 import type { SpotifyLibraryAlbumState } from './spotify.api'
 import { useSpotifyLibrary } from './useSpotifyLibrary'
@@ -453,7 +456,7 @@ function CoverResearchBadge({ status, active, onOpen }: { status: ResearchStatus
 // Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
 // (both directions). Click opens detail. Rating chips show only inside the
 // is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, listened, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
+function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, listened, marked, onToggleMark, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
   album: BoardAlbum
   bucketId: string
   /**
@@ -498,6 +501,14 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
    * auto-research checkbox. Only passed for normal-bucket covers (not the recent
    * strip / Spotify-library bucket).
    */
+  /**
+   * FEAT-album-review-authoring Step 1 — I marked this album "평론 쓸 것".
+   * Private to me; this board is my own dashboard, and the mark is never sent
+   * to a public surface.
+   */
+  marked?: boolean
+  /** Flip the mark. Absent for non-album members and library copy sources. */
+  onToggleMark?: () => void
   research?: { mode: string, selected: boolean, status: ResearchStatus | null, onOpen: () => void, onToggleSelected: (next: boolean) => void }
   /**
    * Touch fallback (coarse pointers): open the album action sheet. The ⋯ button
@@ -659,6 +670,22 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
 	onChange={e => research.onToggleSelected(e.target.checked)}
             />
           )}
+          {onToggleMark && (
+            <button
+	type="button"
+	className={`bb-tile-mark${marked ? ' is-marked' : ''}`}
+	title={marked ? '평론 쓸 것 — 표시 해제' : '평론 쓸 것으로 표시 (나만 봅니다)'}
+	aria-label={marked ? '평론 쓸 것 표시 해제' : '평론 쓸 것으로 표시'}
+	aria-pressed={marked}
+	draggable={false}
+	onClick={(e) => {
+                e.stopPropagation()
+                onToggleMark()
+              }}
+            >
+              ✎
+            </button>
+          )}
           {onTouchActions && (
             <button
 	type="button"
@@ -711,6 +738,10 @@ interface Ops {
   setResearchMode: (bucketId: string, mode: 'off' | 'all' | 'selected') => void
   setItemSelected: (bucketId: string, itemId: string, selected: boolean) => void
   openResearch: (albumId: string, title: string) => void
+  // FEAT-album-review-authoring Step 1: flip the private editorial mark from the
+  // board. The same state the album window writes — RFC C6 requires BOTH
+  // surfaces to be able to fix it, or the owner goes back to hand-moving albums.
+  toggleMark: (albumId: string) => void
 }
 
 // Props shared by every BucketCard / BucketList in the tree (everything except
@@ -731,6 +762,14 @@ interface SharedProps {
    * covers. Empty until the one-shot mount fetch resolves (or on error).
    */
   listenedAlbumIds: Set<string>
+  /**
+   * FEAT-album-review-authoring Step 1 — album_ids I marked "평론 쓸 것".
+   * PRIVATE: only ever my own marks, and the board is my own dashboard. Empty
+   * until the one-shot mount fetch resolves (or on error) — an unmarked cover
+   * and an unloaded one look the same on purpose, since a wrong mark shown is
+   * worse than a mark shown late.
+   */
+  markedAlbumIds: Set<string>
   dropTarget: string | null
   setDropTarget: (fn: string | null | ((t: string | null) => string | null)) => void
   draggingId: string | null
@@ -761,8 +800,8 @@ interface AlbumSheet { album: BoardAlbum, bucketId: string, copySource: boolean,
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, libState, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
@@ -838,6 +877,8 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
 	score={bucket.isDone && a.itemType === 'album' ? (ratings.get(a.albumId ?? '') ?? null) : null}
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
 	listened={a.albumId != null && listenedAlbumIds.has(a.albumId) && !a.alreadyReviewed}
+	marked={a.albumId != null && markedAlbumIds.has(a.albumId)}
+	onToggleMark={(a.itemType === 'album' && a.albumId && !isLib) ? () => ops.toggleMark(a.albumId!) : undefined}
 	fromLib={isLib}
 	isNew={newItemIds.has(a.itemId)}
 	onOpen={onOpen}
@@ -1819,6 +1860,69 @@ ids.push(a.albumId)
   // real sync advances last_synced_at.
   const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh)
 
+  // FEAT-album-review-authoring Step 1 — my private "평론 쓸 것" marks.
+  //
+  // One read for the whole board (GET /api/me/album-states), not one per cover.
+  // The mark also lives on the album window, which is a SEPARATE React root, so
+  // the board re-syncs from that window's confirmed-change event rather than
+  // trying to share state across the island boundary.
+  const [markedAlbumIds, setMarkedAlbumIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    let alive = true
+    fetchMyAlbumStates().then((states) => {
+      if (alive)
+        setMarkedAlbumIds(new Set(states.filter(st => st.review_candidate).map(st => st.album_id)))
+    })
+    const onChanged = (e: Event) => {
+      const d = (e as CustomEvent<AlbumStateChangedDetail>).detail
+      if (!d?.albumId)
+        return
+      setMarkedAlbumIds((prev) => {
+        const next = new Set(prev)
+        if (d.reviewCandidate)
+          next.add(d.albumId)
+        else next.delete(d.albumId)
+        return next
+      })
+    }
+    window.addEventListener(ENT_ALBUM_STATE_CHANGED, onChanged)
+    return () => {
+      alive = false
+      window.removeEventListener(ENT_ALBUM_STATE_CHANGED, onChanged)
+    }
+  }, [])
+
+  /**
+   * Flip the mark from a cover. Optimistic: the point of this affordance is that
+   * it costs nothing mid-organize, so the cover must not wait on a round trip.
+   * A failed write rolls the cover back rather than leaving a mark the server
+   * never stored.
+   */
+  function toggleMark(albumId: string) {
+    const next = !markedAlbumIds.has(albumId)
+    setMarkedAlbumIds((prev) => {
+      const s2 = new Set(prev)
+      if (next)
+        s2.add(albumId)
+      else s2.delete(albumId)
+      return s2
+    })
+    // Partial write — no rating key, so a mark can never disturb a 평가.
+    putMyAlbumState(albumId, { review_candidate: next })
+      .then(() => notifyAlbumStateChanged({ albumId, reviewCandidate: next }))
+      .catch(() => {
+        setMarkedAlbumIds((prev) => {
+          const s2 = new Set(prev)
+          if (next)
+            s2.delete(albumId)
+          else s2.add(albumId)
+          return s2
+        })
+        setFlash('평론 후보 표시를 바꾸지 못했어요.')
+      })
+  }
+
   // Clear all drag state the instant a drop completes its op. Needed in addition
   // to the document-level reset above because card drop handlers stopPropagation
   // (so the document `drop` never fires) and a moved item's original node unmounts
@@ -1833,6 +1937,7 @@ ids.push(a.albumId)
 
   const ops: Ops = {
     tree: tree ?? [],
+    toggleMark,
     // Copy a 최근 들은 앨범 tile into a real bucket. Optimistic: splice a temp
     // tile in on drop so it appears instantly, then reconcile with the server —
     // swap temp → canonical item on success, drop temp on 409 (already there) /
@@ -2232,7 +2337,7 @@ ids.push(a.albumId)
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, listenedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
   // FEAT-my-buckit-artist Step 4: the tree narrowed by the board-level type filter.
   const visibleTree = pruneByType(normalTree, boardType)
 
@@ -2489,6 +2594,20 @@ ids.push(a.albumId)
             // active-device play with the member token; the play click is the only
             // trigger (rule #9 — the sole server hit is the async token mint), and
             // outcomes land in the board's transient toast.
+            // FEAT-album-review-authoring Step 1 — the mark, spelled out. The
+            // cover pill is a 26px glyph; on touch the sheet is where an action
+            // gets a name, and this one needs its privacy said out loud.
+            if (s.album.albumId && s.album.itemType === 'album' && !s.fromLib) {
+              const markId = s.album.albumId
+              const isMarked = markedAlbumIds.has(markId)
+              list.push({
+                label: isMarked ? '평론 쓸 것 표시 해제' : '평론 쓸 것으로 표시 (나만 봄)',
+                onClick: () => {
+                  setAlbumSheet(null)
+                  toggleMark(markId)
+                },
+              })
+            }
             if (s.album.albumId && s.album.itemType === 'album') {
               const albumId = s.album.albumId
               list.push({

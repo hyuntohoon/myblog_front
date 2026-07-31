@@ -849,6 +849,35 @@ export interface paths {
         patch: operations["update_me_api_me_patch"];
         trace?: never;
     };
+    "/api/me/album-states": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Album States
+         * @description The caller's own per-album states (FEAT-album-review-authoring Step 1).
+         *
+         *     Serves both surfaces that can carry a mark: the bucket board reads the whole
+         *     set once, the album overlay filters to one id. Private — it carries the
+         *     editorial marks — so it is JWT-only and scoped to the caller's own member id;
+         *     there is deliberately no way to ask for someone else's.
+         *
+         *     A GET needs no API Gateway route: authed GETs ride the edge_guard catch-all
+         *     and the JWT is verified here at the Lambda, like GET /api/me. That is why
+         *     Step 1 ships with no infra change.
+         */
+        get: operations["get_my_album_states_api_me_album_states_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/release-feed": {
         parameters: {
             query?: never;
@@ -1385,7 +1414,15 @@ export interface paths {
         };
         /** Get Album Reviews */
         get: operations["get_album_reviews_api_reviews_albums__album_id__get"];
-        /** Put Album Review */
+        /**
+         * Put Album Review
+         * @description Patch the caller's state for one album (rating / one-liner / private mark).
+         *
+         *     Partial by design — see AlbumRatingUpsertRequest. The response is the
+         *     caller's OWN state and carries the private mark, so it must never be handed
+         *     to anyone but its author; this route is JWT-only, which is what makes that
+         *     true.
+         */
         put: operations["put_album_review_api_reviews_albums__album_id__put"];
         post?: never;
         /** Delete My Album Review */
@@ -1662,6 +1699,64 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * AlbumRatingAggregateResponse
+         * @description Album-page block: live avg/count + the full public rating list.
+         *
+         *     Counts rating-bearing rows ONLY. A state with just a private mark is not a
+         *     평가 and never appears here — see RatingService.album_aggregate.
+         */
+        Backend_AlbumRatingAggregateResponse: {
+            /** Album Id */
+            album_id: string;
+            /** Average */
+            average?: number | null;
+            /** Count */
+            count: number;
+            /** Reviews */
+            reviews?: components["schemas"]["Backend_AlbumRatingResponse"][];
+        };
+        /** AlbumRatingResponse */
+        Backend_AlbumRatingResponse: {
+            /** Album Id */
+            album_id: string;
+            author: components["schemas"]["Backend_RatingAuthor"];
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Rating */
+            rating: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * AlbumRatingUpsertRequest
+         * @description A PARTIAL update of the caller's state for one album.
+         *
+         *     Only the fields actually present in the request body are applied, so the
+         *     album surface can save a star without knowing about the mark and the bucket
+         *     surface can flip the mark without knowing the star — neither can wipe the
+         *     other's facet with a stale value. `rating: null` and `comment: null` are
+         *     real instructions ("clear it"); an explicit `review_candidate: null` is not
+         *     an instruction and is ignored, since the mark has no absent state.
+         */
+        Backend_AlbumRatingUpsertRequest: {
+            /** Comment */
+            comment?: string | null;
+            /** Rating */
+            rating?: number | null;
+            /** Review Candidate */
+            review_candidate?: boolean | null;
+        };
         /** AlbumResearchResponse */
         Backend_AlbumResearchResponse: {
             /** Album Id */
@@ -1695,49 +1790,6 @@ export interface components {
             tokens_in?: number | null;
             /** Tokens Out */
             tokens_out?: number | null;
-        };
-        /**
-         * AlbumReviewAggregateResponse
-         * @description Album-page block: live avg/count + the full public review list.
-         */
-        Backend_AlbumReviewAggregateResponse: {
-            /** Album Id */
-            album_id: string;
-            /** Average */
-            average?: number | null;
-            /** Count */
-            count: number;
-            /** Reviews */
-            reviews?: components["schemas"]["Backend_AlbumReviewResponse"][];
-        };
-        /** AlbumReviewResponse */
-        Backend_AlbumReviewResponse: {
-            /** Album Id */
-            album_id: string;
-            author: components["schemas"]["Backend_ReviewAuthor"];
-            /** Comment */
-            comment?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Id */
-            id: string;
-            /** Rating */
-            rating: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** AlbumReviewUpsertRequest */
-        Backend_AlbumReviewUpsertRequest: {
-            /** Comment */
-            comment?: string | null;
-            /** Rating */
-            rating: number;
         };
         /**
          * ArtistBrief
@@ -2361,14 +2413,14 @@ export interface components {
             /** Review Count */
             review_count: number;
             /** Reviews */
-            reviews?: components["schemas"]["Backend_MemberReviewResponse"][];
+            reviews?: components["schemas"]["Backend_MemberRatingResponse"][];
         };
         /**
-         * MemberReviewResponse
+         * MemberRatingResponse
          * @description One row in a member's public profile feed — the review plus enough album
          *     context to render + link without a second fetch.
          */
-        Backend_MemberReviewResponse: {
+        Backend_MemberRatingResponse: {
             /** Album Cover Url */
             album_cover_url?: string | null;
             /** Album Id */
@@ -2425,6 +2477,50 @@ export interface components {
             parent_id?: string | null;
             /** Position */
             position: number;
+        };
+        /**
+         * MyAlbumStateListResponse
+         * @description Every album the caller has a state for — the album and bucket surfaces
+         *     read this once and render their marks without a per-cover request.
+         */
+        Backend_MyAlbumStateListResponse: {
+            /** States */
+            states?: components["schemas"]["Backend_MyAlbumStateResponse"][];
+        };
+        /**
+         * MyAlbumStateResponse
+         * @description The CALLER'S OWN state for one album (FEAT-album-review-authoring Step 1).
+         *
+         *     Carries `review_candidate`, which is private (RFC C6 — visible to others it
+         *     becomes a promise, and a promise can't be marked lightly). This schema is
+         *     therefore only ever returned on a JWT route, to the row's own author. Never
+         *     embed it in an album's public list or a public profile.
+         *
+         *     `rating: null` is a legitimate state: the mark can be placed before
+         *     listening. A null rating implies a null comment (DB CHECK).
+         */
+        Backend_MyAlbumStateResponse: {
+            /** Album Id */
+            album_id: string;
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Rating */
+            rating?: number | null;
+            /**
+             * Review Candidate
+             * @default false
+             */
+            review_candidate: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * NightlyGrowRequest
@@ -2622,6 +2718,23 @@ export interface components {
             /** Buckets */
             buckets?: components["schemas"]["Backend_PublicBucket"][];
         };
+        /**
+         * RatingAuthor
+         * @description The public reviewer identity embedded in an album's review list.
+         *
+         *     Deliberately NO `id`: users.id IS the Cognito sub, and the old field
+         *     published every reviewer's sub on an unauthenticated endpoint (2026-07-14
+         *     audit F4.3). `handle` is unique — clients identify authors (incl. "my
+         *     review") by handle.
+         */
+        Backend_RatingAuthor: {
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Handle */
+            handle: string;
+        };
         /** RecentTrackItem */
         Backend_RecentTrackItem: {
             album?: components["schemas"]["Backend_AlbumBrief"] | null;
@@ -2765,23 +2878,6 @@ export interface components {
             per_year?: components["schemas"]["Backend_RetroYearStat"][];
             /** Today Kst */
             today_kst: string;
-        };
-        /**
-         * ReviewAuthor
-         * @description The public reviewer identity embedded in an album's review list.
-         *
-         *     Deliberately NO `id`: users.id IS the Cognito sub, and the old field
-         *     published every reviewer's sub on an unauthenticated endpoint (2026-07-14
-         *     audit F4.3). `handle` is unique — clients identify authors (incl. "my
-         *     review") by handle.
-         */
-        Backend_ReviewAuthor: {
-            /** Avatar Url */
-            avatar_url?: string | null;
-            /** Display Name */
-            display_name: string;
-            /** Handle */
-            handle: string;
         };
         /** ReviewedAlbumResponse */
         Backend_ReviewedAlbumResponse: {
@@ -5387,6 +5483,37 @@ export interface operations {
             };
         };
     };
+    get_my_album_states_api_me_album_states_get: {
+        parameters: {
+            query?: {
+                album_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_MyAlbumStateListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_release_feed_api_me_release_feed_get: {
         parameters: {
             query?: {
@@ -6479,7 +6606,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Backend_AlbumReviewAggregateResponse"];
+                    "application/json": components["schemas"]["Backend_AlbumRatingAggregateResponse"];
                 };
             };
             /** @description Validation Error */
@@ -6504,7 +6631,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Backend_AlbumReviewUpsertRequest"];
+                "application/json": components["schemas"]["Backend_AlbumRatingUpsertRequest"];
             };
         };
         responses: {
@@ -6514,8 +6641,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Backend_AlbumReviewResponse"];
+                    "application/json": components["schemas"]["Backend_MyAlbumStateResponse"];
                 };
+            };
+            /** @description The state has no facet left and was removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

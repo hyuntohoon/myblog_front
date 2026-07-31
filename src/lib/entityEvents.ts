@@ -56,3 +56,26 @@ export function openTrackAlbum(t: OpenTrackAlbumDetail): void {
     year: t.year,
   })
 }
+
+// FEAT-album-review-authoring Step 1 — "my state for this album changed".
+//
+// The mark lives on two surfaces at once (RFC C6: the owner must be able to fix
+// it from either, or they end up hand-moving albums again), and those surfaces
+// are SEPARATE React roots — the app-wide album overlay in layout.astro and the
+// bucket board island. Neither can hold the other's state, so the writer
+// announces and every listener re-reads. Announce AFTER the server confirms:
+// this event means "the stored state changed", not "someone clicked".
+export interface AlbumStateChangedDetail {
+  albumId: string
+  /** The stored value after the write, so a listener can update without a fetch. */
+  reviewCandidate: boolean
+}
+
+export const ENT_ALBUM_STATE_CHANGED = 'ent:album-state-changed'
+
+/** Announce a confirmed change to my state for an album. No-op server-side. */
+export function notifyAlbumStateChanged(detail: AlbumStateChangedDetail): void {
+  if (typeof window === 'undefined')
+    return
+  window.dispatchEvent(new CustomEvent<AlbumStateChangedDetail>(ENT_ALBUM_STATE_CHANGED, { detail }))
+}
