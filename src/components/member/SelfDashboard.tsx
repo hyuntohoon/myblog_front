@@ -19,7 +19,7 @@
 //
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { ReactNode } from 'react'
-import type { MemberReview as PublicMemberReview } from '../album/reviews.api'
+import type { MemberRating as PublicMemberReview } from '../album/reviews.api'
 import type { LyricsOpenTarget, NpStyle } from './NowPlaying'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import { useEffect, useMemo, useRef, useState } from 'react'

@@ -1,53 +1,98 @@
-// FEAT-multi-user-accounts Phase 1 — typed client for the public album-reviews
+// FEAT-multi-user-accounts Phase 1 — typed client for the album 평가 (rating)
 // API (backend). Reads are public (bare fetch, no token); the write/delete are
 // Cognito-JWT via apiFetch. Mirrors components/member/me.api.ts.
+//
+// The file and the paths keep the word "review" because they are named after
+// the route (`/api/reviews/*`), which the owner deliberately did not rename —
+// the symbols below follow the vocabulary instead (평론 = review, 평가 = rating;
+// RFC FEAT-album-review-authoring 충돌 #11).
+//
+// Step 1 added a SECOND, private shape alongside the public one: my own state
+// for an album, carrying the editorial-candidate mark. Keep them apart — the
+// public aggregate must never be a source of mark data, and the state must
+// never be rendered on someone else's screen.
 import type { components } from '@lib/api.gen'
 import { apiFetch } from '@lib/api'
 
 const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string
 
-export type AlbumReviewAggregate = components['schemas']['Backend_AlbumReviewAggregateResponse']
-export type AlbumReview = components['schemas']['Backend_AlbumReviewResponse']
+export type AlbumRatingAggregate = components['schemas']['Backend_AlbumRatingAggregateResponse']
+export type AlbumRating = components['schemas']['Backend_AlbumRatingResponse']
 export type MemberProfile = components['schemas']['Backend_MemberProfileResponse']
-export type MemberReview = components['schemas']['Backend_MemberReviewResponse']
+export type MemberRating = components['schemas']['Backend_MemberRatingResponse']
 export type MemberSummary = components['schemas']['Backend_MemberSummary']
+/** MY state for one album — includes the PRIVATE editorial mark. Author-only. */
+export type MyAlbumState = components['schemas']['Backend_MyAlbumStateResponse']
 
-export class ReviewRateLimitError extends Error {}
+/**
+ * The one-liner ceiling, mirroring the server's RATING_COMMENT_MAX. Kept in
+ * sync by hand: the server is the rule (it 422s past this), and this constant
+ * only exists so the input can stop the user before a round trip.
+ */
+export const RATING_COMMENT_MAX = 60
 
-/** Public: live aggregate (avg/count) + review list for an album. */
-export async function fetchAlbumReviews(albumId: string): Promise<AlbumReviewAggregate | null> {
+export class RatingRateLimitError extends Error {}
+
+/** Public: live aggregate (avg/count) + rating list for an album. */
+export async function fetchAlbumReviews(albumId: string): Promise<AlbumRatingAggregate | null> {
 	try {
 		const res = await fetch(`${BASE}/api/reviews/albums/${albumId}`)
 		if (!res.ok)
 			return null
-		return (await res.json()) as AlbumReviewAggregate
+		return (await res.json()) as AlbumRatingAggregate
 	}
 	catch {
 		return null
 	}
 }
 
-/** Upsert my review (create or edit). Throws ReviewRateLimitError on 429. */
-export async function putMyReview(
+/**
+ * Patch MY state for an album. PARTIAL: pass only what you mean to change.
+ *
+ * Omitting a key leaves that facet alone — which is the point. The bucket board
+ * flips `review_candidate` without holding the rating, and the album panel
+ * saves a rating without holding the mark; neither can wipe the other's facet.
+ * Passing `rating: null` / `comment: null` explicitly means "clear it".
+ *
+ * Returns the resulting state, or null when the state has no facet left (204,
+ * the row is gone) or the write failed. Throws RatingRateLimitError on 429.
+ */
+export async function putMyAlbumState(
 	albumId: string,
-	rating: number,
-	comment: string | null,
-): Promise<AlbumReview | null> {
-	const body: components['schemas']['Backend_AlbumReviewUpsertRequest'] = { rating, comment }
+	changes: Partial<components['schemas']['Backend_AlbumRatingUpsertRequest']>,
+): Promise<MyAlbumState | null> {
 	const res = await apiFetch(`${BASE}/api/reviews/albums/${albumId}`, {
 		method: 'PUT',
-		body: JSON.stringify(body),
+		body: JSON.stringify(changes),
 	})
 	if (!res)
 		return null
 	if (res.status === 429)
-		throw new ReviewRateLimitError()
-	if (!res.ok)
+		throw new RatingRateLimitError()
+	if (!res.ok || res.status === 204)
 		return null
-	return (await res.json()) as AlbumReview
+	return (await res.json()) as MyAlbumState
 }
 
-/** Delete my own review for an album. True on 204. */
+/**
+ * MY states, private mark included. `albumId` filters to one album; omit it for
+ * the whole set (the bucket board's single read). Authed — logged out yields [].
+ */
+export async function fetchMyAlbumStates(albumId?: string): Promise<MyAlbumState[]> {
+	const qs = albumId ? `?album_id=${encodeURIComponent(albumId)}` : ''
+	const res = await apiFetch(`${BASE}/api/me/album-states${qs}`)
+	if (!res || !res.ok)
+		return []
+	const body = (await res.json()) as components['schemas']['Backend_MyAlbumStateListResponse']
+	return body.states ?? []
+}
+
+/**
+ * Delete my 평가 (star + one-liner) for an album. True on 204.
+ *
+ * The private mark survives on the server if one is set — this removes what is
+ * public, not the whole state.
+ */
 export async function deleteMyReview(albumId: string): Promise<boolean> {
 	const res = await apiFetch(`${BASE}/api/reviews/albums/${albumId}`, { method: 'DELETE' })
 	return !!res && res.status === 204
