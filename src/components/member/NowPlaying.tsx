@@ -314,6 +314,10 @@ function useNowPlaying() {
     else {
       // Live says nothing is playing — force the idle branch even if the stale
       // snapshot claimed otherwise. Keep whatever fields are already there.
+      // `paused` (FEAT-lyrics-sync-precision Step 2 split it out of `idle`)
+      // lands here deliberately: this card's behavior for a held player is
+      // unchanged, the new state only carries extra information the lyrics
+      // viewer needs. Handled explicitly so the split can't drift silently.
       setNp(prev => ({ ...(prev ?? {}), is_playing: false, updated_at: new Date().toISOString() }))
       setMoment(null)
       likedTrackRef.current = null
@@ -851,7 +855,10 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
         setState('ready')
         onOpen({ trackId: r.trackId, progressMs: r.progressMs, progressAtMs: r.readAtMs, durationMs: r.durationMs, albumCoverUrl: r.albumCoverUrl, track: r.track, artist: r.artist, artists: r.artists })
       }
-      else if (r.state === 'idle') {
+      // `paused` must land with `idle`, NOT in the failure branch: a held
+      // player is "재생 중 아님", not "확인 실패". (FEAT-lyrics-sync-precision
+      // Step 2 split it out of `idle`; this entry's behavior is unchanged.)
+      else if (r.state === 'idle' || r.state === 'paused') {
         setState('gone')
       }
       else {

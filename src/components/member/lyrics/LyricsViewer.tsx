@@ -82,6 +82,7 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } fro
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
+import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ArtistNames } from '../NowPlaying'
@@ -118,6 +119,21 @@ const PERCEPTUAL_LEAD_MS = 80
 const END_GRACE_MS = 1500
 /** Idle snap-back delay for the un-dimmed browse window (and its countdown ring). */
 const BROWSE_IDLE_MS = 3000
+/**
+ * Minimum spacing between event-driven re-anchor reads (FEAT-lyrics-sync-
+ * precision Step 2). A floor, NOT a cadence — nothing schedules a read, this
+ * only stops a burst of events (tab flicking, a rapid ⏭⏭⏭) from turning into a
+ * request storm. D28 still holds: no timer polls playback state.
+ */
+const EVENT_RESYNC_FLOOR_MS = 1500
+
+/**
+ * What triggered a re-anchor (FEAT-lyrics-sync-precision Step 2). Recorded with
+ * the residual so the accuracy series can be read per trigger — a `visibility`
+ * residual means something happened off-tab, a `command` residual is our own
+ * transport round-trip, a `manual` one is the owner noticing drift.
+ */
+type ResyncSource = 'manual' | 'command' | 'visibility' | 'end'
 
 type Phase =
 	| { k: 'loading' } |
@@ -334,6 +350,31 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     setAnchorSeq(k => k + 1)
   }
 
+  // FEAT-lyrics-sync-precision Step 2 — is playback actually running? Until
+  // now the viewer had no pause concept at all (unlike NowPlaying, which
+  // passes `!paused` to `useClockEstimate`), so a 30s pause left the estimate
+  // 30s ahead until something else happened to fire. Seeded true: the live
+  // entry only exists while a track is playing.
+  const [playing, setPlaying] = useState(true)
+
+  /**
+   * The accuracy series (FEAT-lyrics-sync-precision Step 2). Every event-driven
+   * re-anchor on the SAME track yields "where we thought we were" minus "where
+   * we actually were" — the system grading itself, for free, in real use.
+   *
+   * Nothing consumes it yet; the RFC deliberately dropped live staleness
+   * correction so that acting on this later needs data, not a rewrite. A large
+   * value after a pause is not an error, it is the pause being measured.
+   */
+  const logResidual = (source: ResyncSource, progressMs: number | null, readAtMs: number) => {
+    const a = anchor.current
+    if (!a || progressMs == null)
+      return
+    const predicted = estimateMs(a, readAtMs) + PERCEPTUAL_LEAD_MS
+    // eslint-disable-next-line no-console -- the measurement channel; prod Lambda-side logging does not apply to the browser
+    console.debug('[lyrics-sync] residual', { source, residualMs: Math.round(predicted - progressMs), predictedMs: Math.round(predicted), actualMs: progressMs, playing })
+  }
+
   // Follow/suspend (FEAT-lyrics-viewer-controls Step 1): trackable rows follow
   // the estimate by default. Browse input pauses that loop only while a live
   // anchor exists; plain/no-seed rows retain today's unrestricted manual nav.
@@ -470,18 +511,19 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // so — never substitute a recent track (RFC).
   const [refreshing, setRefreshing] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const refresh = async () => {
+  const refresh = async (source: ResyncSource = 'manual') => {
     if (refreshing)
       return
     setRefreshing(true)
     try {
       const r = await readLivePlayback()
-      if (r.state === 'playing') {
+      if (r.state === 'playing' || r.state === 'paused') {
         setNotice(null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
         setCoverUrl(r.albumCoverUrl)
         setMeta({ track: r.track, artist: r.artist, artists: r.artists })
         setDurationMs(r.durationMs)
+        setPlaying(r.state === 'playing')
         if (r.trackId !== trackId) {
           // Track changed → swap segments; the load effect seeds both focus
           // and the continuous anchor from the fresh position.
@@ -492,11 +534,16 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           // Same track → re-seed the CONTINUOUS anchor from the fresh position
           // (previously a one-shot focus only). A successful re-sync also exits
           // suspend so the freshly corrected position resumes following.
+          // A paused read re-anchors too: the anchor then holds the REAL held
+          // position, so the frozen line is exact rather than guessed, and a
+          // later resume resumes from truth.
+          logResidual(source, r.progressMs, r.readAtMs)
           applyAnchor(r.progressMs, r.readAtMs)
         }
       }
       else if (r.state === 'idle') {
         setNotice('지금 재생 중인 곡이 없어요')
+        setPlaying(false)
       }
       else {
         setNotice('재생 상태를 확인하지 못했어요')
@@ -513,6 +560,43 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   useEffect(() => {
     refreshRef.current = refresh
   })
+
+  // FEAT-lyrics-sync-precision Step 2 — event-driven re-anchoring. A correct
+  // anchor stays correct: playback runs at 1.0x and browser-vs-device clock
+  // drift is ~10ms over a four-minute track. Only EVENTS invalidate it, so
+  // these are the two the browser hands us for free. No timer polls playback
+  // state (D28 upheld).
+  useEffect(() => {
+    if (!canRefresh)
+      return
+    // A floor, not a cadence: tab-flicking or a burst of transport commands
+    // must not turn one-shot reads into a request storm.
+    let lastAtMs = 0
+    const resync = (source: ResyncSource) => {
+      const now = performance.now()
+      if (now - lastAtMs < EVENT_RESYNC_FLOOR_MS)
+        return
+      lastAtMs = now
+      void refreshRef.current(source)
+    }
+    // Every successful transport command dispatches this (@lib/spotifyPlayback).
+    // Once FEAT-lyrics-viewer-playback lands, the viewer's own buttons are the
+    // dominant source — a pause we issued is a pause we know the instant it
+    // takes effect, with nothing to detect.
+    const onCommand = () => resync('command')
+    // Leaving the tab to operate Spotify elsewhere is precisely the case where
+    // "playback kept running" stops being true, and it was assumed until now.
+    const onVisible = () => {
+      if (!document.hidden)
+        resync('visibility')
+    }
+    window.addEventListener(MYBLOG_PLAYBACK_CHANGED, onCommand)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener(MYBLOG_PLAYBACK_CHANGED, onCommand)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [canRefresh])
 
   const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
   const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
@@ -641,7 +725,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // line anyway. That makes lateness the only possible failure, never drift,
   // and it never accumulates across a long instrumental gap.
   useEffect(() => {
-    if (!trackable || suspended || n === 0)
+    // `!playing` (Step 2) freezes rather than tears down: the scheduler simply
+    // never arms, so the focus holds at the last computed line. The anchor is
+    // NOT aged past a pause either — a paused read re-anchors it to the real
+    // held position — so resuming picks up from truth, not from a clock that
+    // kept running while the music did not.
+    if (!trackable || suspended || !playing || n === 0)
       return
     let timer: number | null = null
     const clear = () => {
@@ -668,7 +757,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       // the visibility listener below re-arms and it goes out on return.
       if (endAtMs != null && !endSynced.current && estimatedMs >= endAtMs && !document.hidden) {
         endSynced.current = true
-        void refreshRef.current()
+        void refreshRef.current('end')
         return // the refresh re-anchors, which re-arms through `anchorSeq`
       }
       setFocus((f) => {
@@ -699,7 +788,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       document.removeEventListener('visibilitychange', onVisible)
       clear()
     }
-  }, [trackable, suspended, n, segs, canRefresh, durationMs, anchorSeq])
+  }, [trackable, suspended, playing, n, segs, canRefresh, durationMs, anchorSeq])
 
   // Vertical swipe/drag = manual navigation (touch-action: none on the scroll
   // area hands touch pans to us). Dragging up (finger/pointer moves up) reads

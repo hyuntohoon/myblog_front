@@ -22,11 +22,14 @@ import { getStreamingToken } from '@lib/spotifyPlayback'
 
 const PLAYER_URL = 'https://api.spotify.com/v1/me/player'
 
-export type LivePlayback =
-	| {
-		state: 'playing'
-		trackId: string
-		progressMs: number | null
+/**
+ * The fields a read carries when Spotify has a track loaded — whether it is
+ * running or held. `playing` and `paused` share this shape exactly: a paused
+ * player still reports its position, its track and its device.
+ */
+export interface LivePlaybackTrack {
+	trackId: string
+	progressMs: number | null
 		/**
 		 * Wall-clock instant (performance.now() timeline) `progressMs` was
 		 * measured at — the request window's midpoint, since Spotify stamps the
@@ -49,8 +52,21 @@ export type LivePlayback =
 		 * hint) — comes free with the same `GET /me/player` body, so the hint
 		 * refreshes exactly when the one-shot fires (D28: never polled).
 		 */
-		deviceName: string | null
-	} |
+	deviceName: string | null
+}
+
+export type LivePlayback =
+	| ({ state: 'playing' } & LivePlaybackTrack) |
+	/**
+	 * FEAT-lyrics-sync-precision Step 2 — a track is loaded but held. Split out
+	 * of `idle` because the lyrics viewer has to FREEZE at the real paused
+	 * position: collapsing it into `idle` threw the position away, so the only
+	 * way to freeze was to guess from an already-ageing estimate.
+	 *
+	 * Callers that only ask "is something playing?" must treat this exactly as
+	 * they treat `idle` — it carries no new obligation, only new information.
+	 */
+	({ state: 'paused' } & LivePlaybackTrack) |
 	{ state: 'idle' } |
 	{ state: 'unavailable' }
 
@@ -58,9 +74,11 @@ export type LivePlayback =
  * Read the current playback moment once.
  *
  * - `playing` — an actively playing music track (`item.type === 'track'`).
- * - `idle` — 204 (no active device), paused, or a non-track item (ad/podcast):
- *   nothing the viewer may open. The viewer treats this as "no active playback"
- *   — entry hidden, no recent-history fallback.
+ * - `paused` — the same track payload, held. Was folded into `idle` until
+ *   FEAT-lyrics-sync-precision Step 2.
+ * - `idle` — 204 (no active device) or a non-track item (ad/podcast): nothing
+ *   the viewer may open. The viewer treats this as "no active playback" —
+ *   entry hidden, no recent-history fallback.
  * - `unavailable` — token mint failed (dormant/unauthorized/error) or the read
  *   itself failed; distinct from idle so callers never *hide* the entry over a
  *   transient failure.
@@ -108,7 +126,9 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   }
 
   const item = body?.item
-  if (!body?.is_playing || !item?.id || item.type !== 'track')
+  // No music track loaded at all (204 handled above, ad/podcast, empty body) —
+  // nothing the viewer may open, and nothing to freeze at.
+  if (!item?.id || item.type !== 'track')
     return { state: 'idle' }
   const namedArtists = (item.artists ?? [])
     .flatMap(a => (a?.id && a?.name ? [{ id: a.id, name: a.name }] : []))
@@ -124,7 +144,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     .sort((a, b) => (a.width ?? 0) - (b.width ?? 0))
   const cover = images.find(i => (i.width ?? 0) >= 232) ?? images[images.length - 1]
   return {
-    state: 'playing',
+    state: body.is_playing ? 'playing' : 'paused',
     trackId: String(item.id),
     progressMs: typeof body.progress_ms === 'number' ? body.progress_ms : null,
     readAtMs: (requestStartMs + performance.now()) / 2,
