@@ -22,13 +22,23 @@
 //
 // FEAT-lyrics-auto-progression Step 1 REPEALS the prior manual-only non-goal:
 // the one-shot seed is now a continuous **clock estimate**. On open (and on
-// each re-sync) `readLivePlayback().progressMs` seeds `{ anchorMs, wallMs }`;
-// a ~250ms interval (while following, paused while `document.hidden`) computes
-// `estimatedMs = anchorMs + (performance.now() - wallMs)` and advances `focus`
-// via `focusIndexForMs()` only when the index changes (minimal re-renders).
-// The ↻ re-sync re-seeds the continuous anchor. Plain-only (non-trackable)
-// rows never run the estimate. No backend / polling / SDK coupling — the
-// position source is still the existing one-shot REST read (D28 honored).
+// each re-sync) `readLivePlayback().progressMs` seeds `{ anchorMs, wallMs }`
+// and `estimatedMs = anchorMs + (performance.now() - wallMs)` drives `focus`
+// via `focusIndexForMs()`. The ↻ re-sync re-seeds the anchor. Plain-only
+// (non-trackable) rows never run the estimate. No backend / polling / SDK
+// coupling — the position source is still the existing one-shot REST read
+// (D28 honored).
+//
+// FEAT-lyrics-sync-precision Step 1 removes the fixed lead by removing what it
+// was hiding. `SYNC_LEAD_MS = 300` was never a latency correction: it
+// cancelled the 250ms interval grain (+125ms mean, always late) and the
+// `.lyv-line` 0.35s opacity ramp (+175ms perceived midpoint). Both are gone —
+// the interval is replaced by ONE timer armed for the exact next `start_ms`
+// (`nextBoundaryMs`), and the focus transition gained a 120ms attack against
+// its unchanged 350ms release. What is left is `PERCEPTUAL_LEAD_MS = 80`,
+// labelled as taste. Because the anchor lives in a ref, every anchor WRITE
+// bumps `anchorSeq` to re-arm the scheduler — the old interval got that for
+// free from its next tick.
 //
 // FEAT-lyrics-end-resync extends the clock estimate two ways:
 // (1) Latency-anchored seeding — the anchor's wall instant is the moment the
@@ -83,19 +93,22 @@ const DRAG_STEP = 56
 /** Accumulated wheel delta (px) that advances the focus by one segment. */
 const WHEEL_STEP = 80
 /**
- * Clock-estimate loop cadence (FEAT-lyrics-auto-progression Step 1, OQ1).
- * Lines are typically 3-8s apart, so 250ms is far finer than needed and keeps
- * the estimate / focus comparison cheap. RAF was rejected (overkill at this
- * grain, harder to pause/resume).
+ * FEAT-lyrics-sync-precision Step 1 — the ONLY constant left on the estimate,
+ * and it is TASTE, not latency. A line flipping a touch before its first
+ * syllable reads as "in sync" because you need a beat to find it with your
+ * eyes; flipping exactly on the syllable reads as late.
+ *
+ * It replaces `SYNC_LEAD_MS = 300`, which was never a latency correction: it
+ * cancelled the 250ms polling grain (+125ms mean) and the `.lyv-line` 0.35s
+ * opacity ramp (+175ms perceived midpoint) — 125 + 175 ≈ 300. Both are now
+ * removed at their source (boundary-scheduled focus below; fast-attack
+ * transition in `.lyv-line.is-focus`), so deleting the constant outright would
+ * have made the viewer read LATER than it did. What remains is the ~60ms
+ * midpoint of the new 120ms attack plus a small deliberate lead.
+ *
+ * Tune here if the feel drifts — it is one number and it means one thing.
  */
-const ESTIMATE_INTERVAL_MS = 250
-/**
- * Fixed lead added to the clock estimate (FEAT-lyrics-end-resync). Covers the
- * unmeasurable tail after latency-anchoring: Spotify's own progress staleness
- * and the ≤250ms tick grain — a line landing a touch early reads as "in sync",
- * landing late reads as lagging. Tune here if the feel drifts.
- */
-const SYNC_LEAD_MS = 300
+const PERCEPTUAL_LEAD_MS = 80
 /**
  * How far past `durationMs` the estimate must run before the end-of-track auto
  * re-sync fires (FEAT-lyrics-end-resync). Gives Spotify a beat to actually
@@ -116,7 +129,7 @@ type Phase =
  * at or before `ms` (synced rows only — plain rows carry no timestamps and are
  * never position-initialized).
  */
-function focusIndexForMs(segs: LyricsSegment[], ms: number): number {
+export function focusIndexForMs(segs: LyricsSegment[], ms: number): number {
   let idx = 0
   for (let i = 0; i < segs.length; i++) {
     const start = segs[i].start_ms
@@ -124,6 +137,21 @@ function focusIndexForMs(segs: LyricsSegment[], ms: number): number {
       idx = i
   }
   return idx
+}
+
+/**
+ * The next timed segment start strictly after `ms`, or null when `ms` is past
+ * the last one (FEAT-lyrics-sync-precision Step 1). This is what the focus
+ * scheduler wakes on, so untimed segments (`start_ms == null`, mixed rows) are
+ * skipped — they are never estimate-selectable focus targets either.
+ */
+export function nextBoundaryMs(segs: LyricsSegment[], ms: number): number | null {
+  for (let i = 0; i < segs.length; i++) {
+    const start = segs[i].start_ms
+    if (start != null && start > ms)
+      return start
+  }
+  return null
 }
 
 /**
@@ -294,6 +322,17 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // Seeded on open (from initialProgressMs) and on each re-sync. `null` until a
   // position is available — follow with a null anchor simply doesn't advance.
   const anchor = useRef<ClockAnchor | null>(null)
+  // FEAT-lyrics-sync-precision Step 1: the anchor is a ref, so writing it does
+  // not re-render — the old 250ms interval simply picked the new value up on
+  // its next tick. The boundary scheduler has no next tick, so every anchor
+  // WRITE must re-arm it. This counter is that signal (a scheduler dep).
+  // Clears are deliberately NOT counted: an anchor is only ever cleared
+  // alongside a phase change, which re-runs the scheduler through `segs`.
+  const [anchorSeq, setAnchorSeq] = useState(0)
+  const setAnchor = (next: ClockAnchor) => {
+    anchor.current = next
+    setAnchorSeq(k => k + 1)
+  }
 
   // Follow/suspend (FEAT-lyrics-viewer-controls Step 1): trackable rows follow
   // the estimate by default. Browse input pauses that loop only while a live
@@ -316,7 +355,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     clearSuspendTimer()
     const a = anchor.current
     if (a && n > 0)
-      setFocus(focusIndexForMs(segs, estimateMs(a) + SYNC_LEAD_MS))
+      setFocus(focusIndexForMs(segs, estimateMs(a) + PERCEPTUAL_LEAD_MS))
     setSuspended(false)
   }
 
@@ -350,7 +389,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const applyAnchor = (progressMs: number | null, readAtMs?: number) => {
     if (progressMs == null)
       return
-    anchor.current = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
+    const next: ClockAnchor = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
+    setAnchor(next)
     clearSuspendTimer()
     setSuspended(false)
     // Re-arm end detection only when the fresh position sits meaningfully
@@ -360,7 +400,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
       endSynced.current = false
     if (n > 0)
-      setFocus(focusIndexForMs(segs, estimateMs(anchor.current) + SYNC_LEAD_MS))
+      setFocus(focusIndexForMs(segs, estimateMs(next) + PERCEPTUAL_LEAD_MS))
   }
 
   // One-shot initial-focus seed (position + the wall instant it was read at):
@@ -405,9 +445,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         // load that just finished no longer eats into sync. Without timestamps
         // (plain) there is nothing to anchor — follow simply won't advance.
         if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
-          anchor.current = seed
+          setAnchor(seed)
           endSynced.current = false
-          setFocus(focusIndexForMs(data.segments, seed.ms + SYNC_LEAD_MS + (performance.now() - seed.wallMs)))
+          setFocus(focusIndexForMs(data.segments, seed.ms + PERCEPTUAL_LEAD_MS + (performance.now() - seed.wallMs)))
         }
       })
       .catch(() => {
@@ -498,8 +538,11 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // idle/pill return needs. Untimed lines leave the anchor unchanged (best effort).
   const moveFocusTo = (next: number) => {
     const start = segs[next]?.start_ms
+    // Untimed lines leave the anchor (and so the scheduler) untouched — the
+    // visual focus moves best-effort and the next scheduled boundary reclaims
+    // it, exactly as the old interval did within one tick.
     if (start != null)
-      anchor.current = { ms: start, wallMs: performance.now() }
+      setAnchor({ ms: start, wallMs: performance.now() })
     clearSuspendTimer()
     setSuspended(false)
     setFocus(next)
@@ -585,41 +628,78 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     return () => window.removeEventListener('resize', onResize)
   }, [focus, n])
 
-  // Clock-estimate follow (FEAT-lyrics-viewer-controls Step 1). Advance focus
-  // to the estimated playback segment only when its index changes. Suspend
-  // tears down the interval entirely; the anchor keeps aging in wall-clock so
-  // return snaps directly to the current line rather than catching up steps.
-  // Hidden tabs remain paused and catch up the same way when visible again.
+  // Clock-estimate follow (FEAT-lyrics-viewer-controls Step 1, rebuilt by
+  // FEAT-lyrics-sync-precision Step 1). Suspend tears the scheduler down
+  // entirely; the anchor keeps aging in wall-clock so return snaps directly to
+  // the current line rather than catching up steps.
+  //
+  // The 250ms interval is gone. One timer is armed for the EXACT instant the
+  // next timed segment starts, so the crossing error drops from 0-250ms (mean
+  // +125, always late) to roughly one frame. Every fire recomputes the focus
+  // from the anchor rather than stepping a counter, so a timer that fires late
+  // — background-tab throttling clamps timeouts to ~1s — lands on the right
+  // line anyway. That makes lateness the only possible failure, never drift,
+  // and it never accumulates across a long instrumental gap.
   useEffect(() => {
     if (!trackable || suspended || n === 0)
       return
-    // No position seed yet (e.g. a static/debug entry has no playback binding)
-    // — nothing to estimate from. The loop will start mattering once a re-sync
-    // seeds the anchor.
-    const tick = () => {
-      if (document.hidden)
-        return
+    let timer: number | null = null
+    const clear = () => {
+      if (timer != null) {
+        window.clearTimeout(timer)
+        timer = null
+      }
+    }
+    const arm = () => {
+      clear()
+      // No position seed yet (e.g. a static/debug entry has no playback
+      // binding) — nothing to estimate from. Seeding one bumps `anchorSeq`,
+      // which re-runs this effect.
       const a = anchor.current
       if (!a)
         return
-      const estimatedMs = estimateMs(a) + SYNC_LEAD_MS
+      const estimatedMs = estimateMs(a) + PERCEPTUAL_LEAD_MS
+      const endAtMs = canRefresh && durationMs != null ? durationMs + END_GRACE_MS : null
       // End-of-track auto re-sync (FEAT-lyrics-end-resync): once the estimate
       // runs past the track length + grace, fire ONE automatic refresh — next
       // track playing swaps the lyrics in place, idle keeps the view with the
       // notice. Live entries only (`canRefresh`); armed once per anchor seed.
-      if (canRefresh && durationMs != null && !endSynced.current && estimatedMs >= durationMs + END_GRACE_MS) {
+      // Held back while hidden so a backgrounded tab never fires the request;
+      // the visibility listener below re-arms and it goes out on return.
+      if (endAtMs != null && !endSynced.current && estimatedMs >= endAtMs && !document.hidden) {
         endSynced.current = true
         void refreshRef.current()
+        return // the refresh re-anchors, which re-arms through `anchorSeq`
       }
       setFocus((f) => {
         const nf = focusIndexForMs(segs, estimatedMs)
         return nf !== f ? nf : f
       })
+      // Wake at whichever comes first: the next line, or the end-of-track
+      // threshold. Both are track positions, and playback runs at 1.0x, so the
+      // gap to either is also the wall-clock delay.
+      const boundary = nextBoundaryMs(segs, estimatedMs)
+      const pendingEnd = endAtMs != null && !endSynced.current && endAtMs > estimatedMs ? endAtMs : null
+      const target = boundary != null && pendingEnd != null ?
+        Math.min(boundary, pendingEnd) :
+        boundary ?? pendingEnd
+      if (target == null)
+        return // past the last line with no end re-sync pending — nothing left to do
+      timer = window.setTimeout(arm, Math.max(0, target - estimatedMs))
     }
-    tick()
-    const id = window.setInterval(tick, ESTIMATE_INTERVAL_MS)
-    return () => window.clearInterval(id)
-  }, [trackable, suspended, n, segs, canRefresh, durationMs])
+    arm()
+    // A throttled or skipped timer leaves the focus stale while hidden; re-arm
+    // on return so it corrects immediately instead of at the next boundary.
+    const onVisible = () => {
+      if (!document.hidden)
+        arm()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      clear()
+    }
+  }, [trackable, suspended, n, segs, canRefresh, durationMs, anchorSeq])
 
   // Vertical swipe/drag = manual navigation (touch-action: none on the scroll
   // area hands touch pans to us). Dragging up (finger/pointer moves up) reads
