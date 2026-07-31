@@ -845,6 +845,16 @@
 	opacity: 1;
 	transform: scale(1.045);
 	text-shadow: 0 2px 24px rgba(0,0,0,0.4);
+	/* FEAT-lyrics-sync-precision Step 1 — fast attack, slow release. A
+	   transition declared on the TARGET state governs entering it, so gaining
+	   .is-focus animates over 0.12s here while losing it falls back to the
+	   base .lyv-line 0.35s. The symmetric 0.35s ramp put the perceived "this
+	   line is now" moment at its midpoint (≈175ms late), which is one of the
+	   two terms the old fixed SYNC_LEAD_MS = 300 was silently cancelling.
+	   NOTE: the flat variant carries "now" in COLOR, which snaps by design
+	   (perf comment below), so it never had this lag — this converges the two
+	   variants onto the same timing rather than shifting both. */
+	transition: opacity 0.12s ease-out, transform 0.12s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .lyv-line.is-far {
 	opacity: 0.07;
