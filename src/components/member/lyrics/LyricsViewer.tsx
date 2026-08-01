@@ -80,11 +80,12 @@
 // FEAT-lyrics-auto-progression Step 2 is visual-only (album-blur backdrop +
 // always-dark + large sans-serif typography); it lives in the `.lyv-*` CSS.
 import type { ClockAnchor } from '@lib/clockEstimate'
+import type { PlayerCommand } from '@lib/spotifyPlayback'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
-import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
+import { MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ArtistNames } from '../NowPlaying'
@@ -513,9 +514,21 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // so — never substitute a recent track (RFC).
   const [refreshing, setRefreshing] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const refresh = async (source: ResyncSource = 'manual') => {
-    if (refreshing)
+  // FEAT-lyrics-viewer-playback Step 1 — a read requested while one is in
+  // flight is REMEMBERED, not dropped. `refreshing` state alone made a second
+  // caller a no-op, which was harmless while the only callers were a human tap
+  // and a rare end-of-track fire. The transport bar changes that: ⏭⏭ in quick
+  // succession issues two identity reads, and losing the second leaves the
+  // viewer showing an earlier track's lyrics with nothing left to correct it.
+  // A ref, not state, because the guard must be exact within one tick.
+  const refreshingRef = useRef(false)
+  const refreshQueued = useRef(false)
+  const refresh = async (source: ResyncSource = 'manual'): Promise<void> => {
+    if (refreshingRef.current) {
+      refreshQueued.current = true
       return
+    }
+    refreshingRef.current = true
     setRefreshing(true)
     try {
       const r = await readLivePlayback()
@@ -552,7 +565,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       }
     }
     finally {
+      refreshingRef.current = false
       setRefreshing(false)
+      // Exactly one catch-up read, whatever piled up behind this one — the
+      // queue is a boolean, so a burst collapses to a single trailing read
+      // rather than replaying every dropped call (D28: still no polling).
+      if (refreshQueued.current) {
+        refreshQueued.current = false
+        void refresh(source)
+      }
     }
   }
 
@@ -562,6 +583,78 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   useEffect(() => {
     refreshRef.current = refresh
   })
+
+  // FEAT-lyrics-viewer-playback Step 1 — transport commands from the bottom
+  // bar. Same client-side Spotify Connect transport NowPlaying uses; nothing
+  // new server-side (rule #9 holds — the only server hit is the token mint).
+  //
+  // `no-capability` is sticky: a 403 (no Premium / missing scope) or 404 (no
+  // active device) will not resolve by retrying, so the cluster degrades to
+  // disabled with one line of reason instead of offering dead buttons.
+  const [transportDead, setTransportDead] = useState(false)
+  const commandBusy = useRef(false)
+
+  const runCommand = async (cmd: PlayerCommand) => {
+    if (commandBusy.current || transportDead)
+      return
+    commandBusy.current = true
+    // Optimistic `playing` write. The event-driven resync (Step 2 of
+    // FEAT-lyrics-sync-precision) is rate-limited to one read per
+    // EVENT_RESYNC_FLOOR_MS, so a ⏭ immediately followed by a ⏸ would have its
+    // pause read swallowed — leaving the icon claiming playback and the focus
+    // scheduler still advancing lines over silence. The command we issued is
+    // the most direct evidence we will ever have; the resync stays the
+    // correction of record, not the write path.
+    const wasPlaying = playing
+    const a = anchor.current
+    if (cmd.kind === 'pause' && a) {
+      // Freeze the clock at the current estimate so the held line is exact and
+      // a later resume starts from truth (NowPlaying's idiom, member-player
+      // Step 3). Without this the anchor keeps ageing through the pause.
+      const at = estimateMs(a)
+      setAnchor({ ms: durationMs != null ? Math.min(at, durationMs) : at, wallMs: performance.now() })
+    }
+    else if (cmd.kind === 'play' && a) {
+      // Resume: restart the wall clock from the frozen position.
+      setAnchor({ ms: a.ms, wallMs: performance.now() })
+    }
+    if (cmd.kind === 'play' || cmd.kind === 'pause')
+      setPlaying(cmd.kind === 'play')
+    try {
+      const r = await sendPlayerCommand(cmd)
+      if (r.ok) {
+        setNotice(null)
+        // A skip changes WHICH track is playing, so the viewer needs an
+        // identity read to swap the lyrics. Nothing else will do it:
+        // `sendPlayerCommand` does not dispatch MYBLOG_PLAYBACK_CHANGED (only
+        // `sendConnectPlay` does), so the listener above never sees a skip.
+        // Verified in a browser 2026-08-01 — without this call the viewer sits
+        // on the previous track's lyrics indefinitely.
+        if (cmd.kind === 'next' || cmd.kind === 'previous')
+          void refreshRef.current('command')
+        return
+      }
+      // Failed: put the optimistic state back before reporting.
+      if (cmd.kind === 'play' || cmd.kind === 'pause') {
+        setPlaying(wasPlaying)
+        if (a)
+          setAnchor(a)
+      }
+      if (r.reason === 'no-capability') {
+        setTransportDead(true)
+        setNotice('이 계정/기기에서는 재생을 조작할 수 없어요')
+      }
+      else if (r.reason === 'token') {
+        setNotice('Spotify 연결이 끊겼어요. 다시 연결해 주세요')
+      }
+      else {
+        setNotice('조작에 실패했어요. 잠시 후 다시 시도해 주세요')
+      }
+    }
+    finally {
+      commandBusy.current = false
+    }
+  }
 
   // FEAT-lyrics-sync-precision Step 2 — event-driven re-anchoring. A correct
   // anchor stays correct: playback runs at 1.0x and browser-vs-device clock
@@ -581,10 +674,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       lastAtMs = now
       void refreshRef.current(source)
     }
-    // Every successful transport command dispatches this (@lib/spotifyPlayback).
-    // Once FEAT-lyrics-viewer-playback lands, the viewer's own buttons are the
-    // dominant source — a pause we issued is a pause we know the instant it
-    // takes effect, with nothing to detect.
+    // CORRECTED 2026-08-01 (FEAT-lyrics-viewer-playback Step 1, verified in a
+    // browser): this comment used to claim "every successful transport command
+    // dispatches this". It does not. `sendPlayerCommand` never dispatches —
+    // only `sendConnectPlay` does (@lib/spotifyPlayback), i.e. starting an
+    // album/track from a card. So this listener fires for "playback started
+    // elsewhere on the page", NOT for ⏯⏭⏮.
+    //
+    // That is why the transport bar below writes `playing` itself and asks for
+    // its own identity read after a skip, rather than leaning on this path.
     const onCommand = () => resync('command')
     // Leaving the tab to operate Spotify elsewhere is precisely the case where
     // "playback kept running" stops being true, and it was assumed until now.
@@ -685,9 +783,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // alignment/type size → line heights change → offsets must be re-measured
   // (ordered before the centering effect below, which re-applies the
   // now-fresh center on the same commit).
+  //
+  // `notice` joins them (FEAT-lyrics-viewer-playback Step 1): `.lyv-note` is a
+  // flow sibling of `.lyv-body`, so showing or hiding it changes `.lyv-scroll`'s
+  // clientHeight — and the cache holds `boxH`, not just line offsets. That was
+  // already true before the transport bar; the bar's failure line makes it
+  // reachable often enough to matter, since every degraded command writes one.
   useEffect(() => {
     measureRef.current = null
-  }, [showKo, lyvStyle])
+  }, [showKo, lyvStyle, notice])
 
   useEffect(() => {
     if (n === 0) {
@@ -699,7 +803,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     // no animation either way (CSS transition: none under the media query).
     applyCenter(focus, !positionedRef.current)
     positionedRef.current = true
-  }, [focus, n, showKo, lyvStyle])
+  }, [focus, n, showKo, lyvStyle, notice])
 
   // Re-center instantly on viewport changes (rotation, keyboard, resize) —
   // sizes changed, so drop the offset cache before re-measuring.
@@ -905,16 +1009,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	style={coverUrl ? { backgroundImage: `url(${coverUrl})` } : undefined}
         />
         <div className="lyv-bg-overlay" aria-hidden="true" />
-        {suspended && (
-          <button type="button" className="lyv-return" onClick={returnToFollow} aria-label="현재 줄로 돌아가기">
-            <svg className="lyv-return-ring" viewBox="0 0 20 20" aria-hidden="true">
-              <circle className="lyv-return-ring-track" cx="10" cy="10" r="8" />
-              {/* duration from BROWSE_IDLE_MS so tuning the idle constant can't drift from the ring */}
-              <circle key={ringRestart} className="lyv-return-ring-progress" cx="10" cy="10" r="8" style={{ animationDuration: `${BROWSE_IDLE_MS}ms` }} />
-            </svg>
-            <span aria-hidden="true">↩</span>
-          </button>
-        )}
         <div className="lyv-head">
           <div className="lyv-head-id">
             <span className="lyv-eyebrow mono">
@@ -1092,12 +1186,97 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                   })}
                 </div>
               </div>
+              {/*
+                The browse snap-back ring lives INSIDE .lyv-body (moved there by
+                FEAT-lyrics-viewer-playback Step 1). It used to be absolute
+                against .lyv-panel at bottom: 28px + safe-area — exactly where
+                the transport bar now sits. .lyv-body is already a positioned
+                stacking context and it is what the bar shrinks, so anchoring
+                the ring to it keeps the ring clear of the bar with no
+                conditional offset and no safe-area arithmetic.
+                `suspended` implies a live anchor, which implies this branch
+                rendered, so the ring can never need a host that isn't here.
+              */}
+              {suspended && (
+                <button type="button" className="lyv-return" onClick={returnToFollow} aria-label="현재 줄로 돌아가기">
+                  <svg className="lyv-return-ring" viewBox="0 0 20 20" aria-hidden="true">
+                    <circle className="lyv-return-ring-track" cx="10" cy="10" r="8" />
+                    {/* duration from BROWSE_IDLE_MS so tuning the idle constant can't drift from the ring */}
+                    <circle key={ringRestart} className="lyv-return-ring-progress" cx="10" cy="10" r="8" style={{ animationDuration: `${BROWSE_IDLE_MS}ms` }} />
+                  </svg>
+                  <span aria-hidden="true">↩</span>
+                </button>
+              )}
             </div>
             {/* Position stays available to assistive tech without visual chrome. */}
             <span className="lyv-sr-only" aria-live="polite">
               {`${focus + 1} / ${n}${suspended ? ' · 따라가기 일시정지' : ''}`}
             </span>
           </>
+        )}
+
+        {/*
+          FEAT-lyrics-viewer-playback Step 1 — transport bar, live entries only.
+          Deliberately OUTSIDE the `ready && n > 0` fragment above: loading, a
+          load error and "가사 없음 (연주곡)" are exactly the states the owner
+          needs ⏭ in, to get off a track the viewer has nothing to show for.
+          A flex sibling of .lyv-body rather than an overlay, so .lyv-scroll's
+          clientHeight shrinks with it and applyCenter's boxH * 0.42 keeps the
+          focused line centred without touching the centring math.
+        */}
+        {canRefresh && (
+          <div className="lyv-transport">
+            <div className="lyv-transport-main">
+              <button
+	type="button"
+	className="lyv-tbtn"
+	disabled={transportDead}
+	onClick={() => {
+                  void runCommand({ kind: 'previous' })
+                }}
+	aria-label="이전 곡"
+              >
+                ⏮
+              </button>
+              <button
+	type="button"
+	className="lyv-tbtn is-play"
+	disabled={transportDead}
+	onClick={() => {
+                  void runCommand({ kind: playing ? 'pause' : 'play' })
+                }}
+	aria-label={playing ? '일시정지' : '재생'}
+              >
+                {playing ? '⏸' : '▶'}
+              </button>
+              <button
+	type="button"
+	className="lyv-tbtn"
+	disabled={transportDead}
+	onClick={() => {
+                  void runCommand({ kind: 'next' })
+                }}
+	aria-label="다음 곡"
+              >
+                ⏭
+              </button>
+            </div>
+            {/*
+              Step 2 gives this the queue screen. It ships disabled rather than
+              hidden so the bar's final geometry is what Step 1 verifies in a
+              browser — a button appearing later would re-open the centring and
+              touch-target checks this step is closing.
+            */}
+            <button
+	type="button"
+	className="lyv-tbtn lyv-transport-queue"
+	disabled
+	aria-label="대기열 (준비 중)"
+            >
+              <span aria-hidden="true">☰</span>
+              <span className="lyv-tbtn-label">대기열</span>
+            </button>
+          </div>
         )}
       </div>
     </div>
