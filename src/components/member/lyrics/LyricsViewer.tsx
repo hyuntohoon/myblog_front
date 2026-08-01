@@ -83,6 +83,7 @@ import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlayerCommand } from '@lib/spotifyPlayback'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
+import type { QueueResult } from './queue.api'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
 import { MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand } from '@lib/spotifyPlayback'
@@ -91,6 +92,7 @@ import { useScrollLock } from '@lib/useScrollLock'
 import { ArtistNames } from '../NowPlaying'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
+import { readQueue } from './queue.api'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
 const DRAG_STEP = 56
@@ -335,6 +337,43 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     if (!settingsReady)
       setSettingsOpen(false)
   }, [settingsReady])
+
+  // ── Queue screen (FEAT-lyrics-viewer-playback Step 2) ────────────────────
+  // A VIEW swap, not an overlay: the queue replaces the panel body while the
+  // head and the transport bar stay put. The viewer's vertical drag already
+  // means "browse lyrics lines", so a sheet sliding over the lines would put
+  // two scroll surfaces under one gesture (owner pick 2026-08-01). Swapping
+  // the body keeps exactly one scrollable thing on screen at a time.
+  //
+  // The lyrics clock keeps running underneath — `focus` is derived state, not
+  // something the unmounted list owns — so returning lands on the right line
+  // with no re-read.
+  const [view, setView] = useState<'lyrics' | 'queue'>('lyrics')
+  const [queue, setQueue] = useState<{ k: 'loading' } | { k: 'ready', data: QueueResult }>({ k: 'loading' })
+  // Bumped by 다시 시도 — the read is keyed on it so a retry is a re-run of the
+  // same effect rather than a second, separately-cancelled fetch path.
+  const [queueSeq, setQueueSeq] = useState(0)
+  const queueRef = useRef<HTMLDivElement>(null)
+  const backToLyrics = useCallback(() => setView('lyrics'), [])
+  // Nested dismissable, same idiom as the settings popover: this pushes onto
+  // the shared stack ABOVE the viewer's own entry, so ESC on the queue returns
+  // to the lyrics and only the next ESC closes the viewer.
+  useDismissable(view === 'queue', backToLyrics, queueRef, { trapFocus: false, autoFocus: false })
+  // One read when the screen opens; one more if the track changes while it is
+  // open (a ⏭ from the bar below re-queues everything). No interval — D28.
+  useEffect(() => {
+    if (view !== 'queue')
+      return
+    let live = true
+    setQueue({ k: 'loading' })
+    void readQueue().then((data) => {
+      if (live)
+        setQueue({ k: 'ready', data })
+    })
+    return () => {
+      live = false
+    }
+  }, [view, trackId, queueSeq])
 
   // Clock-estimate anchor (shared idiom in @lib/clockEstimate since
   // member-player Step 3): position `ms` captured at wall instant `wallMs`.
@@ -799,11 +838,23 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       measureRef.current = null
       return
     }
+    // Queue screen open (Step 2): the list is unmounted, so `applyCenter` would
+    // early-return on its null refs anyway — but it would ALSO leave
+    // `positionedRef` true, and the return would then glide the remounted list
+    // up from its identity transform instead of landing. The clock keeps
+    // running underneath, so `focus` may well have moved on by then; forcing
+    // the next centre to be instant is what makes "return lands on the right
+    // line" true rather than merely eventual. The offset cache stays valid —
+    // same content, and the head/transport around it never changed size.
+    if (view === 'queue') {
+      positionedRef.current = false
+      return
+    }
     // First position after (re)load lands instantly; reduced-motion users get
     // no animation either way (CSS transition: none under the media query).
     applyCenter(focus, !positionedRef.current)
     positionedRef.current = true
-  }, [focus, n, showKo, lyvStyle, notice])
+  }, [focus, n, showKo, lyvStyle, notice, view])
 
   // Re-center instantly on viewport changes (rotation, keyboard, resize) —
   // sizes changed, so drop the offset cache before re-measuring.
@@ -1010,12 +1061,26 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         />
         <div className="lyv-bg-overlay" aria-hidden="true" />
         <div className="lyv-head">
+          {/*
+            Back sits at the head's leading edge, not beside ✕ — it is the
+            queue screen's "up", and putting it on the right would read as a
+            second close. ☰ below toggles too, for the thumb.
+          */}
+          {view === 'queue' && (
+            <button type="button" className="lyv-btn lyv-head-back" onClick={backToLyrics} aria-label="가사로 돌아가기">←</button>
+          )}
           <div className="lyv-head-id">
             <span className="lyv-eyebrow mono">
-              Lyrics
-              {phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.source_kind ?
-                ` · ${phase.data.source_kind}` :
-                ''}
+              {view === 'queue' ?
+                '대기열' :
+                (
+                  <>
+                    Lyrics
+                    {phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.source_kind ?
+                      ` · ${phase.data.source_kind}` :
+                      ''}
+                  </>
+                )}
             </span>
             {meta.track && (
               <span className="lyv-title-block">
@@ -1025,7 +1090,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
             )}
           </div>
           <div className="lyv-head-actions">
-            {phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
+            {/*
+              번역 / ↻ / ⚙ all act on the lyrics surface, which the queue screen
+              has replaced. Hiding them (rather than disabling) keeps the head
+              honest about what the current screen can do; ✕ stays because
+              closing the viewer is always available.
+            */}
+            {view === 'lyrics' && phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
               translation?.status === 'done' ?
                 (
                   <div className="lyv-tr-cluster">
@@ -1063,8 +1134,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                       </div>
                     )
             )}
-            {settingsReady && !trackable && <span className="lyv-manual-note mono">동기화 없음 — 수동</span>}
-            {canRefresh && (
+            {view === 'lyrics' && settingsReady && !trackable && <span className="lyv-manual-note mono">동기화 없음 — 수동</span>}
+            {view === 'lyrics' && canRefresh && (
               <button
 	type="button"
 	className={refreshing ? 'lyv-btn is-refreshing' : 'lyv-btn'}
@@ -1077,7 +1148,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                 ↻
               </button>
             )}
-            {settingsReady && (
+            {view === 'lyrics' && settingsReady && (
               <button
 	ref={settingsTriggerRef}
 	type="button"
@@ -1137,18 +1208,26 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 
         {notice && <div className="lyv-note mono" role="status">{notice}</div>}
 
-        {phase.k === 'loading' && <div className="lyv-status mono">불러오는 중…</div>}
+        {view === 'lyrics' && phase.k === 'loading' && <div className="lyv-status mono">불러오는 중…</div>}
 
-        {phase.k === 'error' && (
+        {view === 'lyrics' && phase.k === 'error' && (
           <div className="lyv-status">
             <p>가사를 불러오지 못했어요</p>
             <button type="button" className="lyv-retry mono" onClick={() => setLoadSeq(s => s + 1)}>다시 시도</button>
           </div>
         )}
 
-        {phase.k === 'ready' && n === 0 && <div className="lyv-status">{emptyText}</div>}
+        {view === 'lyrics' && phase.k === 'ready' && n === 0 && <div className="lyv-status">{emptyText}</div>}
 
-        {phase.k === 'ready' && n > 0 && (
+        {view === 'queue' && (
+          <QueueScreen
+	rootRef={queueRef}
+	state={queue}
+	onRetry={() => setQueueSeq(s => s + 1)}
+          />
+        )}
+
+        {view === 'lyrics' && phase.k === 'ready' && n > 0 && (
           <>
             <div className="lyv-body">
               <div
@@ -1262,16 +1341,21 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               </button>
             </div>
             {/*
-              Step 2 gives this the queue screen. It ships disabled rather than
-              hidden so the bar's final geometry is what Step 1 verifies in a
-              browser — a button appearing later would re-open the centring and
-              touch-target checks this step is closing.
+              Step 2 turned this on. It is a TOGGLE, not a one-way door: the bar
+              stays put across the swap, so pressing ☰ again is the shortest way
+              back for a thumb already there (← in the head is the same action
+              for a pointer/keyboard). `aria-pressed` is what tells assistive
+              tech the two screens are one control's two states.
+              Not gated on `transportDead`: a queue READ and a transport COMMAND
+              fail independently, and a member who cannot control playback can
+              still legitimately see what is queued.
             */}
             <button
 	type="button"
-	className="lyv-tbtn lyv-transport-queue"
-	disabled
-	aria-label="대기열 (준비 중)"
+	className={view === 'queue' ? 'lyv-tbtn lyv-transport-queue is-on' : 'lyv-tbtn lyv-transport-queue'}
+	aria-pressed={view === 'queue'}
+	onClick={() => setView(v => (v === 'queue' ? 'lyrics' : 'queue'))}
+	aria-label="대기열"
             >
               <span aria-hidden="true">☰</span>
               <span className="lyv-tbtn-label">대기열</span>
@@ -1281,6 +1365,88 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       </div>
     </div>
   )
+}
+
+/**
+ * The queue screen body (FEAT-lyrics-viewer-playback Step 2) — view only.
+ *
+ * Rows are deliberately inert `<li>`s, not buttons: Step 3 is what decides
+ * whether a row can be jumped to (it needs the playback `context`, and OQ2 is
+ * still open for user-added entries). Shipping them tappable-looking now would
+ * promise something this step cannot keep.
+ *
+ * Every failure resolves to a sentence INSIDE the panel. Nothing here closes
+ * the viewer or disturbs the lyrics clock running behind it, so a queue that
+ * cannot be read costs the member the queue and nothing else.
+ */
+function QueueScreen({ rootRef, state, onRetry }: {
+	rootRef: { current: HTMLDivElement | null }
+	state: { k: 'loading' } | { k: 'ready', data: QueueResult }
+	onRetry: () => void
+}) {
+	if (state.k === 'loading') {
+		return (
+			<div ref={rootRef} className="lyv-queue">
+				<div className="lyv-status mono">불러오는 중…</div>
+			</div>
+		)
+	}
+	const r = state.data
+	if (!r.ok) {
+		// 다시 시도 appears ONLY for the failure a retry can actually clear. A
+		// missing scope and a dead connection both survive any number of
+		// retries, so offering the button there would just be a lie with a
+		// hover state.
+		const message = r.reason === 'no-capability' ?
+			'이 계정에서는 대기열을 볼 수 없어요' :
+			r.reason === 'token' ?
+				'Spotify 연결이 끊겼어요. 다시 연결해 주세요' :
+				'대기열을 불러오지 못했어요'
+		return (
+			<div ref={rootRef} className="lyv-queue">
+				<div className="lyv-status">
+					<p>{message}</p>
+					{r.reason === 'transient' && (
+						<button type="button" className="lyv-retry mono" onClick={onRetry}>다시 시도</button>
+					)}
+				</div>
+			</div>
+		)
+	}
+	if (!r.current && r.items.length === 0) {
+		return (
+			<div ref={rootRef} className="lyv-queue">
+				<div className="lyv-status">대기열이 비어 있어요</div>
+			</div>
+		)
+	}
+	return (
+		<div ref={rootRef} className="lyv-queue">
+			<ul className="lyv-queue-list">
+				{r.current && (
+					<li className="lyv-queue-row is-now">
+						<span className="lyv-queue-badge mono">재생 중</span>
+						<span className="lyv-queue-text">
+							<span className="lyv-queue-title">{r.current.name}</span>
+							{r.current.artist && <span className="lyv-queue-artist">{r.current.artist}</span>}
+						</span>
+					</li>
+				)}
+				{r.items.map((it, i) => (
+					// Spotify may legitimately repeat a track in one queue (a
+					// looped album, a manually re-queued song), so the id alone
+					// is not a key.
+					<li key={`${it.id}:${i}`} className="lyv-queue-row">
+						<span className="lyv-queue-badge mono">{i + 1}</span>
+						<span className="lyv-queue-text">
+							<span className="lyv-queue-title">{it.name}</span>
+							{it.artist && <span className="lyv-queue-artist">{it.artist}</span>}
+						</span>
+					</li>
+				))}
+			</ul>
+		</div>
+	)
 }
 
 export default LyricsViewer
