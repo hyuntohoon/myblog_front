@@ -1013,17 +1013,47 @@
 	padding: 4px 16px calc(8px + env(safe-area-inset-bottom));
 	list-style: none;
 }
+.lyv-queue-item {
+	border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.lyv-queue-item:last-child { border-bottom: 0; }
 .lyv-queue-row {
 	display: flex;
 	align-items: center;
 	gap: 12px;
+	width: 100%;
 	/* 52px keeps rows comfortably above the 44px touch floor the bar uses, so
 	   Step 3 can make them tappable without re-laying-out the list. */
 	min-height: 52px;
 	padding: 6px 0;
-	border-bottom: 1px solid rgba(255,255,255,0.08);
 }
-.lyv-queue-row:last-child { border-bottom: 0; }
+/* Step 3's context → visible-tail fallback makes every row with a uri safely
+   tappable; there is no longer a reachability guess to encode in the UI. */
+.lyv-queue-row.is-tappable {
+	appearance: none;
+	background: none;
+	border: 0;
+	margin: 0;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+	-webkit-tap-highlight-color: transparent;
+	transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+@media (hover: hover) {
+	.lyv-queue-row.is-tappable:not(:disabled):hover { background: rgba(255,255,255,0.07); }
+}
+.lyv-queue-row.is-tappable:not(:disabled):active { background: rgba(255,255,255,0.18); }
+.lyv-queue-row.is-tappable:focus-visible {
+	outline: 1.5px solid var(--color-accent);
+	outline-offset: -2px;
+}
+.lyv-queue-row.is-tappable[aria-busy="true"] { opacity: 0.55; }
+.lyv-queue-row.is-tappable:disabled { opacity: 0.4; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+	.lyv-queue-row.is-tappable { transition: none; }
+}
 .lyv-queue-badge {
 	flex: none;
 	width: 2.75em;
