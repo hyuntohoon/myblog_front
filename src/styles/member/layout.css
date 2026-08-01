@@ -467,10 +467,16 @@
 	pointer-events: none;
 }
 
-/* Browse-mode return control — a circular countdown floating near the panel
-   foot, outside the moving list (keeper decision 2026-07-20: behavior D with
-   A's ring). Tap = immediate return; otherwise the ring clocks the snap-back.
-   CSS-clocked so suspend adds one timeout but no per-frame JS. */
+/* Browse-mode return control — a circular countdown floating near the foot of
+   the lyric area, outside the moving list (keeper decision 2026-07-20:
+   behavior D with A's ring). Tap = immediate return; otherwise the ring clocks
+   the snap-back. CSS-clocked so suspend adds one timeout but no per-frame JS.
+
+   Anchored to .lyv-body, not .lyv-panel (FEAT-lyrics-viewer-playback Step 1):
+   the transport bar occupies the panel foot now, and .lyv-body is what the bar
+   shrinks — so measuring from it keeps the ring above the bar for free. The
+   safe-area term stays for the entries that render no bar, where .lyv-body
+   does reach the panel edge. */
 .lyv-return {
 	position: absolute;
 	left: 50%;
@@ -918,6 +924,66 @@
 	font-size: 0.6em;
 	font-weight: 400;
 	margin-top: 5px;
+}
+
+/* FEAT-lyrics-viewer-playback Step 1 — transport bar at the panel foot.
+   A flex SIBLING of .lyv-body, never an overlay: .lyv-panel is a flex column
+   and .lyv-body is flex:1/min-height:0, so the bar takes its ~56px out of
+   .lyv-scroll's clientHeight and applyCenter's boxH * 0.42 stays centred with
+   no change to the centring math.
+   Three columns so the transport cluster is centred on the PANEL (matching the
+   RFC sketch) rather than centred on whatever is left beside 대기열. */
+.lyv-transport {
+	position: relative;
+	z-index: 5;
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
+	background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
+}
+.lyv-transport-main {
+	grid-column: 2;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.lyv-transport-queue {
+	grid-column: 3;
+	justify-self: end;
+	gap: 6px;
+	font-size: var(--text-sm);
+}
+.lyv-tbtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* 44px is the floor the 390px clickthrough checks — do not shrink for fit. */
+	min-width: 44px;
+	height: 44px;
+	padding: 0 10px;
+	font-family: var(--font-sans);
+	font-size: 17px;
+	line-height: 1;
+	color: #fff;
+	background: transparent;
+	border: 0;
+	border-radius: 999px;
+	cursor: pointer;
+	transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+.lyv-tbtn.is-play { font-size: 22px; }
+.lyv-tbtn:not(:disabled):hover { background: rgba(255,255,255,0.14); }
+.lyv-tbtn:disabled { opacity: 0.38; cursor: default; }
+.lyv-tbtn-label { margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) {
+	.lyv-tbtn { transition: none; }
+}
+/* Narrow phones: the 대기열 label is the only droppable pixel — the icon still
+   carries the meaning and aria-label carries it for assistive tech. */
+@media (max-width: 400px) {
+	.lyv-tbtn-label { display: none; }
 }
 
 /* screen-reader-only — keeps the focus position announced without visual chrome */
