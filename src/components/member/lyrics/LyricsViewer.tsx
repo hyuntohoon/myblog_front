@@ -45,9 +45,11 @@
 //     playback position was actually READ (`readAtMs` from readLivePlayback),
 //     not whenever the lyrics finished loading. Previously the entry-tap
 //     position was paired with a post-`getLyrics()` performance.now(), so the
-//     focus lagged by the whole read + lyrics-load latency. A small
-//     `SYNC_LEAD_MS` bias covers what can't be measured (Spotify-side progress
-//     staleness, tick granularity, perception).
+//     focus lagged by the whole read + lyrics-load latency. (This block also
+//     described a `SYNC_LEAD_MS` bias "covering what can't be measured" —
+//     that claim was disproved and the constant removed by
+//     FEAT-lyrics-sync-precision, below; nothing now models Spotify-side
+//     staleness or tick granularity, because neither is a term any more.)
 // (2) End-of-track auto re-sync — the live entry now hands in `durationMs`;
 //     when the estimate passes duration + END_GRACE_MS the viewer fires ONE
 //     automatic `refresh()` (same one-shot read — event-driven, not polling, so
