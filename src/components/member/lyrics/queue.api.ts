@@ -31,6 +31,12 @@ const TIMEOUT_MS = 8000
 export interface QueueEntry {
 	/** Spotify id. Used as the react key and to mark the playing row. */
 	id: string
+	/**
+	 * Spotify uri (`spotify:track:…`). Step 3 sends this to jump. Nullable
+	 * defensively — a row with no uri has nothing to send and stays inert
+	 * rather than looking tappable and failing.
+	 */
+	uri: string | null
 	name: string
 	/** Joined artist names, or null for an entry that has none (episode). */
 	artist: string | null
@@ -46,6 +52,7 @@ export type QueueResult =
 
 interface RawEntry {
 	id?: string | null
+	uri?: string | null
 	name?: string | null
 	artists?: Array<{ name?: string | null } | null> | null
 }
@@ -65,7 +72,7 @@ function toEntry(raw: RawEntry | null | undefined): QueueEntry | null {
 		.map(a => a?.name)
 		.filter((n): n is string => Boolean(n))
 		.join(', ')
-	return { id: String(raw.id), name: String(raw.name), artist: artist || null }
+	return { id: String(raw.id), uri: raw.uri ? String(raw.uri) : null, name: String(raw.name), artist: artist || null }
 }
 
 /** Read the member's playback queue once. Never throws. */

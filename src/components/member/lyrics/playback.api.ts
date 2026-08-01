@@ -53,6 +53,15 @@ export interface LivePlaybackTrack {
 		 * refreshes exactly when the one-shot fires (D28: never polled).
 		 */
 	deviceName: string | null
+  /**
+   * The album/playlist the player is running (`context.uri`/`context.type`),
+   * or null for a bare `uris` playback. FEAT-lyrics-viewer-playback Step 3
+   * needs it: a `context_uri` + `offset` jump is the only form that leaves the
+   * context alive, and there is no other source for it — the queue endpoint
+   * does not report a context.
+   */
+  contextUri: string | null
+  contextType: string | null
 }
 
 export type LivePlayback =
@@ -105,6 +114,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     is_playing?: boolean
     progress_ms?: number | null
     device?: { name?: string | null } | null
+    context?: { uri?: string | null, type?: string | null } | null
     item?: {
       id?: string
       type?: string
@@ -156,5 +166,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     albumSpotifyId: item.album?.id ?? null,
     albumCoverUrl: cover?.url ?? null,
     deviceName: body.device?.name?.trim() || null,
+    contextUri: body.context?.uri ?? null,
+    contextType: body.context?.type ?? null,
   }
 }

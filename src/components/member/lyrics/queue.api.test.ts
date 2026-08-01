@@ -14,7 +14,7 @@ vi.mock('@lib/spotifyPlayback', () => ({ getStreamingToken: vi.fn() }))
 const lib = vi.mocked(playbackLib)
 
 function entry(over: Record<string, unknown> = {}) {
-  return { id: 'trk1', name: 'Some Track', artists: [{ name: 'Someone' }], ...over }
+  return { id: 'trk1', uri: 'spotify:track:trk1', name: 'Some Track', artists: [{ name: 'Someone' }], ...over }
 }
 
 /** Stub one `GET /v1/me/player/queue` response. */
@@ -42,7 +42,7 @@ describe('readQueue outcome mapping', () => {
     expect(r.ok).toBe(true)
     if (!r.ok)
       throw new Error('expected ok')
-    expect(r.current).toEqual({ id: 'trk1', name: 'Some Track', artist: 'Someone' })
+    expect(r.current).toEqual({ id: 'trk1', uri: 'spotify:track:trk1', name: 'Some Track', artist: 'Someone' })
     expect(r.items.map(i => i.id)).toEqual(['trk2', 'trk3'])
   })
 
@@ -62,6 +62,17 @@ describe('readQueue outcome mapping', () => {
       throw new Error('expected ok')
     expect(r.items).toHaveLength(1)
     expect(r.items[0].artist).toBeNull()
+  })
+
+  it('keeps an entry with no uri and renders it with uri: null', async () => {
+    // The list must still agree with Spotify; the missing uri only makes this
+    // one row inert instead of making the whole entry disappear.
+    respond(200, { currently_playing: null, queue: [entry({ uri: null })] })
+    const r = await readQueue()
+    if (!r.ok)
+      throw new Error('expected ok')
+    expect(r.items).toHaveLength(1)
+    expect(r.items[0].uri).toBeNull()
   })
 
   it('drops an entry with no id or no name — it has nothing to render', async () => {

@@ -83,7 +83,8 @@ import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlayerCommand } from '@lib/spotifyPlayback'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
-import type { QueueResult } from './queue.api'
+import type { QueueEntry, QueueResult } from './queue.api'
+import type { JumpContext } from './queueJump'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
 import { MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand } from '@lib/spotifyPlayback'
@@ -93,6 +94,7 @@ import { ArtistNames } from '../NowPlaying'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 import { readQueue } from './queue.api'
+import { jumpToQueueIndex } from './queueJump'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
 const DRAG_STEP = 56
@@ -350,6 +352,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // with no re-read.
   const [view, setView] = useState<'lyrics' | 'queue'>('lyrics')
   const [queue, setQueue] = useState<{ k: 'loading' } | { k: 'ready', data: QueueResult }>({ k: 'loading' })
+  // FEAT-lyrics-viewer-playback Step 3 — the playback context, the one thing a
+  // jump needs that the queue endpoint does not report. Read alongside the
+  // queue rather than at tap time so the tap costs exactly one round trip.
+  const [context, setContext] = useState<JumpContext | null>(null)
+  // Which row is mid-jump, for the row's own busy state. `commandBusy` already
+  // guards concurrency; this is only what the member sees.
+  const [jumpingIndex, setJumpingIndex] = useState<number | null>(null)
   // Bumped by 다시 시도 — the read is keyed on it so a retry is a re-run of the
   // same effect rather than a second, separately-cancelled fetch path.
   const [queueSeq, setQueueSeq] = useState(0)
@@ -366,9 +375,20 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       return
     let live = true
     setQueue({ k: 'loading' })
-    void readQueue().then((data) => {
-      if (live)
-        setQueue({ k: 'ready', data })
+    void Promise.all([readQueue(), readLivePlayback()]).then(([q, p]) => {
+      if (!live)
+        return
+      setQueue({ k: 'ready', data: q })
+      // Context only. This read deliberately does NOT touch the anchor, the
+      // focus or `playing` — `refresh()` owns those, and re-seeding the clock
+      // from an incidental read would fight it.
+      if (p.state === 'playing' || p.state === 'paused')
+        setContext(p.contextUri ? { uri: p.contextUri, type: p.contextType ?? '' } : null)
+      else if (p.state === 'idle')
+        setContext(null)
+      // 'unavailable' → keep what we knew. A failed read is not evidence the
+      // context is gone, and guessing null would drop us to the fallback link
+      // for no reason.
     })
     return () => {
       live = false
@@ -573,6 +593,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       const r = await readLivePlayback()
       if (r.state === 'playing' || r.state === 'paused') {
         setNotice(null)
+        setContext(r.contextUri ? { uri: r.contextUri, type: r.contextType ?? '' } : null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
         setCoverUrl(r.albumCoverUrl)
         setMeta({ track: r.track, artist: r.artist, artists: r.artists })
@@ -598,6 +619,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       else if (r.state === 'idle') {
         setNotice('지금 재생 중인 곡이 없어요')
         setPlaying(false)
+        setContext(null)
       }
       else {
         setNotice('재생 상태를 확인하지 못했어요')
@@ -692,6 +714,47 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
     finally {
       commandBusy.current = false
+    }
+  }
+
+  // FEAT-lyrics-viewer-playback Step 3 — tapping a queue row. The chain lives
+  // in `queueJump.ts`; this is what the viewer does around it.
+  const jumpTo = async (index: number) => {
+    if (commandBusy.current || transportDead)
+      return
+    if (queue.k !== 'ready' || !queue.data.ok)
+      return
+    commandBusy.current = true
+    setJumpingIndex(index)
+    try {
+      const r = await jumpToQueueIndex(queue.data.items, index, context)
+      if (r.ok) {
+        setNotice(null)
+        setPlaying(true)
+        // The jump changed WHICH track is playing and nothing else re-reads
+        // identity — `sendPlayerCommand` dispatches no event (Step 1). This
+        // also re-reads the queue for free: its effect is keyed on `trackId`.
+        void refreshRef.current('command')
+        // Stay on the queue screen: the member tapped a list they were reading,
+        // and that list re-reads itself when the track swaps.
+        return
+      }
+      if (r.reason === 'nothing-to-send')
+        return
+      if (r.reason === 'no-capability') {
+        setTransportDead(true)
+        setNotice('이 계정/기기에서는 재생을 조작할 수 없어요')
+      }
+      else if (r.reason === 'token') {
+        setNotice('Spotify 연결이 끊겼어요. 다시 연결해 주세요')
+      }
+      else {
+        setNotice('그 곡으로 넘어가지 못했어요. 잠시 후 다시 시도해 주세요')
+      }
+    }
+    finally {
+      commandBusy.current = false
+      setJumpingIndex(null)
     }
   }
 
@@ -1224,6 +1287,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	rootRef={queueRef}
 	state={queue}
 	onRetry={() => setQueueSeq(s => s + 1)}
+	onJump={jumpTo}
+	jumpDisabled={transportDead}
+	jumpingIndex={jumpingIndex}
           />
         )}
 
@@ -1370,19 +1436,21 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 /**
  * The queue screen body (FEAT-lyrics-viewer-playback Step 2) — view only.
  *
- * Rows are deliberately inert `<li>`s, not buttons: Step 3 is what decides
- * whether a row can be jumped to (it needs the playback `context`, and OQ2 is
- * still open for user-added entries). Shipping them tappable-looking now would
- * promise something this step cannot keep.
+ * Rows are tappable by default: the context → visible-tail fallback chain
+ * removed the need to predict which entries Spotify can reach. A row stays
+ * inert only when it carries no uri, because there is then nothing to send.
  *
  * Every failure resolves to a sentence INSIDE the panel. Nothing here closes
  * the viewer or disturbs the lyrics clock running behind it, so a queue that
  * cannot be read costs the member the queue and nothing else.
  */
-function QueueScreen({ rootRef, state, onRetry }: {
+function QueueScreen({ rootRef, state, onRetry, onJump, jumpDisabled, jumpingIndex }: {
 	rootRef: { current: HTMLDivElement | null }
 	state: { k: 'loading' } | { k: 'ready', data: QueueResult }
 	onRetry: () => void
+	onJump: (index: number) => void
+	jumpDisabled: boolean
+	jumpingIndex: number | null
 }) {
 	if (state.k === 'loading') {
 		return (
@@ -1424,28 +1492,55 @@ function QueueScreen({ rootRef, state, onRetry }: {
 		<div ref={rootRef} className="lyv-queue">
 			<ul className="lyv-queue-list">
 				{r.current && (
-					<li className="lyv-queue-row is-now">
-						<span className="lyv-queue-badge mono">재생 중</span>
-						<span className="lyv-queue-text">
-							<span className="lyv-queue-title">{r.current.name}</span>
-							{r.current.artist && <span className="lyv-queue-artist">{r.current.artist}</span>}
-						</span>
+					<li className="lyv-queue-item">
+						<div className="lyv-queue-row is-now">
+							<QueueRowBody badge="재생 중" entry={r.current} />
+						</div>
 					</li>
 				)}
 				{r.items.map((it, i) => (
 					// Spotify may legitimately repeat a track in one queue (a
 					// looped album, a manually re-queued song), so the id alone
 					// is not a key.
-					<li key={`${it.id}:${i}`} className="lyv-queue-row">
-						<span className="lyv-queue-badge mono">{i + 1}</span>
-						<span className="lyv-queue-text">
-							<span className="lyv-queue-title">{it.name}</span>
-							{it.artist && <span className="lyv-queue-artist">{it.artist}</span>}
-						</span>
+					<li key={`${it.id}:${i}`} className="lyv-queue-item">
+						{it.uri ?
+							(
+								<button
+									type="button"
+									className="lyv-queue-row is-tappable"
+									disabled={jumpDisabled}
+									aria-busy={jumpingIndex === i}
+									onClick={() => onJump(i)}
+								>
+									<QueueRowBody badge={String(i + 1)} entry={it} />
+								</button>
+							) :
+							(
+								<div className="lyv-queue-row">
+									<QueueRowBody badge={String(i + 1)} entry={it} />
+								</div>
+							)}
 					</li>
 				))}
 			</ul>
 		</div>
+	)
+}
+
+/**
+ * Badge + title/artist — byte-identical in all three row shapes (재생 중, a
+ * tappable row, a uri-less inert row). Kept in one place so a later change to
+ * what a row shows cannot land in two of the three and drift.
+ */
+function QueueRowBody({ badge, entry }: { badge: string, entry: QueueEntry }) {
+	return (
+		<>
+			<span className="lyv-queue-badge mono">{badge}</span>
+			<span className="lyv-queue-text">
+				<span className="lyv-queue-title">{entry.name}</span>
+				{entry.artist && <span className="lyv-queue-artist">{entry.artist}</span>}
+			</span>
+		</>
 	)
 }
 

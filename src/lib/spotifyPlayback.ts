@@ -332,6 +332,16 @@ export type PlayerCommand =
 	| { kind: 'play' } |
 	{ kind: 'pause' } |
 	{ kind: 'seek', positionMs: number } |
+  /**
+   * Jump to a track INSIDE the current album/playlist, keeping that context
+   * alive so Spotify keeps playing past it.
+   */
+	{ kind: 'play-context', contextUri: string, offsetUri: string } |
+  /**
+   * Play an explicit track list. REPLACES the playback context — always send
+   * the whole tail you want kept, never a lone track.
+   */
+	{ kind: 'play-uris', uris: string[] } |
 	{ kind: 'next' } |
 	{ kind: 'previous' }
 
@@ -345,8 +355,16 @@ export type PlayerCommandOutcome =
 export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerCommandOutcome> {
   const url = cmd.kind === 'seek' ?
     `${PLAYER_BASE}/seek?position_ms=${Math.max(0, Math.round(cmd.positionMs))}` :
-    `${PLAYER_BASE}/${cmd.kind}`
+    cmd.kind === 'play-context' || cmd.kind === 'play-uris' ?
+      `${PLAYER_BASE}/play` :
+      `${PLAYER_BASE}/${cmd.kind}`
   const method = cmd.kind === 'next' || cmd.kind === 'previous' ? 'POST' : 'PUT'
+  const body = cmd.kind === 'play-context' ?
+    JSON.stringify({ context_uri: cmd.contextUri, offset: { uri: cmd.offsetUri } }) :
+    cmd.kind === 'play-uris' ?
+      JSON.stringify({ uris: cmd.uris }) :
+      undefined
+  // Do not dispatch MYBLOG_PLAYBACK_CHANGED for these new kinds; RFC OQ4 remains open.
   // Up to two attempts: a 401 mid-session means the minted token aged out
   // server-side despite the 5s cache skew — drop the cache and re-mint once.
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -355,7 +373,13 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
       return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus }
     let res: Response
     try {
-      res = await fetch(url, { method, headers: { Authorization: `Bearer ${tok.token}` } })
+      res = await fetch(url, body ?
+        {
+          method,
+          body,
+          headers: { Authorization: `Bearer ${tok.token}`, 'Content-Type': 'application/json' },
+        } :
+        { method, headers: { Authorization: `Bearer ${tok.token}` } })
     }
     catch {
       return { ok: false, reason: 'transient' }
