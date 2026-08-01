@@ -135,6 +135,24 @@ const BROWSE_IDLE_MS = 3000
 const EVENT_RESYNC_FLOOR_MS = 1500
 
 /**
+ * How many times a jump re-reads identity before giving up, and how far apart
+ * (FEAT-lyrics-viewer-playback Step 3 follow-up).
+ *
+ * Spotify applies `PUT /me/player/play` **asynchronously**: the 204 is an
+ * acknowledgement, not a completion, so `GET /me/player` fired straight after
+ * it can still report the track we just left. Reproduced 2026-08-02 against a
+ * stub that delays its state change by 1.2s — the single post-jump read
+ * returned the OLD track and the viewer then sat on it indefinitely: title,
+ * lyrics and queue all stale, the queue worst of all because its effect is
+ * keyed on `trackId`, which never moved.
+ *
+ * A burst, NOT a cadence — it is bounded, it only ever runs behind one tap, and
+ * it stops the moment Spotify agrees. D28 (nothing polls playback state) holds.
+ */
+const JUMP_CONFIRM_TRIES = 4
+const JUMP_CONFIRM_GAP_MS = 500
+
+/**
  * What triggered a re-anchor (FEAT-lyrics-sync-precision Step 2). Recorded with
  * the residual so the accuracy series can be read per trigger — a `visibility`
  * residual means something happened off-tab, a `command` residual is our own
@@ -359,6 +377,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // Which row is mid-jump, for the row's own busy state. `commandBusy` already
   // guards concurrency; this is only what the member sees.
   const [jumpingIndex, setJumpingIndex] = useState<number | null>(null)
+  // The track a jump asked Spotify for, while we are still waiting for Spotify
+  // to admit it changed (see JUMP_CONFIRM_TRIES). A read that disagrees with
+  // this is Spotify lagging, not the member changing songs, so it is dropped —
+  // otherwise it drags the viewer back to the track we just left. Declared here
+  // rather than beside `refresh` because the queue effect below reads it too.
+  const awaitingTrack = useRef<string | null>(null)
   // Bumped by 다시 시도 — the read is keyed on it so a retry is a re-run of the
   // same effect rather than a second, separately-cancelled fetch path.
   const [queueSeq, setQueueSeq] = useState(0)
@@ -375,6 +399,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       return
     let live = true
     setQueue({ k: 'loading' })
+    // Mid-jump: this effect just fired on the OPTIMISTIC `trackId`, but Spotify
+    // has not applied the play yet and would hand back the pre-jump queue —
+    // a list contradicting the head. `confirmJump` bumps `queueSeq` once
+    // identity settles, and that is the read that lands.
+    if (awaitingTrack.current !== null)
+      return
     void Promise.all([readQueue(), readLivePlayback()]).then(([q, p]) => {
       if (!live)
         return
@@ -592,6 +622,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     try {
       const r = await readLivePlayback()
       if (r.state === 'playing' || r.state === 'paused') {
+        // Still the track we jumped away from? Then Spotify has not applied the
+        // play yet. Write nothing — the caller reads again — because every
+        // write below would undo the identity the jump already established.
+        if (awaitingTrack.current !== null && r.trackId !== awaitingTrack.current)
+          return
+        awaitingTrack.current = null
         setNotice(null)
         setContext(r.contextUri ? { uri: r.contextUri, type: r.contextType ?? '' } : null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
@@ -717,6 +753,36 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
   }
 
+  /**
+   * Re-read identity until Spotify reports the track the jump asked for.
+   *
+   * `refresh` drops any read that still names the old track (see
+   * `awaitingTrack`), so this loop is what eventually collects the cover,
+   * duration and artist ids the tapped row could not carry. It stops the
+   * instant Spotify agrees, and after JUMP_CONFIRM_TRIES it gives up and lets
+   * normal reads resume — a wrong-but-current read beats suppressing reads
+   * forever.
+   */
+  const confirmJump = async () => {
+    try {
+      for (let i = 0; i < JUMP_CONFIRM_TRIES; i++) {
+        await refreshRef.current('command')
+        if (awaitingTrack.current === null)
+          return
+        await new Promise(res => setTimeout(res, JUMP_CONFIRM_GAP_MS))
+      }
+      awaitingTrack.current = null
+    }
+    finally {
+      // Identity has settled (agreed or given up), so the queue can be read
+      // for real. Its own effect fired on the optimistic `trackId` change and
+      // deliberately did not read — at that moment Spotify was still serving
+      // the PRE-jump queue, and rendering it would have put a list on screen
+      // that contradicted the head we had just set.
+      setQueueSeq(s => s + 1)
+    }
+  }
+
   // FEAT-lyrics-viewer-playback Step 3 — tapping a queue row. The chain lives
   // in `queueJump.ts`; this is what the viewer does around it.
   const jumpTo = async (index: number) => {
@@ -727,14 +793,28 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     commandBusy.current = true
     setJumpingIndex(index)
     try {
+      const tapped = queue.data.items[index]
       const r = await jumpToQueueIndex(queue.data.items, index, context)
       if (r.ok) {
         setNotice(null)
         setPlaying(true)
-        // The jump changed WHICH track is playing and nothing else re-reads
-        // identity — `sendPlayerCommand` dispatches no event (Step 1). This
-        // also re-reads the queue for free: its effect is keyed on `trackId`.
-        void refreshRef.current('command')
+        // Write identity from the row that was tapped, exactly as Step 1 writes
+        // `playing` at command-issue time: the command we just sent is the most
+        // direct evidence we will ever have of what is playing. Waiting for the
+        // read instead is what left the head, the lyrics and the queue on the
+        // previous track whenever Spotify had not caught up yet.
+        awaitingTrack.current = tapped.id
+        if (tapped.id !== trackId) {
+          // A jump starts the track from the top; the confirming read replaces
+          // this with the real position as soon as Spotify reports it.
+          pendingSeed.current = { ms: 0, wallMs: performance.now() }
+          setTrackId(tapped.id)
+        }
+        // The queue row carries no cover, duration or artist ids — those arrive
+        // with the confirming read. `artists: []` renders the plain artist text
+        // (no links) until then, which is honest rather than wrong.
+        setMeta({ track: tapped.name, artist: tapped.artist, artists: [] })
+        void confirmJump()
         // Stay on the queue screen: the member tapped a list they were reading,
         // and that list re-reads itself when the track swaps.
         return
