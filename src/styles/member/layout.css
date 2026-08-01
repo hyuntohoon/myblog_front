@@ -985,6 +985,89 @@
 @media (max-width: 400px) {
 	.lyv-tbtn-label { display: none; }
 }
+.lyv-tbtn.is-on { background: rgba(255,255,255,0.2); }
+
+/* FEAT-lyrics-viewer-playback Step 2 — the queue screen.
+   Occupies the SAME flex slot as .lyv-body (flex:1/min-height:0) rather than
+   overlaying it, so the head and the transport bar keep their geometry and the
+   panel still has exactly one scrollable surface. The viewer's vertical drag
+   means "browse lyrics lines"; a queue sheet floating over those lines would
+   put two scroll surfaces under one gesture (owner pick 2026-08-01). */
+.lyv-queue {
+	position: relative;
+	z-index: 1;
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+.lyv-queue-list {
+	flex: 1;
+	min-height: 0;
+	/* The one scroller on screen — the lyrics list is unmounted while this is
+	   up, so no gesture is ambiguous. */
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	margin: 0;
+	padding: 4px 16px calc(8px + env(safe-area-inset-bottom));
+	list-style: none;
+}
+.lyv-queue-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	/* 52px keeps rows comfortably above the 44px touch floor the bar uses, so
+	   Step 3 can make them tappable without re-laying-out the list. */
+	min-height: 52px;
+	padding: 6px 0;
+	border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.lyv-queue-row:last-child { border-bottom: 0; }
+.lyv-queue-badge {
+	flex: none;
+	width: 2.75em;
+	font-size: var(--text-xs);
+	color: rgba(255,255,255,0.45);
+	text-align: right;
+}
+.lyv-queue-row.is-now .lyv-queue-badge {
+	width: auto;
+	color: var(--color-accent);
+}
+/* min-width:0 on both the flex child AND the ellipsised spans — without it a
+   long title forces the row wider than the panel instead of truncating. */
+.lyv-queue-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.lyv-queue-title,
+.lyv-queue-artist {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.lyv-queue-title {
+	font-family: var(--font-sans);
+	font-size: 15px;
+	color: rgba(255,255,255,0.92);
+}
+.lyv-queue-row.is-now .lyv-queue-title { color: #fff; }
+.lyv-queue-artist {
+	font-family: var(--font-sans);
+	font-size: 13px;
+	color: rgba(255,255,255,0.55);
+}
+/* Back button in the head — same chrome as ⚙/✕, just at the leading edge. */
+.lyv-head-back { flex: none; margin-right: 10px; }
+/* .lyv-head is space-between, which reads correctly only while it holds TWO
+   children. The queue screen adds ← as a third and space-between then pushes
+   the track identity into the middle of the bar. `margin-right: auto` pins the
+   identity to the leading edge in both screens instead. */
+.lyv-head-id { margin-right: auto; }
 
 /* screen-reader-only — keeps the focus position announced without visual chrome */
 .lyv-sr-only {
