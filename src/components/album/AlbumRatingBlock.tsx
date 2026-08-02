@@ -205,7 +205,15 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 										onChange={e => setDraftComment(e.target.value)}
 										placeholder="한 줄 감상 (선택)"
 										maxLength={RATING_COMMENT_MAX}
-										rows={2}
+										// 3, not 2 (entrance audit 2026-08-02). The 60-char cap was
+										// sized off a 460px desktop overlay, where 60 chars wrap to
+										// 2 lines. In the 390px modal the box is 280px wide and the
+										// same 60 chars need 3 — so a full-length 한줄평 scrolled and
+										// its last line was clipped mid-glyph while being typed.
+										// Widening the box is the fix rather than cutting the cap:
+										// the cap is the FORMAT (one line, 이동진 준거), and 60 still
+										// renders as one line where a saved 평가 is read.
+										rows={3}
 										className="sans"
 										style={{ width: '100%', resize: 'none', padding: '8px 10px', fontSize: 13, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'inherit' }}
 									/>
