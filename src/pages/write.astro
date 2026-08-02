@@ -9,4 +9,11 @@ import WriterApp from '@components/writer/WriterApp'
   <WriterApp client:load />
 </WriteLayout>
 
+{/*
+  Left as a plain processed script on purpose (FEAT-member-player Step 5b). The
+  obvious fix for "ClientRouter skips an already-run script" is `data-astro-rerun`
+  — but ANY attribute makes Astro treat a script as `is:inline`, which drops
+  bundling, and this one imports from `@lib/auth`. The gate would ship as a raw
+  `.ts` src and 404. So the re-arming lives inside the module instead.
+*/}
 <script src="../scripts/write.guard.ts"></script>

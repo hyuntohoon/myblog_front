@@ -501,6 +501,14 @@ export default function WriterApp() {
 
   // Periodic autosave + safety flush when the tab is hidden/closed. Mounted once
   // (flushLocal is stable) so the 30s interval never resets mid-typing.
+  //
+  // `astro:before-preparation` is not decoration — it is the whole reason the
+  // draft still survives leaving /write (FEAT-member-player Step 5b). Until that
+  // step, /write had no ClientRouter, so every way out of the editor was a
+  // document unload and `pagehide` caught it. Client-side routing does NOT fire
+  // `pagehide`: the island just unmounts and the in-memory draft goes with it.
+  // Firing the same flush before the router prepares a navigation restores the
+  // guarantee exactly — no confirm dialog needed, because nothing is lost.
   useEffect(() => {
     const iv = setInterval(flushLocal, 30000)
     const onHide = () => {
@@ -509,10 +517,12 @@ export default function WriterApp() {
     }
     document.addEventListener('visibilitychange', onHide)
     window.addEventListener('pagehide', flushLocal)
+    document.addEventListener('astro:before-preparation', flushLocal)
     return () => {
       clearInterval(iv)
       document.removeEventListener('visibilitychange', onHide)
       window.removeEventListener('pagehide', flushLocal)
+      document.removeEventListener('astro:before-preparation', flushLocal)
     }
   }, [flushLocal])
 
