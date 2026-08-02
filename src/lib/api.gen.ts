@@ -895,6 +895,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/review-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Review Candidates
+         * @description The caller's "평론 쓸 것" queue (FEAT-album-review-authoring Step 2).
+         *
+         *     The harvest side of the Step 1 mark: Step 1 shipped placing and clearing it,
+         *     this is where the marks gather into a list. Private for the same reason the
+         *     mark is (RFC C6 — a visible mark is a promise), so it is JWT-only and scoped
+         *     to the caller; there is no handle parameter, by design.
+         *
+         *     Like the other authed GETs, it rides the edge_guard catch-all with the JWT
+         *     checked here at the Lambda — no API Gateway route, no `terraform apply`.
+         */
+        get: operations["get_my_review_candidates_api_me_review_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/tracked-artists": {
         parameters: {
             query?: never;
@@ -2878,6 +2906,50 @@ export interface components {
             per_year?: components["schemas"]["Backend_RetroYearStat"][];
             /** Today Kst */
             today_kst: string;
+        };
+        /** ReviewCandidateListResponse */
+        Backend_ReviewCandidateListResponse: {
+            /** Candidates */
+            candidates?: components["schemas"]["Backend_ReviewCandidateResponse"][];
+        };
+        /**
+         * ReviewCandidateResponse
+         * @description One row of the caller's "평론 쓸 것" queue (Step 2 — the harvest side of C6).
+         *
+         *     Same private class as MyAlbumStateResponse (it exists only because a mark
+         *     exists) but a different shape, because it answers a different question. The
+         *     state response says "what is my state for THIS album", so the caller already
+         *     knows the album; this one says "which albums did I mark", so it has to carry
+         *     the album's identity — a mark can sit on an album in no bucket, with no
+         *     rating, and the row would otherwise be a bare uuid.
+         *
+         *     `rating`/`comment` ride along so the queue can show what is already written
+         *     without a second read: a marked album may be unrated, rated, or rated with a
+         *     one-liner, and those read as different amounts of work left.
+         *
+         *     `updated_at` is the state's last change, not a mark timestamp — there is no
+         *     separate "marked at" column, and the queue orders by it.
+         */
+        Backend_ReviewCandidateResponse: {
+            /** Album Cover Url */
+            album_cover_url?: string | null;
+            /** Album Id */
+            album_id: string;
+            /** Album Title */
+            album_title: string;
+            /** Artist Id */
+            artist_id?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /** Comment */
+            comment?: string | null;
+            /** Rating */
+            rating?: number | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ReviewedAlbumResponse */
         Backend_ReviewedAlbumResponse: {
@@ -5542,6 +5614,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_review_candidates_api_me_review_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ReviewCandidateListResponse"];
                 };
             };
         };

@@ -23,6 +23,8 @@ export type MemberRating = components['schemas']['Backend_MemberRatingResponse']
 export type MemberSummary = components['schemas']['Backend_MemberSummary']
 /** MY state for one album — includes the PRIVATE editorial mark. Author-only. */
 export type MyAlbumState = components['schemas']['Backend_MyAlbumStateResponse']
+/** One row of MY "평론 쓸 것" queue — same private class as the mark. Author-only. */
+export type ReviewCandidate = components['schemas']['Backend_ReviewCandidateResponse']
 
 /**
  * The one-liner ceiling, mirroring the server's RATING_COMMENT_MAX. Kept in
@@ -85,6 +87,22 @@ export async function fetchMyAlbumStates(albumId?: string): Promise<MyAlbumState
 		return []
 	const body = (await res.json()) as components['schemas']['Backend_MyAlbumStateListResponse']
 	return body.states ?? []
+}
+
+/**
+ * MY "평론 쓸 것" queue — the albums I marked, newest change first (Step 2).
+ *
+ * A separate read from fetchMyAlbumStates rather than a filter over it: the
+ * queue lists albums that may be in no bucket and carry no rating, so each row
+ * has to arrive with its own title/cover/artist, which the state shape has no
+ * reason to carry. Authed and author-scoped — logged out yields [].
+ */
+export async function fetchMyReviewCandidates(): Promise<ReviewCandidate[]> {
+	const res = await apiFetch(`${BASE}/api/me/review-candidates`)
+	if (!res || !res.ok)
+		return []
+	const body = (await res.json()) as components['schemas']['Backend_ReviewCandidateListResponse']
+	return body.candidates ?? []
 }
 
 /**
