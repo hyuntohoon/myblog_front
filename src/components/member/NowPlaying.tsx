@@ -44,7 +44,8 @@ import { artistHref } from '@lib/entityLinks'
 import { resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
 import { readSpotifyCapabilityStanding, rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe  } from '@lib/spotifyCapability'
 import { bindMediaSessionHandlers, publishNowPlaying, publishPlaybackState, publishPosition } from '@lib/mediaSession'
-import { getActiveRung, getStreamingToken, getTrackLiked, listDevices, MYBLOG_PLAYBACK_CHANGED, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
+import { isLoggedIn } from '@lib/auth'
+import { getActiveRung, getStreamingToken, getTrackLiked, listDevices, MYBLOG_PLAYBACK_CHANGED, play, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
 import { whyNoControls } from '@lib/playerCapabilityMatrix'
 import { useDismissable } from '@lib/useDismissable'
 import type { SpotifyScopeGeneration } from './integrations.api'
@@ -1137,7 +1138,17 @@ function DeviceGlyph() {
  * The list is fetched when the picker OPENS and never polled — D28 holds. A closed
  * picker costs nothing, which is why this can live on a bar that is always mounted.
  */
-function DeviceHintLine({ name, onSwitched }: { name: string, onSwitched: () => void }) {
+/**
+ * The device picker. `name` is the active device when there is one; passing null
+ * renders the idle-state trigger instead.
+ *
+ * That null case is not cosmetic — it breaks a circularity Step 5 shipped with.
+ * The picker used to render only from the `Listening on <device>` line, which needs
+ * `moment.deviceName`, which needs something to ALREADY be playing. So the in-page
+ * device ("이 브라우저") — the entire rung 2 — was unreachable unless you were
+ * already playing somewhere else. There was no way to say "use this browser".
+ */
+function DeviceHintLine({ name, onSwitched }: { name: string | null, onSwitched: () => void }) {
   const [open, setOpen] = useState(false)
   const [devices, setDevices] = useState<PlaybackDevice[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -1207,15 +1218,21 @@ function DeviceHintLine({ name, onSwitched }: { name: string, onSwitched: () => 
 	type="button"
 	onClick={() => { void openList() }}
 	aria-expanded={open}
-	aria-label="재생 기기 바꾸기"
+	aria-label={name === null ? '재생 기기 선택' : '재생 기기 바꾸기'}
 	className="mono"
 	style={{ width: '100%', textAlign: 'left', borderTop: '1px solid var(--color-border-soft)', borderLeft: 0, borderRight: 0, borderBottom: 0, background: 'transparent', padding: '7px 16px 8px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)', display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, cursor: 'pointer' }}
       >
         <DeviceGlyph />
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-          Listening on
-          {' '}
-          <span style={{ color: 'var(--color-subtle)' }}>{name}</span>
+          {name === null ?
+            '재생 기기 선택' :
+            (
+              <>
+                Listening on
+                {' '}
+                <span style={{ color: 'var(--color-subtle)' }}>{name}</span>
+              </>
+            )}
         </span>
         <span aria-hidden="true" style={{ marginLeft: 'auto', flex: '0 0 auto', opacity: 0.7 }}>{open ? '▾' : '▸'}</span>
       </button>
@@ -1336,7 +1353,60 @@ function LyricsEntry({ onOpen }: { onOpen: OnOpenLyrics }) {
 
 /* ── idle / loading shells ─────────────────────────────────────────────────── */
 
-function IdleBox({ compact = false, iso, latest, onSync, syncing, reconnect = false }: { compact?: boolean, iso?: string | null, latest?: RecentTrackItem | null, onSync?: () => void, syncing?: boolean, reconnect?: boolean }) {
+/**
+ * The idle bar — and, since 2026-08-02, the site's only visible way to START.
+ *
+ * Step 5 fixed the cold-start 404 but gave it no entrance: every play affordance
+ * sat behind an album overlay, a bucket action sheet, the pocket tray, or a review
+ * page that does not exist yet, and the transport only appears once something is
+ * already playing. Opening the site with nothing playing, there was nothing to
+ * press. This is the screen that is showing at exactly that moment, so the
+ * entrance belongs here.
+ *
+ * `이어듣기` plays the last track the member heard. It needs no catalog resolve —
+ * the recent-tracks cache already carries `spotify_track_id` — and it goes through
+ * the ladder, so with no active device it raises this tab instead of failing.
+ */
+/**
+ * "▶ 이어듣기" — plays the last track the member heard.
+ *
+ * Shared by every idle rendering (the full/list `IdleBox` and the banner's own
+ * inline idle branch) instead of copied into each: the banner keeps its own idle
+ * markup, and duplicating this is exactly how the capability matrix drifted.
+ *
+ * No catalog resolve — the recent-tracks cache already carries `spotify_track_id`.
+ * It goes through the ladder, so with no active device it raises this tab rather
+ * than failing, which is the whole point of putting an entrance here.
+ */
+function ResumeLastButton({ latest, onStarted, onNote }: { latest: RecentTrackItem, onStarted: () => void, onNote: (m: string) => void }) {
+  const [busy, setBusy] = useState(false)
+  const resume = async () => {
+    if (busy)
+      return
+    setBusy(true)
+    const r = await play({ kind: 'uris', uris: [`spotify:track:${latest.spotify_track_id}`] })
+    setBusy(false)
+    onNote(r.message)
+    if (r.ok)
+      onStarted()
+  }
+  return (
+    <button
+	type="button"
+	onClick={() => { void resume() }}
+	disabled={busy}
+	className="sans"
+	aria-label={`${latest.track_name} 이어듣기`}
+	title="마지막에 들은 곡부터 이어듣기"
+	style={{ padding: '5px 11px', borderRadius: 5, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.55 : 1, fontSize: 12, whiteSpace: 'nowrap' }}
+    >
+      {busy ? '재생 요청 중…' : '▶ 이어듣기'}
+    </button>
+  )
+}
+
+function IdleBox({ compact = false, iso, latest, onSync, syncing, reconnect = false, onSwitched }: { compact?: boolean, iso?: string | null, latest?: RecentTrackItem | null, onSync?: () => void, syncing?: boolean, reconnect?: boolean, onSwitched?: () => void }) {
+  const [note, setNote] = useState<string | null>(null)
   return (
     <div className="panel" style={{ overflow: 'hidden' }}>
       {/* minWidth 140 on the text cell forces the sync controls to wrap below it
@@ -1354,8 +1424,17 @@ function IdleBox({ compact = false, iso, latest, onSync, syncing, reconnect = fa
               ) :
             <div className="serif italic" style={{ fontSize: compact ? 16 : 18, color: 'var(--color-subtle)' }}>재생 중 아님</div>}
         </div>
-        <span style={{ marginLeft: 'auto' }}><SyncControl iso={iso} onSync={onSync} syncing={syncing} /></span>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          {latest?.spotify_track_id && isLoggedIn() && (
+            <ResumeLastButton latest={latest} onStarted={() => onSwitched?.()} onNote={setNote} />
+          )}
+          <SyncControl iso={iso} onSync={onSync} syncing={syncing} />
+        </span>
       </div>
+      {note && <div className="mono" style={{ padding: '0 16px 9px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)' }}>{note}</div>}
+      {/* With nothing playing there is no active device, so this is the ONLY place
+          the member can hand playback to this browser on purpose. */}
+      {isLoggedIn() && <DeviceHintLine name={null} onSwitched={() => onSwitched?.()} />}
       {reconnect && <ReconnectLine />}
     </div>
   )
@@ -1371,7 +1450,7 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment
   if (state === 'loading')
     return <div className="panel" style={{ padding: 18 }}><span className="meta">불러오는 중…</span></div>
   if (!np || !np.is_playing || !np.track)
-    return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} reconnect={reconnect} />
+    return <IdleBox iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} reconnect={reconnect} onSwitched={() => { void sync() }} />
   return (
     <div className="panel" style={{ overflow: 'hidden' }}>
       <div style={{ padding: narrow ? 14 : 18, display: 'flex', gap: narrow ? 14 : 18, alignItems: 'center' }}>
@@ -1451,7 +1530,7 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics, moment
                 )}
               </div>
             ) :
-          <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} reconnect={reconnect} /></div>}
+          <div style={{ borderBottom: '1px solid var(--color-border-soft)' }}><IdleBox compact iso={np?.updated_at} latest={latest} onSync={onSync} syncing={syncing} reconnect={reconnect} onSwitched={() => { void sync() }} /></div>}
 
       <div style={{ padding: '10px 8px 8px' }}>
         <div className="meta" style={{ padding: '0 8px 8px' }}>최근 들은 앨범</div>
@@ -1476,6 +1555,7 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics, moment
 /* ── banner variant (overview default) ───────────────────────────────────────── */
 
 function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode }: NpShared) {
+  const [idleNote, setIdleNote] = useState<string | null>(null)
   const narrow = useNarrow()
   const onSync = () => {
     void sync()
@@ -1512,6 +1592,9 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
             <span style={{ whiteSpace: 'nowrap', color: live ? 'var(--color-accent)' : latest ? 'var(--color-text)' : 'var(--color-faded)' }}>{live || !latest ? 'NOW PLAYING' : '최근 재생'}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 10, rowGap: 6, minWidth: 0 }}>
               {live && onOpenLyrics && <LyricsEntry onOpen={onOpenLyrics} />}
+              {!live && latest?.spotify_track_id && isLoggedIn() && (
+                <ResumeLastButton latest={latest} onStarted={() => { void sync() }} onNote={setIdleNote} />
+              )}
               <SyncControl iso={np?.updated_at} onSync={onSync} syncing={syncing} />
             </span>
           </div>
@@ -1576,7 +1659,11 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
           <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} setMode={setMode} />
         </div>
       )}
+      {idleNote && !live && <div className="mono" style={{ padding: '0 16px 10px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)' }}>{idleNote}</div>}
       {live && moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} onSwitched={() => { void sync() }} />}
+      {/* Idle: no active device exists, so this is the only place the member can
+          hand playback to this browser deliberately (see DeviceHintLine's note). */}
+      {!live && isLoggedIn() && <DeviceHintLine name={null} onSwitched={() => { void sync() }} />}
       {reconnect && tier === 'fallback' && <ReconnectLine />}
       {live && moment && tier === 'fallback' && !reconnect && <WhyNoControlsLine />}
     </div>

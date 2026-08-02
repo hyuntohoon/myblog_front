@@ -41,7 +41,7 @@ interface GuideFeature {
 	on: boolean
 }
 
-function IntegrationGuide({ standing, features, next }: { standing: string, features: GuideFeature[], next: string }) {
+function IntegrationGuide({ standing, features, next, helpHref }: { standing: string, features: GuideFeature[], next: string, helpHref?: string }) {
 	return (
 		<div style={{ marginTop: 2, padding: '13px 14px', border: '1px solid var(--color-border-soft)', borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', gap: 10 }}>
 			<div className="kicker">이 연동으로 열리는 기능</div>
@@ -55,6 +55,7 @@ function IntegrationGuide({ standing, features, next }: { standing: string, feat
 				))}
 			</div>
 			<div className="sans" style={{ borderTop: '1px solid var(--color-border-soft)', paddingTop: 9, fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-subtle)' }}>{next}</div>
+			{helpHref && <a className="sans" href={helpHref} style={{ fontSize: 12, color: 'var(--color-accent)' }}>기능별 조건 자세히 보기 →</a>}
 		</div>
 	)
 }
@@ -94,6 +95,7 @@ function SpotifyCapabilityGuide({ conn }: { conn: Integration | null }) {
 			// used to be a second hand-rolled copy that had already drifted ('스냅샷'
 			// here vs '최근 재생 스냅샷' there for the same capability).
 			features={capabilityRows({ connected, generation, probe })}
+			helpHref="/help/player/"
 			next={next}
 		/>
 	)

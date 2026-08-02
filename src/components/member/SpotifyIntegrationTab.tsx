@@ -140,6 +140,10 @@ export function SpotifyIntegrationTab() {
               {`현재 상태 · ${connected ? '연결됨' : '연결 안 됨'} · 스코프 세대 ${GENERATION_COPY[generation]} · 마지막 probe ${probeCopy}`}
             </div>
             <Powers connected={connected} generation={generation} />
+            {/* /help/player shipped with no inbound link at all (7c). This is the
+                surface that already answers "what does this unlock", so it is where
+                the fuller version belongs. */}
+            <a className="sans" href="/help/player/" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: 'var(--color-accent)' }}>기능별 조건 자세히 보기 →</a>
             <div className="sans" style={{ marginTop: 12, borderTop: '1px solid var(--color-border-soft)', paddingTop: 10, fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-subtle)' }}>
               {generation === 'legacy' ? '재동의 한 번으로 기기 안내와 좋아요까지 열려요. 좋아요는 무료 계정도 쓸 수 있고 컨트롤만 Premium 전용이에요.' : generation === 'playback' ? '재동의하면 무료 계정에서도 가능한 좋아요가 열려요.' : connected ? '좋아요는 무료 계정도 사용할 수 있고, 재생 컨트롤만 Premium 전용이에요.' : '연동하면 라이브 바·가사·기기 안내와 좋아요가 열려요. 컨트롤은 Premium 전용이에요.'}
             </div>
