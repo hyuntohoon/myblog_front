@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom'
 import { isLoggedIn } from '@lib/auth'
 import { ENT_OPEN_ALBUM } from '@lib/entityEvents'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
-import { sendConnectPlay } from '@lib/spotifyPlayback'
+import { play } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { AlbumDetailView } from './AlbumDetailView'
@@ -72,31 +72,22 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
     if (!isLoggedIn() || playing)
       return
     setPlaying(true)
-    const outcome = await sendConnectPlay({ kind: 'album', albumId: target.albumId, title: target.title })
+    // Step 5: one ladder call. The 'no active device' dead end this surface used to
+    // report is now the hand-off to rung 2, so it is no longer a case here.
+    const outcome = await play({ kind: 'album', albumId: target.albumId, title: target.title })
     setPlaying(false)
     if (outcome.ok) {
       rememberSpotifyTransportProbe('available')
-      showNotice('Spotify에서 앨범 재생을 시작했어요.')
+      showNotice(outcome.rung === 'in-page' ? outcome.message : 'Spotify에서 앨범 재생을 시작했어요.')
       return
     }
-    if (outcome.reason === 'no-active-device') {
-      showNotice('재생 중인 Spotify 기기가 없어요. Spotify에서 먼저 재생을 시작해 주세요.')
-      return
-    }
-    if (outcome.reason === 'no-capability') {
+    if (outcome.reason === 'no-capability')
       rememberSpotifyTransportProbe('no-capability')
-      showNotice('이 컨트롤은 Spotify Premium 계정에서 사용할 수 있어요.')
-      return
-    }
-    if (outcome.reason === 'unresolvable') {
-      showNotice('이 앨범은 Spotify에서 재생할 수 없어요.')
-      return
-    }
     if (outcome.reason === 'token' && outcome.status === 'disconnected') {
       showNotice('Spotify를 연동하면 이 앨범을 재생할 수 있어요.')
       return
     }
-    showNotice('재생에 실패했어요. 잠시 후 다시 시도해 주세요.')
+    showNotice(outcome.message)
   }
 
   return (

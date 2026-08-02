@@ -36,14 +36,16 @@
 // ids via @lib/spotifyCatalog — album links light up post-resolve, artist names
 // become links only when resolvable (never a dead click).
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { PlayerCommandOutcome } from '@lib/spotifyPlayback'
+import type { PlaybackDevice, PlayerCommandOutcome  } from '@lib/spotifyPlayback'
 import { useEffect, useRef, useState } from 'react'
 import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
 import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
-import { getStreamingToken, getTrackLiked, MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand, setTrackLiked } from '@lib/spotifyPlayback'
+import { bindMediaSessionHandlers, publishNowPlaying, publishPlaybackState, publishPosition } from '@lib/mediaSession'
+import { getActiveRung, getStreamingToken, getTrackLiked, listDevices, MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
+import { useDismissable } from '@lib/useDismissable'
 import { readLivePlayback } from './lyrics/playback.api'
 import type { LivePlayback } from './lyrics/playback.api'
 import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
@@ -533,6 +535,51 @@ function useNowPlaying() {
         window.clearTimeout(noteTimer.current)
     }
   }, [])
+  /**
+   * OS media integration (member-player Step 5) — **rung 2 only**.
+   *
+   * The moment this tab emits audio it must own the media keys, the lock screen
+   * and headset buttons, or the sound has no visible source and no way to stop it
+   * short of hunting for the tab. On rung 1 a real Connect device is playing and
+   * its own app owns that surface; claiming it here would put a second, competing
+   * control on the lock screen — so `@lib/mediaSession` no-ops unless the active
+   * rung is in-page, and this effect just keeps it fed.
+   *
+   * The handlers route to the SAME transport the on-screen buttons use, so a
+   * headset click and a click on the bar cannot diverge.
+   */
+  useEffect(() => {
+    if (getActiveRung() !== 'in-page')
+      return
+    const teardown = bindMediaSessionHandlers({
+      onPlay: () => { void playPause() },
+      onPause: () => { void playPause() },
+      onNext: () => { void skip('next') },
+      onPrevious: () => { void skip('previous') },
+      onSeek: (ms) => { void seek(ms) },
+    })
+    return teardown
+    // Rebinding on the live track keeps the closures pointing at current state;
+    // the handlers read `paused` through playPause, which reads it fresh.
+  }, [moment?.trackId, paused])
+
+  useEffect(() => {
+    const live = liveSnapshot(np)
+    if (!moment) {
+      publishNowPlaying(null)
+      return
+    }
+    publishNowPlaying({
+      title: live?.track ?? '재생 중',
+      artist: live?.artist ?? undefined,
+      album: live?.album ?? undefined,
+      artwork: live?.album_cover_url ?? undefined,
+    })
+    publishPlaybackState(paused)
+    if (moment.anchor && moment.durationMs != null)
+      publishPosition(moment.durationMs, estimateMs(moment.anchor))
+  }, [np, moment, paused])
+
   return { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }
 }
 
@@ -818,19 +865,161 @@ function ReconnectLine() {
  * playback-state scope never reach this: their live read fails before a
  * moment exists, so the line is omitted by construction.
  */
-function DeviceHintLine({ name }: { name: string }) {
+function DeviceGlyph() {
   return (
-    <div className="mono" style={{ borderTop: '1px solid var(--color-border-soft)', padding: '7px 16px 8px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)', display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-      <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: '0 0 auto' }}>
-        <rect x="3" y="0.5" width="6" height="11" rx="1.2" fill="none" stroke="currentColor" />
-        <circle cx="6" cy="8.5" r="1.1" fill="currentColor" />
-      </svg>
-      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-        Listening on
-        {' '}
-        <span style={{ color: 'var(--color-subtle)' }}>{name}</span>
-      </span>
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+      <rect x="3" y="0.5" width="6" height="11" rx="1.2" fill="none" stroke="currentColor" />
+      <circle cx="6" cy="8.5" r="1.1" fill="currentColor" />
+    </svg>
+  )
+}
+
+/**
+ * The device hint, made switchable (member-player Step 5 — owner: "스포티파이처럼
+ * 클릭을 통해서 변경").
+ *
+ * Deliberately NOT new chrome: Step 4 already put "Listening on <device>" in this
+ * panel-bottom-edge slot, and the thing a listener wants to do with that line is
+ * change it. So the line becomes the trigger and the list opens in place.
+ *
+ * The list is fetched when the picker OPENS and never polled — D28 holds. A closed
+ * picker costs nothing, which is why this can live on a bar that is always mounted.
+ */
+function DeviceHintLine({ name, onSwitched }: { name: string, onSwitched: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [devices, setDevices] = useState<PlaybackDevice[] | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+  useDismissable(open, () => setOpen(false), boxRef)
+
+  const openList = async () => {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    setOpen(true)
+    setError(null)
+    setDevices(null)
+    const r = await listDevices()
+    if (!r.ok) {
+      setError(r.reason === 'no-capability' ?
+        '기기 목록은 Spotify Premium 계정에서 볼 수 있어요.' :
+        '기기 목록을 가져오지 못했어요.')
+      return
+    }
+    setDevices(r.devices)
+  }
+
+  const pick = async (d: PlaybackDevice) => {
+    if (busy)
+      return
+    setBusy(d.id)
+    const r = await transferPlayback(d.id)
+    setBusy(null)
+    if (!r.ok) {
+      setError(r.reason === 'no-capability' ?
+        '이 전환은 Spotify Premium 계정에서 사용할 수 있어요.' :
+        '기기를 바꾸지 못했어요.')
+      return
+    }
+    setOpen(false)
+    onSwitched()
+  }
+
+  // "이 브라우저" is offered even when Spotify has never seen it: the in-page device
+  // does not exist until the SDK connects, so picking it must CREATE it first.
+  // Without this the only way to reach rung 2 would be a cold-start play, and a
+  // listener already playing elsewhere could never move the sound here on purpose.
+  const pickThisBrowser = async () => {
+    if (busy)
+      return
+    setBusy('in-page')
+    const r = await transferPlayback('', { raiseInPageFirst: true })
+    setBusy(null)
+    if (!r.ok) {
+      setError(r.reason === 'no-capability' ?
+        '이 브라우저 재생은 Spotify Premium 계정에서 사용할 수 있어요.' :
+        '이 브라우저로 옮기지 못했어요.')
+      return
+    }
+    setOpen(false)
+    onSwitched()
+  }
+
+  const alreadyListed = devices?.some(d => d.isInPage) ?? false
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative' }}>
+      <button
+	type="button"
+	onClick={() => { void openList() }}
+	aria-expanded={open}
+	aria-label="재생 기기 바꾸기"
+	className="mono"
+	style={{ width: '100%', textAlign: 'left', borderTop: '1px solid var(--color-border-soft)', borderLeft: 0, borderRight: 0, borderBottom: 0, background: 'transparent', padding: '7px 16px 8px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)', display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, cursor: 'pointer' }}
+      >
+        <DeviceGlyph />
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+          Listening on
+          {' '}
+          <span style={{ color: 'var(--color-subtle)' }}>{name}</span>
+        </span>
+        <span aria-hidden="true" style={{ marginLeft: 'auto', flex: '0 0 auto', opacity: 0.7 }}>{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div
+	role="listbox"
+	aria-label="재생 기기"
+	style={{ position: 'absolute', left: 8, right: 8, bottom: '100%', marginBottom: 4, zIndex: 40, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 7, boxShadow: '0 18px 44px rgba(0,0,0,.32)', padding: 5, maxHeight: 240, overflowY: 'auto' }}
+        >
+          {devices == null && !error && <div className="mono" style={{ padding: '8px 9px', fontSize: 10.5, color: 'var(--color-faded)' }}>기기를 찾는 중…</div>}
+          {error && <div className="mono" style={{ padding: '8px 9px', fontSize: 10.5, color: 'var(--color-accent)' }}>{error}</div>}
+          {devices?.map(d => (
+            <DeviceRow
+	key={d.id}
+	label={d.isInPage ? '이 브라우저 (음질 제한)' : d.name}
+	sub={d.isInPage ? undefined : d.type}
+	active={d.isActive}
+	busy={busy === d.id}
+	onClick={() => { void pick(d) }}
+            />
+          ))}
+          {devices != null && !alreadyListed && (
+            <DeviceRow
+	label="이 브라우저 (음질 제한)"
+	active={false}
+	busy={busy === 'in-page'}
+	onClick={() => { void pickThisBrowser() }}
+            />
+          )}
+          {devices?.length === 0 && (
+            <div className="mono" style={{ padding: '6px 9px 8px', fontSize: 10, color: 'var(--color-faded)', lineHeight: 1.5 }}>
+              다른 기기가 없어요. Spotify 앱을 켜면 여기에 나타납니다.
+            </div>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+function DeviceRow({ label, sub, active, busy, onClick }: { label: string, sub?: string, active: boolean, busy: boolean, onClick: () => void }) {
+  return (
+    <button
+	type="button"
+	role="option"
+	aria-selected={active}
+	onClick={onClick}
+	disabled={busy}
+	className="mono"
+	style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', textAlign: 'left', padding: '7px 9px', border: 0, borderRadius: 5, background: active ? 'var(--color-border-soft)' : 'transparent', color: 'var(--color-text)', fontSize: 11, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.55 : 1 }}
+    >
+      <span aria-hidden="true" style={{ flex: '0 0 auto', width: 9, color: 'var(--color-accent)' }}>{active ? '●' : ''}</span>
+      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{label}</span>
+      {sub && <span style={{ marginLeft: 'auto', flex: '0 0 auto', color: 'var(--color-faded)', fontSize: 9.5 }}>{sub}</span>}
+      {busy && <span style={{ marginLeft: 'auto', flex: '0 0 auto', color: 'var(--color-faded)', fontSize: 9.5 }}>옮기는 중…</span>}
+    </button>
   )
 }
 
@@ -957,7 +1146,7 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment
           )}
         </div>
       </div>
-      {moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} />}
+      {moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} onSwitched={() => { void sync() }} />}
       {reconnect && tier === 'fallback' && <ReconnectLine />}
     </div>
   )
@@ -1134,7 +1323,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
           <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} />
         </div>
       )}
-      {live && moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} />}
+      {live && moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} onSwitched={() => { void sync() }} />}
       {reconnect && tier === 'fallback' && <ReconnectLine />}
     </div>
   )

@@ -50,6 +50,18 @@ import '../styles/search.css';
 			fires astro:page-load, which page scripts now key off).
 		-->
 		<ClientRouter />
+		<!--
+			FEAT-member-player Step 5 — keep in-page audio alive across the router's
+			body swap. Measured (RFC OQ4, prod 2026-08-02): the Web Playback SDK's
+			iframe is torn out by the default swap, and transition:persist does NOT
+			save it — Astro preserves node identity, an iframe needs browsing-context
+			continuity. Inert until this tab is actually the audio device.
+		-->
+		<script>
+			import { installPlaybackPersist } from '../scripts/playbackPersist.client'
+
+			installPlaybackPersist()
+		</script>
 		<slot name="seo" />
 	</head>
 	<body class="min-h-screen bg-bg text-text">

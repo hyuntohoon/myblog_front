@@ -189,6 +189,30 @@ function ensureSdk(): Promise<SpotifyNamespace> {
 
 let player: SpotifyPlayer | null = null
 let deviceId: string | null = null
+/**
+ * Which rung last produced sound, or null before any play this session.
+ *
+ * Only meaningful as "where the last successful play went" — Spotify may move
+ * playback elsewhere without telling us (D28: no polling, so we do not watch for
+ * it). Transport commands use it to decide whether to address our own device
+ * explicitly; a stale value costs one 404, never a wrong device.
+ */
+let activeRung: PlayRung | null = null
+
+/** The in-page device id, or null if this tab has never been raised as a device. */
+export function getInPageDeviceId(): string | null {
+  return deviceId
+}
+
+/** The rung that last produced sound this session. */
+export function getActiveRung(): PlayRung | null {
+  return activeRung
+}
+
+function notifyPlaybackChanged(): void {
+  if (typeof window !== 'undefined')
+    window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+}
 
 /**
  * Lazy-load the SDK and connect a Premium device, returning its device_id.
@@ -260,64 +284,180 @@ function messageFor(status: Exclude<StreamingStatus, 'ready'>): string {
   return STATUS_MESSAGE[status]
 }
 
+// ── the play ladder (member-player Step 5) ───────────────────────────────────
+// ONE entry every play surface calls. Before Step 5 the site had two unrelated
+// play paths split by build date: `requestPlayback` (SDK, sent device_id, cold
+// start worked) and `sendConnectPlay` (Connect remote, deliberately omitted
+// device_id, 404'd on cold start). Everything the owner actually used was on the
+// second, hence "재생 시작이 안 된다".
+//
+// The two paths differ by **exactly one query parameter**. Both PUT the same body
+// to /v1/me/player/play; only `device_id` differs. So the ladder is not a merge of
+// two subsystems — it is one request with a fallback on the parameter:
+//
+//   rung 1  no device_id      → whatever Connect device is active (DEFAULT)
+//   rung 2  device_id=<ours>  → raise this tab as the 'Buckit' device
+//   rung 3  neither possible  → notice + "Spotify에서 열기"
+//
+// Rung 1 first is a correctness argument, not a preference: the Web Playback SDK
+// caps at AAC 256 kbps and Spotify Lossless excludes the web player, so remote
+// control costs zero audio quality while rung 2 always costs some (RFC D, 2026-08-02).
+//
+// Rung selection is attempt-then-fallback, NOT a `GET /me/player/devices` probe
+// first: the 404 the old path already returned *is* the "no active device" signal,
+// so the happy path stays at one request and D28 (no polling) holds by construction.
+
 /**
- * The explicit play action — the ONLY entry that mints a token or loads the SDK.
- *
- * Order matters: token FIRST. In dormant v1 the 503 short-circuits BEFORE the SDK
- * is pulled, so a dormant play makes one async token call and no 1MB SDK download
- * — and the negative test (no `spotify-player.js` after a dormant play) holds.
+ * What to play. `album`/`track` carry DB ids resolved at play time (the provider
+ * stays switchable); `context`/`uris` are already provider URIs — the lyrics queue
+ * jump resolves those itself and must keep its exact tail semantics.
  */
-export async function requestPlayback(target: PlaybackTarget): Promise<PlaybackOutcome> {
+export type PlayIntent =
+	| { kind: 'album', albumId: string, title?: string } |
+	{ kind: 'track', trackId: string, title?: string, isrc?: string, artist?: string } |
+  /** Jump inside the running album/playlist, keeping that context alive. */
+	{ kind: 'context', contextUri: string, offsetUri: string } |
+  /** Explicit track list — REPLACES the context, so always send the whole tail. */
+	{ kind: 'uris', uris: string[] }
+
+/** Which rung actually produced sound. */
+export type PlayRung = 'remote' | 'in-page'
+
+/** `degraded` is true on rung 2 — the caller must say the audio is quality-limited. */
+export interface PlaySuccess { ok: true, rung: PlayRung, degraded: boolean, message: string }
+/** `status`/`httpStatus` are present only for `reason: 'token'`. */
+export interface PlayFailure {
+	ok: false
+	reason: 'no-capability' | 'unresolvable' | 'unavailable' | 'transient' | 'token'
+	status?: Exclude<StreamingStatus, 'ready'>
+	httpStatus?: number
+	message: string
+}
+export type PlayOutcome = PlaySuccess | PlayFailure
+
+const REMOTE_MESSAGE = '재생을 시작했어요.'
+/** Rung 2 is a fallback, not a peer — the UI must not present it as equivalent. */
+export const IN_PAGE_MESSAGE = '이 브라우저에서 재생 중 (음질 제한)'
+
+/** The play body for an intent. Throws `resolve-*` when a DB id has no Spotify id. */
+async function playBodyFor(intent: PlayIntent): Promise<object> {
+  if (intent.kind === 'context')
+    return { context_uri: intent.contextUri, offset: { uri: intent.offsetUri } }
+  if (intent.kind === 'uris')
+    return { uris: intent.uris }
+  const uri = await resolveProviderUri(intent)
+  return intent.kind === 'album' ? { context_uri: uri } : { uris: [uri] }
+}
+
+/** One PUT /me/player/play. `deviceId` omitted = rung 1, present = rung 2. */
+async function putPlay(token: string, body: object, deviceId?: string): Promise<Response> {
+  const url = deviceId ?
+    `${PLAYER_BASE}/play?device_id=${encodeURIComponent(deviceId)}` :
+    `${PLAYER_BASE}/play`
+  return fetch(url, {
+    method: 'PUT',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * Start playback, climbing the ladder. Never throws.
+ *
+ * Token FIRST, before anything else: a dormant (503) or disconnected (404) account
+ * short-circuits before the catalog resolve AND before the ~1 MB SDK download, so the
+ * negative test (no `spotify-player.js` after a play that cannot possibly sound) holds
+ * exactly as it did for the old `requestPlayback`.
+ */
+export async function play(intent: PlayIntent): Promise<PlayOutcome> {
+  // Visitors short-circuit before the token mint and before the catalog resolve.
+  if (!isLoggedIn())
+    return { ok: false, reason: 'token', status: 'unauthorized', message: messageFor('unauthorized') }
+
+  const first = await getStreamingToken()
+  if (!first.ok)
+    return { ok: false, reason: 'token', status: first.status, httpStatus: first.httpStatus, message: messageFor(first.status) }
+
+  let body: object
+  try {
+    body = await playBodyFor(intent)
+  }
+  catch {
+    return { ok: false, reason: 'unresolvable', message: '이 항목은 Spotify에서 재생할 수 없어요.' }
+  }
+
+  // ── rung 1: whatever Connect device is already active ──────────────────────
+  // Two attempts: a 401 mid-session means the minted token aged out server-side
+  // despite the 5 s cache skew — drop the cache and re-mint once.
+  let sawNoDevice = false
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = attempt === 0 ? first : await getStreamingToken()
+    if (!tok.ok)
+      return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus, message: messageFor(tok.status) }
+    let res: Response
+    try {
+      res = await putPlay(tok.token, body)
+    }
+    catch {
+      return { ok: false, reason: 'transient', message: messageFor('error') }
+    }
+    if (res.ok) {
+      activeRung = 'remote'
+      notifyPlaybackChanged()
+      return { ok: true, rung: 'remote', degraded: false, message: REMOTE_MESSAGE }
+    }
+    if (res.status === 401 && attempt === 0) {
+      cachedToken = null
+      continue
+    }
+    // 404 = no active device. THIS is the cold start the whole step exists to fix:
+    // before Step 5 it was a dead end; now it is the hand-off to rung 2.
+    if (res.status === 404) {
+      sawNoDevice = true
+      break
+    }
+    if (res.status === 403)
+      return { ok: false, reason: 'no-capability', message: '이 컨트롤은 Spotify Premium 계정에서 사용할 수 있어요.' }
+    return { ok: false, reason: 'transient', message: messageFor('error') }
+  }
+  if (!sawNoDevice)
+    return { ok: false, reason: 'transient', message: messageFor('error') }
+
+  // ── rung 2: raise this tab as the 'Buckit' device ──────────────────────────
   const tok = await getStreamingToken()
   if (!tok.ok)
-    return { status: tok.status, message: messageFor(tok.status) }
+    return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus, message: messageFor(tok.status) }
 
-  // Live-token path. Lazy SDK load + device connect happen only here (post Step 1 the
-  // token route returns 200, so this is now reachable for the owner on a Premium session).
   let device: string
   try {
     device = await ensureConnectedDevice(tok.token)
   }
   catch (e) {
-    // Only account_error (non-Premium — the Web Playback SDK requires Premium) maps to
-    // 'unsupported' (the Premium message). auth_error (bad token), init_error (device init),
-    // and an SDK-script load failure are transient/unknown → 'error', so a Premium user on a
-    // flaky network is never wrongly told they need a Premium account. Both distinct from
-    // dormant (the 503 provisioning state, short-circuited above).
+    // Only account_error (the SDK requires Premium) means "you cannot do this" —
+    // rung 3. auth_error / init_error / a failed SDK script load are transient, so a
+    // Premium listener on a flaky network is never wrongly told to upgrade.
     const reason = e instanceof Error ? e.message : ''
-    const status: Exclude<StreamingStatus, 'ready'> = reason === 'account_error' ? 'unsupported' : 'error'
-    return { status, message: messageFor(status) }
+    if (reason === 'account_error')
+      return { ok: false, reason: 'no-capability', message: messageFor('unsupported') }
+    return { ok: false, reason: 'transient', message: messageFor('error') }
   }
 
-  let uri: string
+  let res: Response
   try {
-    uri = await resolveProviderUri(target)
+    res = await putPlay(tok.token, body, device)
   }
   catch {
-    // No resolvable Spotify id for this item (resolve 404) or the resolve call failed —
-    // distinct from dormant (a provisioning state, already short-circuited above).
-    return { status: 'unsupported', message: '이 항목은 Spotify에서 재생할 수 없어요.' }
+    return { ok: false, reason: 'transient', message: messageFor('error') }
   }
-
-  let playRes: Response
-  try {
-    playRes = await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${encodeURIComponent(device)}`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${tok.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(target.kind === 'track' ? { uris: [uri] } : { context_uri: uri }),
-    })
+  if (res.ok) {
+    activeRung = 'in-page'
+    notifyPlaybackChanged()
+    return { ok: true, rung: 'in-page', degraded: true, message: IN_PAGE_MESSAGE }
   }
-  catch {
-    return { status: 'error', message: messageFor('error') }
-  }
-  // 403/404 from the play call = restriction or the track is unavailable in the account's
-  // market (OQ5) — surface a clear notice rather than a false 'started'.
-  if (!playRes.ok) {
-    if (playRes.status === 403 || playRes.status === 404)
-      return { status: 'unsupported', message: '이 트랙은 현재 계정/지역에서 재생할 수 없어요.' }
-    return { status: 'error', message: messageFor('error') }
-  }
-  return { status: 'ready', message: '재생을 시작했어요.' }
+  // 403/404 here is a restriction or a market-unavailable item — never a false 'started'.
+  if (res.status === 403 || res.status === 404)
+    return { ok: false, reason: 'unavailable', message: '이 트랙은 현재 계정/지역에서 재생할 수 없어요.' }
+  return { ok: false, reason: 'transient', message: messageFor('error') }
 }
 
 // ── Connect remote transport (member-player Step 3, D1 full tier) ─────────────
@@ -353,11 +493,21 @@ export type PlayerCommandOutcome =
 
 /** One transport command to the member's active device. Never throws. */
 export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerCommandOutcome> {
+  // Address our own device explicitly while rung 2 owns the sound. Spotify treats
+  // the in-page device as active once played to, so this is belt-and-braces — but
+  // without it, a transport command racing a device change 404s and the bar reads
+  // as "no capability" when the real answer is "wrong device".
+  const own = activeRung === 'in-page' && deviceId ? deviceId : null
+  const q = own ? `device_id=${encodeURIComponent(own)}` : ''
+  const withQ = (base: string, existing?: string) => {
+    const parts = [existing, q].filter(Boolean)
+    return parts.length ? `${base}?${parts.join('&')}` : base
+  }
   const url = cmd.kind === 'seek' ?
-    `${PLAYER_BASE}/seek?position_ms=${Math.max(0, Math.round(cmd.positionMs))}` :
+    withQ(`${PLAYER_BASE}/seek`, `position_ms=${Math.max(0, Math.round(cmd.positionMs))}`) :
     cmd.kind === 'play-context' || cmd.kind === 'play-uris' ?
-      `${PLAYER_BASE}/play` :
-      `${PLAYER_BASE}/${cmd.kind}`
+      withQ(`${PLAYER_BASE}/play`) :
+      withQ(`${PLAYER_BASE}/${cmd.kind}`)
   const method = cmd.kind === 'next' || cmd.kind === 'previous' ? 'POST' : 'PUT'
   const body = cmd.kind === 'play-context' ?
     JSON.stringify({ context_uri: cmd.contextUri, offset: { uri: cmd.offsetUri } }) :
@@ -397,55 +547,119 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
   return { ok: false, reason: 'transient' }
 }
 
-// ── Connect target play (member-player Step 6b) ─────────────────────────────
-// Unlike requestPlayback(), this remote-controls the member's already-active
-// Spotify Connect device. It never loads the Web Playback SDK and deliberately
-// omits device_id.
+// ── device picker (member-player Step 5, pulled out of the 6e bundle) ────────
+// "스포티파이처럼 클릭을 통해서 변경" (owner, 2026-08-02). Read-on-open only —
+// the list is fetched when the picker opens, never polled (D28).
 
-export type ConnectPlayOutcome =
-	| { ok: true } |
-	{ ok: false, reason: 'no-active-device' } |
-	{ ok: false, reason: 'no-capability' } |
-	{ ok: false, reason: 'unresolvable' } |
-	{ ok: false, reason: 'token', status: Exclude<StreamingStatus, 'ready'>, httpStatus?: number } |
-	{ ok: false, reason: 'transient' }
+export interface PlaybackDevice {
+  id: string
+  name: string
+  type: string
+  isActive: boolean
+  /** True for the 'Buckit' device this tab raised — the quality-limited one. */
+  isInPage: boolean
+}
 
-/** Play a catalog album/track on the active Connect device. Never throws. */
-export async function sendConnectPlay(target: PlaybackTarget): Promise<ConnectPlayOutcome> {
-  // Short-circuit before both the token mint and catalog resolve for visitors.
+export type DeviceListOutcome =
+	| { ok: true, devices: PlaybackDevice[] } |
+	{ ok: false, reason: 'no-capability' | 'transient' | 'token' }
+
+interface SpotifyDevicePayload { id?: string | null, name?: string, type?: string, is_active?: boolean }
+
+/** List the account's Connect devices. Never throws. */
+export async function listDevices(): Promise<DeviceListOutcome> {
   if (!isLoggedIn())
-    return { ok: false, reason: 'token', status: 'unauthorized' }
-
-  const firstToken = await getStreamingToken()
-  if (!firstToken.ok)
-    return { ok: false, reason: 'token', status: firstToken.status, httpStatus: firstToken.httpStatus }
-
-  let uri: string
-  try {
-    uri = await resolveProviderUri(target)
+    return { ok: false, reason: 'token' }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = await getStreamingToken()
+    if (!tok.ok)
+      return { ok: false, reason: 'token' }
+    let res: Response
+    try {
+      res = await fetch(`${PLAYER_BASE}/devices`, { headers: { Authorization: `Bearer ${tok.token}` } })
+    }
+    catch {
+      return { ok: false, reason: 'transient' }
+    }
+    if (res.ok) {
+      try {
+        const body = (await res.json()) as { devices?: SpotifyDevicePayload[] }
+        const ours = deviceId
+        const devices = (body.devices ?? []).flatMap((d) => {
+          if (!d.id)
+            return []
+          return [{
+            id: d.id,
+            name: d.name ?? '알 수 없는 기기',
+            type: d.type ?? '',
+            isActive: d.is_active === true,
+            isInPage: !!ours && d.id === ours,
+          }]
+        })
+        return { ok: true, devices }
+      }
+      catch {
+        return { ok: false, reason: 'transient' }
+      }
+    }
+    if (res.status === 401 && attempt === 0) {
+      cachedToken = null
+      continue
+    }
+    if (res.status === 403)
+      return { ok: false, reason: 'no-capability' }
+    return { ok: false, reason: 'transient' }
   }
-  catch {
-    return { ok: false, reason: 'unresolvable' }
+  return { ok: false, reason: 'transient' }
+}
+
+export type TransferOutcome =
+	| { ok: true } |
+	{ ok: false, reason: 'no-capability' | 'transient' | 'token' }
+
+/**
+ * Move playback to `targetDeviceId`, keeping it playing.
+ *
+ * `raiseInPageFirst` exists because the in-page device does not exist until the SDK
+ * has connected — picking "이 브라우저" from a cold list must create the device before
+ * transferring to it, or the transfer 404s against an id that was never real.
+ */
+export async function transferPlayback(targetDeviceId: string, opts?: { raiseInPageFirst?: boolean }): Promise<TransferOutcome> {
+  if (!isLoggedIn())
+    return { ok: false, reason: 'token' }
+  const first = await getStreamingToken()
+  if (!first.ok)
+    return { ok: false, reason: 'token' }
+
+  let id = targetDeviceId
+  if (opts?.raiseInPageFirst) {
+    try {
+      id = await ensureConnectedDevice(first.token)
+    }
+    catch (e) {
+      const reason = e instanceof Error ? e.message : ''
+      return { ok: false, reason: reason === 'account_error' ? 'no-capability' : 'transient' }
+    }
   }
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const tok = attempt === 0 ? firstToken : await getStreamingToken()
+    const tok = attempt === 0 ? first : await getStreamingToken()
     if (!tok.ok)
-      return { ok: false, reason: 'token', status: tok.status, httpStatus: tok.httpStatus }
+      return { ok: false, reason: 'token' }
     let res: Response
     try {
-      res = await fetch(`${PLAYER_BASE}/play`, {
+      res = await fetch(PLAYER_BASE, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${tok.token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(target.kind === 'album' ? { context_uri: uri } : { uris: [uri] }),
+        body: JSON.stringify({ device_ids: [id], play: true }),
       })
     }
     catch {
       return { ok: false, reason: 'transient' }
     }
     if (res.ok) {
-      if (typeof window !== 'undefined')
-        window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+      activeRung = deviceId && id === deviceId ? 'in-page' : 'remote'
+      notifyPlaybackChanged()
       return { ok: true }
     }
     if (res.status === 401 && attempt === 0) {
@@ -454,8 +668,6 @@ export async function sendConnectPlay(target: PlaybackTarget): Promise<ConnectPl
     }
     if (res.status === 403)
       return { ok: false, reason: 'no-capability' }
-    if (res.status === 404)
-      return { ok: false, reason: 'no-active-device' }
     return { ok: false, reason: 'transient' }
   }
   return { ok: false, reason: 'transient' }
@@ -544,4 +756,6 @@ export function __resetPlaybackState(): void {
   cachedToken = null
   player = null
   deviceId = null
+  activeRung = null
+  sdkPromise = null
 }

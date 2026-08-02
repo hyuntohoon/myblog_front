@@ -1,5 +1,5 @@
 import type { components } from '../lib/api.gen'
-import { requestPlayback } from '../lib/spotifyPlayback'
+import { play } from '../lib/spotifyPlayback'
 
 type AlbumDetail = components['schemas']['Music_AlbumDetail']
 type Track = components['schemas']['Music_TrackOut']
@@ -88,7 +88,7 @@ window.addEventListener('album:detail', (e: Event) => {
   render(payload)
 })
 
-// FEAT-pocket-buckit Step 5b — explicit per-track play. `requestPlayback` mints
+// FEAT-pocket-buckit Step 5b — explicit per-track play. The Step 5 ladder mints
 // the token / pulls the SDK ONLY here, on a real click. On this public review
 // page an anonymous (or dormant-503) play just shows a notice — no SDK load, no
 // redirect (rule #9 + the SDK-must-not-load-on-page-load guarantee).
@@ -118,7 +118,7 @@ function onRootClick(e: Event): void {
   if (playBtn) {
     const trackId = playBtn.dataset.trackId
     if (trackId)
-      void requestPlayback({ kind: 'track', trackId, title: playBtn.dataset.trackTitle }).then(o => showPlayNote(o.message))
+      void play({ kind: 'track', trackId, title: playBtn.dataset.trackTitle }).then(o => showPlayNote(o.message))
     return
   }
   // FEAT-pocket-buckit Step 6 — per-track "담기" → hand off to the ReviewTrackAdder
