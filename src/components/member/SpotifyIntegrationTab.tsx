@@ -2,6 +2,7 @@
 // integrations contract; this surface reports the stored grant generation and
 // session-only capability probes without adding a capability API or polling.
 import { useEffect, useState } from 'react'
+import { capabilityRows } from '@lib/playerCapabilityMatrix'
 import { readSpotifyCapabilityStanding } from '@lib/spotifyCapability'
 import { buildSpotifyAuthorizeUrl, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
 import type { Integration, SpotifyScopeGeneration } from './integrations.api'
@@ -53,25 +54,16 @@ const GENERATION_COPY: Record<SpotifyScopeGeneration, string> = {
 }
 
 function Powers({ connected, generation }: { connected: boolean, generation: SpotifyScopeGeneration }) {
-  const modernPlayback = connected && (generation === 'playback' || generation === 'library')
-  const library = connected && generation === 'library'
-  const probe = readSpotifyCapabilityStanding()
-  const transport = !modernPlayback ? '—' : probe.transport === 'available' ? '사용 가능(Premium 확인됨)' : probe.transport === 'no-capability' ? '제한됨(Premium/기기 상태)' : 'Premium에서 가능 · 아직 확인 전'
-  const features = [
-    ['스냅샷', connected ? '사용 가능' : '—'],
-    ['라이브 바', connected ? '사용 가능' : '—'],
-    ['재생/일시정지/seek', transport],
-    ['기기 안내', modernPlayback ? '사용 가능(무료 포함)' : '—'],
-    ['가사 live', connected ? '사용 가능' : '—'],
-    ['다음·이전/지정 재생', transport],
-    ['좋아요', library ? '사용 가능(무료 포함)' : '—'],
-  ]
+  // Step 7: rows come from the shared matrix, not from a list hand-rolled here.
+  // This component used to own them, SettingsApp grew a second copy, and the two
+  // had already drifted on wording — see @lib/playerCapabilityMatrix.
+  const features = capabilityRows({ connected, generation, probe: readSpotifyCapabilityStanding() })
   return (
     <ul className="sans" style={{ margin: '4px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {features.map(([label, standing]) => (
-        <li key={label} style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, .9fr) minmax(0, 1.1fr)', gap: 10, fontSize: 12.5, color: 'var(--color-subtle)' }}>
-          <span>{label}</span>
-          <span style={{ color: standing === '—' ? 'var(--color-faded)' : 'var(--color-text)' }}>{standing}</span>
+      {features.map(f => (
+        <li key={f.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, .9fr) minmax(0, 1.1fr)', gap: 10, fontSize: 12.5, color: 'var(--color-subtle)' }}>
+          <span>{f.label}</span>
+          <span style={{ color: f.on ? 'var(--color-text)' : 'var(--color-faded)' }}>{f.standing}</span>
         </li>
       ))}
     </ul>

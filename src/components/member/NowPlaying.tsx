@@ -42,10 +42,13 @@ import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
-import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
+import { readSpotifyCapabilityStanding, rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe  } from '@lib/spotifyCapability'
 import { bindMediaSessionHandlers, publishNowPlaying, publishPlaybackState, publishPosition } from '@lib/mediaSession'
 import { getActiveRung, getStreamingToken, getTrackLiked, listDevices, MYBLOG_PLAYBACK_CHANGED, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
+import { whyNoControls } from '@lib/playerCapabilityMatrix'
 import { useDismissable } from '@lib/useDismissable'
+import type { SpotifyScopeGeneration } from './integrations.api'
+import { getIntegrations, spotifyScopeGeneration } from './integrations.api'
 import { readLivePlayback } from './lyrics/playback.api'
 import type { LivePlayback } from './lyrics/playback.api'
 import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
@@ -1019,6 +1022,82 @@ export function ArtistNames({ artists, text }: { artists?: Array<{ id: string, n
  * session, or a 404 following one — see RECONNECT_FLAG). Same slot idiom the
  * Step 4 Connect device hint will use.
  */
+/**
+ * "왜 컨트롤이 없나요?" — Step 7b.
+ *
+ * Replaces the one-shot degrade toast as the *durable* explanation. The toast says
+ * it once, at the moment of failure, and then the bar just looks broken forever;
+ * a member who arrives later never sees any reason at all. This sits quietly in
+ * the same panel-bottom-edge slot as ReconnectLine / the device line, and names
+ * the ONE next action rather than listing capabilities — `whyNoControls` returns
+ * null when nothing is wrong, so the affordance is absent exactly when it should be.
+ */
+function WhyNoControlsLine() {
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+  useDismissable(open, () => setOpen(false), boxRef)
+  const [conn, setConn] = useState<{ connected: boolean, generation: SpotifyScopeGeneration } | null>(null)
+
+  useEffect(() => {
+    let on = true
+    // One read, only when the member actually asks — a bar that is merely
+    // fallback-tier must not cost an integrations fetch on every mount.
+    if (!open || conn)
+      return
+    void getIntegrations().then((list) => {
+      if (!on)
+        return
+      const sp = list.find(i => i.provider === 'spotify') ?? null
+      const connected = sp?.status === 'connected'
+      setConn({ connected, generation: spotifyScopeGeneration(sp?.scope, connected) })
+    }).catch(() => {})
+    return () => {
+      on = false
+    }
+  }, [open, conn])
+
+  const why = conn ? whyNoControls({ ...conn, probe: readSpotifyCapabilityStanding() }) : null
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative' }}>
+      <button
+	type="button"
+	onClick={() => setOpen(o => !o)}
+	aria-expanded={open}
+	className="mono"
+	style={{ width: '100%', textAlign: 'left', borderTop: '1px solid var(--color-border-soft)', borderLeft: 0, borderRight: 0, borderBottom: 0, background: 'transparent', padding: '7px 16px 8px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)', cursor: 'pointer' }}
+      >
+        왜 컨트롤이 없나요?
+      </button>
+      {open && (
+        <div
+	role="status"
+	style={{ position: 'absolute', left: 8, right: 8, bottom: '100%', marginBottom: 4, zIndex: 40, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 7, boxShadow: '0 18px 44px rgba(0,0,0,.32)', padding: '11px 12px' }}
+        >
+          {!conn && <div className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>확인 중…</div>}
+          {conn && !why && (
+            <div className="sans" style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-subtle)' }}>
+              컨트롤을 막는 조건은 없어요. 재생 중인 기기가 없으면 잠시 뒤 다시 보입니다.
+            </div>
+          )}
+          {why && (
+            <>
+              <div className="sans" style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-subtle)' }}>{why.reason}</div>
+              {why.href && (
+                <a className="sans" href={why.href} style={{ display: 'inline-block', marginTop: 8, fontSize: 12, color: 'var(--color-accent)' }}>
+{why.action}
+{' '}
+→
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ReconnectLine() {
   return (
     <div className="mono" style={{ borderTop: '1px solid var(--color-border-soft)', padding: '7px 16px 8px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-accent)' }}>
@@ -1321,6 +1400,7 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment
       </div>
       {moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} onSwitched={() => { void sync() }} />}
       {reconnect && tier === 'fallback' && <ReconnectLine />}
+      {moment && tier === 'fallback' && !reconnect && <WhyNoControlsLine />}
     </div>
   )
 }
@@ -1498,6 +1578,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
       )}
       {live && moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} onSwitched={() => { void sync() }} />}
       {reconnect && tier === 'fallback' && <ReconnectLine />}
+      {live && moment && tier === 'fallback' && !reconnect && <WhyNoControlsLine />}
     </div>
   )
 }
