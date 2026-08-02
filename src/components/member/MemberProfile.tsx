@@ -11,15 +11,18 @@
 // every viewer. PRIVACY: isSelf comes only from the authed response — token
 // presence merely gates the attempt (and avoids apiFetch's login redirect for
 // anonymous visitors); any error/401 leaves the page fully public.
+import type { RatingSortKey } from '@lib/ratingStats'
 import type { MemberNowPlaying, MemberProfile as Profile } from '../album/reviews.api'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isPlaceholderIdentity } from '@lib/member'
+import { RATING_SORTS, sortRatings } from '@lib/ratingStats'
 import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
 import { getMe } from './me.api'
-import { AlbumArt, Cover, SectionTitle, Stars } from './ui'
+import { RatingStats } from './RatingStats'
+import { AlbumArt, Cover, SectionTitle, Seg, Stars } from './ui'
 
 // Bundle guard: the dashboard (and everything it drags in — BucketBoard,
 // OverviewDash, LikedBoard, member.css …) loads only after isSelf is confirmed
@@ -58,6 +61,40 @@ function fmtDate(iso: string): string {
 	if (Number.isNaN(d.getTime()))
 		return ''
 	return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * The 평가한 앨범 empty state (Step 2 — the empty case is a designed surface, not
+ * a fallback string: prod holds zero ratings on the day this ships, so this is
+ * what the screen actually IS for a while).
+ *
+ * Split by who is looking. On your own profile the message has somewhere to send
+ * you — the whole diagnosis behind this RFC is that the owner files albums and
+ * never rates them, so the useful pointer is at the pile itself (My Buckit), and
+ * the useful reassurance is that a star alone is a complete 평가. On someone
+ * else's profile there is nothing to prompt: it is a plain fact about them.
+ */
+function NoRatingsYet({ isSelf }: { isSelf: boolean }) {
+	if (!isSelf) {
+		return (
+			<div className="sans" style={{ fontSize: 'var(--text-base)', color: 'var(--color-subtle)' }}>아직 남긴 평가가 없습니다.</div>
+		)
+	}
+	return (
+		<div style={{ padding: '22px 20px', border: '1px dashed var(--color-border)', borderRadius: 6 }}>
+			<p className="serif" style={{ margin: 0, fontSize: 'var(--text-md)', lineHeight: 'var(--leading-snug)' }}>아직 남긴 평가가 없어요.</p>
+			<p className="sans" style={{ margin: '8px 0 0', fontSize: 'var(--text-base)', color: 'var(--color-subtle)', lineHeight: 'var(--leading-normal)' }}>
+				앨범을 열고 별점만 눌러도 한 개입니다. 한 줄은 쓰고 싶을 때만 쓰면 돼요.
+			</p>
+			<a
+				href="?tab=bucket"
+				className="mono"
+				style={{ display: 'inline-block', marginTop: 14, fontSize: 'var(--text-2xs)', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-accent)', textDecoration: 'none', borderBottom: '1px solid currentColor', paddingBottom: 2 }}
+			>
+				담아둔 앨범부터 보기 →
+			</a>
+		</div>
+	)
 }
 
 function Avatar({ url, name, size = 64 }: { url?: string | null, name: string, size?: number }) {
@@ -187,6 +224,10 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	const avatar = profile?.avatar_url ?? avatarUrl
 	const reviews = profile?.reviews ?? []
 	const activeNavId = dashActive ? tab : RATINGS_TAB
+	// Step 2 — 정렬 (OQ7: 최신 · 별점 · 이름). Client-side: the feed is the whole
+	// history in one response, so sorting it needs no round trip and no index.
+	const [sort, setSort] = useState<RatingSortKey>('recent')
+	const sortedReviews = useMemo(() => sortRatings(reviews, sort), [reviews, sort])
 
 	return (
 		<div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 20px 80px' }}>
@@ -237,15 +278,23 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 				<div style={{ maxWidth: 680 }}>
 					{np && <NowPlayingStrip np={np} />}
 
+					{state === 'ok' && <RatingStats ratings={reviews} />}
+
 					<section style={{ marginTop: 34 }}>
-						<SectionTitle title="평가한 앨범" />
+						<SectionTitle
+							title="평가한 앨범"
+							// The sort control appears only with something to sort — on an
+							// empty history it would be three dead buttons above a message
+							// explaining there is nothing there.
+							right={reviews.length > 1 ? <Seg value={sort} onChange={v => setSort(v as RatingSortKey)} options={[...RATING_SORTS]} /> : undefined}
+						/>
 
 						{state === 'loading' && <div className="meta">불러오는 중…</div>}
 						{state === 'missing' && <div className="sans" style={{ fontSize: 'var(--text-base)', color: 'var(--color-subtle)' }}>존재하지 않는 사용자입니다.</div>}
-						{state === 'ok' && reviews.length === 0 && <div className="sans" style={{ fontSize: 'var(--text-base)', color: 'var(--color-subtle)' }}>아직 남긴 평가가 없습니다.</div>}
+						{state === 'ok' && reviews.length === 0 && <NoRatingsYet isSelf={isSelf} />}
 
 						<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
-							{reviews.map(r => (
+							{sortedReviews.map(r => (
 								<li key={r.id} style={{ display: 'flex', gap: 14 }}>
 									<button
 										type="button"

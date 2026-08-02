@@ -86,13 +86,14 @@ export interface DetailTarget {
 	prepTonight?: boolean
 }
 
-export interface MemberProfile {
-	name: string
-	handle: string
-	joined: string
-	location: string
-	stats: { reviews: number, albums: number, avgRating: number | null }
-}
+/*
+ * `MemberProfile` + `computeStats` used to live here. Both were dead (no
+ * importer) AND wrong-shaped for what the profile actually needs: they folded
+ * MemberReview[] — 평론 posts from the build-time blog collection — while the
+ * profile's statistics are over 평가 rows. Removed in FEAT-album-review-authoring
+ * Step 2, which is where the RFC parked the decision to revive or delete them.
+ * The live version is computeRatingStats in lib/ratingStats.ts.
+ */
 
 /**
  * Identity shown in the profile header. Single-author for now; multi-user
@@ -126,21 +127,6 @@ export function isPlaceholderIdentity(displayName: string | null | undefined, ha
 export const OWNER_HANDLE = 'user-0468fd3c'
 
 export const REVIEW_TYPES: readonly ('전체' | MemberReviewType)[] = ['전체', '앨범 리뷰', '칼럼', '트랙 리뷰']
-
-/**
- * Build profile stats from the (real) review list. Follower/following/list
- *  counts are intentionally absent — social needs the multi-user model.
- */
-export function computeStats(reviews: MemberReview[]): MemberProfile['stats'] {
-	const rated = reviews.filter(r => r.rating != null)
-	const albums = new Set(reviews.filter(r => r.type !== '칼럼').map(r => `${r.album}|${r.artist}`))
-	const avg = rated.length === 0 ? null : rated.reduce((s, r) => s + (r.rating ?? 0), 0) / rated.length
-	return {
-		reviews: reviews.length,
-		albums: albums.size,
-		avgRating: avg == null ? null : Math.round(avg * 10) / 10,
-	}
-}
 
 /* ── sample-backed getters (the swap seam) ──────────────────────────────── */
 export const SAMPLE_NOTICE = '샘플'

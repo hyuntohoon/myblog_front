@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom'
 import { REVIEW_TYPES } from '@lib/member'
 import { archivePost, listDrafts, readErrorDetail } from '../../scripts/write/api'
 import type { PostListItem } from '../../scripts/write/api'
+import { ReviewCandidates } from './ReviewCandidates'
 import { AlbumArt, SectionTitle, Seg, Stars } from './ui'
 
 type TypeFilter = '전체' | MemberReviewType
@@ -256,6 +257,8 @@ export function ReviewsTab({ reviews, onOpen }: { reviews: MemberReview[], onOpe
 
   return (
     <div>
+      {/* Step 2 — the tab reads as one pipeline: 표시해 둔 것 → 쓰는 중 → 발행된 것. */}
+      <ReviewCandidates />
       {drafts.length > 0 && (
         <div style={{ marginBottom: 30 }}>
           <SectionTitle kicker={`${drafts.length}개`} title="작성 중인 초안" />
