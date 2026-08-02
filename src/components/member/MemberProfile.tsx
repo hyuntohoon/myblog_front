@@ -20,6 +20,7 @@ import { artistHref } from '@lib/entityLinks'
 import { isPlaceholderIdentity } from '@lib/member'
 import { RATING_SORTS, sortRatings } from '@lib/ratingStats'
 import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
+import { boardTabHref } from './dashboardLinks'
 import { getMe } from './me.api'
 import { RatingStats } from './RatingStats'
 import { AlbumArt, Cover, SectionTitle, Seg, Stars } from './ui'
@@ -29,8 +30,10 @@ import { AlbumArt, Cover, SectionTitle, Seg, Stars } from './ui'
 // AND a dashboard tab is first visited.
 const SelfDashboard = lazy(() => import('./SelfDashboard'))
 
-// Dashboard tab ids are the authoritative ?tab= deep-link values (same
-// convention as the /buckets → ?tab=bucket link). 평론 hosts the runtime
+// Dashboard tab ids are the authoritative ?tab= deep-link values. Note the
+// convention is /members/?me&tab=<id> (see buckets.astro) — `tab` alone is not
+// an address, because /members/ needs ?u=/?me to know whose profile to mount.
+// Build these hrefs with boardTabHref/dashboardTabHref, never by hand. 평론 hosts the runtime
 // review feed since merge PR2; 'ratings' is the public 평가한 앨범 list every
 // viewer gets.
 const DASH_TABS = [
@@ -87,7 +90,7 @@ function NoRatingsYet({ isSelf }: { isSelf: boolean }) {
 				앨범을 열고 별점만 눌러도 한 개입니다. 한 줄은 쓰고 싶을 때만 쓰면 돼요.
 			</p>
 			<a
-				href="?tab=bucket"
+				href={boardTabHref()}
 				className="mono"
 				style={{ display: 'inline-block', marginTop: 14, fontSize: 'var(--text-2xs)', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-accent)', textDecoration: 'none', borderBottom: '1px solid currentColor', paddingBottom: 2 }}
 			>

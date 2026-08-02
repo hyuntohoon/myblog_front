@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { fetchMyReviewCandidates } from '../album/reviews.api'
+import { boardTabHref } from './dashboardLinks'
 import { AlbumArt, SectionTitle, Stars } from './ui'
 
 function CandidateCard({ c }: { c: ReviewCandidate }) {
@@ -74,7 +75,7 @@ function NoCandidatesYet() {
 				평론으로 쓰고 싶은 앨범에 표시를 남겨 두면 여기 모입니다. 표시는 나만 보이고, 아직 안 들은 앨범에도 찍어둘 수 있어요.
 			</p>
 			<a
-				href="?tab=bucket"
+				href={boardTabHref()}
 				className="mono"
 				style={{ display: 'inline-block', marginTop: 12, fontSize: 'var(--text-2xs)', letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-accent)', textDecoration: 'none', borderBottom: '1px solid currentColor', paddingBottom: 2 }}
 			>

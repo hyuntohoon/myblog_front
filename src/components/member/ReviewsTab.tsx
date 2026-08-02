@@ -18,6 +18,7 @@ import { createPortal } from 'react-dom'
 import { REVIEW_TYPES } from '@lib/member'
 import { archivePost, listDrafts, readErrorDetail } from '../../scripts/write/api'
 import type { PostListItem } from '../../scripts/write/api'
+import { boardTabHref } from './dashboardLinks'
 import { ReviewCandidates } from './ReviewCandidates'
 import { AlbumArt, SectionTitle, Seg, Stars } from './ui'
 
@@ -32,21 +33,12 @@ function fmtDate(iso: string): string {
 // FEAT-bucket-identity Direction B — the dashboard tabs are URL-driven (?tab=<id>,
 // see MemberProfile's selectTab). There is no popstate bridge from a raw URL
 // change back into React state, so the review→bucket reverse link NAVIGATES to
-// ?tab=bucket (MemberProfile then re-reads its initial tab from the param on the
-// next load). Self-only by construction: ReviewsTab only mounts inside the
+// the board tab (MemberProfile then re-reads its initial tab from the param on
+// the next load). Self-only by construction: ReviewsTab only mounts inside the
 // self-dashboard (MemberProfile gates it behind the authed self check), so this
 // never appears on a public /review/{slug} or another member's page.
-function boardTabHref(): string {
-  try {
-    const url = new URL(window.location.href)
-    url.searchParams.set('tab', 'bucket')
-    url.hash = ''
-    return `${url.pathname}${url.search}`
-  }
-  catch {
-    return '?tab=bucket'
-  }
-}
+// The href builder moved to ./dashboardLinks — two later copies of it got the
+// param handling wrong (entrance audit 2026-08-02), so there is now one.
 
 function ReviewCard({ r, onOpen, onDelete, bucketName, hasResearch, boardHref }: { r: MemberReview, onOpen: (t: DetailTarget) => void, onDelete: (r: MemberReview) => void, bucketName?: string, hasResearch: boolean, boardHref: string }) {
   const isColumn = r.type === '칼럼'
