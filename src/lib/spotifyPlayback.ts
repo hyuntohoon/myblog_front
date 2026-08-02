@@ -483,7 +483,19 @@ export type PlayerCommand =
    */
 	{ kind: 'play-uris', uris: string[] } |
 	{ kind: 'next' } |
-	{ kind: 'previous' }
+	{ kind: 'previous' } |
+  // ── Step 6e playback modes ────────────────────────────────────────────────
+  // Same grant as the rest of the transport (`user-modify-playback-state`), so no
+  // re-consent. Unlike play/pause these are DEVICE-DEPENDENT: plenty of real
+  // Connect targets (speakers, TVs, car heads) accept transport but reject volume,
+  // which Spotify answers 403 — the same code as "not Premium". Callers must not
+  // read a volume 403 as a capability loss; see `sendPlaybackMode`.
+	{ kind: 'shuffle', on: boolean } |
+	{ kind: 'repeat', mode: RepeatMode } |
+	{ kind: 'volume', percent: number }
+
+/** `context` repeats the album/playlist, `track` repeats one song. */
+export type RepeatMode = 'off' | 'context' | 'track'
 
 export type PlayerCommandOutcome =
 	| { ok: true } |
@@ -507,7 +519,13 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
     withQ(`${PLAYER_BASE}/seek`, `position_ms=${Math.max(0, Math.round(cmd.positionMs))}`) :
     cmd.kind === 'play-context' || cmd.kind === 'play-uris' ?
       withQ(`${PLAYER_BASE}/play`) :
-      withQ(`${PLAYER_BASE}/${cmd.kind}`)
+      cmd.kind === 'shuffle' ?
+        withQ(`${PLAYER_BASE}/shuffle`, `state=${cmd.on}`) :
+        cmd.kind === 'repeat' ?
+          withQ(`${PLAYER_BASE}/repeat`, `state=${cmd.mode}`) :
+          cmd.kind === 'volume' ?
+            withQ(`${PLAYER_BASE}/volume`, `volume_percent=${Math.min(100, Math.max(0, Math.round(cmd.percent)))}`) :
+            withQ(`${PLAYER_BASE}/${cmd.kind}`)
   const method = cmd.kind === 'next' || cmd.kind === 'previous' ? 'POST' : 'PUT'
   const body = cmd.kind === 'play-context' ?
     JSON.stringify({ context_uri: cmd.contextUri, offset: { uri: cmd.offsetUri } }) :
@@ -545,6 +563,107 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
     return { ok: false, reason: 'transient' }
   }
   return { ok: false, reason: 'transient' }
+}
+
+// ── 6e playback modes ────────────────────────────────────────────────────────
+
+export type PlaybackModeOutcome =
+	| { ok: true } |
+	/** The command is fine; THIS device just does not support it (e.g. volume). */
+	{ ok: false, reason: 'unsupported-on-device' } |
+	{ ok: false, reason: 'no-capability' | 'no-active-device' | 'token' | 'transient' }
+
+/**
+ * Shuffle / repeat / volume.
+ *
+ * A thin wrapper over `sendPlayerCommand` that exists for one reason: **a 403 here
+ * does not mean what a 403 on play/pause means.** Many real Connect targets accept
+ * transport but reject volume (speakers with fixed output, TVs, car heads), and
+ * Spotify answers that with the same 403 it uses for "not Premium". Routing it
+ * through the shared 403-probe would degrade the whole session's tier over a
+ * device quirk — hiding play/pause because a speaker has no volume API.
+ *
+ * So volume 403 is reported as `unsupported-on-device` and callers must NOT feed it
+ * to `rememberSpotifyTransportProbe`. Shuffle/repeat keep the normal reading, since
+ * those are Premium features rather than device features.
+ */
+export async function sendPlaybackMode(cmd: Extract<PlayerCommand, { kind: 'shuffle' | 'repeat' | 'volume' }>): Promise<PlaybackModeOutcome> {
+  const r = await sendPlayerCommand(cmd)
+  if (r.ok)
+    return { ok: true }
+  if (r.reason === 'token')
+    return { ok: false, reason: 'token' }
+  if (r.reason === 'no-capability') {
+    if (cmd.kind === 'volume')
+      return { ok: false, reason: 'unsupported-on-device' }
+    return { ok: false, reason: 'no-capability' }
+  }
+  return { ok: false, reason: 'transient' }
+}
+
+// ── 6c queue ─────────────────────────────────────────────────────────────────
+
+export type QueueOutcome =
+	| { ok: true } |
+	{ ok: false, reason: 'no-active-device' | 'no-capability' | 'unresolvable' | 'token' | 'transient', message: string }
+
+/**
+ * Append one TRACK to the active device's queue ("다음에 듣기").
+ *
+ * **Tracks only, and that is an API constraint, not a design choice.** The RFC filed
+ * 6c as riding "the same surfaces as 6b", but every 6b surface is album-level and
+ * `POST /me/player/queue` documents its uri as *"Must be a track or an episode uri"*
+ * — an album would have to be fanned out into one request per track, which is
+ * unbounded work behind a single tap. So this takes a track and the album surfaces
+ * keep 재생 only.
+ *
+ * No ladder here either: queueing onto a device that is not playing is meaningless,
+ * so a 404 stays a 404 and the caller says "start playing first" rather than silently
+ * raising an in-page device to hold a queue nobody is listening to.
+ */
+export async function queueTrack(target: { trackId: string, title?: string }): Promise<QueueOutcome> {
+  if (!isLoggedIn())
+    return { ok: false, reason: 'token', message: messageFor('unauthorized') }
+
+  const first = await getStreamingToken()
+  if (!first.ok)
+    return { ok: false, reason: 'token', message: messageFor(first.status) }
+
+  let uri: string
+  try {
+    uri = await resolveProviderUri({ kind: 'track', trackId: target.trackId })
+  }
+  catch {
+    return { ok: false, reason: 'unresolvable', message: '이 트랙은 Spotify에서 재생할 수 없어요.' }
+  }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = attempt === 0 ? first : await getStreamingToken()
+    if (!tok.ok)
+      return { ok: false, reason: 'token', message: messageFor(tok.status) }
+    let res: Response
+    try {
+      res = await fetch(`${PLAYER_BASE}/queue?uri=${encodeURIComponent(uri)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok.token}` },
+      })
+    }
+    catch {
+      return { ok: false, reason: 'transient', message: messageFor('error') }
+    }
+    if (res.ok)
+      return { ok: true }
+    if (res.status === 401 && attempt === 0) {
+      cachedToken = null
+      continue
+    }
+    if (res.status === 404)
+      return { ok: false, reason: 'no-active-device', message: '재생 중일 때만 대기열에 넣을 수 있어요. 먼저 재생을 시작해 주세요.' }
+    if (res.status === 403)
+      return { ok: false, reason: 'no-capability', message: '대기열은 Spotify Premium 계정에서 사용할 수 있어요.' }
+    return { ok: false, reason: 'transient', message: messageFor('error') }
+  }
+  return { ok: false, reason: 'transient', message: messageFor('error') }
 }
 
 // ── device picker (member-player Step 5, pulled out of the 6e bundle) ────────

@@ -1,5 +1,5 @@
 import type { components } from '../lib/api.gen'
-import { play } from '../lib/spotifyPlayback'
+import { play, queueTrack } from '../lib/spotifyPlayback'
 
 type AlbumDetail = components['schemas']['Music_AlbumDetail']
 type Track = components['schemas']['Music_TrackOut']
@@ -57,6 +57,12 @@ function buildTracklistHtml(tracks: Track[]): string {
       const playBtn = id ?
         `<button type="button" class="lfq-tt-play" data-track-id="${escapeHtml(id)}" data-track-title="${title}" aria-label="${title || '트랙'} 재생" title="재생 (Spotify Premium)">▶</button>` :
         '<span></span>'
+      // FEAT-member-player Step 6c — per-track "다음에 듣기". This is the ONLY place
+      // 6c can live: the RFC filed it as riding 6b's surfaces, but those are all
+      // album-level and `POST /me/player/queue` takes a track or episode uri only.
+      const queueBtn = id ?
+        `<button type="button" class="lfq-tt-queue" data-queue-track-id="${escapeHtml(id)}" data-queue-track-title="${title}" aria-label="${title || '트랙'} 다음에 듣기" title="다음에 듣기">＋▶</button>` :
+        '<span></span>'
       // FEAT-pocket-buckit Step 6 — per-track "담기" (track-as-bucket-member). Adds
       // item_type='track' via the ReviewTrackAdder island (event bridge below).
       const addBtn = id ?
@@ -68,6 +74,7 @@ function buildTracklistHtml(tracks: Track[]): string {
           <span class="lfq-tt-title">${title}${featNames(t.feat_artist_names)}${isPick ? ' <span class="lfq-tt-star" aria-label="추천 트랙">★</span>' : ''}</span>
           <span class="lfq-tt-dur">${dur}</span>
           ${playBtn}
+          ${queueBtn}
           ${addBtn}
         </li>
       `
@@ -119,6 +126,20 @@ function onRootClick(e: Event): void {
     const trackId = playBtn.dataset.trackId
     if (trackId)
       void play({ kind: 'track', trackId, title: playBtn.dataset.trackTitle }).then(o => showPlayNote(o.message))
+    return
+  }
+  // FEAT-member-player Step 6c — 다음에 듣기. Deliberately NOT laddered like play():
+  // queueing onto a device that is not playing is meaningless, so a 404 stays a 404
+  // and says "start playing first" instead of raising an in-page device to hold a
+  // queue nobody is listening to.
+  const queueBtn = target?.closest<HTMLButtonElement>('.lfq-tt-queue')
+  if (queueBtn) {
+    const trackId = queueBtn.dataset.queueTrackId
+    if (trackId) {
+      const label = queueBtn.dataset.queueTrackTitle
+      void queueTrack({ trackId, title: label }).then(o =>
+        showPlayNote(o.ok ? `대기열에 넣었어요${label ? ` — ${label}` : ''}` : o.message))
+    }
     return
   }
   // FEAT-pocket-buckit Step 6 — per-track "담기" → hand off to the ReviewTrackAdder

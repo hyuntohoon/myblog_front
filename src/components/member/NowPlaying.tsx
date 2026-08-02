@@ -36,7 +36,7 @@
 // ids via @lib/spotifyCatalog — album links light up post-resolve, artist names
 // become links only when resolvable (never a dead click).
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { PlaybackDevice, PlayerCommandOutcome  } from '@lib/spotifyPlayback'
+import type { PlaybackDevice, PlayerCommandOutcome, RepeatMode } from '@lib/spotifyPlayback'
 import { useEffect, useRef, useState } from 'react'
 import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
 import { openAlbum } from '@lib/entityEvents'
@@ -44,7 +44,7 @@ import { artistHref } from '@lib/entityLinks'
 import { resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
 import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { bindMediaSessionHandlers, publishNowPlaying, publishPlaybackState, publishPosition } from '@lib/mediaSession'
-import { getActiveRung, getStreamingToken, getTrackLiked, listDevices, MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
+import { getActiveRung, getStreamingToken, getTrackLiked, listDevices, MYBLOG_PLAYBACK_CHANGED, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { readLivePlayback } from './lyrics/playback.api'
 import type { LivePlayback } from './lyrics/playback.api'
@@ -75,6 +75,14 @@ interface LiveMoment {
   albumSpotifyId: string | null
   /** Active Connect device name (Step 4 'playing elsewhere' hint), if known. */
   deviceName: string | null
+  /**
+   * Playback modes (Step 6e), riding the same one-shot body as `deviceName` —
+   * no extra request, so D28 holds by construction. `volumePercent` null means
+   * the device exposes no volume API, which is not the same as muted.
+   */
+  shuffle: boolean | null
+  repeat: RepeatMode | null
+  volumePercent: number | null
 }
 
 /**
@@ -302,6 +310,9 @@ function useNowPlaying() {
         artists: r.artists,
         albumSpotifyId: r.albumSpotifyId,
         deviceName: r.deviceName,
+        shuffle: r.shuffle,
+        repeat: r.repeat,
+        volumePercent: r.volumePercent,
       })
       loadLikedState(r.trackId)
       setPaused(false)
@@ -450,6 +461,52 @@ function useNowPlaying() {
     }
   }
 
+  /**
+   * Shuffle / repeat / volume (Step 6e). Optimistic like the transport, with one
+   * rule the other controls do not need: **a volume failure must not degrade the
+   * tier.** Plenty of real Connect targets accept transport and reject volume, and
+   * Spotify answers that with the same 403 it uses for "not Premium" — routing it
+   * through `rememberSpotifyTransportProbe` would hide play/pause because a speaker
+   * has no volume API. `sendPlaybackMode` separates the two; this just honors it.
+   */
+  const setMode = async (cmd: { kind: 'shuffle', on: boolean } | { kind: 'repeat', mode: RepeatMode } | { kind: 'volume', percent: number }) => {
+    if (controlBusyRef.current)
+      return
+    controlBusyRef.current = true
+    // Optimistic: the modes have no confirmation read of their own — the next
+    // one-shot (↻, a seek confirm, a track change) reconciles them for free.
+    setMoment((m) => {
+      if (!m)
+        return m
+      if (cmd.kind === 'shuffle')
+        return { ...m, shuffle: cmd.on }
+      if (cmd.kind === 'repeat')
+        return { ...m, repeat: cmd.mode }
+      return { ...m, volumePercent: cmd.percent }
+    })
+    try {
+      const r = await sendPlaybackMode(cmd)
+      if (!onRef.current || r.ok)
+        return
+      if (r.reason === 'unsupported-on-device') {
+        flashNote('이 기기는 볼륨 조절을 지원하지 않아요')
+        // Roll the slider back — leaving it moved would claim a change that never happened.
+        setMoment(m => (m ? { ...m, volumePercent: null } : m))
+        return
+      }
+      if (r.reason === 'no-capability') {
+        rememberSpotifyTransportProbe('no-capability')
+        setTier('fallback')
+        return
+      }
+      flashNote('설정을 바꾸지 못했어요. 잠시 후 다시 시도해 주세요')
+      void sync()
+    }
+    finally {
+      controlBusyRef.current = false
+    }
+  }
+
   const toggleLiked = async () => {
     const trackId = moment?.trackId
     if (!trackId || libraryBusyRef.current || (likedState !== 'liked' && likedState !== 'unliked'))
@@ -580,7 +637,7 @@ function useNowPlaying() {
       publishPosition(moment.durationMs, estimateMs(moment.anchor))
   }, [np, moment, paused])
 
-  return { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }
+  return { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode }
 }
 
 /**
@@ -629,6 +686,7 @@ interface NpShared {
   seek: (ms: number) => Promise<void>
   skip: (kind: 'next' | 'previous') => Promise<void>
   toggleLiked: () => Promise<void>
+  setMode: (cmd: { kind: 'shuffle', on: boolean } | { kind: 'repeat', mode: RepeatMode } | { kind: 'volume', percent: number }) => Promise<void>
 }
 
 /* ── transport (member-player Step 3, direction A "hairline LCD") ──────────── */
@@ -683,6 +741,117 @@ function SkipBtn({ kind, onClick, size }: { kind: 'next' | 'previous', onClick: 
   )
 }
 
+/**
+ * Shuffle / repeat / volume (Step 6e).
+ *
+ * Grouped and rendered LAST in the control row on purpose: the miniaturization
+ * drop order in the design references puts these first to go, so they sit where
+ * they can be dropped without disturbing anything to their left. Full tier only,
+ * and each control hides itself when the live read says the device does not expose
+ * it — a rendered control that cannot work is worse than an absent one.
+ */
+function ShuffleGlyph() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <path d="M1 3.5h2.6l6.8 7h2.6M1 10.5h2.6l6.8-7h2.6" />
+      <path d="M11.2 1.6 13 3.5l-1.8 1.9M11.2 8.6 13 10.5l-1.8 1.9" />
+    </svg>
+  )
+}
+
+/**
+ * `one` = repeat-one; the centre dot is the standard mark for it.
+ *
+ * Drawn as a closed rounded loop rather than two arrowed lines: the first attempt
+ * used the same two-parallel-arrows shape as shuffle, and at 13px in the bar the
+ * pair was genuinely confusable. A loop and a crossing read as different things
+ * even at a glance.
+ */
+function RepeatGlyph({ one }: { one: boolean }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <path d="M4.6 3h4.8a2.4 2.4 0 0 1 2.4 2.4v3.2a2.4 2.4 0 0 1-2.4 2.4H4.6a2.4 2.4 0 0 1-2.4-2.4V5.4A2.4 2.4 0 0 1 4.6 3Z" />
+      <path d="M6.2 1.4 4.4 3l1.8 1.6" strokeLinecap="round" strokeLinejoin="round" />
+      {one && <circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none" />}
+    </svg>
+  )
+}
+
+function ModeControls({ shuffle, repeat, volumePercent, onSet, micro }: {
+  shuffle: boolean | null
+  repeat: RepeatMode | null
+  volumePercent: number | null
+  onSet: (cmd: { kind: 'shuffle', on: boolean } | { kind: 'repeat', mode: RepeatMode } | { kind: 'volume', percent: number }) => Promise<void>
+  micro: boolean
+}) {
+  const narrow = useNarrow()
+  // The design references put shuffle/repeat/volume FIRST in the miniaturization
+  // drop order, and the 390 pass proved why: squeezing them in clipped the total-
+  // duration label off the right edge. So on a narrow viewport they drop entirely
+  // rather than compete with the transport for width.
+  if (narrow)
+    return null
+  const size = micro ? 22 : 26
+  // off → context → track → off. One button cycling three states beats three
+  // buttons for a control this peripheral.
+  const nextRepeat: RepeatMode = repeat === 'off' ? 'context' : repeat === 'context' ? 'track' : 'off'
+  const repeatLabel = repeat === 'track' ? '한 곡 반복' : repeat === 'context' ? '전체 반복' : '반복 없음'
+  const btn = (on: boolean): React.CSSProperties => ({
+    width: size,
+    height: size,
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: size,
+    border: '1px solid transparent',
+    background: 'transparent',
+    color: on ? 'var(--color-accent)' : 'var(--color-faded)',
+    fontSize: micro ? 10 : 11,
+    lineHeight: 1,
+    cursor: 'pointer',
+    padding: 0,
+  })
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, flex: '0 0 auto' }}>
+      {shuffle != null && (
+        <button
+	type="button"
+	onClick={() => { void onSet({ kind: 'shuffle', on: !shuffle }) }}
+	aria-pressed={shuffle}
+	aria-label={shuffle ? '셔플 끄기' : '셔플 켜기'}
+	title={shuffle ? '셔플 켜짐' : '셔플 꺼짐'}
+	style={btn(shuffle)}
+        >
+          <ShuffleGlyph />
+        </button>
+      )}
+      {repeat != null && (
+        <button
+	type="button"
+	onClick={() => { void onSet({ kind: 'repeat', mode: nextRepeat }) }}
+	aria-label={`반복 — 지금 ${repeatLabel}`}
+	title={repeatLabel}
+	style={btn(repeat !== 'off')}
+        >
+          <RepeatGlyph one={repeat === 'track'} />
+        </button>
+      )}
+      {volumePercent != null && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 2 }}>
+          <input
+	type="range"
+	min={0}
+	max={100}
+	value={volumePercent}
+	aria-label="볼륨"
+	onChange={(e) => { void onSet({ kind: 'volume', percent: Number(e.target.value) }) }}
+	style={{ width: micro ? 46 : 62, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+          />
+        </span>
+      )}
+    </span>
+  )
+}
+
 function LikeBtn({ state, onClick, size }: { state: LikedState, onClick: () => void, size: number }) {
   const available = state === 'liked' || state === 'unliked'
   const liked = state === 'liked'
@@ -715,7 +884,7 @@ function LikeBtn({ state, onClick, size }: { state: LikedState, onClick: () => v
  * Full tier: button + click/keyboard seek + accent knob. Fallback tier:
  * display-only — controls hidden (not disabled, D1), the estimate still ticks.
  */
-function Transport({ moment, paused, tier, playPause, seek, note, micro = false, showButton = true, showExtendedControls = false, likedState = 'unknown', skip, toggleLiked }: {
+function Transport({ moment, paused, tier, playPause, seek, note, micro = false, showButton = true, showExtendedControls = false, likedState = 'unknown', skip, toggleLiked, setMode }: {
   moment: LiveMoment
   paused: boolean
   tier: Tier
@@ -728,6 +897,7 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
   likedState?: LikedState
   skip?: (kind: 'next' | 'previous') => Promise<void>
   toggleLiked?: () => Promise<void>
+  setMode?: (cmd: { kind: 'shuffle', on: boolean } | { kind: 'repeat', mode: RepeatMode } | { kind: 'volume', percent: number }) => Promise<void>
 }) {
   const est = useClockEstimate(moment.anchor, !paused, moment.durationMs)
   const barRef = useRef<HTMLDivElement>(null)
@@ -757,6 +927,9 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
               {full && showButton && <PlayPauseBtn paused={paused} onClick={() => { void playPause() }} size={micro ? 24 : 30} />}
               {full && showExtendedControls && skip && <SkipBtn kind="next" onClick={() => { void skip('next') }} size={micro ? 22 : 26} />}
               {showExtendedControls && toggleLiked && <LikeBtn state={likedState} onClick={() => { void toggleLiked() }} size={micro ? 23 : 27} />}
+              {full && showExtendedControls && setMode && (
+                <ModeControls shuffle={moment.shuffle} repeat={moment.repeat} volumePercent={moment.volumePercent} onSet={setMode} micro={micro} />
+              )}
             </span>
           ) :
 null}
@@ -1111,7 +1284,7 @@ function IdleBox({ compact = false, iso, latest, onSync, syncing, reconnect = fa
 
 /* ── full variant ──────────────────────────────────────────────────────────── */
 
-function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }: NpShared) {
+function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode }: NpShared) {
   const narrow = useNarrow()
   const onSync = () => {
     void sync()
@@ -1141,7 +1314,7 @@ function NowPlayingFull({ np, state, sync, syncing, latest, onOpenLyrics, moment
           </div>
           {moment && (
             <div style={{ marginTop: narrow ? 10 : 12 }}>
-              <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} />
+              <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} setMode={setMode} />
             </div>
           )}
         </div>
@@ -1222,7 +1395,7 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics, moment
 
 /* ── banner variant (overview default) ───────────────────────────────────────── */
 
-function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }: NpShared) {
+function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode }: NpShared) {
   const narrow = useNarrow()
   const onSync = () => {
     void sync()
@@ -1295,7 +1468,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
                       seek surface shrinks to ~60px, too small a touch target. */}
                   {moment && !narrow && (
                     <div style={{ marginBottom: 6 }}>
-                      <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} />
+                      <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} setMode={setMode} />
                     </div>
                   )}
                 </>
@@ -1320,7 +1493,7 @@ function NowPlayingBanner({ np, state, sync, syncing, latest, onOpenLyrics, mome
       </div>
       {live && moment && narrow && (
         <div style={{ padding: '0 16px 14px' }}>
-          <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} />
+          <Transport moment={moment} paused={paused} tier={tier} playPause={playPause} seek={seek} note={note} showExtendedControls likedState={likedState} skip={skip} toggleLiked={toggleLiked} setMode={setMode} />
         </div>
       )}
       {live && moment?.deviceName != null && <DeviceHintLine name={moment.deviceName} onSwitched={() => { void sync() }} />}
@@ -1334,9 +1507,9 @@ export function NowPlaying({ variant, onOpenLyrics }: { variant: NpStyle, onOpen
   // remounts the variant component but must NOT re-fire the snapshot GET +
   // one-shot live Spotify read (they used to run per variant mount) — and the
   // capability tier / pause freeze / transport anchor survive the toggle too.
-  const { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked } = useNowPlaying()
+  const { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode } = useNowPlaying()
   const latest = useLatestPlayed(state === 'ready' && !liveSnapshot(np))
-  const shared: NpShared = { np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked }
+  const shared: NpShared = { np, state, sync, syncing, latest, onOpenLyrics, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode }
   if (variant === 'list')
     return <NowPlayingList {...shared} />
   if (variant === 'banner')
