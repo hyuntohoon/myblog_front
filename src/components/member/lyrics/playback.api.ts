@@ -82,8 +82,11 @@ export type LivePlayback =
 	 * position: collapsing it into `idle` threw the position away, so the only
 	 * way to freeze was to guess from an already-ageing estimate.
 	 *
-	 * Callers that only ask "is something playing?" must treat this exactly as
-	 * they treat `idle` — it carries no new obligation, only new information.
+	 * Callers that only ask "is something playing?" may still treat this exactly
+	 * as they treat `idle` — `LyricsEntry` does. Callers that RENDER a held track
+	 * must not: `NowPlaying.applyLive` folded it into `idle` until OQ4
+	 * (2026-08-03) made ⏸ on another surface deliverable here, at which point the
+	 * fold started clearing the card in response to its own pause.
 	 */
 	({ state: 'paused' } & LivePlaybackTrack) |
 	{ state: 'idle' } |

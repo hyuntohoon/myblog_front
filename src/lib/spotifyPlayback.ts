@@ -532,7 +532,17 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
     cmd.kind === 'play-uris' ?
       JSON.stringify({ uris: cmd.uris }) :
       undefined
-  // Do not dispatch MYBLOG_PLAYBACK_CHANGED for these new kinds; RFC OQ4 remains open.
+  // OQ4 ANSWERED 2026-08-03 (owner, FEAT-lyrics-viewer-playback): a successful
+  // transport command dispatches MYBLOG_PLAYBACK_CHANGED, so a command issued on
+  // one surface reaches the others. Until now only `sendConnectPlay` dispatched —
+  // which is why FEAT-lyrics-sync-precision's `'command'` residual series had
+  // never observed a transport command at all, only "an album was started".
+  //
+  // Modes are deliberately EXCLUDED. The event means "the playhead or the track
+  // moved"; shuffle/repeat/volume move neither, NowPlaying already reconciles them
+  // optimistically off the next one-shot, and the lyrics viewer — which has no
+  // volume control — would pay one wasted read per slider move.
+  const notifies = cmd.kind !== 'shuffle' && cmd.kind !== 'repeat' && cmd.kind !== 'volume'
   // Up to two attempts: a 401 mid-session means the minted token aged out
   // server-side despite the 5s cache skew — drop the cache and re-mint once.
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -552,8 +562,11 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
     catch {
       return { ok: false, reason: 'transient' }
     }
-    if (res.ok)
+    if (res.ok) {
+      if (notifies)
+        notifyPlaybackChanged()
       return { ok: true }
+    }
     if (res.status === 401 && attempt === 0) {
       cachedToken = null
       continue

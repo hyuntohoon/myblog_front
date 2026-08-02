@@ -172,6 +172,15 @@ const JUMP_CONFIRM_TRIES = 4
 const JUMP_CONFIRM_GAP_MS = 500
 
 /**
+ * How long a ⏸/▶ keeps the right to drop a read that disagrees with it
+ * (`awaitingPlayState`, OQ4). Same budget the jump/skip confirmation spends
+ * (`JUMP_CONFIRM_TRIES * JUMP_CONFIRM_GAP_MS`), because the thing being waited
+ * on — Spotify Connect applying a transport command — is the same. It is a
+ * ceiling, not a wait: the guard clears the moment a read agrees.
+ */
+const PLAY_STATE_GUARD_MS = JUMP_CONFIRM_TRIES * JUMP_CONFIRM_GAP_MS
+
+/**
  * What triggered a re-anchor (FEAT-lyrics-sync-precision Step 2). Recorded with
  * the residual so the accuracy series can be read per trigger — a `visibility`
  * residual means something happened off-tab, a `command` residual is our own
@@ -416,6 +425,21 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // said the old track took `refresh`'s SAME-track branch, re-anchored to the
   // track being left, and nothing ever asked again.
   const awaitingChangeFrom = useRef<string | null>(null)
+  // The third member of the same family, added with OQ4 (2026-08-03). ⏸/▶ never
+  // needed one while nothing read back after them; now `sendPlayerCommand`
+  // dispatches MYBLOG_PLAYBACK_CHANGED, so the listener below issues a read into
+  // exactly the same propagation lag the other two guard against — and a read
+  // that still says `playing` after a ⏸ would overwrite the optimistic `playing`
+  // write that Step 1 established as the ONLY mechanism, leaving the scheduler
+  // advancing lines over silence.
+  //
+  // Unlike its twins this one has no confirmation loop, deliberately: the
+  // optimistic write is already the right answer, so a disagreeing read is just
+  // dropped and the next event/visibility read reconciles. All that is lost is
+  // one residual sample, and that channel is best-effort by construction.
+  // It expires so a guard that never sees agreement (the member paused from the
+  // Spotify app mid-flight) cannot suppress reads for the rest of the session.
+  const awaitingPlayState = useRef<{ playing: boolean, untilMs: number } | null>(null)
   // Bumped by 다시 시도 — the read is keyed on it so a retry is a re-run of the
   // same effect rather than a second, separately-cancelled fetch path.
   const [queueSeq, setQueueSeq] = useState(0)
@@ -490,14 +514,26 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
    * Nothing consumes it yet; the RFC deliberately dropped live staleness
    * correction so that acting on this later needs data, not a rewrite. A large
    * value after a pause is not an error, it is the pause being measured.
+   *
+   * `readState` (OQ4) is what the read itself said, not our `playing` flag. The
+   * two differ exactly when a sample is confounded: `estimateMs` ages an anchor
+   * by wall time with no notion of pause, so a residual measured against a held
+   * player carries the elapsed round-trip inside it. Recording the state the
+   * sample was taken in is what lets a later consumer separate "our clock drifted"
+   * from "the player was not running" — without it the `'command'` series OQ4 just
+   * opened would arrive already unreadable.
+   *
+   * Only same-track reads reach here, and that is correct rather than a gap: a
+   * residual is predicted-minus-actual position, and a track change destroys the
+   * prediction. ⏭/⏮ have nothing to measure, not a lost measurement.
    */
-  const logResidual = (source: ResyncSource, progressMs: number | null, readAtMs: number) => {
+  const logResidual = (source: ResyncSource, progressMs: number | null, readAtMs: number, readState: 'playing' | 'paused') => {
     const a = anchor.current
     if (!a || progressMs == null)
       return
     const predicted = estimateMs(a, readAtMs) + leadMs
     // eslint-disable-next-line no-console -- the measurement channel; prod Lambda-side logging does not apply to the browser
-    console.debug('[lyrics-sync] residual', { source, residualMs: Math.round(predicted - progressMs), predictedMs: Math.round(predicted), actualMs: progressMs, playing })
+    console.debug('[lyrics-sync] residual', { source, residualMs: Math.round(predicted - progressMs), predictedMs: Math.round(predicted), actualMs: progressMs, playing, readState })
   }
 
   // Follow/suspend (FEAT-lyrics-viewer-controls Step 1): trackable rows follow
@@ -666,6 +702,18 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         // re-anchor to the track being left and end the correction there.
         if (awaitingChangeFrom.current !== null && r.trackId === awaitingChangeFrom.current)
           return
+        // Third of the same shape (OQ4): still reporting the state we just
+        // commanded away from means the ⏸/▶ has not propagated. Drop the read
+        // rather than write it back over the optimistic state.
+        const wantState = awaitingPlayState.current
+        if (wantState) {
+          if (performance.now() > wantState.untilMs)
+            awaitingPlayState.current = null
+          else if ((r.state === 'playing') !== wantState.playing)
+            return
+          else
+            awaitingPlayState.current = null
+        }
         awaitingTrack.current = null
         awaitingChangeFrom.current = null
         setNotice(null)
@@ -688,7 +736,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           // A paused read re-anchors too: the anchor then holds the REAL held
           // position, so the frozen line is exact rather than guessed, and a
           // later resume resumes from truth.
-          logResidual(source, r.progressMs, r.readAtMs)
+          logResidual(source, r.progressMs, r.readAtMs, r.state)
           applyAnchor(r.progressMs, r.readAtMs)
         }
       }
@@ -783,16 +831,22 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       // Resume: restart the wall clock from the frozen position.
       setAnchor({ ms: a.ms, wallMs: performance.now() })
     }
-    if (cmd.kind === 'play' || cmd.kind === 'pause')
+    if (cmd.kind === 'play' || cmd.kind === 'pause') {
       setPlaying(cmd.kind === 'play')
+      // Armed BEFORE the request, not after it resolves: `sendPlayerCommand`
+      // dispatches MYBLOG_PLAYBACK_CHANGED synchronously on success (OQ4), so the
+      // listener's read is already in flight by the time we are handed `r`.
+      awaitingPlayState.current = { playing: cmd.kind === 'play', untilMs: performance.now() + PLAY_STATE_GUARD_MS }
+    }
     try {
       const r = await sendPlayerCommand(cmd)
       if (r.ok) {
         setNotice(null)
         // A skip changes WHICH track is playing, so the viewer needs an
-        // identity read to swap the lyrics. Nothing else will do it:
-        // `sendPlayerCommand` does not dispatch MYBLOG_PLAYBACK_CHANGED (only
-        // `sendConnectPlay` does), so the listener above never sees a skip.
+        // identity read to swap the lyrics. Since OQ4 the listener above does
+        // also see the skip, but it cannot be the mechanism: it is behind
+        // EVENT_RESYNC_FLOOR_MS, so a ⏭⏭ has its second read swallowed, and it
+        // reads exactly once where a skip needs a confirmation loop.
         //
         // This was ONE read until 2026-08-02, and one read is a race the skip
         // usually loses: Spotify answers `GET /me/player` with the pre-skip
@@ -804,9 +858,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           void confirmSkip(trackId)
         return
       }
-      // Failed: put the optimistic state back before reporting.
+      // Failed: put the optimistic state back before reporting. No event was
+      // dispatched (only a successful command dispatches), so the guard has
+      // nothing left to protect and must not outlive the command.
       if (cmd.kind === 'play' || cmd.kind === 'pause') {
         setPlaying(wasPlaying)
+        awaitingPlayState.current = null
         if (a)
           setAnchor(a)
       }
@@ -932,15 +989,19 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       lastAtMs = now
       void refreshRef.current(source)
     }
-    // CORRECTED 2026-08-01 (FEAT-lyrics-viewer-playback Step 1, verified in a
-    // browser): this comment used to claim "every successful transport command
-    // dispatches this". It does not. `sendPlayerCommand` never dispatches —
-    // only `sendConnectPlay` does (@lib/spotifyPlayback), i.e. starting an
-    // album/track from a card. So this listener fires for "playback started
-    // elsewhere on the page", NOT for ⏯⏭⏮.
+    // History worth keeping, because the comment here was wrong twice in the
+    // opposite direction. It originally claimed every transport command
+    // dispatched this; a browser check on 2026-08-01 disproved that (only
+    // `sendConnectPlay` did), and the bar was built to write `playing` itself
+    // and run its own post-skip confirmation instead of leaning on this path.
+    // OQ4 (2026-08-03) then made the claim true on purpose.
     //
-    // That is why the transport bar below writes `playing` itself and asks for
-    // its own identity read after a skip, rather than leaning on this path.
+    // Neither of those mechanisms moved as a result, and that is the point: this
+    // path is rate-limited (EVENT_RESYNC_FLOOR_MS) and reads once, so it can
+    // MEASURE a command but must never be what a command depends on. What it
+    // gains now is the ⏸/▶ of *other* surfaces — the NowPlaying card, a headset —
+    // and, for our own ⏯, the same-track read that finally puts a transport
+    // command into the `'command'` residual series.
     const onCommand = () => resync('command')
     // Leaving the tab to operate Spotify elsewhere is precisely the case where
     // "playback kept running" stops being true, and it was assumed until now.

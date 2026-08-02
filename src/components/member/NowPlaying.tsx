@@ -11,8 +11,8 @@
 // degrades the session to the **fallback tier** (controls hidden — not
 // disabled — the estimated bar keeps moving). Pause freezes the clock anchor
 // client-side (no extra read); seek re-anchors optimistically, then confirms
-// with ONE one-shot read (OQ2) — skipped while paused, since a paused player
-// reads as `idle` in the one-shot contract. D28 holds: never polled; the
+// with ONE one-shot read (OQ2) — skipped while paused, where the optimistic
+// anchor is already exact. D28 holds: never polled; the
 // estimate is wall-clock math off the last explicit read. Step 4 adds the
 // Connect-style "Listening on <device>" bottom-edge hint (full/banner) from
 // the same one-shot body — see DeviceHintLine.
@@ -241,9 +241,11 @@ function useNowPlaying() {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [syncing, setSyncing] = useState(false)
   const [moment, setMoment] = useState<LiveMoment | null>(null)
-  // Client-side pause: freezes the clock anchor without a follow-up read (a
-  // paused player reads as `idle` in the one-shot contract, so re-reading
-  // would collapse the card).
+  // Client-side pause: freezes the clock anchor without a follow-up read. The
+  // old reason — "a paused read collapses the card" — stopped being true in two
+  // steps (FEAT-lyrics-sync-precision Step 2 split `paused` out of `idle`; OQ4
+  // taught `applyLive` to render it), but the behaviour stands on its own: the
+  // frozen anchor IS the held position, so a read would confirm what we know.
   const [paused, setPaused] = useState(false)
   const [tier, setTier] = useState<Tier>('fallback')
   const [likedState, setLikedState] = useState<LikedState>('unknown')
@@ -296,7 +298,21 @@ function useNowPlaying() {
     if (r.state === 'unavailable')
       return
     liveWonRef.current = true
-    if (r.state === 'playing') {
+    if (r.state === 'playing' || r.state === 'paused') {
+      // `paused` joins `playing` here as of OQ4 (2026-08-03). It used to fall to
+      // the idle branch below, which cleared `moment` and reset `paused` — fine
+      // while nothing could deliver a paused read mid-session, but OQ4 makes
+      // every transport command dispatch MYBLOG_PLAYBACK_CHANGED, so a ⏸ pressed
+      // in the lyrics viewer or on a headset now lands one here. Through the old
+      // branch that read would have wiped the progress bar, duration, device and
+      // mode controls and flipped the button back to ▶ — the card collapsing in
+      // response to its own pause.
+      //
+      // `is_playing: true` for a held track is deliberate and not new: it means
+      // "a track is current", and `paused` is the separate flag the render reads
+      // (Equalizer, PlayPauseBtn, useClockEstimate). This is exactly the state
+      // `playPause`'s optimistic path already produces for a pause.
+      //
       // The live chain carries Spotify ids only; album_id lights up below once
       // the catalog resolve lands (ui-unify playback plumb).
       setNp({
@@ -319,7 +335,7 @@ function useNowPlaying() {
         volumePercent: r.volumePercent,
       })
       loadLikedState(r.trackId)
-      setPaused(false)
+      setPaused(r.state === 'paused')
       if (r.albumSpotifyId) {
         void resolveDbAlbumId(r.albumSpotifyId).then((id) => {
           // Same-track guard: a later read may have swapped the card.
@@ -331,10 +347,9 @@ function useNowPlaying() {
     else {
       // Live says nothing is playing — force the idle branch even if the stale
       // snapshot claimed otherwise. Keep whatever fields are already there.
-      // `paused` (FEAT-lyrics-sync-precision Step 2 split it out of `idle`)
-      // lands here deliberately: this card's behavior for a held player is
-      // unchanged, the new state only carries extra information the lyrics
-      // viewer needs. Handled explicitly so the split can't drift silently.
+      // Only `idle` reaches here now; `paused` moved up to the track branch with
+      // OQ4 (see there). `idle` means there is no track at all, so clearing is
+      // right — that has not changed.
       setNp(prev => ({ ...(prev ?? {}), is_playing: false, updated_at: new Date().toISOString() }))
       setMoment(null)
       likedTrackRef.current = null
@@ -432,8 +447,8 @@ function useNowPlaying() {
       setMoment(m => (m ? { ...m, anchor: { ms: target, wallMs: performance.now() } } : m))
       // …then the OQ2 confirmation one-shot (accepted 2026-07-19): the PUT
       // returns no body, so one explicit read realigns to the server truth.
-      // Skipped while paused — a paused player reads as `idle` and would
-      // collapse the card; the optimistic anchor is exact there anyway.
+      // Skipped while paused — the optimistic anchor is exact there, so the read
+      // would only confirm the seek target we just wrote.
       if (!paused)
         await sync()
     }
@@ -581,8 +596,17 @@ function useNowPlaying() {
       }
     })
     const onPlaybackChanged = () => {
-      // Connect play succeeded elsewhere in the page. One event ⇒ one
-      // confirmation read; no timer or polling is introduced.
+      // Since OQ4 (2026-08-03) every successful transport command dispatches this,
+      // including the ones this card issues itself — so ignore the event while a
+      // command of ours is in flight. Each of our own commands already owns its
+      // handling: `seek` and `skip` do their own confirmation read, and `playPause`
+      // deliberately does NONE (it is fully optimistic; a read racing the pause is
+      // how the button used to flip back to ▶). Without this guard the dispatch
+      // would double those reads and undo that decision. Events from elsewhere —
+      // the lyrics viewer's bar, a headset, `sendConnectPlay` — still land.
+      if (controlBusyRef.current)
+        return
+      // One event ⇒ one confirmation read; no timer or polling is introduced.
       void readLivePlayback().then((r) => {
         if (onRef.current)
           applyLive(r)
