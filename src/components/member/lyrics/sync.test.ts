@@ -8,7 +8,7 @@
 // the 0-250ms lateness.
 import type { LyricsSegment } from './lyrics.api'
 import { describe, expect, it } from 'vitest'
-import { focusIndexForMs, nextBoundaryMs } from './LyricsViewer'
+import { focusIndexForMs, leadMsForStyle, nextBoundaryMs } from './LyricsViewer'
 
 /** Build segments the way normalize_lyrics does: `i` is the array position. */
 function segs(...starts: Array<number | null>): LyricsSegment[] {
@@ -89,5 +89,29 @@ describe('focusIndexForMs (pre-existing, pinned here as the scheduler depends on
 
   it('clamps to the first line before the first start (lead can go negative-ish)', () => {
     expect(focusIndexForMs(segs(3000, 6000), 0)).toBe(0)
+  })
+})
+
+// The perceptual lead is taste, but the RELATIONSHIP between the two styles is
+// not: `blur` announces "now" by fading opacity over a 120ms attack, `flat` by
+// snapping colour with no ramp at all. So flat has no attack midpoint to
+// absorb part of the lead, and must lead by less. Shipping one number for both
+// (until 2026-08-02) is what made flat run early.
+describe('leadMsForStyle', () => {
+  it('leads less on flat, because a colour snap has no attack to absorb it', () => {
+    expect(leadMsForStyle('flat')).toBeLessThan(leadMsForStyle('blur'))
+  })
+
+  it('leads on both — flipping exactly on the syllable reads as late', () => {
+    expect(leadMsForStyle('flat')).toBeGreaterThan(0)
+    expect(leadMsForStyle('blur')).toBeGreaterThan(0)
+  })
+
+  it('the gap is about the 120ms attack midpoint the flat wash lacks', () => {
+    // Not an exact identity — the lead is taste — but if this drifts far from
+    // ~60ms, the reasoning in the constants block no longer describes the code.
+    const gap = leadMsForStyle('blur') - leadMsForStyle('flat')
+    expect(gap).toBeGreaterThanOrEqual(40)
+    expect(gap).toBeLessThanOrEqual(80)
   })
 })
