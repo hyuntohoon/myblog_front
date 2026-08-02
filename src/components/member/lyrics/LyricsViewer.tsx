@@ -35,7 +35,10 @@
 // `.lyv-line` 0.35s opacity ramp (+175ms perceived midpoint). Both are gone —
 // the interval is replaced by ONE timer armed for the exact next `start_ms`
 // (`nextBoundaryMs`), and the focus transition gained a 120ms attack against
-// its unchanged 350ms release. What is left is `PERCEPTUAL_LEAD_MS = 80`,
+// its unchanged 350ms release. What is left is the perceptual lead (80ms on
+// `blur`, 20ms on `flat` — the flat wash snaps in colour and so has no attack
+// midpoint to absorb; split 2026-08-02 on the owner's report that flat ran
+// early),
 // labelled as taste. Because the anchor lives in a ref, every anchor WRITE
 // bumps `anchorSeq` to re-arm the scheduler — the old interval got that for
 // free from its next tick.
@@ -91,6 +94,7 @@ import { MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand } from '@lib/spotifyPlayback
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ArtistNames } from '../NowPlaying'
+import { confirmTransport } from './confirmTransport'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 import { readQueue } from './queue.api'
@@ -111,12 +115,27 @@ const WHEEL_STEP = 80
  * opacity ramp (+175ms perceived midpoint) — 125 + 175 ≈ 300. Both are now
  * removed at their source (boundary-scheduled focus below; fast-attack
  * transition in `.lyv-line.is-focus`), so deleting the constant outright would
- * have made the viewer read LATER than it did. What remains is the ~60ms
- * midpoint of the new 120ms attack plus a small deliberate lead.
+ * have made the viewer read LATER than it did.
  *
- * Tune here if the feel drifts — it is one number and it means one thing.
+ * **It is TWO numbers, because the two styles announce "now" differently**
+ * (owner report 2026-08-02: on `flat` the lyrics run early). `blur` carries
+ * "now" in OPACITY, so the line rises over the 120ms attack and is perceived
+ * at roughly its ~60ms midpoint; `flat` carries "now" in COLOR, which snaps
+ * with no ramp at all (`layout.css` — deliberate, it is the Apple-Music look
+ * the owner asked for). Step 1 computed 80 as "~60ms attack midpoint + ~20ms
+ * deliberate lead" and then applied it to both, so on `flat` the 60ms credit
+ * does not exist and the whole 80ms lands as lead. Only the number is wrong
+ * there, not the look — so the number, not the look, is what changes.
+ *
+ * Tune here if the feel drifts. Each is one number and means one thing.
  */
-const PERCEPTUAL_LEAD_MS = 80
+const BLUR_LEAD_MS = 80
+const FLAT_LEAD_MS = 20
+
+/** Exported for the sync tests — the whole of the style/lead relationship. */
+export function leadMsForStyle(style: 'blur' | 'flat'): number {
+  return style === 'flat' ? FLAT_LEAD_MS : BLUR_LEAD_MS
+}
 /**
  * How far past `durationMs` the estimate must run before the end-of-track auto
  * re-sync fires (FEAT-lyrics-end-resync). Gives Spotify a beat to actually
@@ -313,6 +332,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
     catch { /* private mode — the choice just doesn't persist */ }
   }
+  // How far ahead of the true position the focus is computed, per style — see
+  // BLUR_LEAD_MS / FLAT_LEAD_MS. Derived (not state) so switching style in the
+  // ⚙ popover retimes the viewer on the next render; the boundary scheduler
+  // lists it as a dep so an open track re-arms immediately rather than at the
+  // next line.
+  const leadMs = leadMsForStyle(lyvStyle)
   const panelRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -383,6 +408,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // otherwise it drags the viewer back to the track we just left. Declared here
   // rather than beside `refresh` because the queue effect below reads it too.
   const awaitingTrack = useRef<string | null>(null)
+  // The twin of `awaitingTrack` for ⏭/⏮ (owner bug report 2026-08-02: the
+  // viewer stayed on the previous track's lyrics after a skip). A skip cannot
+  // name the track it is going TO, so it names the one it is coming FROM and
+  // waits for any read that disagrees. Without this the single post-command
+  // read was a race against Spotify Connect propagation: a read that still
+  // said the old track took `refresh`'s SAME-track branch, re-anchored to the
+  // track being left, and nothing ever asked again.
+  const awaitingChangeFrom = useRef<string | null>(null)
   // Bumped by 다시 시도 — the read is keyed on it so a retry is a re-run of the
   // same effect rather than a second, separately-cancelled fetch path.
   const [queueSeq, setQueueSeq] = useState(0)
@@ -403,7 +436,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     // has not applied the play yet and would hand back the pre-jump queue —
     // a list contradicting the head. `confirmJump` bumps `queueSeq` once
     // identity settles, and that is the read that lands.
-    if (awaitingTrack.current !== null)
+    if (awaitingTrack.current !== null || awaitingChangeFrom.current !== null)
       return
     void Promise.all([readQueue(), readLivePlayback()]).then(([q, p]) => {
       if (!live)
@@ -462,7 +495,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     const a = anchor.current
     if (!a || progressMs == null)
       return
-    const predicted = estimateMs(a, readAtMs) + PERCEPTUAL_LEAD_MS
+    const predicted = estimateMs(a, readAtMs) + leadMs
     // eslint-disable-next-line no-console -- the measurement channel; prod Lambda-side logging does not apply to the browser
     console.debug('[lyrics-sync] residual', { source, residualMs: Math.round(predicted - progressMs), predictedMs: Math.round(predicted), actualMs: progressMs, playing })
   }
@@ -488,7 +521,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     clearSuspendTimer()
     const a = anchor.current
     if (a && n > 0)
-      setFocus(focusIndexForMs(segs, estimateMs(a) + PERCEPTUAL_LEAD_MS))
+      setFocus(focusIndexForMs(segs, estimateMs(a) + leadMs))
     setSuspended(false)
   }
 
@@ -533,7 +566,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
       endSynced.current = false
     if (n > 0)
-      setFocus(focusIndexForMs(segs, estimateMs(next) + PERCEPTUAL_LEAD_MS))
+      setFocus(focusIndexForMs(segs, estimateMs(next) + leadMs))
   }
 
   // One-shot initial-focus seed (position + the wall instant it was read at):
@@ -580,7 +613,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
           setAnchor(seed)
           endSynced.current = false
-          setFocus(focusIndexForMs(data.segments, seed.ms + PERCEPTUAL_LEAD_MS + (performance.now() - seed.wallMs)))
+          setFocus(focusIndexForMs(data.segments, seed.ms + leadMs + (performance.now() - seed.wallMs)))
         }
       })
       .catch(() => {
@@ -627,7 +660,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         // write below would undo the identity the jump already established.
         if (awaitingTrack.current !== null && r.trackId !== awaitingTrack.current)
           return
+        // Same reasoning for a skip, inverted: still the track we skipped away
+        // from means Spotify has not applied the skip yet. Write nothing —
+        // `confirmSkip` reads again — because the same-track branch below would
+        // re-anchor to the track being left and end the correction there.
+        if (awaitingChangeFrom.current !== null && r.trackId === awaitingChangeFrom.current)
+          return
         awaitingTrack.current = null
+        awaitingChangeFrom.current = null
         setNotice(null)
         setContext(r.contextUri ? { uri: r.contextUri, type: r.contextType ?? '' } : null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
@@ -691,6 +731,34 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const [transportDead, setTransportDead] = useState(false)
   const commandBusy = useRef(false)
 
+  /**
+   * Re-read identity until Spotify reports a track other than `from`.
+   *
+   * The ⏭/⏮ counterpart of `confirmJump`. A skip knows only which track it is
+   * leaving, so "settled" means any disagreement with `from` rather than
+   * agreement with a named id — but the retry budget, the gap and the queue
+   * re-read on settle are deliberately identical, because the thing being
+   * waited on (Spotify Connect applying a transport command) is identical.
+   *
+   * Giving up leaves the viewer on the old track, which is what it already did
+   * before this existed — a wrong-but-current view beats suppressing reads for
+   * the rest of the session.
+   */
+  const confirmSkip = async (from: string) => {
+    awaitingChangeFrom.current = from
+    try {
+      await confirmTransport(
+        () => refreshRef.current('command'),
+        () => awaitingChangeFrom.current === null,
+        { tries: JUMP_CONFIRM_TRIES, gapMs: JUMP_CONFIRM_GAP_MS },
+      )
+      awaitingChangeFrom.current = null
+    }
+    finally {
+      setQueueSeq(s => s + 1)
+    }
+  }
+
   const runCommand = async (cmd: PlayerCommand) => {
     if (commandBusy.current || transportDead)
       return
@@ -725,10 +793,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         // identity read to swap the lyrics. Nothing else will do it:
         // `sendPlayerCommand` does not dispatch MYBLOG_PLAYBACK_CHANGED (only
         // `sendConnectPlay` does), so the listener above never sees a skip.
-        // Verified in a browser 2026-08-01 — without this call the viewer sits
-        // on the previous track's lyrics indefinitely.
+        //
+        // This was ONE read until 2026-08-02, and one read is a race the skip
+        // usually loses: Spotify answers `GET /me/player` with the pre-skip
+        // track for a beat after returning 204, and that stale read took the
+        // same-track branch and closed the case. The 2026-08-01 browser check
+        // that blessed the single read happened to win the race. `confirmSkip`
+        // retries on the same schedule the queue-row jump already used.
         if (cmd.kind === 'next' || cmd.kind === 'previous')
-          void refreshRef.current('command')
+          void confirmSkip(trackId)
         return
       }
       // Failed: put the optimistic state back before reporting.
@@ -765,12 +838,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
    */
   const confirmJump = async () => {
     try {
-      for (let i = 0; i < JUMP_CONFIRM_TRIES; i++) {
-        await refreshRef.current('command')
-        if (awaitingTrack.current === null)
-          return
-        await new Promise(res => setTimeout(res, JUMP_CONFIRM_GAP_MS))
-      }
+      // Shares `confirmTransport` with `confirmSkip` (2026-08-02) so the two
+      // cannot drift. Behaviour is unchanged except that the loop no longer
+      // sleeps after its final attempt — the queue re-read below used to wait
+      // out a gap it never used.
+      await confirmTransport(
+        () => refreshRef.current('command'),
+        () => awaitingTrack.current === null,
+        { tries: JUMP_CONFIRM_TRIES, gapMs: JUMP_CONFIRM_GAP_MS },
+      )
       awaitingTrack.current = null
     }
     finally {
@@ -1047,7 +1123,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       const a = anchor.current
       if (!a)
         return
-      const estimatedMs = estimateMs(a) + PERCEPTUAL_LEAD_MS
+      const estimatedMs = estimateMs(a) + leadMs
       const endAtMs = canRefresh && durationMs != null ? durationMs + END_GRACE_MS : null
       // End-of-track auto re-sync (FEAT-lyrics-end-resync): once the estimate
       // runs past the track length + grace, fire ONE automatic refresh — next
@@ -1088,7 +1164,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       document.removeEventListener('visibilitychange', onVisible)
       clear()
     }
-  }, [trackable, suspended, playing, n, segs, canRefresh, durationMs, anchorSeq])
+  }, [trackable, suspended, playing, n, segs, canRefresh, durationMs, anchorSeq, leadMs])
 
   // Vertical swipe/drag = manual navigation (touch-action: none on the scroll
   // area hands touch pans to us). Dragging up (finger/pointer moves up) reads
