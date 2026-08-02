@@ -1,5 +1,26 @@
 ---
+// FEAT-member-player Step 5b — the editor rejoins the site shell.
+//
+// This layout used to carry no `ClientRouter`, which made every /write ↔ site
+// move a full document load. Step 5's in-page playback therefore stopped at the
+// editor door: a document load tears down the whole JS context, so no swap
+// override can save it.
+//
+// The reconciliation is deliberately narrow. `ClientRouter` must exist on BOTH
+// sides or the router falls back to a document load, so it is the one thing that
+// has to be added — plus the same playback-persist script `layout.astro` runs.
+// The site header/footer, PocketBuckit and AlbumOverlay are still NOT mounted
+// here: this is a full-screen editor, and pulling in the site chrome would be a
+// product change wearing a refactor's clothes. Those islands simply do not
+// persist onto /write (the incoming document has no counterpart), which is
+// exactly today's behavior.
+//
+// Body stays class-less on purpose: `writer/base.css` owns the body rule here,
+// and the swap takes body attributes from the incoming document, so
+// `layout.astro`'s Tailwind body classes come off automatically on the way in
+// and back on on the way out.
 import { Font } from 'astro:assets'
+import { ClientRouter } from 'astro:transitions'
 import ThemeProvider from '@components/theme-provider.astro'
 
 import '../styles/global.css'
@@ -27,6 +48,16 @@ import '../styles/research.css'
 	rel="stylesheet"
     />
     <ThemeProvider />
+    <ClientRouter />
+    <!--
+      Same override layout.astro installs — inert unless this tab is the audio
+      device, so on /write it costs nothing until the owner actually plays here.
+    -->
+    <script>
+      import { installPlaybackPersist } from '../scripts/playbackPersist.client'
+
+      installPlaybackPersist()
+    </script>
     <slot name="seo" />
   </head>
   <body>
