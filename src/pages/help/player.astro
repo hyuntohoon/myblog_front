@@ -1,0 +1,163 @@
+---
+// FEAT-member-player Step 7c — the player capability 설명서.
+//
+// Renders the SAME rows the integrations guide (7a) and the inline "왜 컨트롤이
+// 없나요?" popover (7b) render, from `@lib/playerCapabilityMatrix`. That shared
+// module is the RFC's "single source" requirement made literal: before Step 7 the
+// rows were hand-rolled in two components and had already drifted on wording.
+//
+// This page is PRERENDERED, so it has no session to read — it calls the matrix with
+// `situation: null`, which returns the audience-neutral standings ("Spotify Premium
+// 필요") instead of a member's live ones. One code path, two audiences: change a
+// capability once and both the live guide and this page move together.
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import { capabilityRows } from '@lib/playerCapabilityMatrix'
+
+export const prerender = true
+
+const rows = capabilityRows(null)
+
+---
+
+<Layout>
+  <Seo
+	slot="seo"
+	forceTitle="플레이어 기능 안내"
+	description="buckit 플레이어에서 어떤 기능이 언제 열리는지 — 연동, 재동의, Premium, 기기 조건을 기능별로 정리했습니다."
+  />
+  <SkipNavContent>
+    <main class="hp-wrap">
+      <header class="hp-head">
+        <p class="kicker">플레이어</p>
+        <h1 class="hp-title">어떤 기능이 언제 열리나요</h1>
+        <p class="hp-dek">
+          buckit의 재생 기능은 Spotify 연동 상태에 따라 조금씩 다르게 열립니다.
+          아래 표가 전부이고, 내 계정의 현재 상태는
+          <a href="/settings/">설정</a>의 “이 연동으로 열리는 기능”에서 볼 수 있어요.
+        </p>
+      </header>
+
+      <ul class="hp-list">
+        {rows.map(row => (
+          <li class="hp-row">
+            <div class="hp-row-head">
+              <span class="hp-label">{row.label}</span>
+              <span class="hp-need">{row.standing}</span>
+            </div>
+            {/* No 필요 chip here: the requirement already sits at row-right, and
+                rendering both produced "Spotify 연동 필요" beside "필요 Spotify 연동".
+                `unlockedBy` still drives the live surfaces, where it is the member's
+                one next action rather than a restatement. */}
+            <p class="hp-what">{row.what}</p>
+          </li>
+        ))}
+      </ul>
+
+      <section class="hp-note">
+        <h2 class="hp-note-title">헷갈리기 쉬운 두 가지</h2>
+        <p>
+          <strong>좋아요와 기기 안내는 무료 계정에서도 됩니다.</strong>
+          Premium이 필요한 건 재생을 직접 조작하는 기능(재생·일시정지·seek·다음/이전·지정 재생)뿐이에요.
+        </p>
+        <p>
+          <strong>볼륨은 기기가 정합니다.</strong>
+          스피커·TV처럼 볼륨 조절을 지원하지 않는 기기에서는 볼륨만 사라지고,
+          나머지 컨트롤은 그대로 남습니다.
+        </p>
+      </section>
+    </main>
+  </SkipNavContent>
+</Layout>
+
+<style>
+  .hp-wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 56px 20px 96px;
+  }
+  .hp-head { margin-bottom: 34px; }
+  .hp-title {
+    font-family: var(--font-serif);
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.2;
+    margin: 6px 0 14px;
+  }
+  .hp-dek {
+    font-family: var(--font-sans);
+    font-size: 14.5px;
+    line-height: 1.7;
+    color: var(--color-subtle);
+    margin: 0;
+  }
+  .hp-dek a { color: var(--color-accent); }
+  .hp-list { list-style: none; margin: 0; padding: 0; }
+  .hp-row {
+    padding: 16px 0;
+    border-top: 1px solid var(--color-border-soft);
+  }
+  .hp-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+    justify-content: space-between;
+  }
+  .hp-label {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    color: var(--color-text);
+  }
+  .hp-need {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: var(--color-faded);
+  }
+  .hp-what {
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--color-subtle);
+    margin: 7px 0 0;
+  }
+  .hp-unlock {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    color: var(--color-faded);
+    margin: 7px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .hp-unlock-mark {
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--color-subtle);
+  }
+  .hp-note {
+    margin-top: 40px;
+    padding: 18px 18px 4px;
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-sm);
+  }
+  .hp-note-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-faded);
+    margin: 0 0 10px;
+  }
+  .hp-note p {
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--color-subtle);
+    margin: 0 0 14px;
+  }
+  .hp-note strong { color: var(--color-text); font-weight: 500; }
+</style>

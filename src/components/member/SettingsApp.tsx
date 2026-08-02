@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { logout } from '@lib/auth'
 import { readSpotifyCapabilityStanding } from '@lib/spotifyCapability'
 import { deleteMe, getMe, HANDLE_RE, HandleTakenError, OwnerUndeletableError, updateMe } from './me.api'
+import { capabilityRows, standingLine } from '@lib/playerCapabilityMatrix'
 import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
 import type { Integration } from './integrations.api'
 import { SectionTitle } from './ui'
@@ -73,28 +74,13 @@ function LastfmCapabilityGuide({ connected }: { connected: boolean }) {
 	)
 }
 
-const SCOPE_GENERATION_COPY = {
-	none: '없음',
-	legacy: '구스코프(재생 스코프 이전)',
-	playback: '재생 스코프 세대',
-	library: '좋아요 스코프 세대',
-} as const
-
 function SpotifyCapabilityGuide({ conn }: { conn: Integration | null }) {
 	const connected = conn?.status === 'connected'
 	const generation = spotifyScopeGeneration(conn?.scope, conn != null)
-	const modernPlayback = connected && (generation === 'playback' || generation === 'library')
-	const library = connected && generation === 'library'
+	// `modernPlayback` / `library` / `transportStanding` / `probeCopy` used to be
+	// derived here to feed a hand-rolled feature list. The shared matrix owns all of
+	// them now — deleting them is the point of the refactor, not a side effect of it.
 	const probe = readSpotifyCapabilityStanding()
-	const transportStanding = !modernPlayback ?
-		'—' :
-		probe.transport === 'available' ?
-'사용 가능(Premium 확인됨)' :
-			probe.transport === 'no-capability' ? '제한됨(Premium/기기 상태)' : 'Premium에서 가능 · 아직 확인 전'
-	const probeCopy = [
-		`컨트롤 ${probe.transport === 'available' ? '사용 가능' : probe.transport === 'no-capability' ? '제한 응답' : '확인 전'}`,
-		`좋아요 ${probe.library === 'available' ? '사용 가능' : probe.library === 'scope-missing' ? '권한 부족 응답' : '확인 전'}`,
-	].join(' · ')
 	const next = !connected ?
 		(conn ? '재동의하면 라이브 바·가사·기기 안내와 무료 계정에서도 가능한 좋아요가 열려요. 재생 컨트롤은 Premium 전용이에요.' : '연동하면 스냅샷·라이브 바·가사·기기 안내와 무료 계정에서도 가능한 좋아요가 열려요. 재생 컨트롤은 Premium 전용이에요.') :
 		generation === 'legacy' ?
@@ -103,16 +89,11 @@ function SpotifyCapabilityGuide({ conn }: { conn: Integration | null }) {
 
 	return (
 		<IntegrationGuide
-			standing={`현재 상태 · ${connected ? '연결됨' : '연결 안 됨'} · 스코프 세대 ${SCOPE_GENERATION_COPY[generation]} · 마지막 probe ${probeCopy}`}
-			features={[
-				{ label: '스냅샷', standing: connected ? '사용 가능' : '—', on: connected },
-				{ label: '라이브 바', standing: connected ? '사용 가능' : '—', on: connected },
-				{ label: '재생/일시정지/seek', standing: transportStanding, on: probe.transport === 'available' && modernPlayback },
-				{ label: '기기 안내', standing: modernPlayback ? '사용 가능(무료 포함)' : '—', on: modernPlayback },
-				{ label: '가사 live', standing: connected ? '사용 가능' : '—', on: connected },
-				{ label: '다음·이전/지정 재생', standing: transportStanding, on: probe.transport === 'available' && modernPlayback },
-				{ label: '좋아요', standing: library ? '사용 가능(무료 포함)' : '—', on: library },
-			]}
+			standing={standingLine({ connected, generation, probe })}
+			// Step 7: the same shared matrix the integrations tab renders — this list
+			// used to be a second hand-rolled copy that had already drifted ('스냅샷'
+			// here vs '최근 재생 스냅샷' there for the same capability).
+			features={capabilityRows({ connected, generation, probe })}
 			next={next}
 		/>
 	)
