@@ -3,9 +3,9 @@
 // The one property this module exists to protect is that the explicit `uris`
 // fallback carries the whole visible tail. A lone-track fallback would replace
 // Spotify's playback context and silently discard every queued row after it.
-import type { PlayerCommandOutcome } from '@lib/spotifyPlayback'
+import type { PlayOutcome } from '@lib/spotifyPlayback'
 import type { QueueEntry } from './queue.api'
-import { sendPlayerCommand } from '@lib/spotifyPlayback'
+import { play } from '@lib/spotifyPlayback'
 
 /** The album/playlist the player is running, as read by `readLivePlayback`. */
 export interface JumpContext { uri: string, type: string }
@@ -31,8 +31,8 @@ export async function jumpToQueueIndex(items: QueueEntry[], index: number, conte
 	const tail = items.slice(index).flatMap(i => (i.uri ? [i.uri] : []))
 
 	if (context && (context.type === 'album' || context.type === 'playlist')) {
-		const r: PlayerCommandOutcome = await sendPlayerCommand({
-			kind: 'play-context',
+		const r: PlayOutcome = await play({
+			kind: 'context',
 			contextUri: context.uri,
 			offsetUri: tapped.uri,
 		})
@@ -42,8 +42,11 @@ export async function jumpToQueueIndex(items: QueueEntry[], index: number, conte
 		// user-added row that is not part of the album/playlist context.
 	}
 
-	const r = await sendPlayerCommand({ kind: 'play-uris', uris: tail })
+	const r = await play({ kind: 'uris', uris: tail })
 	if (r.ok)
 		return { ok: true, via: 'uris' }
-	return { ok: false, reason: r.reason }
+	// The ladder's richer failure set collapses back to this module's three, which is
+	// all its callers render. 'unresolvable'/'unavailable' cannot occur here — both
+	// intents carry provider URIs already, so nothing is resolved on this path.
+	return { ok: false, reason: r.reason === 'no-capability' ? 'no-capability' : r.reason === 'token' ? 'token' : 'transient' }
 }

@@ -22,7 +22,7 @@ import { isOwnerUser } from '@lib/owner'
 import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
-import { requestPlayback } from '@lib/spotifyPlayback'
+import { play } from '@lib/spotifyPlayback'
 import { usePocket } from './PocketBuckitProvider'
 
 // ── scale helper — every inline px scales with the --pb-scale CSS var ──────────
@@ -424,7 +424,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
       setNotice('재생할 수 없는 항목이에요.')
       return
     }
-    void requestPlayback(target).then(o => setNotice(o.message))
+    void play(target).then(o => setNotice(o.message))
   }
 
   // FEAT-my-buckit-artist Step 6 / viewers Track B — a member is draggable onto a
