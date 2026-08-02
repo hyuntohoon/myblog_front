@@ -357,7 +357,9 @@ const recordLabel = post.musicReview?.label ?? null
   }
   .lfq-article :global(.lfq-tt-row) {
     display: grid;
-    grid-template-columns: 3ch 1fr auto auto auto;
+    /* no · title · duration · ▶ · 다음에 듣기 (6c) · 담기 — one auto column per
+       trailing action, so adding 6c is a column, not a reflow of the title. */
+    grid-template-columns: 3ch minmax(0, 1fr) auto auto auto auto;
     gap: 14px;
     align-items: baseline;
     padding: 10px 0;
@@ -408,6 +410,7 @@ const recordLabel = post.musicReview?.label ?? null
      owner provisions Spotify streaming) + the notice. Subtle, hover-revealed,
      so the editorial reading page stays calm. */
   .lfq-article :global(.lfq-tt-play),
+  .lfq-article :global(.lfq-tt-queue),
   .lfq-article :global(.lfq-tt-add) {
     align-self: center;
     width: 24px;
@@ -425,13 +428,18 @@ const recordLabel = post.musicReview?.label ?? null
     transition: opacity 0.14s, color 0.14s, border-color 0.14s;
   }
   .lfq-article :global(.lfq-tt-add) { font-size: var(--text-base); }
+  /* 6c sits between play and 담기; two glyphs need a hair more room than one. */
+  .lfq-article :global(.lfq-tt-queue) { font-size: 8.5px; letter-spacing: -0.5px; }
   .lfq-article :global(.lfq-tt-row:hover .lfq-tt-play),
+  .lfq-article :global(.lfq-tt-row:hover .lfq-tt-queue),
   .lfq-article :global(.lfq-tt-row:hover .lfq-tt-add),
   .lfq-article :global(.lfq-tt-play:focus-visible),
+  .lfq-article :global(.lfq-tt-queue:focus-visible),
   .lfq-article :global(.lfq-tt-add:focus-visible) {
     opacity: 1;
   }
   .lfq-article :global(.lfq-tt-play:hover),
+  .lfq-article :global(.lfq-tt-queue:hover),
   .lfq-article :global(.lfq-tt-add:hover) {
     color: var(--color-accent);
     border-color: var(--color-accent);
@@ -440,6 +448,7 @@ const recordLabel = post.musicReview?.label ?? null
      non-drag "담기" path (WCAG 2.5.7) and play reachable on coarse pointers. */
   @media (hover: none) {
     .lfq-article :global(.lfq-tt-play),
+    .lfq-article :global(.lfq-tt-queue),
     .lfq-article :global(.lfq-tt-add) { opacity: 1; }
   }
   .lfq-article :global(.lfq-tt-playnote) {

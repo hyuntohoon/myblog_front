@@ -54,6 +54,16 @@ export interface LivePlaybackTrack {
 		 */
 	deviceName: string | null
   /**
+   * Playback modes (member-player Step 6e). Like `deviceName`, these ride the
+   * SAME `GET /me/player` body the one-shot already fetches — reading them costs
+   * zero extra requests, so D28 holds by construction rather than by restraint.
+   * `volumePercent` is null on devices that expose no volume API (speakers with
+   * fixed output, some TVs); a null here means "no control", not "muted".
+   */
+  shuffle: boolean | null
+  repeat: 'off' | 'context' | 'track' | null
+  volumePercent: number | null
+  /**
    * The album/playlist the player is running (`context.uri`/`context.type`),
    * or null for a bare `uris` playback. FEAT-lyrics-viewer-playback Step 3
    * needs it: a `context_uri` + `offset` jump is the only form that leaves the
@@ -113,7 +123,9 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   let body: {
     is_playing?: boolean
     progress_ms?: number | null
-    device?: { name?: string | null } | null
+    device?: { name?: string | null, volume_percent?: number | null } | null
+    shuffle_state?: boolean | null
+    repeat_state?: string | null
     context?: { uri?: string | null, type?: string | null } | null
     item?: {
       id?: string
@@ -166,6 +178,9 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     albumSpotifyId: item.album?.id ?? null,
     albumCoverUrl: cover?.url ?? null,
     deviceName: body.device?.name?.trim() || null,
+    shuffle: typeof body.shuffle_state === 'boolean' ? body.shuffle_state : null,
+    repeat: body.repeat_state === 'off' || body.repeat_state === 'context' || body.repeat_state === 'track' ? body.repeat_state : null,
+    volumePercent: typeof body.device?.volume_percent === 'number' ? body.device.volume_percent : null,
     contextUri: body.context?.uri ?? null,
     contextType: body.context?.type ?? null,
   }
