@@ -8,6 +8,7 @@
 
 import type { BoardBucket } from '@lib/buckets'
 import type { PocketOrder, PocketTreeDepth } from './design'
+import { PLAYBACK_KIND } from '@lib/buckets'
 
 export type PocketAction = 'add' | 'queue' | 'play' | 'summarize'
 
@@ -44,11 +45,19 @@ export interface PocketLeaf {
 }
 
 /**
- * v1 verb/action per bucket kind. Today every review bucket is an album
- * collection (`add`); the special `spotify_library` mirror is excluded upstream.
- * Kept as a table so Step-5 kinds (playlist/queue/summary) slot in.
+ * Verb/action per bucket kind. A normal review bucket is an album collection
+ * (`add`); the special `spotify_library` mirror is excluded upstream.
+ *
+ * FEAT-playback-bucket-player Step 5 makes this actually kind-aware — until now it
+ * returned 담기/add unconditionally, so `PocketAction='queue'` and `PocketLeaf.ordered`
+ * were declared but dead. The Playback Bucket is the first consumer of both:
+ * dropping there queues rather than collects, it takes tracks AND albums (an album
+ * expands into its tracks), and `ordered` says its item list is a sequence — the
+ * position IS the play order, so nothing downstream may re-sort it for display.
  */
-function actionFor(_kind: string): { verb: string, action: PocketAction, accepts: string } {
+function actionFor(kind: string): { verb: string, action: PocketAction, accepts: string, ordered?: boolean } {
+  if (kind === PLAYBACK_KIND)
+    return { verb: '재생 대기열에 추가', action: 'queue', accepts: '트랙 · 앨범', ordered: true }
   return { verb: '담기', action: 'add', accepts: '앨범' }
 }
 
@@ -89,6 +98,7 @@ function toLeaf(b: BoardBucket, path: string[]): PocketLeaf {
     kind: b.kind,
     type: b.type,
     pinned: path.length === 1,
+    ordered: meta.ordered,
     processing: b.researchMode !== 'off',
     recent: b.albums.slice(0, 3).map(a => ({ itemId: a.itemId, itemType: a.itemType, albumId: a.albumId, title: a.title, cover: a.cover })),
   }

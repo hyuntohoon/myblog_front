@@ -5,7 +5,8 @@
 // here — the assertions must not change.
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import { describe, expect, it } from 'vitest'
-import { collectItems, crMeta, isResearchEngaged, TOLISTEN_KIND } from '@lib/bucketLifecycle'
+import { PLAYBACK_KIND, PLAYBACK_TYPE, SLIB_KIND } from '@lib/buckets'
+import { collectItems, crMeta, isResearchEngaged, isSystemBucket, TOLISTEN_KIND } from '@lib/bucketLifecycle'
 
 function bucket(over: Partial<BoardBucket> = {}): BoardBucket {
   return {
@@ -119,5 +120,39 @@ describe('crMeta', () => {
       children: [bucket({ albums: [album({ postId: 'p', alreadyReviewed: false } as Partial<BoardAlbum>)] })],
     })
     expect(crMeta(b).tag).toBe('작성 중')
+  })
+})
+
+// FEAT-playback-bucket-player Step 5 — the Playback Bucket is a queue, not a
+// lifecycle stage, so it is tagged by `kind` ahead of every other rule. Before this
+// it fell through to 담음 and rendered as an ordinary crate on the board.
+describe('crMeta — the playback queue', () => {
+  const queue = bucket({ kind: PLAYBACK_KIND, type: PLAYBACK_TYPE })
+
+  it('is tagged 재생 대기열', () => {
+    expect(crMeta(queue).tag).toBe('재생 대기열')
+  })
+  it('stays 재생 대기열 after a rename (tagged by kind, not name)', () => {
+    expect(crMeta({ ...queue, name: '아무 이름' }).tag).toBe('재생 대기열')
+  })
+  it('outranks every lifecycle rule — a queue is never 완료 / 작성 중 / 조사 중', () => {
+    expect(crMeta({ ...queue, isDone: true }).tag).toBe('재생 대기열')
+    expect(crMeta({ ...queue, albums: [album({ postId: 'p', alreadyReviewed: false })] }).tag).toBe('재생 대기열')
+    expect(crMeta({ ...queue, albums: [album({ researchStatus: 'running' })] }).tag).toBe('재생 대기열')
+  })
+})
+
+describe('isSystemBucket', () => {
+  it('covers all three system kinds', () => {
+    expect(isSystemBucket({ kind: PLAYBACK_KIND })).toBe(true)
+    expect(isSystemBucket({ kind: SLIB_KIND })).toBe(true)
+    expect(isSystemBucket({ kind: TOLISTEN_KIND })).toBe(true)
+  })
+  it('leaves a user crate deletable', () => {
+    expect(isSystemBucket({ kind: 'review' })).toBe(false)
+  })
+  it('keys on kind, not type — the older two are type=general and must stay protected', () => {
+    expect(isSystemBucket(bucket({ kind: SLIB_KIND, type: 'general' }))).toBe(true)
+    expect(isSystemBucket(bucket({ kind: 'review', type: PLAYBACK_TYPE }))).toBe(false)
   })
 })

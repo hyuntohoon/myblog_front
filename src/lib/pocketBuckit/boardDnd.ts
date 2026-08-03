@@ -10,6 +10,7 @@
 // roots, no shared context — so the window event is the only channel (the established pattern).
 import type { PbBoardDndStartDetail } from './events'
 import { useSyncExternalStore } from 'react'
+import { PLAYBACK_TYPE } from '@lib/buckets'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT } from './events'
 
 let current: PbBoardDndStartDetail | null = null
@@ -43,15 +44,23 @@ export function getBoardDnd(): PbBoardDndStartDetail | null {
 }
 
 /**
- * Does a Pocket bucket of this `type` ('general' | 'artist' | …) accept the current board
- * drag? Mirrors the board's `canAcceptAlbumDrag` exactly — General accepts all; an Artist
- * bucket needs an artist member or an album/track SOURCE (which expands to its credited
- * artists). null payload → false. UX-only: the board re-checks authoritatively on drop.
+ * Does a Pocket bucket of this `type` ('general' | 'artist' | 'playback') accept the current
+ * board drag? **The twin of the board's `canAcceptAlbumDrag`** — General accepts all; an
+ * Artist bucket needs an artist member or an album/track SOURCE (which expands to its
+ * credited artists); the Playback Bucket needs a track or album source and rejects an artist.
+ * null payload → false. UX-only: the board re-checks authoritatively on drop.
+ *
+ * These two functions are duplicated on purpose (two React roots, no shared context — this
+ * island cannot read the board's live `dnd`), which makes them a drift pair: **a rule change
+ * in either one must land in both in the same PR**, or a tray chip previews an acceptance the
+ * board then refuses. `boardDnd.test.ts` asserts the two agree case-for-case.
  */
 export function boardDragAccepts(bucketType: string): boolean {
   const it = current
   if (!it)
     return false
+  if (bucketType === PLAYBACK_TYPE)
+    return it.srcItemType !== 'artist' && (!!it.albumId || !!it.trackId)
   if (bucketType !== 'artist')
     return true
   return it.srcItemType === 'artist' || !!it.albumId || !!it.trackId

@@ -4,6 +4,7 @@
 // tested by src/components/member/bucketLifecycle.test.ts.
 import type { BoardAlbum, BoardBucket } from './buckets'
 import type { ResearchStatus } from './research'
+import { PLAYBACK_KIND, SLIB_KIND } from './buckets'
 
 // `review_buckets.kind` of the system "들을 것" queue. FEAT-pocket-buckit Step 6
 // (V31) folded the old `album_to_listen_items` table into this kind, so the front
@@ -12,6 +13,22 @@ import type { ResearchStatus } from './research'
 // identity Direction B made every other tag rename-proof too, so the old name-
 // regex fallback for pre-system buckets is gone).
 export const TOLISTEN_KIND = 'to_listen'
+
+// FEAT-playback-bucket-player Step 5 — the system-owned kinds. The backend's
+// `delete_bucket` rejects exactly these with 409 (SYSTEM_BUCKET_KINDS in
+// bucket_service.py); this list is the client-side mirror, and it is COSMETIC by
+// design — it hides a doomed 삭제 affordance so a bucket never blinks out
+// optimistically and then reappears, but the server is the authority.
+//
+// Note the axis: system-ness is `kind`, not `type`. `spotify_library` and
+// `to_listen` are both type='general'; only the Playback Bucket has its own type.
+// Guarding on type here would silently stop protecting the older two.
+export const SYSTEM_BUCKET_KINDS: readonly string[] = [PLAYBACK_KIND, SLIB_KIND, TOLISTEN_KIND]
+
+/** System-owned bucket — auto-created, non-deletable, non-duplicable (server-enforced). */
+export function isSystemBucket(b: Pick<BoardBucket, 'kind'>): boolean {
+  return SYSTEM_BUCKET_KINDS.includes(b.kind)
+}
 
 // ── status meta ───────────────────────────────────────────────────────────--
 // FEAT-bucket-identity Direction B: the lifecycle tag is derived ONLY from typed
@@ -50,6 +67,13 @@ export function isResearchEngaged(s: ResearchStatus | null): boolean {
 }
 
 export function crMeta(b: BoardBucket): { tag: string } {
+  // FEAT-playback-bucket-player Step 5: the Playback Bucket is not a lifecycle
+  // stage at all — it is a queue, so none of 담음/조사 중/작성 중/완료 can ever
+  // describe it. Tagged by kind first, ahead of every other rule, for the same
+  // rename-proof reason as the to-listen bucket below. Without this it rendered as
+  // an ordinary 담음 crate, indistinguishable from a user's own.
+  if (b.kind === PLAYBACK_KIND)
+    return { tag: '재생 대기열' }
   // Canonical: the system to-listen bucket is tagged by kind, not its name.
   if (b.kind === TOLISTEN_KIND)
     return { tag: '청취 예정' }

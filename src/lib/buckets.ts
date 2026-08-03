@@ -16,6 +16,8 @@ type ApiBucketsResponse = components['schemas']['Backend_BucketsResponse']
 type ApiItem = components['schemas']['Backend_BucketItemResponse']
 type ApiArtistExpansion = components['schemas']['Backend_ArtistExpansionResponse']
 type ApiArtistBrief = components['schemas']['Backend_ArtistBrief']
+type ApiTrackExpansion = components['schemas']['Backend_TrackExpansionResponse']
+type ApiTrackBrief = components['schemas']['Backend_TrackBrief']
 type ApiPublicBucketsResponse = components['schemas']['Backend_PublicBucketsResponse']
 type ApiPublicBucket = components['schemas']['Backend_PublicBucket']
 type ApiPublicItem = components['schemas']['Backend_PublicBucketItem']
@@ -536,6 +538,37 @@ export async function expandSourceArtists(
   }
 }
 
+/** One track as appended by an album → tracks expansion. */
+export interface TrackBriefView { id: string, title: string, artistNames: string[] }
+
+function mapTrackBrief(t: ApiTrackBrief): TrackBriefView {
+  return { id: t.id, title: t.title, artistNames: t.artist_names ?? [] }
+}
+
+/**
+ * FEAT-playback-bucket-player: drop an ALBUM on the Playback Bucket → the backend
+ * expands it into its tracks and appends them as `item_type='playback'` rows **in
+ * album order** (`track_no ASC NULLS LAST`). The source album row is never stored —
+ * dropping an album on the queue enqueues its tracks, not the album.
+ *
+ * Sibling of {@link expandSourceArtists}, not a variant: the same source-expansion
+ * idiom (one POST /items, a `source_*` id, an expansion summary back), a different
+ * produced kind. Unlike the artist expansion there is NO `skipped` list — the queue
+ * deliberately allows duplicates (FEAT-pocket-buckit D8, no partial unique on
+ * `item_type='playback'`), so every track is appended and nothing is swallowed.
+ *
+ * The add endpoint returns a Union; a `source_album_id` playback add yields a
+ * TrackExpansionResponse rather than a single BucketItemResponse.
+ */
+export async function expandAlbumTracks(bucketId: string, albumId: string): Promise<TrackBriefView[]> {
+  const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items`, {
+    method: 'POST',
+    body: JSON.stringify({ item_type: 'playback', source_album_id: albumId }),
+  })
+  const data = await asJson<ApiTrackExpansion>(res)
+  return (data.expansion?.added ?? []).map(mapTrackBrief)
+}
+
 /** DELETE /api/buckets/{bucketId}/items/{itemId} — remove a single album (204). */
 export async function deleteBucketItem(bucketId: string, itemId: string): Promise<void> {
   const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/items/${itemId}`, { method: 'DELETE' })
@@ -563,6 +596,17 @@ export async function reorderItems(buckets: { id: string, item_ids: string[] }[]
 // `review_buckets.kind` value of the single special Spotify-library bucket — it
 // is filtered out of the normal crate tree and rendered as its own section.
 export const SLIB_KIND = 'spotify_library'
+
+// FEAT-playback-bucket-player (V51) — the per-user, system-owned Playback Bucket,
+// whose ordered item list IS the playback queue. Two orthogonal axes, both needed:
+//   · `kind` marks it system-owned (the free-TEXT role axis, like SLIB_KIND) — it is
+//     what the delete guard keys on.
+//   · `type` is the closed membership enum — it is what the DROP RULES key on.
+// Both mirror the backend's PLAYBACK_BUCKET_KIND / PLAYBACK_BUCKET_TYPE
+// (app/services/bucket_service.py); the client rules below are cosmetic previews of
+// gates the server enforces authoritatively, so the two spellings must agree.
+export const PLAYBACK_KIND = 'playback_queue'
+export const PLAYBACK_TYPE = 'playback'
 
 // Pre-order walk of every bucket in the tree (each node then its descendants).
 export function visit(buckets: BoardBucket[], fn: (b: BoardBucket) => void): void {

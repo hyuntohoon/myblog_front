@@ -5,10 +5,12 @@
 // current (target, payload) → ops-call mapping so the extraction is a proven
 // no-op and future edits to the rules stay honest.
 import type { BoardBucket } from './buckets'
-import type { DropOps } from './boardDnd'
+import type { DndItem, DropOps } from './boardDnd'
 import { describe, expect, it, vi } from 'vitest'
-import { SLIB_KIND } from './buckets'
+import { PLAYBACK_KIND, PLAYBACK_TYPE, SLIB_KIND } from './buckets'
 import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from './boardDnd'
+import { boardDragAccepts } from './pocketBuckit/boardDnd'
+import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT } from './pocketBuckit/events'
 
 function bucket(over: Partial<BoardBucket> = {}): BoardBucket {
   return {
@@ -33,8 +35,12 @@ function mockOps(tree: BoardBucket[] = []): DropOps {
     insertAlbum: vi.fn(),
     moveBucketInto: vi.fn(),
     expandSource: vi.fn(),
+    queueTrack: vi.fn(),
+    expandAlbumTracks: vi.fn(),
   }
 }
+
+const playback = bucket({ id: 'pq', kind: PLAYBACK_KIND, type: PLAYBACK_TYPE })
 
 describe('canAcceptAlbumDrag', () => {
   it('a general bucket accepts any album drag', () => {
@@ -49,6 +55,64 @@ describe('canAcceptAlbumDrag', () => {
   })
   it('an artist bucket rejects a source bearing no artist/album/track', () => {
     expect(canAcceptAlbumDrag(bucket({ type: 'artist' }), { kind: 'album', srcItemType: 'review' })).toBe(false)
+  })
+  // FEAT-playback-bucket-player Step 5 — the queue holds tracks: a track queues as
+  // one row, an album expands into its tracks, an artist is refused (Artist inverted).
+  it('a playback bucket accepts a track or an album source', () => {
+    expect(canAcceptAlbumDrag(playback, { kind: 'album', trackId: 'tr', srcItemType: 'track' })).toBe(true)
+    expect(canAcceptAlbumDrag(playback, { kind: 'album', albumId: 'al', srcItemType: 'album' })).toBe(true)
+    // a queue row dragged out of the queue is itself a track source
+    expect(canAcceptAlbumDrag(playback, { kind: 'album', trackId: 'tr', srcItemType: 'playback' })).toBe(true)
+  })
+  it('a playback bucket rejects an artist member', () => {
+    expect(canAcceptAlbumDrag(playback, { kind: 'album', artistId: 'ar', srcItemType: 'artist' })).toBe(false)
+  })
+  it('a playback bucket rejects an artist source even if it somehow carries an album', () => {
+    // Belt-and-braces: today an artist row has a null albumId, so the album/track test
+    // alone would already reject it. The explicit srcItemType check is what keeps that
+    // true if an artist row ever starts carrying its album.
+    expect(canAcceptAlbumDrag(playback, { kind: 'album', srcItemType: 'artist', albumId: 'al' })).toBe(false)
+  })
+  it('a playback bucket rejects a source with nothing playable (review / snapshot)', () => {
+    expect(canAcceptAlbumDrag(playback, { kind: 'album', srcItemType: 'review' })).toBe(false)
+    expect(canAcceptAlbumDrag(playback, { kind: 'album', srcItemType: 'snapshot' })).toBe(false)
+  })
+})
+
+// The Pocket island cannot read the board's live `dnd` (two React roots, no shared
+// context), so `boardDragAccepts` duplicates the rule above. Duplication is the design;
+// DRIFT is the bug — a tray chip that previews an acceptance the board then refuses.
+// This pins them together case-for-case so a future edit to one fails here, not in prod.
+describe('boardDragAccepts mirrors canAcceptAlbumDrag (drift guard)', () => {
+  const cases: { name: string, type: string, it: DndItem }[] = [
+    { name: 'general / album', type: 'general', it: { kind: 'album', albumId: 'al', srcItemType: 'album' } },
+    { name: 'general / review', type: 'general', it: { kind: 'album', srcItemType: 'review' } },
+    { name: 'artist / artist member', type: 'artist', it: { kind: 'album', artistId: 'ar', srcItemType: 'artist' } },
+    { name: 'artist / album source', type: 'artist', it: { kind: 'album', albumId: 'al', srcItemType: 'album' } },
+    { name: 'artist / review', type: 'artist', it: { kind: 'album', srcItemType: 'review' } },
+    { name: 'playback / track', type: 'playback', it: { kind: 'album', trackId: 'tr', srcItemType: 'track' } },
+    { name: 'playback / album', type: 'playback', it: { kind: 'album', albumId: 'al', srcItemType: 'album' } },
+    { name: 'playback / artist', type: 'playback', it: { kind: 'album', artistId: 'ar', srcItemType: 'artist' } },
+    { name: 'playback / review', type: 'playback', it: { kind: 'album', srcItemType: 'review' } },
+  ]
+  for (const c of cases) {
+    it(`agrees on ${c.name}`, () => {
+      // Feed the island singleton the same payload the board is holding.
+      window.dispatchEvent(new CustomEvent(PB_BOARD_DND_START_EVENT, {
+        detail: {
+          srcItemType: c.it.srcItemType ?? 'album',
+          albumId: c.it.albumId ?? null,
+          trackId: c.it.trackId ?? null,
+          artistId: c.it.artistId ?? null,
+        },
+      }))
+      expect(boardDragAccepts(c.type)).toBe(canAcceptAlbumDrag(bucket({ type: c.type }), c.it))
+      window.dispatchEvent(new CustomEvent(PB_BOARD_DND_END_EVENT))
+    })
+  }
+  it('rejects everything with no drag in flight', () => {
+    expect(boardDragAccepts('general')).toBe(false)
+    expect(boardDragAccepts('playback')).toBe(false)
   })
 })
 
@@ -109,6 +173,50 @@ describe('routeAlbumDrop — artist target', () => {
     const ops = mockOps([artist])
     routeAlbumDrop(artist, { kind: 'album', trackId: 'tr' }, ops)
     expect(ops.expandSource).toHaveBeenCalledWith('ar', { trackId: 'tr' })
+  })
+})
+
+describe('routeAlbumDrop — playback target', () => {
+  it('queues a track as ONE appended row', () => {
+    const ops = mockOps([playback])
+    routeAlbumDrop(playback, { kind: 'album', trackId: 'tr', srcItemType: 'track', itemId: 'i', fromBucketId: 'src' }, ops)
+    expect(ops.queueTrack).toHaveBeenCalledWith('pq', 'tr')
+    // a COPY, not a move: the source row must stay where it is
+    expect(ops.insertAlbum).not.toHaveBeenCalled()
+    expect(ops.expandAlbumTracks).not.toHaveBeenCalled()
+  })
+  it('expands an album into its tracks rather than storing the album', () => {
+    const ops = mockOps([playback])
+    routeAlbumDrop(playback, { kind: 'album', albumId: 'al', srcItemType: 'album', itemId: 'i', fromBucketId: 'src' }, ops)
+    expect(ops.expandAlbumTracks).toHaveBeenCalledWith('pq', 'al')
+    expect(ops.copyAlbum).not.toHaveBeenCalled()
+    expect(ops.insertAlbum).not.toHaveBeenCalled()
+  })
+  it('queues the SAME track twice — the queue allows duplicates (D8)', () => {
+    const ops = mockOps([playback])
+    const drag: DndItem = { kind: 'album', trackId: 'tr', srcItemType: 'track', itemId: 'i', fromBucketId: 'src' }
+    routeAlbumDrop(playback, drag, ops)
+    routeAlbumDrop(playback, drag, ops)
+    expect(ops.queueTrack).toHaveBeenCalledTimes(2)
+  })
+  it('does not re-queue a row dropped on its own bucket (that is a reorder)', () => {
+    const ops = mockOps([playback])
+    routeAlbumDrop(playback, { kind: 'album', trackId: 'tr', srcItemType: 'playback', itemId: 'i', fromBucketId: 'pq' }, ops)
+    expect(ops.queueTrack).not.toHaveBeenCalled()
+    expect(ops.expandAlbumTracks).not.toHaveBeenCalled()
+  })
+  it('a copy-source album (recent strip) still expands', () => {
+    const ops = mockOps([playback])
+    routeAlbumDrop(playback, { kind: 'album', copy: true, albumId: 'al', srcItemType: 'album', fromBucketId: 'strip' }, ops)
+    expect(ops.expandAlbumTracks).toHaveBeenCalledWith('pq', 'al')
+    expect(ops.copyAlbum).not.toHaveBeenCalled()
+  })
+  it('an artist member reaching the drop path is a no-op (drag-over already refused it)', () => {
+    const ops = mockOps([playback])
+    routeAlbumDrop(playback, { kind: 'album', artistId: 'ar', srcItemType: 'artist', itemId: 'i', fromBucketId: 'src' }, ops)
+    expect(ops.queueTrack).not.toHaveBeenCalled()
+    expect(ops.expandAlbumTracks).not.toHaveBeenCalled()
+    expect(ops.insertAlbum).not.toHaveBeenCalled()
   })
 })
 
