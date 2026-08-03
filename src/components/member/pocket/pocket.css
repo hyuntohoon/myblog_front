@@ -370,6 +370,14 @@
   outline: 1.5px dashed color-mix(in srgb, var(--chip-accent, var(--color-accent)) 55%, transparent);
   outline-offset: 3px; border-radius: 7px;
 }
+/* FEAT-playback-bucket-player Step 5 — the inverse affordance: a chip that cannot take
+   the in-flight member mutes IN PLACE. Opacity only, deliberately: no display/size/order
+   change may touch a tray chip mid-drag or the rail reflows under the cursor (D-series
+   invariant). pointer-events stay live so the chip keeps its tooltip/hover reason. */
+.pb-scope [data-chip-id][data-dropreject] {
+  opacity: 0.38;
+  transition: opacity 120ms ease;
+}
 .pb-scope [data-chip-id][data-drophot] {
   outline: 2px solid var(--chip-accent, var(--color-accent));
   outline-offset: 3px; border-radius: 7px;

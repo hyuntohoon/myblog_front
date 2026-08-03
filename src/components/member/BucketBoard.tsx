@@ -28,7 +28,7 @@ import * as api from '@lib/buckets'
 import { findBucket, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
 import type { DndItem } from '@lib/boardDnd'
 import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from '@lib/boardDnd'
-import { crMeta } from '@lib/bucketLifecycle'
+import { crMeta, isSystemBucket } from '@lib/bucketLifecycle'
 import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_BOARD_DROP_EVENT, PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
@@ -734,6 +734,11 @@ interface Ops {
   // FEAT-my-buckit-artist: expand a featuring track / compilation album source into
   // its credited artists on an Artist bucket (the source row is never stored).
   expandSource: (bucketId: string, source: { albumId: string } | { trackId: string }) => void
+  // FEAT-playback-bucket-player Step 5 — the two Playback Bucket drop paths. Both
+  // APPEND (the queue allows duplicates by design); neither plays anything, which is
+  // the whole point of doing the queue a step before the player.
+  queueTrack: (bucketId: string, trackId: string) => void
+  expandAlbumTracks: (bucketId: string, albumId: string) => void
   // FEAT-album-research-notes
   setResearchMode: (bucketId: string, mode: 'off' | 'all' | 'selected') => void
   setItemSelected: (bucketId: string, itemId: string, selected: boolean) => void
@@ -2172,6 +2177,43 @@ ids.push(a.albumId)
         })
         .catch(() => setFlash('아티스트 확장에 실패했어요'))
     },
+    // FEAT-playback-bucket-player Step 5 — queue ONE track. A copy, not a move: the
+    // source row stays in whatever bucket it came from. No 409 path exists (the queue
+    // allows duplicates by design, D8), so a repeat drop is a success, not a conflict
+    // — the flash says 추가, never 이미 담겨 있어요. The response echoes the new row,
+    // so it lands optimistically with no refetch.
+    queueTrack(bucketId, trackId) {
+      api.addBucketPlayback(bucketId, trackId)
+        .then(({ item }) => {
+          if (item) {
+            setTree((prev) => {
+              if (prev == null)
+                return prev
+              const t = clone(prev)
+              findBucket(t, bucketId)?.albums.push(item)
+              return t
+            })
+          }
+          setFlash('재생 대기열에 추가했어요')
+        })
+        .catch(() => setFlash('재생 대기열 추가에 실패했어요'))
+    },
+    // Album → its tracks, appended in album order. Unlike queueTrack the N new rows
+    // are not echoed individually (the response is an expansion summary), so this one
+    // reloads to render the new tail.
+    expandAlbumTracks(bucketId, albumId) {
+      api.expandAlbumTracks(bucketId, albumId)
+        .then((added) => {
+          if (added.length === 0) {
+            // A real state, not an error: the album exists but no tracks are synced yet.
+            setFlash('이 앨범은 아직 트랙 정보가 없어요')
+            return
+          }
+          setFlash(`${added.length}곡을 재생 대기열에 추가했어요`)
+          void refresh()
+        })
+        .catch(() => setFlash('재생 대기열 추가에 실패했어요'))
+    },
     // FEAT-album-research-notes — set the bucket's auto-research scope.
     // Optimistic; the backend auto-enqueues note-less (checked) items on the
     // all/selected transition. The cover badges auto-load when mode != 'off' so
@@ -2269,6 +2311,17 @@ ids.push(a.albumId)
       return
     }
     const { id } = pendingBucketDelete
+    // FEAT-playback-bucket-player Step 5 — last cosmetic stop before the optimistic
+    // removal. The two entry points below already hide/refuse the action, so reaching
+    // here means a state we didn't anticipate; the backend answers 409 either way, but
+    // without this the row would blink out and then come back on the refresh (exactly
+    // the behavior observed in prod after Step 3 shipped the server guard alone).
+    const target = findBucket(tree, id)
+    if (target && isSystemBucket(target)) {
+      setPendingBucketDelete(null)
+      setFlash('시스템 버킷은 삭제할 수 없어요')
+      return
+    }
     const t = clone(tree)
     removeBucketNode(t, id)
     setTree(t)
@@ -2501,6 +2554,12 @@ ids.push(a.albumId)
 	onTrashAlbum={trashAlbum}
 	onTrashBucket={(id) => {
             const b = tree ? findBucket(tree, id) : null
+            // A system bucket dragged to the trash is refused with a reason rather
+            // than opening a confirm dialog whose only possible outcome is a 409.
+            if (b && isSystemBucket(b)) {
+              setFlash('시스템 버킷은 삭제할 수 없어요')
+              return
+            }
             setPendingBucketDelete({ id, name: b?.name ?? '' })
           }}
         />,
@@ -2707,14 +2766,21 @@ ids.push(a.albumId)
                 })
               },
             },
-            {
-              label: '삭제',
-              danger: true,
-              onClick: () => {
-                setPendingBucketDelete({ id: bucketSheet.id, name: bucketSheet.name })
-                setBucketSheet(null)
-              },
-            },
+            // 삭제 is omitted for a system bucket (Playback / Spotify 라이브러리 /
+            // 청취 예정) — the server refuses it with 409, so offering it would only
+            // ever produce a failure. 이동 / 중첩 above deliberately STAYS: the
+            // Playback Bucket is non-deletable but fully position-movable (T1), so
+            // hiding the whole menu would take away something the owner still has.
+            ...(isSystemBucket(bucketSheet) ?
+              [] :
+              [{
+                label: '삭제',
+                danger: true,
+                onClick: () => {
+                  setPendingBucketDelete({ id: bucketSheet.id, name: bucketSheet.name })
+                  setBucketSheet(null)
+                },
+              }]),
           ]}
         />
       )}

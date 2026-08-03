@@ -879,6 +879,13 @@ export function PocketTray() {
     // reverse DnD: this chip can receive the in-flight board member (dashed hint), and is
     // currently the hovered drop target (solid highlight).
     const droppable = !!boardDrag && boardDragAccepts(leaf.type)
+    // FEAT-playback-bucket-player Step 5 — a chip that CANNOT take the in-flight
+    // member is muted in place instead of silently doing nothing. It is never
+    // removed, hidden, or reordered: the tray must not reflow mid-drag (D-series
+    // invariant), because a target moving out from under the cursor is how a drag
+    // lands somewhere the user didn't aim. The reason stays readable on the chip —
+    // its `accepts` line already says what it takes ('트랙 · 앨범' for the queue).
+    const dropReject = !!boardDrag && !droppable
     const dropHot = dropOverId === leaf.id
     const chip = light ?
       (sticker ?
@@ -891,7 +898,9 @@ export function PocketTray() {
         <span
 	data-chip-id={leaf.id}
 	data-droppable={droppable || undefined}
+	data-dropreject={dropReject || undefined}
 	data-drophot={dropHot || undefined}
+	title={dropReject ? `${leaf.name} — ${leaf.accepts}만 받아요` : undefined}
 	className={isDragging ? 'pb-chip-drag' : undefined}
 	style={{ position: 'relative', display: 'inline-flex', flex: '0 0 auto', alignItems: 'flex-end', touchAction: canReorder ? 'none' : undefined, '--chip-accent': accentFor(leaf) } as CSSProperties}
 	// FEAT-pocket-buckit-viewers Track A — a tray chip is a reverse-DnD drop target. Gate

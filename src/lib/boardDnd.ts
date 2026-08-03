@@ -7,7 +7,7 @@
 // functions so they are unit-testable in jsdom (the drop routing is
 // headless-reproducible; only the gesture/overlay needs a real browser).
 import type { BoardBucket } from './buckets'
-import { findBucket, SLIB_KIND, subtreeHas } from './buckets'
+import { findBucket, PLAYBACK_TYPE, SLIB_KIND, subtreeHas } from './buckets'
 
 // The live drag payload (native DnD can't carry object refs reliably, so
 // BucketBoard keeps one module-level `dnd` of this shape).
@@ -31,13 +31,26 @@ export interface DropOps {
   insertAlbum: (itemId: string, fromBucketId: string, toBucketId: string, beforeItemId: string | null, bakeOrder?: string[]) => void
   moveBucketInto: (bucketId: string, targetId: string | null) => void
   expandSource: (bucketId: string, source: { albumId: string } | { trackId: string }) => void
+  /** FEAT-playback-bucket-player: append ONE track to the Playback Bucket (a copy). */
+  queueTrack: (bucketId: string, trackId: string) => void
+  /** FEAT-playback-bucket-player: append an album's tracks, in album order. */
+  expandAlbumTracks: (bucketId: string, albumId: string) => void
 }
 
 // FEAT-my-buckit-artist: an Artist bucket accepts only an artist member (move) or
 // an album/track SOURCE that expands into its credited artists. A source bearing
 // no artist (review/playback/snapshot tile) is rejected at drag-over — no glow, no
 // optimistic insert. General buckets accept all (today's behavior).
+//
+// FEAT-playback-bucket-player adds the third branch: the Playback Bucket holds
+// TRACKS, so it takes a track source (one queued row) or an album source (expanded
+// into its tracks) and rejects an ARTIST source — the Artist-bucket rule inverted.
+// Rejection is drag-over styling only (the target stays in place and mutes; the
+// tray never reflows mid-drag, the D-series invariant); the server re-checks and
+// 400s, so this can only ever be a preview of the real gate, never the gate itself.
 export function canAcceptAlbumDrag(bucket: BoardBucket, it: DndItem): boolean {
+  if (bucket.type === PLAYBACK_TYPE)
+    return it.srcItemType !== 'artist' && (!!it.albumId || !!it.trackId)
   if (bucket.type !== 'artist')
     return true
   return it.srcItemType === 'artist' || !!it.albumId || !!it.trackId
@@ -67,6 +80,26 @@ export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): 
   // to reconcile against Spotify, so reject it.
   if (isLib && it.kind === 'album' && !it.albumId)
     return
+  // FEAT-playback-bucket-player: the Playback Bucket takes tracks. A track/playback
+  // member queues as ONE appended row — a COPY, not a move: the source row stays in
+  // the collection it came from, because queueing a track is not removing it. An
+  // album SOURCE expands into its tracks (album order, N rows); the album row itself
+  // is never stored. Duplicates are deliberate (D8) — re-queueing a track you already
+  // queued appends another entry rather than 409ing.
+  //
+  // The same-bucket guard mirrors the other two branches, and here it is what keeps
+  // the duplicate rule from swallowing a reorder: dragging a queue row onto its own
+  // bucket is a reposition (the cover insert-before path handles it), never a request
+  // for a second copy of itself.
+  if (target.type === PLAYBACK_TYPE && it.kind === 'album') {
+    if (it.fromBucketId === target.id)
+      return
+    if (it.trackId)
+      ops.queueTrack(target.id, it.trackId)
+    else if (it.albumId)
+      ops.expandAlbumTracks(target.id, it.albumId)
+    return
+  }
   // Artist bucket: an artist member moves/adds in; an album/track SOURCE expands into its
   // credited artists (the source row itself is never stored). A non-artist-bearing source
   // no-ops (it is rejected at drag-over upstream, so it never reaches here in practice).
