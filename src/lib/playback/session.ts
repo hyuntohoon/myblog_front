@@ -20,10 +20,12 @@
 import type { BoardAlbum } from '@lib/buckets'
 import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlaybackDevice, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung } from '@lib/spotifyPlayback'
+import type { OwnershipMessage } from './ownership'
 import { addBucketPlayback, deleteBucketItem, expandAlbumTracks } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED, play, sendPlayerCommand } from '@lib/spotifyPlayback'
 import { readLivePlayback } from '@components/member/lyrics/playback.api'
+import { playbackOwnership } from './ownership'
 import { playbackQueue, withoutQueueItems } from './queue'
 import { cachedUri, prefetchUris, resolveTail } from './uris'
 
@@ -78,6 +80,36 @@ export interface PlaybackSessionState {
   notice: SessionNotice | null
   /** A play/transport call is in flight — the forms disable transport rather than double-fire. */
   busy: boolean
+  /** Only the owner owns the in-page SDK device and writes playback state. */
+  isOwner: boolean
+  ownerPresent: boolean
+  /** The rung on which the owning tab last produced sound. */
+  ownerRung: PlayRung | null
+}
+
+type SessionCommand =
+	| { kind: 'play-at', itemId: string } |
+	{ kind: 'toggle-play' } |
+	{ kind: 'next' } |
+	{ kind: 'previous' }
+
+interface BroadcastSessionState {
+  currentItemId: string | null
+  /**
+   * Carried across tabs for the same reason `currentItemId` is: after #348 the
+   * session can be describing playback that matches no queue row, and that is the
+   * only field saying so. Leaving it out would make a mirror render "nothing is
+   * playing" while the owner is showing a track — worse than before mirroring,
+   * because the mirror looks confidently wrong rather than empty.
+   */
+  external: ExternalNowPlaying | null
+  playing: boolean
+  anchor: { ms: number, anchorEpochMs: number } | null
+  durationMs: number | null
+  rung: PlayRung | null
+  degraded: boolean
+  device: PlaybackDevice | null
+  notice: SessionNotice | null
 }
 
 const EMPTY: PlaybackSessionState = {
@@ -91,9 +123,17 @@ const EMPTY: PlaybackSessionState = {
   device: null,
   notice: null,
   busy: false,
+  isOwner: false,
+  ownerPresent: false,
+  ownerRung: null,
 }
 
-let current: PlaybackSessionState = EMPTY
+const initialOwnership = playbackOwnership.getSnapshot()
+let current: PlaybackSessionState = {
+  ...EMPTY,
+  isOwner: initialOwnership.isOwner,
+  ownerPresent: initialOwnership.ownerPresent,
+}
 const listeners = new Set<() => void>()
 
 function emit(): void {
@@ -102,7 +142,79 @@ function emit(): void {
 
 function patch(p: Partial<PlaybackSessionState>): void {
   current = { ...current, ...p }
+  if (current.isOwner)
+    current = { ...current, ownerRung: current.rung }
   emit()
+  if (current.isOwner)
+    broadcastState()
+}
+
+function broadcastState(): void {
+  // `performance.now()` has a different origin in every document. Convert the
+  // anchor wall time to epoch time before it crosses the tab boundary.
+  const anchor = current.anchor ?
+    {
+        ms: current.anchor.ms,
+        anchorEpochMs: Date.now() - (performance.now() - current.anchor.wallMs),
+      } :
+    null
+  const state: BroadcastSessionState = {
+    currentItemId: current.currentItemId,
+    external: current.external,
+    playing: current.playing,
+    anchor,
+    durationMs: current.durationMs,
+    rung: current.rung,
+    degraded: current.degraded,
+    device: current.device,
+    notice: current.notice,
+  }
+  playbackOwnership.post({ type: 'state', state })
+}
+
+function applyBroadcastState(payload: unknown): void {
+  const state = payload as BroadcastSessionState
+  // `performance.now()` has a different origin in every document. Rebuild the
+  // sender's epoch anchor in this document's performance timeline.
+  const anchor = state.anchor ?
+    {
+        ms: state.anchor.ms,
+        wallMs: performance.now() - (Date.now() - state.anchor.anchorEpochMs),
+      } :
+    null
+  patch({
+    currentItemId: state.currentItemId,
+    external: state.external,
+    playing: state.playing,
+    anchor,
+    durationMs: state.durationMs,
+    rung: state.rung,
+    degraded: state.degraded,
+    device: state.device,
+    notice: state.notice,
+    ownerRung: state.rung,
+  })
+}
+
+async function gate(command: SessionCommand): Promise<boolean> {
+  // Ownership decides who owns the SDK device and issues transport. It never
+  // decides who may read or edit the queue: the queue is `bucketStore`'s
+  // projection and stays fully interactive in every tab.
+  if (current.isOwner)
+    return true
+  if (current.ownerPresent) {
+    // Forward to the owner whatever rung it is on. Forwarding never raises a
+    // second SDK device — that is the thing ownership exists to prevent — it
+    // just asks the tab that already holds the device to act. Gating the
+    // forward on rung would silently drop the command in every state where the
+    // rung is not yet known: `advance()` resets `rung` to null when the queue
+    // empties, so two tabs where one has played and stopped would leave the
+    // other's drop doing nothing at all, in either tab. The rung decides what
+    // this tab may OFFER (see `canControlPlayback`), not what it may ask for.
+    playbackOwnership.post({ type: 'command', cmd: command })
+    return false
+  }
+  return playbackOwnership.ensureOwner()
 }
 
 /** The queue, live off the shared store. Never cached here — see the header. */
@@ -212,6 +324,15 @@ function rowForSpotifyTrack(spotifyTrackId: string | null): BoardAlbum | null {
  * not get appended, removed, or reordered into our list.
  */
 async function adoptLive(): Promise<void> {
+  // Adoption is a WRITE to the session, sourced from a Spotify read. Only the owner
+  // performs it: if every tab adopted independently they would be two writers racing
+  // over one state, each overwriting the other's broadcast with its own slightly
+  // older read, and the progress line would jitter between two anchors taken at
+  // different instants. A mirror gets the same information for free — the owner
+  // broadcasts the adopted state — so the read is not merely redundant, it is
+  // harmful. With no owner at all, this tab is the only reader and proceeds.
+  if (!current.isOwner && current.ownerPresent)
+    return
   const live = await readLivePlayback()
 
   // `unavailable` is a token/network failure, NOT "nothing is playing". Treating it
@@ -460,13 +581,13 @@ export const playbackSession = {
     const rows = queueRows()
     if (rows.length === 0)
       return
-    await playFrom(0)
+    await playbackSession.playAt(rows[0].itemId)
   },
 
   /** Play from a specific row (a tap on the queue). Re-issues our own tail from there. */
   async playAt(itemId: string): Promise<void> {
     const i = queueRows().findIndex(r => r.itemId === itemId)
-    if (i >= 0)
+    if (i >= 0 && (current.isOwner || await gate({ kind: 'play-at', itemId })))
       await playFrom(i)
   },
 
@@ -488,6 +609,13 @@ export const playbackSession = {
    * flight would race two rewrites over one list and could leave duplicates.
    */
   async replaceQueueAndPlay(intent: ReplaceIntent): Promise<ReplaceOutcome> {
+    // ▶ is the most explicit "make sound HERE" there is, and this path can reach
+    // rung 2, which raises *this* tab as the SDK device. So it takes the lease
+    // rather than forwarding: T4 makes an explicit claim unconditional precisely
+    // so a deliberate press is never argued with. Forwarding instead would also
+    // strand the Undo — the toast belongs to the tab that pressed, and its rows
+    // were replaced by this tab's own rewrite.
+    await playbackOwnership.ensureOwner()
     patch({ busy: true, notice: null })
     try {
       await bucketStore.ensureFresh()
@@ -542,6 +670,8 @@ export const playbackSession = {
     // of the transport, not a read-only curiosity.
     if (!current.currentItemId && !current.external)
       return
+    if (!current.isOwner && !await gate({ kind: 'toggle-play' }))
+      return
     patch({ busy: true })
     const r = await sendPlayerCommand({ kind: current.playing ? 'pause' : 'play' })
     if (!r.ok) {
@@ -563,12 +693,13 @@ export const playbackSession = {
 
   /** Skip forward. Completion and an explicit skip are the same transition for the queue. */
   async next(): Promise<void> {
-    await advance('skip')
+    if (current.isOwner || await gate({ kind: 'next' }))
+      await advance('skip')
   },
 
   async previous(): Promise<void> {
     const i = rowIndex(current.currentItemId)
-    if (i > 0)
+    if (i > 0 && (current.isOwner || await gate({ kind: 'previous' })))
       await playFrom(i - 1)
   },
 
@@ -603,7 +734,7 @@ export const playbackSession = {
     const after = queueRows()
     const nextIdx = i >= 0 ? i : 0
     if (nextIdx < after.length && wasPlaying) {
-      await playFrom(nextIdx)
+      await playbackSession.playAt(after[nextIdx].itemId)
       return
     }
     patch({ currentItemId: null, playing: false, anchor: null, rung: null, degraded: false })
@@ -625,9 +756,22 @@ export const playbackSession = {
     patch({ notice: null })
   },
 
+  async takeOver(): Promise<void> {
+    if (!await playbackOwnership.ensureOwner())
+      return
+    const i = rowIndex(current.currentItemId)
+    if (i >= 0)
+      await playFrom(i)
+  },
+
   /** Test seam. */
   __reset(): void {
-    current = EMPTY
+    const ownership = playbackOwnership.getSnapshot()
+    current = {
+      ...EMPTY,
+      isOwner: ownership.isOwner,
+      ownerPresent: ownership.ownerPresent,
+    }
     emit()
   },
 }
@@ -684,6 +828,56 @@ async function advance(cause: 'completed' | 'skip'): Promise<void> {
   }
   await playFrom(nextIdx)
 }
+
+async function executeCommand(command: SessionCommand): Promise<void> {
+  if (!current.isOwner)
+    return
+  if (command.kind === 'play-at')
+    await playbackSession.playAt(command.itemId)
+  else if (command.kind === 'toggle-play')
+    await playbackSession.togglePlay()
+  else if (command.kind === 'next')
+    await playbackSession.next()
+  else
+    await playbackSession.previous()
+}
+
+function syncOwnership(): void {
+  const ownership = playbackOwnership.getSnapshot()
+  const wasOwner = current.isOwner
+  const ownerArrived = !current.ownerPresent && ownership.ownerPresent
+  const ownerRung = ownership.isOwner ?
+    current.rung :
+    ownership.ownerPresent ?
+      (wasOwner ? current.rung : current.ownerRung) :
+      null
+  patch({
+    isOwner: ownership.isOwner,
+    ownerPresent: ownership.ownerPresent,
+    ownerRung,
+  })
+  if (!ownership.isOwner && (wasOwner || ownerArrived))
+    playbackOwnership.post({ type: 'sync-request' })
+}
+
+function handleOwnershipMessage(message: OwnershipMessage): void {
+  if (message.type === 'state') {
+    const owner = playbackOwnership.getSnapshot()
+    if (!current.isOwner && owner.ownerTabId === message.from)
+      applyBroadcastState(message.state)
+  }
+  else if (message.type === 'command') {
+    void executeCommand(message.cmd as SessionCommand)
+  }
+  else if (message.type === 'sync-request' && current.isOwner) {
+    broadcastState()
+  }
+}
+
+playbackOwnership.subscribe(syncOwnership)
+playbackOwnership.onMessage(handleOwnershipMessage)
+if (!current.isOwner)
+  playbackOwnership.post({ type: 'sync-request' })
 
 // ── transport echo ───────────────────────────────────────────────────────────
 // `MYBLOG_PLAYBACK_CHANGED` fires for Connect plays AND (since front #342) for

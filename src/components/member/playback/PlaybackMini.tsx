@@ -1,9 +1,11 @@
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { PlaybackEntryProps } from './PlaybackPanel'
 import {
+  canControlPlayback,
   PlaybackEntries,
   PlaybackIdentity,
   PlaybackNotices,
+  PlaybackOwnerBanner,
   PlaybackQueue,
   PlaybackTransport,
   usePlaybackViewModel,
@@ -28,6 +30,7 @@ export function PlaybackMini({
 }: PlaybackMiniProps) {
   const model = usePlaybackViewModel()
   const more = Math.max(0, model.queue.length - 3)
+  const canControl = canControlPlayback(model.state)
   return (
     <>
       <div className="pb-dhead pbp-mini-head" onPointerDown={onHeadPointerDown} onPointerMove={onHeadPointerMove} onPointerUp={onHeadPointerUp}>
@@ -45,7 +48,8 @@ export function PlaybackMini({
         </span>
       </div>
       <PlaybackIdentity row={model.current} external={model.state.external} compact />
-      <PlaybackTransport state={model.state} />
+      <PlaybackOwnerBanner state={model.state} />
+      <PlaybackTransport state={model.state} canControl={canControl} />
       <PlaybackEntries current={model.current} state={model.state} {...entries} />
       <PlaybackNotices state={model.state} queue={model.queue} />
       <PlaybackQueue model={model} limit={3} />

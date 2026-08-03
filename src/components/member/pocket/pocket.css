@@ -609,7 +609,8 @@
 }
 .pb-scope .pbp-entries button:first-child { border-left: 0; }
 
-.pb-scope .pbp-notice {
+.pb-scope .pbp-notice,
+.pb-scope .pbp-owner-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -624,7 +625,8 @@
 }
 .pb-scope .pbp-notice.is-degraded { border-color: color-mix(in srgb, var(--color-accent) 38%, var(--color-border)); }
 .pb-scope .pbp-notice.is-error { color: var(--color-accent); }
-.pb-scope .pbp-notice button {
+.pb-scope .pbp-notice button,
+.pb-scope .pbp-owner-banner button {
   flex: 0 0 auto;
   padding: 4px 7px;
   border: 1px solid currentColor;
