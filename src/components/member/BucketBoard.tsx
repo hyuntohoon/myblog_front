@@ -33,6 +33,7 @@ import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_BOARD_DROP_EVENT, PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
+import { playbackSession } from '@lib/playback/session'
 import { play } from '@lib/spotifyPlayback'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
@@ -2206,6 +2207,9 @@ ids.push(a.albumId)
             })
           }
           setFlash('재생 대기열에 추가했어요')
+          // The membership is visible in the shared tree before playback starts.
+          // A held session counts as current, so onDropped appends without interrupting.
+          void playbackSession.onDropped()
         })
         .catch(() => setFlash('재생 대기열 추가에 실패했어요'))
     },
@@ -2221,7 +2225,7 @@ ids.push(a.albumId)
             return
           }
           setFlash(`${added.length}곡을 재생 대기열에 추가했어요`)
-          void refresh()
+          void refresh().then(() => playbackSession.onDropped())
         })
         .catch(() => setFlash('재생 대기열 추가에 실패했어요'))
     },
