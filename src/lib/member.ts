@@ -114,6 +114,24 @@ export function isPlaceholderIdentity(displayName: string | null | undefined, ha
 	return !displayName || (displayName === handle && /^user-[0-9a-f]{8}$/.test(handle))
 }
 
+/** Neutral stand-in for a member who never set a display name (audit E-2). */
+export const ANON_MEMBER_LABEL = '이름 없는 회원'
+
+/**
+ * Byline for surfaces an anonymous visitor reaches, where a lazy-provisioned
+ * handle would otherwise publish a Cognito `sub` fragment as if it were a name
+ * (audit E-2: `/collection/` bylined the owner's shelf `@user-0468fd3c`).
+ *
+ * Deliberately NOT the same treatment as the member directory: `MembersHub` /
+ * `MemberProfile` / `AlbumRatingBlock` render a placeholder identity as a mono
+ * `@handle` on purpose, because there the handle is the addressable key (it is
+ * in the `/members/?u=` URL either way). Use this only where the handle is pure
+ * attribution and nothing links by it.
+ */
+export function publicMemberLabel(displayName: string | null | undefined, handle: string): string {
+	return isPlaceholderIdentity(displayName, handle) ? ANON_MEMBER_LABEL : displayName as string
+}
+
 /**
  * The blog owner's live `users.handle` in prod (profile→member merge PR2).
  * MUST match the prod users row of the OWNER_SUB account — MEMBER_IDENTITY

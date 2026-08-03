@@ -78,11 +78,23 @@ export function Tracklist({ tracks, onOpenLyrics, albumMeta }: { tracks: MusicTr
 }
 
 // ── artists block ────────────────────────────────────────────────────────────
+// Hover affordance for the artist-hub link. Self-supplied (the SCOPED_CSS idiom
+// the off-dashboard home islands use) because this component is mounted from
+// layout.astro via AlbumOverlay — i.e. on every page — while the rule used to
+// live in member/layout.css, which loads on /collection/ and /settings/ only.
+// That mismatch was audit E-6, the 4th recurrence of the member.css trap: the
+// rule must travel with whatever emits the class, not with the dashboard.
+const ARTIST_LINK_CSS = `
+.lf-artist-link{color:inherit;text-decoration:none;border-bottom:1px solid transparent;transition:color .14s,border-color .14s}
+.lf-artist-link:hover{color:var(--color-accent);border-bottom-color:currentColor}
+`
+
 function Artists({ artists }: { artists: MusicArtist[] }) {
   if (artists.length === 0)
     return null
   return (
     <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
+      <style>{ARTIST_LINK_CSS}</style>
       <div className="meta" style={{ marginBottom: 12 }}>아티스트</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {artists.map(ar => (
