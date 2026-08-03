@@ -1,5 +1,6 @@
 import type { components } from '../lib/api.gen'
-import { play, queueTrack } from '../lib/spotifyPlayback'
+import { playbackSession } from '../lib/playback/session'
+import { queueTrack } from '../lib/spotifyPlayback'
 
 type AlbumDetail = components['schemas']['Music_AlbumDetail']
 type Track = components['schemas']['Music_TrackOut']
@@ -100,7 +101,7 @@ window.addEventListener('album:detail', (e: Event) => {
 // page an anonymous (or dormant-503) play just shows a notice — no SDK load, no
 // redirect (rule #9 + the SDK-must-not-load-on-page-load guarantee).
 let noteTimer: number | undefined
-function showPlayNote(msg: string): void {
+function showPlayNote(msg: string, undo: (() => void) | null = null): void {
   const section = root?.parentElement
   if (!section)
     return
@@ -112,6 +113,20 @@ function showPlayNote(msg: string): void {
     section.appendChild(note)
   }
   note.textContent = msg
+  // Step 6b: ▶ replaces the playback queue, so the note carries the same 되돌리기
+  // affordance the React surfaces show. Vanilla DOM here — no island to bridge to
+  // on this page — so the button is built by hand rather than dispatched.
+  if (undo) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'lfq-tt-playundo'
+    button.textContent = '되돌리기'
+    button.addEventListener('click', () => {
+      button.disabled = true
+      undo()
+    }, { once: true })
+    note.appendChild(button)
+  }
   void note.offsetWidth // restart the transition on repeat clicks
   note.classList.add('is-on')
   if (noteTimer !== undefined)
@@ -124,8 +139,16 @@ function onRootClick(e: Event): void {
   const playBtn = target?.closest<HTMLButtonElement>('.lfq-tt-play')
   if (playBtn) {
     const trackId = playBtn.dataset.trackId
-    if (trackId)
-      void play({ kind: 'track', trackId, title: playBtn.dataset.trackTitle }).then(o => showPlayNote(o.message))
+    if (trackId) {
+      // Step 6b: the track ▶ replaces the playback queue with this one track and
+      // plays it — the owner's "it has to work from a track too". Same session
+      // entry as the album ▶, so there is still exactly one play path.
+      void playbackSession.replaceQueueAndPlay({ kind: 'track', trackId, title: playBtn.dataset.trackTitle })
+        .then((o) => {
+          const undo = o.undo
+          showPlayNote(o.message, undo ? () => void undo().then(u => showPlayNote(u.message)) : null)
+        })
+    }
     return
   }
   // FEAT-member-player Step 6c — 다음에 듣기. Deliberately NOT laddered like play():

@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import type { BoardAlbum, BoardBucket } from '@lib/buckets'
+import type { BoardAlbum } from '@lib/buckets'
 import type { ExternalNowPlaying, PlaybackSessionState } from '@lib/playback/session'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { deleteBucketItem } from '@lib/buckets'
@@ -7,7 +7,7 @@ import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { useClockEstimate } from '@lib/clockEstimate'
 import { INITIAL_DOCK, useDockTear } from '@lib/dockTear'
 import { openAlbum } from '@lib/entityEvents'
-import { playbackQueue } from '@lib/playback/queue'
+import { playbackQueue, withoutQueueItems } from '@lib/playback/queue'
 import { playbackSession } from '@lib/playback/session'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { useDismissable } from '@lib/useDismissable'
@@ -187,14 +187,6 @@ export function PlaybackNotices({ state, queue }: { state: PlaybackSessionState,
   )
 }
 
-function withoutQueueItem(tree: BoardBucket[], bucketId: string, itemId: string): BoardBucket[] {
-  return tree.map(bucket => ({
-    ...bucket,
-    albums: bucket.id === bucketId ? bucket.albums.filter(row => row.itemId !== itemId) : bucket.albums,
-    children: bucket.children.length ? withoutQueueItem(bucket.children, bucketId, itemId) : bucket.children,
-  }))
-}
-
 async function removeQueueItem(itemId: string): Promise<void> {
   const { bucket } = playbackQueue()
   if (!bucket)
@@ -204,7 +196,7 @@ async function removeQueueItem(itemId: string): Promise<void> {
     await playbackSession.onRemoved(itemId)
     // Non-current removals are outside the session transition; apply the confirmed
     // membership delete here. Current removal already did this, so the pass is idempotent.
-    bucketStore.setTree(withoutQueueItem(bucketStore.getTree(), bucket.id, itemId))
+    bucketStore.setTree(withoutQueueItems(bucketStore.getTree(), bucket.id, [itemId]))
   }
   catch {
     // The server did not confirm the membership change; leave the shared tree intact.
