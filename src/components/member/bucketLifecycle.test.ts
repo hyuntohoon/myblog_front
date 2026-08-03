@@ -6,7 +6,7 @@
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import { describe, expect, it } from 'vitest'
 import { PLAYBACK_KIND, PLAYBACK_TYPE, SLIB_KIND } from '@lib/buckets'
-import { collectItems, crMeta, isResearchEngaged, isSystemBucket, TOLISTEN_KIND } from '@lib/bucketLifecycle'
+import { collectItems, crMeta, isResearchEngaged, isSystemBucket, systemBucketInSubtree, TOLISTEN_KIND } from '@lib/bucketLifecycle'
 
 function bucket(over: Partial<BoardBucket> = {}): BoardBucket {
   return {
@@ -154,5 +154,35 @@ describe('isSystemBucket', () => {
   it('keys on kind, not type — the older two are type=general and must stay protected', () => {
     expect(isSystemBucket(bucket({ kind: SLIB_KIND, type: 'general' }))).toBe(true)
     expect(isSystemBucket(bucket({ kind: 'review', type: PLAYBACK_TYPE }))).toBe(false)
+  })
+})
+
+// BUG-playback-system-bucket-cascade — deleting a bucket cascades to its whole subtree, so
+// "is this deletable" is a question about the subtree, never about the node alone. Mirrors
+// the backend's _system_bucket_in_subtree.
+describe('systemBucketInSubtree', () => {
+  const queue = bucket({ kind: PLAYBACK_KIND, type: PLAYBACK_TYPE, name: '재생 대기열' })
+
+  it('finds the system bucket when it IS the bucket', () => {
+    expect(systemBucketInSubtree(queue)).toBe(PLAYBACK_KIND)
+  })
+  it('finds it as a direct child', () => {
+    expect(systemBucketInSubtree(bucket({ children: [queue] }))).toBe(PLAYBACK_KIND)
+  })
+  it('finds it at depth — the cascade is not one level deep', () => {
+    const deep = bucket({ children: [bucket({ children: [bucket({ children: [queue] })] })] })
+    expect(systemBucketInSubtree(deep)).toBe(PLAYBACK_KIND)
+  })
+  it('covers the two older system kinds too', () => {
+    expect(systemBucketInSubtree(bucket({ children: [bucket({ kind: SLIB_KIND })] }))).toBe(SLIB_KIND)
+    expect(systemBucketInSubtree(bucket({ children: [bucket({ kind: TOLISTEN_KIND })] }))).toBe(TOLISTEN_KIND)
+  })
+  it('is null for an ordinary tree — the guard must not block every delete', () => {
+    const plain = bucket({ children: [bucket({ children: [bucket()] })] })
+    expect(systemBucketInSubtree(plain)).toBeNull()
+  })
+  it('does not look at siblings, only the subtree', () => {
+    // The queue sitting NEXT to this bucket must not make this bucket undeletable.
+    expect(systemBucketInSubtree(bucket({ id: 'other' }))).toBeNull()
   })
 })

@@ -28,7 +28,7 @@ import * as api from '@lib/buckets'
 import { findBucket, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
 import type { DndItem } from '@lib/boardDnd'
 import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from '@lib/boardDnd'
-import { crMeta, isSystemBucket } from '@lib/bucketLifecycle'
+import { crMeta, systemBucketInSubtree, systemBucketLabel } from '@lib/bucketLifecycle'
 import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_BOARD_DROP_EVENT, PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
@@ -375,6 +375,17 @@ function displayOrder(albums: BoardAlbum[], view: BucketView): string[] {
 // The lifecycle-tag rule (`crMeta` + `collectItems` + `isResearchEngaged` +
 // `TOLISTEN_KIND`) now lives in @lib/bucketLifecycle (REFACTOR-frontend-member-
 // surface Step 3), unit-tested by member/bucketLifecycle.test.ts.
+
+// BUG-playback-system-bucket-cascade — why a delete was refused. Two distinct cases, and
+// conflating them would be the unhelpful half: the bucket IS the system bucket (nothing to
+// do about it), versus the bucket CONTAINS one (fixable — move it out and the delete works).
+// The second case names the offender, because "move it out first" needs a referent.
+function deleteBlockedMessage(target: BoardBucket, blockedKind: string): string {
+  const label = systemBucketLabel(blockedKind)
+  return target.kind === blockedKind ?
+    `${label}은(는) 시스템 버킷이라 삭제할 수 없어요` :
+    `이 버킷 안에 ${label}이(가) 있어서 삭제할 수 없어요 · 먼저 밖으로 옮겨주세요`
+}
 
 // Effective accent color: an explicit user color wins, else the neutral ink (top
 // level) / hairline (nested) default. (Direction B dropped the old name-regex
@@ -2317,9 +2328,10 @@ ids.push(a.albumId)
     // without this the row would blink out and then come back on the refresh (exactly
     // the behavior observed in prod after Step 3 shipped the server guard alone).
     const target = findBucket(tree, id)
-    if (target && isSystemBucket(target)) {
+    const blocked = target ? systemBucketInSubtree(target) : null
+    if (blocked != null) {
       setPendingBucketDelete(null)
-      setFlash('시스템 버킷은 삭제할 수 없어요')
+      setFlash(deleteBlockedMessage(target!, blocked))
       return
     }
     const t = clone(tree)
@@ -2556,8 +2568,9 @@ ids.push(a.albumId)
             const b = tree ? findBucket(tree, id) : null
             // A system bucket dragged to the trash is refused with a reason rather
             // than opening a confirm dialog whose only possible outcome is a 409.
-            if (b && isSystemBucket(b)) {
-              setFlash('시스템 버킷은 삭제할 수 없어요')
+            const blocked = b ? systemBucketInSubtree(b) : null
+            if (b && blocked != null) {
+              setFlash(deleteBlockedMessage(b, blocked))
               return
             }
             setPendingBucketDelete({ id, name: b?.name ?? '' })
@@ -2771,7 +2784,7 @@ ids.push(a.albumId)
             // ever produce a failure. 이동 / 중첩 above deliberately STAYS: the
             // Playback Bucket is non-deletable but fully position-movable (T1), so
             // hiding the whole menu would take away something the owner still has.
-            ...(isSystemBucket(bucketSheet) ?
+            ...(systemBucketInSubtree(bucketSheet) != null ?
               [] :
               [{
                 label: '삭제',
