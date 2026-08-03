@@ -44,7 +44,7 @@ export function PlaybackMini({
           <button type="button" onClick={onClose} aria-label="닫기">✕</button>
         </span>
       </div>
-      <PlaybackIdentity row={model.current} compact />
+      <PlaybackIdentity row={model.current} external={model.state.external} compact />
       <PlaybackTransport state={model.state} />
       <PlaybackEntries current={model.current} state={model.state} {...entries} />
       <PlaybackNotices state={model.state} queue={model.queue} />

@@ -23,8 +23,9 @@ import type { PlaybackDevice, PlayerCommandOutcome, PlayFailure, PlayRung } from
 import { deleteBucketItem } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED, play, sendPlayerCommand } from '@lib/spotifyPlayback'
+import { readLivePlayback } from '@components/member/lyrics/playback.api'
 import { playbackQueue } from './queue'
-import { prefetchUris, resolveTail } from './uris'
+import { cachedUri, prefetchUris, resolveTail } from './uris'
 
 /** How the last play/transport attempt ended, as ONE sentence the forms render verbatim. */
 export interface SessionNotice {
@@ -34,9 +35,37 @@ export interface SessionNotice {
   reason?: PlayFailure['reason']
 }
 
+/**
+ * Something is playing that is NOT one of our queue rows — started from an album
+ * page, another surface, the phone, a speaker, anywhere.
+ *
+ * This exists because the RFC's own non-goal says it must: *"the Buckit list is
+ * authoritative for what we enqueued; **Spotify is authoritative for what is
+ * playing**"*. Step 6 shipped only the first half — the panel could describe
+ * nothing but playback it had started itself, so the owner found (2026-08-03) that
+ * playing an album had no relationship to the queue and that the panel could not
+ * control whatever was actually sounding.
+ *
+ * Being outside the queue never disables transport. A player that can see what is
+ * playing but refuses to pause it is the bug, not the feature.
+ */
+export interface ExternalNowPlaying {
+  title: string | null
+  artist: string | null
+  /** Spotify track id, so a later queue read can still match it to a row. */
+  spotifyTrackId: string | null
+  deviceName: string | null
+}
+
 export interface PlaybackSessionState {
   /** The row we believe is sounding, by `review_bucket_items.id`. Null = nothing started. */
   currentItemId: string | null
+  /**
+   * Set when live playback could NOT be matched to a queue row. Mutually exclusive
+   * with `currentItemId` — the panel renders whichever is present, and the transport
+   * behaves identically either way.
+   */
+  external: ExternalNowPlaying | null
   playing: boolean
   /** Position anchor, shared with the lyrics viewer (`@lib/clockEstimate`). */
   anchor: ClockAnchor | null
@@ -53,6 +82,7 @@ export interface PlaybackSessionState {
 
 const EMPTY: PlaybackSessionState = {
   currentItemId: null,
+  external: null,
   playing: false,
   anchor: null,
   durationMs: null,
@@ -164,6 +194,79 @@ async function playFrom(index: number): Promise<void> {
   })
 }
 
+/**
+ * Find the queue row whose track is `spotifyTrackId`, using URIs already resolved
+ * by `lib/playback/uris.ts`.
+ *
+ * Deliberately cache-ONLY (`cachedUri`, never `resolveUri`): matching must not fire
+ * a request per row, and an unmatched row simply falls through to the external
+ * branch, which is a correct outcome rather than a failure. The panel prefetches the
+ * visible queue anyway, so by the time this runs the URIs are usually known.
+ */
+function rowForSpotifyTrack(spotifyTrackId: string | null): BoardAlbum | null {
+  if (!spotifyTrackId)
+    return null
+  const uri = `spotify:track:${spotifyTrackId}`
+  return queueRows().find(r => r.trackId && cachedUri(r.trackId) === uri) ?? null
+}
+
+/**
+ * Ask Spotify what is actually playing and adopt it.
+ *
+ * ONE read, never a loop — D28 (no polling) is upheld: this runs when the panel
+ * opens and when `MYBLOG_PLAYBACK_CHANGED` fires, both of which are 1:1 with a user
+ * action or a track boundary.
+ *
+ * Adoption is deliberately non-destructive to the queue: it changes what the session
+ * believes is sounding, never the rows. A track playing from somewhere else does
+ * not get appended, removed, or reordered into our list.
+ */
+async function adoptLive(): Promise<void> {
+  const live = await readLivePlayback()
+
+  // `unavailable` is a token/network failure, NOT "nothing is playing". Treating it
+  // as silence would make a transient blip wipe a perfectly good current track —
+  // the same distinction `readLivePlayback`'s own docstring insists on.
+  if (live.state === 'unavailable')
+    return
+
+  if (live.state === 'idle') {
+    patch({ playing: false, external: null })
+    return
+  }
+
+  // `paused` carries the full track payload and MUST be adopted, not folded into
+  // idle: someone pausing on their phone should leave this panel showing that track
+  // with a working ▶, which is the whole point of adopting external playback.
+  // (`NowPlaying` folded paused into idle until 2026-08-03 and cleared its own card
+  // in response to its own pause — the same trap.)
+  const playing = live.state === 'playing'
+  // Anchor on `readAtMs`, not `performance.now()`: Spotify stamps the position
+  // somewhere inside the request window, and that field is the measured midpoint.
+  // Using "whenever we got around to it" is what makes a progress line drift.
+  const anchor: ClockAnchor | null = typeof live.progressMs === 'number' ?
+    { ms: live.progressMs, wallMs: live.readAtMs } :
+    null
+
+  const row = rowForSpotifyTrack(live.trackId)
+  if (row) {
+    patch({ currentItemId: row.itemId, external: null, playing, anchor, durationMs: live.durationMs })
+    return
+  }
+  patch({
+    currentItemId: null,
+    external: {
+      title: live.track,
+      artist: live.artist,
+      spotifyTrackId: live.trackId,
+      deviceName: live.deviceName,
+    },
+    playing,
+    anchor,
+    durationMs: live.durationMs,
+  })
+}
+
 export const playbackSession = {
   subscribe(cb: () => void): () => void {
     listeners.add(cb)
@@ -211,7 +314,11 @@ export const playbackSession = {
   },
 
   async togglePlay(): Promise<void> {
-    if (!current.currentItemId)
+    // Anything we can SEE, we can control. Gating this on `currentItemId` was the
+    // shipped bug: a track playing from an album page or a phone showed up nowhere
+    // and could not be paused from here. External playback is a first-class subject
+    // of the transport, not a read-only curiosity.
+    if (!current.currentItemId && !current.external)
       return
     patch({ busy: true })
     const r = await sendPlayerCommand({ kind: current.playing ? 'pause' : 'play' })
@@ -283,6 +390,18 @@ export const playbackSession = {
   /** Warm the tail's URIs while the user is looking at the queue, so a tap costs no request. */
   prefetch(): void {
     void prefetchUris(trackIdsFrom(queueRows()))
+  },
+
+  /**
+   * Adopt whatever is actually playing — call when a player surface becomes visible.
+   *
+   * Prefetches first so the URI match can succeed: `rowForSpotifyTrack` is
+   * cache-only by design, and without warm URIs a track that IS in the queue would
+   * be misreported as external on the very first read.
+   */
+  async syncFromLive(): Promise<void> {
+    await prefetchUris(trackIdsFrom(queueRows()))
+    await adoptLive()
   },
 
   setDevice(device: PlaybackDevice | null): void {
@@ -360,11 +479,11 @@ async function advance(cause: 'completed' | 'skip'): Promise<void> {
 // module scope, because the session is a singleton and both forms share it.
 if (typeof window !== 'undefined') {
   window.addEventListener(MYBLOG_PLAYBACK_CHANGED, () => {
-    // Deliberately narrow: the event says "something changed", not what. Re-reading
-    // live state belongs to the surfaces that already do a one-shot read; here it
-    // only invalidates the anchor so the progress line stops asserting a position it
-    // can no longer vouch for.
-    if (current.currentItemId)
-      patch({ anchor: current.anchor ? { ms: positionNow(), wallMs: performance.now() } : null })
+    // The event says "something changed", not what — so ASK. This used to only
+    // re-anchor the clock, which meant a play started anywhere else (an album page,
+    // the phone, a speaker) left the panel describing whatever it had started last,
+    // or nothing at all. One read, fired by an event that is already 1:1 with a real
+    // transition, so D28 (no polling) still holds.
+    void adoptLive()
   })
 }

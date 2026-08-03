@@ -10,6 +10,12 @@ const mocks = vi.hoisted(() => ({
   sendPlayerCommand: vi.fn(),
   resolveTail: vi.fn(),
   prefetchUris: vi.fn(),
+  cachedUri: vi.fn(),
+  readLivePlayback: vi.fn(),
+}))
+
+vi.mock('@components/member/lyrics/playback.api', () => ({
+  readLivePlayback: mocks.readLivePlayback,
 }))
 
 vi.mock('@lib/buckets', async (importOriginal) => {
@@ -27,6 +33,7 @@ vi.mock('@lib/spotifyPlayback', () => ({
 vi.mock('@lib/playback/uris', () => ({
   resolveTail: mocks.resolveTail,
   prefetchUris: mocks.prefetchUris,
+  cachedUri: mocks.cachedUri,
 }))
 
 const PLAYBACK_LAG_MS = 1_200
@@ -106,6 +113,8 @@ beforeEach(() => {
   mocks.deleteBucketItem.mockResolvedValue(undefined)
   mocks.resolveTail.mockImplementation(async (ids: string[]) => ids.map(id => `provider:track:${id}`))
   mocks.prefetchUris.mockResolvedValue(undefined)
+  mocks.cachedUri.mockImplementation((trackId: string) => `provider:track:${trackId}`)
+  mocks.readLivePlayback.mockResolvedValue({ state: 'idle' })
   // Spotify acknowledges the write before the player applies it. Every playback
   // stub keeps that stale-read window alive; fake timers keep the suite fast.
   mocks.play.mockImplementation(() => new Promise(resolve => window.setTimeout(() => resolve(nextPlayOutcome), PLAYBACK_LAG_MS)))
@@ -229,5 +238,106 @@ describe('queue-preserving transitions', () => {
     expect(playbackSession.getSnapshot()).toMatchObject({ busy: true, currentItemId: null })
     await finishPlayback(pending)
     expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+  })
+})
+
+// ── adopting playback we did not start ───────────────────────────────────────
+// The shipped Step 6 session could only ever describe playback it had started
+// itself, so an album played from anywhere else was invisible here and the
+// transport beside it was dead. These cover the fix.
+describe('external playback adoption', () => {
+  const liveTrack = (trackId: string, state: 'playing' | 'paused' = 'playing') => ({
+    state,
+    trackId,
+    progressMs: 42_000,
+    readAtMs: 1_000,
+    durationMs: 240_000,
+    track: 'Paranoid Android',
+    artist: 'Radiohead',
+    artists: [],
+    album: 'OK Computer',
+    albumSpotifyId: null,
+    albumCoverUrl: null,
+    deviceName: '거실 스피커',
+    shuffle: null,
+    repeat: null,
+    volumePercent: null,
+    contextUri: null,
+    contextType: null,
+  })
+
+  it('matches live playback to a queue row when the track is ours', async () => {
+    setQueue([row('a'), row('b')])
+    // `cachedUri` is what the matcher consults — mirror how uris.ts would have it.
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-b' ? 'spotify:track:SPOT-B' : null))
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-B'))
+
+    await playbackSession.syncFromLive()
+
+    const state = playbackSession.getSnapshot()
+    expect(state.currentItemId).toBe('b')
+    expect(state.external).toBeNull()
+    expect(state.playing).toBe(true)
+    // Anchored on the READ instant, not "now" — otherwise the progress line drifts
+    // by however long the request took.
+    expect(state.anchor).toEqual({ ms: 42_000, wallMs: 1_000 })
+  })
+
+  it('reports playback outside the queue instead of going blind', async () => {
+    setQueue([row('a')])
+    mocks.cachedUri.mockReturnValue('spotify:track:SOMETHING-ELSE')
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-UNKNOWN'))
+
+    await playbackSession.syncFromLive()
+
+    const state = playbackSession.getSnapshot()
+    expect(state.currentItemId).toBeNull()
+    expect(state.external).toEqual({
+      title: 'Paranoid Android',
+      artist: 'Radiohead',
+      spotifyTrackId: 'SPOT-UNKNOWN',
+      deviceName: '거실 스피커',
+    })
+    expect(state.playing).toBe(true)
+  })
+
+  it('adopts a track PAUSED elsewhere rather than folding it into idle', async () => {
+    setQueue([])
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-X', 'paused'))
+
+    await playbackSession.syncFromLive()
+
+    const state = playbackSession.getSnapshot()
+    expect(state.external?.title).toBe('Paranoid Android')
+    expect(state.playing).toBe(false)
+  })
+
+  it('controls external playback — the bug the owner reported', async () => {
+    setQueue([])
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-X'))
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+
+    const pausing = playbackSession.togglePlay()
+    // 204 is acceptance, not application: mid-flight nothing has changed yet.
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS - 1)
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+    await vi.advanceTimersByTimeAsync(1)
+    await pausing
+
+    expect(mocks.sendPlayerCommand).toHaveBeenCalledWith({ kind: 'pause' })
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+  })
+
+  it('keeps the current track when the read is unavailable (transient, not silence)', async () => {
+    setQueue([])
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-X'))
+    await playbackSession.syncFromLive()
+
+    mocks.readLivePlayback.mockResolvedValue({ state: 'unavailable' })
+    await playbackSession.syncFromLive()
+
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('SPOT-X')
+    expect(playbackSession.getSnapshot().playing).toBe(true)
   })
 })
