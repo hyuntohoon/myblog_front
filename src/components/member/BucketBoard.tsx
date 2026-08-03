@@ -34,7 +34,6 @@ import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_BOARD_DROP_EVENT, PB_CLOSED_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { playbackSession } from '@lib/playback/session'
-import { play } from '@lib/spotifyPlayback'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
@@ -1540,11 +1539,18 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const [addingTo, setAddingTo] = useState<{ id: string, name: string, type: string } | null>(null)
   // FEAT-my-buckit-artist: a transient board-level toast for the source-expansion
   // feedback ("참여 아티스트 N명 담음 · M명 중복"). Auto-clears after a few seconds.
-  const [flash, setFlash] = useState<string | null>(null)
+  // FEAT-playback-bucket-player Step 6b: the toast gained an optional Undo, because
+  // ▶ now REPLACES the playback queue. Every existing `setFlash('…')` call keeps its
+  // one-argument shape — the second argument defaults to no button — so this is a
+  // widening, not a rewrite of seventeen call sites.
+  const [flash, setFlashState] = useState<{ label: string, undo: (() => void) | null } | null>(null)
+  const setFlash = useCallback((label: string | null, undo: (() => void) | null = null) => {
+    setFlashState(label == null ? null : { label, undo })
+  }, [])
   useEffect(() => {
     if (!flash)
       return
-    const t = setTimeout(() => setFlash(null), 4000)
+    const t = setTimeout(() => setFlashState(null), 4000)
     return () => clearTimeout(t)
   }, [flash])
   // FEAT-my-buckit-artist Step 4: the board-level type filter ('all'|'general'|
@@ -2690,18 +2696,16 @@ ids.push(a.albumId)
                 label: '이 앨범 재생 ▶',
                 onClick: () => {
                   setAlbumSheet(null)
-                  // Step 5: one ladder call. 'no active device' is no longer a dead
-                  // end here — it is the hand-off to the in-page device.
-                  void play({ kind: 'album', albumId, title: s.album.title }).then((r) => {
-                    if (r.ok) {
-                      setFlash(r.rung === 'in-page' ? r.message : 'Spotify에서 앨범 재생을 시작했어요.')
+                  // Step 6b: ▶ replaces the playback queue with this album and plays
+                  // it, through the session — the ladder underneath is unchanged.
+                  void playbackSession.replaceQueueAndPlay({ kind: 'album', albumId, title: s.album.title }).then((r) => {
+                    const undo = r.undo
+                    const runUndo = undo ? () => void undo().then(u => setFlash(u.message)) : null
+                    if (!r.ok && r.play?.ok === false && r.play.reason === 'token' && r.play.status === 'disconnected') {
+                      setFlash('Spotify를 연동하면 이 앨범을 재생할 수 있어요.', runUndo)
                       return
                     }
-                    if (r.reason === 'token' && r.status === 'disconnected') {
-                      setFlash('Spotify를 연동하면 이 앨범을 재생할 수 있어요.')
-                      return
-                    }
-                    setFlash(r.message)
+                    setFlash(r.message, runUndo)
                   })
                 },
               })
@@ -2816,7 +2820,19 @@ ids.push(a.albumId)
       {/* FEAT-my-buckit-artist: source-expansion feedback toast (참여 아티스트 N명…). */}
       {flash && typeof document !== 'undefined' && createPortal(
         <div role="status" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 101, background: 'var(--color-text)', color: 'var(--color-bg)', borderRadius: 6, padding: '10px 16px', fontSize: 13, boxShadow: '0 6px 22px rgba(26,26,26,.28)' }}>
-          {flash}
+          {flash.label}
+          {flash.undo && (
+            <button
+	type="button"
+	onClick={() => {
+                flash.undo?.()
+                setFlash(null)
+              }}
+	style={{ marginLeft: 12, background: 'none', border: 'none', padding: 0, color: 'inherit', font: 'inherit', fontSize: 13, textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              되돌리기
+            </button>
+          )}
         </div>,
         document.body,
       )}

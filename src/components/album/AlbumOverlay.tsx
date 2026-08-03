@@ -12,8 +12,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { isLoggedIn } from '@lib/auth'
 import { ENT_OPEN_ALBUM } from '@lib/entityEvents'
+import { playbackSession } from '@lib/playback/session'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
-import { play } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { AlbumDetailView } from './AlbumDetailView'
@@ -46,12 +46,15 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
   const cardRef = useRef<HTMLDivElement>(null)
   const noticeTimer = useRef<number | null>(null)
   const [playing, setPlaying] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  // The toast carries an optional Undo, because ▶ now REPLACES the playback queue
+  // (Step 6b) and that is destructive. Shipped idiom, not a new one: label + a
+  // 되돌리기 button, no confirm dialog (this RFC's OQ3).
+  const [notice, setNotice] = useState<{ label: string, undo: (() => void) | null } | null>(null)
   useDismissable(true, onClose, cardRef)
   useScrollLock()
 
-  const showNotice = (message: string) => {
-    setNotice(message)
+  const showNotice = (label: string, undo: (() => void) | null = null) => {
+    setNotice({ label, undo })
     if (noticeTimer.current != null)
       window.clearTimeout(noticeTimer.current)
     noticeTimer.current = window.setTimeout(() => setNotice(null), 4200)
@@ -72,22 +75,32 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
     if (!isLoggedIn() || playing)
       return
     setPlaying(true)
-    // Step 5: one ladder call. The 'no active device' dead end this surface used to
-    // report is now the hand-off to rung 2, so it is no longer a case here.
-    const outcome = await play({ kind: 'album', albumId: target.albumId, title: target.title })
+    // FEAT-playback-bucket-player Step 6b: ▶ REPLACES the playback queue and plays
+    // it, instead of calling the ladder behind the session's back. Same ladder
+    // underneath (the session owns the only play path) — what changed is that the
+    // queue now knows about this, which is the whole finding this step came from.
+    const outcome = await playbackSession.replaceQueueAndPlay({
+      kind: 'album',
+      albumId: target.albumId,
+      title: target.title,
+    })
     setPlaying(false)
+    const undo = outcome.undo
+    const runUndo = undo ? () => void undo().then(r => showNotice(r.message)) : null
     if (outcome.ok) {
       rememberSpotifyTransportProbe('available')
-      showNotice(outcome.rung === 'in-page' ? outcome.message : 'Spotify에서 앨범 재생을 시작했어요.')
+      showNotice(outcome.message, runUndo)
       return
     }
-    if (outcome.reason === 'no-capability')
-      rememberSpotifyTransportProbe('no-capability')
-    if (outcome.reason === 'token' && outcome.status === 'disconnected') {
-      showNotice('Spotify를 연동하면 이 앨범을 재생할 수 있어요.')
-      return
+    if (outcome.play?.ok === false) {
+      if (outcome.play.reason === 'no-capability')
+        rememberSpotifyTransportProbe('no-capability')
+      if (outcome.play.reason === 'token' && outcome.play.status === 'disconnected') {
+        showNotice('Spotify를 연동하면 이 앨범을 재생할 수 있어요.', runUndo)
+        return
+      }
     }
-    showNotice(outcome.message)
+    showNotice(outcome.message, runUndo)
   }
 
   return (
@@ -128,7 +141,20 @@ undefined}
       </div>
       {notice && createPortal(
         <div className="rise" role="status" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 200, padding: '11px 16px', borderRadius: 7, background: 'var(--color-text)', color: 'var(--color-bg)', boxShadow: '0 16px 40px rgba(0,0,0,.3)', maxWidth: 'min(90vw, 560px)' }}>
-          <span className="sans" style={{ fontSize: 13 }}>{notice}</span>
+          <span className="sans" style={{ fontSize: 13 }}>{notice.label}</span>
+          {notice.undo && (
+            <button
+	type="button"
+	className="sans"
+	onClick={() => {
+                notice.undo?.()
+                setNotice(null)
+              }}
+	style={{ marginLeft: 12, background: 'none', border: 'none', padding: 0, color: 'inherit', font: 'inherit', fontSize: 13, textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              되돌리기
+            </button>
+          )}
         </div>,
         document.body,
       )}

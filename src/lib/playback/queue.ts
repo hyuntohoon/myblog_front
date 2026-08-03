@@ -55,3 +55,27 @@ export function playbackQueue(): { bucket: BoardBucket | null, items: BoardAlbum
   const bucket = findPlaybackBucket(tree)
   return { bucket, items: bucket?.albums ?? [] }
 }
+
+/**
+ * `tree` with `itemIds` dropped from `bucketId`'s direct members.
+ *
+ * The DELETE endpoint does not mutate `bucketStore`, so every confirmed membership
+ * delete has to be applied to the shared tree by hand. That walker existed twice —
+ * once in `session.ts`, once in `PlaybackPanel.tsx`, character for character — which
+ * is the duplicated-pattern class CLAUDE.md names by hand. One copy lives here and
+ * both call sites import it.
+ *
+ * Takes a set of ids rather than one, because replacing the queue deletes N rows and
+ * pruning them one re-render at a time would show the old queue draining row by row.
+ */
+export function withoutQueueItems(tree: BoardBucket[], bucketId: string, itemIds: Iterable<string>): BoardBucket[] {
+  const drop = new Set(itemIds)
+  if (drop.size === 0)
+    return tree
+  const walk = (nodes: BoardBucket[]): BoardBucket[] => nodes.map(b => ({
+    ...b,
+    albums: b.id === bucketId ? b.albums.filter(a => !drop.has(a.itemId)) : b.albums,
+    children: b.children.length ? walk(b.children) : b.children,
+  }))
+  return walk(tree)
+}
