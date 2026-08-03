@@ -4,7 +4,7 @@
 // tested by src/components/member/bucketLifecycle.test.ts.
 import type { BoardAlbum, BoardBucket } from './buckets'
 import type { ResearchStatus } from './research'
-import { PLAYBACK_KIND, SLIB_KIND } from './buckets'
+import { PLAYBACK_KIND, SLIB_KIND, visit } from './buckets'
 
 // `review_buckets.kind` of the system "들을 것" queue. FEAT-pocket-buckit Step 6
 // (V31) folded the old `album_to_listen_items` table into this kind, so the front
@@ -28,6 +28,37 @@ export const SYSTEM_BUCKET_KINDS: readonly string[] = [PLAYBACK_KIND, SLIB_KIND,
 /** System-owned bucket — auto-created, non-deletable, non-duplicable (server-enforced). */
 export function isSystemBucket(b: Pick<BoardBucket, 'kind'>): boolean {
   return SYSTEM_BUCKET_KINDS.includes(b.kind)
+}
+
+/**
+ * BUG-playback-system-bucket-cascade — the `kind` of a system bucket anywhere in `b`'s
+ * subtree (including `b` itself), or null. Deleting a bucket cascades to its whole subtree,
+ * so "is this deletable" is a question about the subtree, never about the node alone.
+ *
+ * Mirrors the backend's `_system_bucket_in_subtree` and, like `isSystemBucket`, is cosmetic —
+ * the server answers 409 either way. It exists because the optimistic delete removes the row
+ * first: without it, deleting a crate that happens to contain the queue makes the whole
+ * subtree vanish and then reappear on the error refresh.
+ *
+ * Returns the kind, not a bool, so the message can name what is in the way — "move it out
+ * first" is only actionable if the member knows which bucket to move.
+ */
+export function systemBucketInSubtree(b: BoardBucket): string | null {
+  let found: string | null = null
+  visit([b], (n) => {
+    if (found == null && isSystemBucket(n))
+      found = n.kind
+  })
+  return found
+}
+
+/** Korean label for a system kind, for the "can't delete" message. */
+export function systemBucketLabel(kind: string): string {
+  if (kind === PLAYBACK_KIND)
+    return '재생 대기열'
+  if (kind === SLIB_KIND)
+    return 'Spotify 라이브러리'
+  return '청취 예정'
 }
 
 // ── status meta ───────────────────────────────────────────────────────────--
