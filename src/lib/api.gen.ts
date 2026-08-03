@@ -3348,6 +3348,35 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * TrackExpansion
+         * @description FEAT-playback-bucket-player: the tracks an album drop appended to the Playback Bucket.
+         *
+         *     No `skipped` list, unlike BucketItemExpansion: the queue allows duplicates by design
+         *     (FEAT-pocket-buckit D8 — no partial unique on item_type='playback'), so every track of the
+         *     album is appended and nothing is dropped. `added` is in the order the rows were appended
+         *     (album order), so the front can render the new queue tail without a re-read.
+         */
+        Backend_TrackExpansion: {
+            /** Added */
+            added?: components["schemas"]["Backend_TrackBrief"][];
+        };
+        /**
+         * TrackExpansionResponse
+         * @description FEAT-playback-bucket-player: the add-item response for an album dropped on the Playback
+         *     Bucket. Like ArtistExpansionResponse this is a DISTINCT shape from BucketItemResponse (there
+         *     is no single membership row to echo), so POST /items returns a Union of the three and the
+         *     front discriminates on the presence of `expansion` (+ item_type to tell the two apart).
+         */
+        Backend_TrackExpansionResponse: {
+            expansion: components["schemas"]["Backend_TrackExpansion"];
+            /**
+             * Item Type
+             * @default playback
+             * @constant
+             */
+            item_type: "playback";
+        };
         /** TrackedArtistCandidate */
         Backend_TrackedArtistCandidate: {
             /** Already Tracked */
@@ -4243,6 +4272,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description System bucket — cannot be deleted */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4310,7 +4346,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Backend_BucketItemResponse"] | components["schemas"]["Backend_ArtistExpansionResponse"];
+                    "application/json": components["schemas"]["Backend_BucketItemResponse"] | components["schemas"]["Backend_ArtistExpansionResponse"] | components["schemas"]["Backend_TrackExpansionResponse"];
                 };
             };
             /** @description Item already in this bucket */
