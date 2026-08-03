@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import type { PlaybackSessionState } from '@lib/playback/session'
+import type { ExternalNowPlaying, PlaybackSessionState } from '@lib/playback/session'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { deleteBucketItem } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
@@ -76,6 +76,16 @@ export function usePlaybackViewModel(): PlaybackViewModel {
     playbackSession.prefetch()
   }, [queueKey])
 
+  // Adopt whatever is actually sounding the moment a player surface appears.
+  //
+  // Without this the panel could only ever describe playback IT had started, so
+  // opening it while a track ran from an album page — or from the phone — showed a
+  // stale row or nothing at all, with a dead transport beside it. One read on mount;
+  // afterwards `MYBLOG_PLAYBACK_CHANGED` keeps it honest. Never a timer (D28).
+  useEffect(() => {
+    void playbackSession.syncFromLive()
+  }, [])
+
   return { state, queue, current: displayCurrent, elapsedMs: elapsed ?? 0, durationMs }
 }
 
@@ -101,18 +111,38 @@ export function openPlaybackAlbum(row: BoardAlbum | null): void {
   openAlbum({ albumId, artist: row.artist, cover: row.cover, year: row.year })
 }
 
-export function PlaybackIdentity({ row, compact = false }: { row: BoardAlbum | null, compact?: boolean }) {
-  const title = row?.title ?? '—'
+/**
+ * The current track — from a queue row, or from playback that is happening OUTSIDE
+ * the queue (an album page, the phone, a speaker).
+ *
+ * The external branch is not a degraded state and is not styled as one: it is the
+ * honest answer to "what is playing", and the transport beside it works. It only
+ * says where it came from, because "왜 이 곡이 대기열에 없지" is the question a
+ * member would otherwise be left holding.
+ */
+export function PlaybackIdentity({ row, external, compact = false }: {
+  row: BoardAlbum | null
+  external?: ExternalNowPlaying | null
+  compact?: boolean
+}) {
+  const title = row?.title ?? external?.title ?? '—'
+  const artist = row?.artist ?? external?.artist ?? '—'
+  const cover = row?.cover ?? null
   return (
     <div className={`pbp-identity${compact ? ' is-compact' : ''}`}>
-      <div className="pbp-cover" aria-hidden={!row}>
-        {row?.cover ?
-          <img src={row.cover} alt="" /> :
+      <div className="pbp-cover" aria-hidden={!row && !external}>
+        {cover ?
+          <img src={cover} alt="" /> :
           <span>{title.slice(0, 2)}</span>}
       </div>
       <div className="pbp-current-copy">
         <div className="pbp-current-title">{title}</div>
-        <div className="pbp-current-artist">{row?.artist ?? '—'}</div>
+        <div className="pbp-current-artist">{artist}</div>
+        {external && (
+          <div className="pbp-current-outside">
+            {external.deviceName ? `${external.deviceName}에서 재생 중 · 대기열 밖` : '대기열 밖에서 재생 중'}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -121,11 +151,11 @@ export function PlaybackIdentity({ row, compact = false }: { row: BoardAlbum | n
 export function PlaybackTransport({ state }: { state: PlaybackSessionState }) {
   return (
     <div className="pbp-transport" role="group" aria-label="재생 제어">
-      <button type="button" onClick={() => void playbackSession.previous()} disabled={state.busy || !state.currentItemId} aria-label="이전 곡">‹</button>
-      <button type="button" className="pbp-play-toggle" onClick={() => void playbackSession.togglePlay()} disabled={state.busy || !state.currentItemId} aria-label={state.playing ? '일시정지' : '재생'}>
+      <button type="button" onClick={() => void playbackSession.previous()} disabled={state.busy || (!state.currentItemId && !state.external)} aria-label="이전 곡">‹</button>
+      <button type="button" className="pbp-play-toggle" onClick={() => void playbackSession.togglePlay()} disabled={state.busy || (!state.currentItemId && !state.external)} aria-label={state.playing ? '일시정지' : '재생'}>
         {state.playing ? 'Ⅱ' : '▶'}
       </button>
-      <button type="button" onClick={() => void playbackSession.next()} disabled={state.busy || !state.currentItemId} aria-label="다음 곡">›</button>
+      <button type="button" onClick={() => void playbackSession.next()} disabled={state.busy || (!state.currentItemId && !state.external)} aria-label="다음 곡">›</button>
     </div>
   )
 }
@@ -229,7 +259,7 @@ function PlaybackContents({ entries, mobileTabs = false }: { entries: PlaybackEn
   const model = usePlaybackViewModel()
   return (
     <>
-      <PlaybackIdentity row={model.current} />
+      <PlaybackIdentity row={model.current} external={model.state.external} />
       <PlaybackProgress model={model} />
       <PlaybackTransport state={model.state} />
       {!mobileTabs && <PlaybackEntries current={model.current} state={model.state} {...entries} />}
@@ -285,7 +315,7 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
         ))}
       </div>
       <div className="pbp-body">
-        <PlaybackIdentity row={model.current} />
+        <PlaybackIdentity row={model.current} external={model.state.external} />
         <PlaybackProgress model={model} />
         <PlaybackTransport state={model.state} />
         <PlaybackNotices state={model.state} queue={model.queue} />

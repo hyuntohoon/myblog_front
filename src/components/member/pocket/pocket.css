@@ -523,6 +523,20 @@
   white-space: nowrap;
 }
 .pb-scope .pbp-identity.is-compact .pbp-current-title { font-size: var(--text-lg); }
+/* Playing, but not from the queue — an album page, another tab, the phone, a
+   speaker. Stated in the accent rather than a warning colour on purpose: it is
+   information, not a fault, and the transport beside it works normally. */
+.pb-scope .pbp-current-outside {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: .06em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .pb-scope .pbp-current-artist {
   margin-top: 7px;
   overflow: hidden;
