@@ -271,7 +271,7 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
   return (
     <section ref={panelRef} className="pbp-panel is-mobile" role="dialog" aria-modal="true" aria-label="재생 대기열 플레이어">
       <div className="pbp-head">
-        <span className="pbp-head-title">PLAYBACK BUCKET</span>
+        <span className="pbp-head-title">재생 대기열</span>
         <button type="button" className="pbp-close" onClick={onClose} aria-label="닫기">✕</button>
       </div>
       <div className="pbp-mobile-tabs" role="tablist" aria-label="플레이어 보기">
@@ -352,7 +352,7 @@ function DesktopPlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { on
       </div>
       <section ref={panelRef} className={`pbp-panel${dock.docked ? ' is-docked' : ' is-float'}`} role="region" aria-label="재생 대기열 플레이어">
         <div className="pbp-head" {...handlers}>
-          <span className="pbp-head-title">PLAYBACK BUCKET</span>
+          <span className="pbp-head-title">재생 대기열</span>
           <span className="pbp-head-actions">
             <button type="button" className="pbp-place" onClick={togglePlacement}>{dock.docked ? '⇱ 분리' : '⇲ 도킹'}</button>
             <button type="button" className="pbp-close" onClick={onClose} aria-label="닫기">✕</button>
