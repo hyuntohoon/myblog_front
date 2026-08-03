@@ -20,6 +20,7 @@ import { createPortal } from 'react-dom'
 import { goLogin, isLoggedIn } from '@lib/auth'
 import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, listBuckets } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
+import { playbackSession } from '@lib/playback/session'
 import { writePocketIntent } from '@lib/pocketBuckit/intent'
 
 // What to add: an album (default, back-compat), a track (FEAT-pocket-buckit
@@ -161,7 +162,9 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
         // The menu writes past the shared bucketStore (SWR, 5-min window) — force a
         // revalidate so the board/tray islands show the new member now, not on the
         // next stale-window expiry. Fire-and-forget; the toast already confirmed.
-        void bucketStore.ensureFresh(true)
+        const refreshed = bucketStore.ensureFresh(true)
+        if (asQueue)
+          void refreshed.then(() => playbackSession.onDropped())
         showToast({
           label: `${title} 담음`,
           // Best-effort restore; swallow a network failure so a failed undo can't

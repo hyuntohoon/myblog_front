@@ -45,6 +45,10 @@ export interface BoardAlbum {
   albumId: string | null
   /** Typed non-album target FKs (forward-compat; null on album rows). */
   trackId: string | null
+  /** Parent album carried by a track brief; never used by album-membership mutations. */
+  trackAlbumId?: string | null
+  /** Track length supplied by the playback bucket's TrackBrief. */
+  durationSec?: number | null
   reviewTargetId: string | null
   /**
    * FEAT-my-buckit-artist: the credited artist for an `itemType==='artist'`
@@ -176,6 +180,8 @@ function mapItem(it: ApiItem): BoardAlbum {
     // carries the parent album_id — those paths must NOT treat a track as an album.
     albumId: it.album_id ?? null,
     trackId: it.track_id ?? null,
+    trackAlbumId: isTrack ? (tr?.album_id ?? null) : null,
+    durationSec: isTrack ? (tr?.duration_sec ?? null) : null,
     reviewTargetId: it.review_target_id ?? null,
     artistId: it.artist_id ?? null,
     // FEAT-pocket-buckit Step 6: a track/playback member renders from its TrackBrief

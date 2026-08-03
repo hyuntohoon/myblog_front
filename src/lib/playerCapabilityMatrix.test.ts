@@ -30,6 +30,8 @@ describe('free-account asymmetry', () => {
 
     expect(row(rows, 'liked').on).toBe(true)
     expect(row(rows, 'device-hint').on).toBe(true)
+    expect(row(rows, 'queue').on).toBe(true)
+    expect(row(rows, 'queue').standing).toContain('대기열 담기 가능')
     expect(row(rows, 'transport').on).toBe(false)
   })
 
@@ -87,7 +89,7 @@ describe('the sessionless help page', () => {
 
     expect(row(rows, 'transport').unlockedBy).toBe('premium')
     expect(row(rows, 'modes').unlockedBy).toBe('premium')
-    expect(row(rows, 'queue').unlockedBy).toBe('premium')
+    expect(row(rows, 'queue').unlockedBy).toBe('connect')
     expect(row(rows, 'liked').unlockedBy).toBe('reconsent')
     expect(row(rows, 'snapshot').unlockedBy).toBe('connect')
   })
@@ -95,6 +97,14 @@ describe('the sessionless help page', () => {
   it('exposes the same row ids as a live situation, so the two cannot drift', () => {
     const live = capabilityRows({ connected: true, generation: 'library', probe: probe('available', 'available') }).map(r => r.id)
     expect(capabilityRows(null).map(r => r.id)).toEqual(live)
+  })
+
+  it('describes the Buckit-owned tail, not Spotify\'s active-player queue', () => {
+    const queue = row(capabilityRows(null), 'queue')
+
+    expect(queue.label).toContain('Buckit')
+    expect(queue.what).toContain('재생 중이 아니어도')
+    expect(queue.what).toContain('남은 대기열')
   })
 })
 

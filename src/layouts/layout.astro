@@ -66,9 +66,14 @@ import '../styles/search.css';
 	</head>
 	<body class="min-h-screen bg-bg text-text">
 		<SkipNavLink />
-		<Header />
-		<slot />
-		<Footer />
+		<!-- The site-wide playback dock sets --pbp-dock-w on <html>. This shell is
+			the one content owner that yields that width; the Pocket island itself stays
+			outside it so the fixed panel is never narrowed by its own contract. -->
+		<div class="site-shell">
+			<Header />
+			<slot />
+			<Footer />
+		</div>
 		<!--
 			transition:persist keeps this island's React state (tray contents,
 			open drawers) across ClientRouter navigations.

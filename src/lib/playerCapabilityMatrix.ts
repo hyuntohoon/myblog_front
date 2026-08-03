@@ -131,11 +131,17 @@ export function capabilityRows(situation: CapabilitySituation | null): Capabilit
     },
     {
       id: 'queue',
-      label: '다음에 듣기',
-      standing: !situation ? 'Spotify Premium + 재생 중' : transportOn ? '재생 중일 때 사용 가능' : transportStanding,
-      on: transportOn,
-      what: '지금 듣는 것 뒤에 곡을 붙여 둡니다. 재생 중이어야 넣을 수 있어요.',
-      unlockedBy: !situation ? 'premium' : transportOn ? null : !connected ? 'connect' : !modernPlayback ? 'reconsent' : 'premium',
+      label: 'Buckit 재생 대기열',
+      standing: !situation ?
+        'Spotify 연동 필요 · 재생 제어는 Premium' :
+        !modernPlayback ?
+          '—' :
+          transportOn ?
+            '대기열 · 재생 사용 가능' :
+            '대기열 담기 가능 · 재생 제어 제한',
+      on: modernPlayback,
+      what: 'Playback Bucket에 곡을 순서대로 담습니다. 재생 중이 아니어도 추가할 수 있고, 고른 곡부터 Buckit의 남은 대기열을 이어 재생합니다.',
+      unlockedBy: !situation ? 'connect' : modernPlayback ? null : connected ? 'reconsent' : 'connect',
     },
     {
       id: 'modes',

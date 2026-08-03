@@ -14,7 +14,9 @@ import type { PbBoardDropDetail } from '@lib/pocketBuckit/events'
 import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import type { PlaybackTarget } from '@lib/spotifyPlayback'
+import type { PlaybackEntryHandler } from '../playback/PlaybackPanel'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { PLAYBACK_KIND } from '@lib/buckets'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isLoggedIn } from '@lib/auth'
@@ -23,11 +25,18 @@ import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { play } from '@lib/spotifyPlayback'
+import { PlaybackMini } from '../playback/PlaybackMini'
+import { PlaybackPanel } from '../playback/PlaybackPanel'
 import { usePocket } from './PocketBuckitProvider'
 
 // ── scale helper — every inline px scales with the --pb-scale CSS var ──────────
 const SCALE = 'var(--pb-scale, 1)'
 const sc = (n: number) => `calc(${n}px * ${SCALE})`
+
+// Pocket is a site-wide island and cannot reach the member dashboard's local
+// lyrics/track-detail mounts. Keep those two entries explicit until they gain an
+// app-wide event like albums; the panel never invents replacement surfaces.
+const NOOP_PLAYBACK_ENTRY: PlaybackEntryHandler = () => {}
 
 function accentFor(leaf: PocketLeaf): string {
   return leaf.color || 'var(--color-accent)'
@@ -323,7 +332,7 @@ function cascadeDefault(w: number, h: number, inspect: PocketBuckitDesign['inspe
 // re-clamped to the live viewport). A pointerdown anywhere focuses it (brings it to the
 // front via z). The per-item remove (−) controls appear ONLY in edit mode (request §5 —
 // removal is never implied by a drawer simply being open).
-function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: string, z: number, index: number, design: PocketBuckitDesign, editMode: boolean }) {
+function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }: { bucketId: string, z: number, index: number, design: PocketBuckitDesign, editMode: boolean, onExpandPlayback: () => void }) {
   const { bucketById, removeItem, closeDrawer, focusDrawer, moveDrawer, drawerPosFor } = usePocket()
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ dx: number, dy: number } | null>(null)
@@ -459,6 +468,49 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
     '--bucket-accent': accent,
     ...(dropHot ? { outline: '2px solid var(--bucket-accent)', outlineOffset: sc(2), boxShadow: '0 0 0 6px color-mix(in srgb, var(--bucket-accent) 16%, transparent)' } : null),
   } as CSSProperties
+
+  if (bucket.kind === PLAYBACK_KIND) {
+    return (
+      <div
+	ref={panelRef}
+	className="pb-inspect pbp-mini-shell pb-drawer-in"
+	style={style}
+	role="dialog"
+	aria-label={`${bucket.name} 미니 플레이어`}
+	onPointerDownCapture={() => focusDrawer(bucketId)}
+	onDragOver={(e) => {
+          if (!boardDragAccepts(bucket.type))
+            return
+          e.preventDefault()
+          setDropHot(true)
+        }}
+	onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node))
+            setDropHot(false)
+        }}
+	onDrop={(e) => {
+          if (!boardDragAccepts(bucket.type))
+            return
+          e.preventDefault()
+          setDropHot(false)
+          fireBoardDrop(bucket.id)
+        }}
+      >
+        <PlaybackMini
+	onExpand={() => {
+            closeDrawer(bucketId)
+            onExpandPlayback()
+          }}
+	onClose={() => closeDrawer(bucketId)}
+	onHeadPointerDown={onHeadDown}
+	onHeadPointerMove={onHeadMove}
+	onHeadPointerUp={onHeadUp}
+	onOpenLyrics={NOOP_PLAYBACK_ENTRY}
+	onOpenTrackInfo={NOOP_PLAYBACK_ENTRY}
+        />
+      </div>
+    )
+  }
 
   return (
     <div
@@ -627,12 +679,12 @@ function DrawerPanel({ bucketId, z, index, design, editMode }: { bucketId: strin
 }
 
 // ── the open-drawer layer (several movable mini-drawers at once) ───────────────
-function DrawerLayer({ design, editMode }: { design: PocketBuckitDesign, editMode: boolean }) {
+function DrawerLayer({ design, editMode, onExpandPlayback }: { design: PocketBuckitDesign, editMode: boolean, onExpandPlayback: () => void }) {
   const { openDrawers } = usePocket()
   return (
     <>
       {openDrawers.map((d, i) => (
-        <DrawerPanel key={d.bucketId} bucketId={d.bucketId} z={d.z} index={i} design={design} editMode={editMode} />
+        <DrawerPanel key={d.bucketId} bucketId={d.bucketId} z={d.z} index={i} design={design} editMode={editMode} onExpandPlayback={onExpandPlayback} />
       ))}
     </>
   )
@@ -665,6 +717,7 @@ export function PocketTray() {
   // edit-mode tray bucket-delete: the first × tap arms a per-bucket confirm, the
   // second deletes (no server undo). Separate from drawer-open + reorder state (§9).
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [playbackPanelOpen, setPlaybackPanelOpen] = useState(false)
 
   const light = isLightDesign(design)
   const fam = engineFamily(design)
@@ -822,8 +875,16 @@ export function PocketTray() {
   if (typeof window !== 'undefined' && !isLoggedIn())
     return null
 
-  if (!open)
-    return <div className="pb-scope"><EntryControl design={design} count={leaves.length} onOpen={() => setOpen(true)} /></div>
+  if (!open) {
+    return (
+      <div className="pb-scope">
+        <EntryControl design={design} count={leaves.length} onOpen={() => setOpen(true)} />
+        {playbackPanelOpen && (
+          <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={NOOP_PLAYBACK_ENTRY} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
+        )}
+      </div>
+    )
+  }
 
   const trayBottom = sc(light ? (sticker ? 116 : 88) : (fam === 'f4' ? 132 : 104))
 
@@ -999,7 +1060,11 @@ export function PocketTray() {
             </div>
           )}
 
-      <DrawerLayer design={design} editMode={editMode} />
+      <DrawerLayer design={design} editMode={editMode} onExpandPlayback={() => setPlaybackPanelOpen(true)} />
+
+      {playbackPanelOpen && (
+        <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={NOOP_PLAYBACK_ENTRY} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
+      )}
 
       {undo && (
         <div className="undo-rib" style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: `calc(${trayBottom} + ${sc(14)})`, width: 'auto', borderRadius: sc(4), zIndex: 73 }}>
