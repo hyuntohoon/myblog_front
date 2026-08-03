@@ -148,14 +148,39 @@ export function PlaybackIdentity({ row, external, compact = false }: {
   )
 }
 
-export function PlaybackTransport({ state }: { state: PlaybackSessionState }) {
+/**
+ * May this tab offer transport at all?
+ *
+ * False in exactly one case: this tab is a mirror whose owner is on rung 2, where
+ * the audio is inside that other tab and moving it here means taking the lease.
+ * On rung 1 the audio is on a Connect device in no tab at all, so every tab stays
+ * a usable remote (T4) — the session forwards those presses to the owner.
+ */
+export function canControlPlayback(state: PlaybackSessionState): boolean {
+  return state.isOwner || !state.ownerPresent || state.ownerRung !== 'in-page'
+}
+
+export function PlaybackTransport({ state, canControl }: { state: PlaybackSessionState, canControl: boolean }) {
   return (
     <div className="pbp-transport" role="group" aria-label="재생 제어">
-      <button type="button" onClick={() => void playbackSession.previous()} disabled={state.busy || (!state.currentItemId && !state.external)} aria-label="이전 곡">‹</button>
-      <button type="button" className="pbp-play-toggle" onClick={() => void playbackSession.togglePlay()} disabled={state.busy || (!state.currentItemId && !state.external)} aria-label={state.playing ? '일시정지' : '재생'}>
+      <button type="button" onClick={() => void playbackSession.previous()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label="이전 곡">‹</button>
+      <button type="button" className="pbp-play-toggle" onClick={() => void playbackSession.togglePlay()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label={state.playing ? '일시정지' : '재생'}>
         {state.playing ? 'Ⅱ' : '▶'}
       </button>
-      <button type="button" onClick={() => void playbackSession.next()} disabled={state.busy || (!state.currentItemId && !state.external)} aria-label="다음 곡">›</button>
+      <button type="button" onClick={() => void playbackSession.next()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label="다음 곡">›</button>
+    </div>
+  )
+}
+
+export function PlaybackOwnerBanner({ state }: { state: PlaybackSessionState }) {
+  // Exactly the inverse of `canControlPlayback` — the one case transport is
+  // withheld is the one case there is something to offer instead.
+  if (canControlPlayback(state))
+    return null
+  return (
+    <div className="pbp-owner-banner" role="status">
+      <span>다른 탭에서 재생 중이에요</span>
+      <button type="button" onClick={() => void playbackSession.takeOver()}>이 탭에서 재생하기</button>
     </div>
   )
 }
@@ -249,11 +274,13 @@ function PlaybackProgress({ model }: { model: PlaybackViewModel }) {
 
 function PlaybackContents({ entries, mobileTabs = false }: { entries: PlaybackEntryProps, mobileTabs?: boolean }) {
   const model = usePlaybackViewModel()
+  const canControl = canControlPlayback(model.state)
   return (
     <>
       <PlaybackIdentity row={model.current} external={model.state.external} />
       <PlaybackProgress model={model} />
-      <PlaybackTransport state={model.state} />
+      <PlaybackOwnerBanner state={model.state} />
+      <PlaybackTransport state={model.state} canControl={canControl} />
       {!mobileTabs && <PlaybackEntries current={model.current} state={model.state} {...entries} />}
       <PlaybackNotices state={model.state} queue={model.queue} />
       <PlaybackQueue model={model} removable />
@@ -276,6 +303,7 @@ function useMobilePanel(): boolean {
 function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onClose: () => void }) {
   const panelRef = useRef<HTMLElement>(null)
   const model = usePlaybackViewModel()
+  const canControl = canControlPlayback(model.state)
   const [tab, setTab] = useState<'queue' | 'lyrics' | 'track' | 'album'>('queue')
   useDismissable(true, onClose, panelRef, { trapFocus: true })
   useScrollLock()
@@ -309,7 +337,8 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
       <div className="pbp-body">
         <PlaybackIdentity row={model.current} external={model.state.external} />
         <PlaybackProgress model={model} />
-        <PlaybackTransport state={model.state} />
+        <PlaybackOwnerBanner state={model.state} />
+        <PlaybackTransport state={model.state} canControl={canControl} />
         <PlaybackNotices state={model.state} queue={model.queue} />
         <PlaybackQueue model={model} removable />
       </div>

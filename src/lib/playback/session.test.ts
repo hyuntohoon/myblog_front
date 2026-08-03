@@ -1,4 +1,5 @@
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
+import type { OwnershipMessage, PlaybackOwnershipState } from '@lib/playback/ownership'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { playbackQueue } from './queue'
@@ -15,6 +16,16 @@ const mocks = vi.hoisted(() => ({
   prefetchUris: vi.fn(),
   cachedUri: vi.fn(),
   readLivePlayback: vi.fn(),
+  ownershipState: {
+    tabId: 'test-tab',
+    isOwner: true,
+    ownerTabId: 'test-tab',
+    ownerPresent: true,
+  } as PlaybackOwnershipState,
+  ownershipListeners: new Set<() => void>(),
+  ownershipMessageListeners: new Set<(message: OwnershipMessage) => void>(),
+  ownershipPost: vi.fn(),
+  ensureOwner: vi.fn(),
 }))
 
 vi.mock('@components/member/lyrics/playback.api', () => ({
@@ -45,6 +56,23 @@ vi.mock('@lib/playback/uris', () => ({
   cachedUri: mocks.cachedUri,
 }))
 
+vi.mock('@lib/playback/ownership', () => ({
+  playbackOwnership: {
+    subscribe: (cb: () => void) => {
+      mocks.ownershipListeners.add(cb)
+      return () => mocks.ownershipListeners.delete(cb)
+    },
+    getSnapshot: () => mocks.ownershipState,
+    getServerSnapshot: () => mocks.ownershipState,
+    ensureOwner: mocks.ensureOwner,
+    post: mocks.ownershipPost,
+    onMessage: (cb: (message: OwnershipMessage) => void) => {
+      mocks.ownershipMessageListeners.add(cb)
+      return () => mocks.ownershipMessageListeners.delete(cb)
+    },
+  },
+}))
+
 const PLAYBACK_LAG_MS = 1_200
 const WRITE_LAG_MS = 200
 
@@ -55,13 +83,14 @@ function afterWriteLag<T>(apply: () => T): Promise<T> {
   return new Promise<T>(resolve => window.setTimeout(() => resolve(apply()), WRITE_LAG_MS))
 }
 const OK = { ok: true, rung: 'remote', degraded: false, message: '재생을 시작했어요.' } as const
+const IN_PAGE_OK = { ok: true, rung: 'in-page', degraded: true, message: '이 브라우저에서 재생 중 (음질 제한)' } as const
 const FAILURE = {
   ok: false,
   reason: 'transient',
   message: '재생 토큰을 가져오지 못했어요. 잠시 후 다시 시도해 주세요.',
 } as const
 
-let nextPlayOutcome: typeof OK | typeof FAILURE
+let nextPlayOutcome: typeof OK | typeof IN_PAGE_OK | typeof FAILURE
 
 function row(id: string): BoardAlbum {
   return {
@@ -127,6 +156,15 @@ async function settleAll(): Promise<void> {
   await vi.advanceTimersByTimeAsync(30_000)
 }
 
+function setOwnership(patch: Partial<PlaybackOwnershipState>): void {
+  Object.assign(mocks.ownershipState, patch)
+  for (const cb of mocks.ownershipListeners) cb()
+}
+
+function receiveOwnership(message: OwnershipMessage): void {
+  for (const cb of mocks.ownershipMessageListeners) cb(message)
+}
+
 function queueIds(): string[] {
   return playbackQueue().items.map(item => item.itemId)
 }
@@ -151,6 +189,16 @@ async function startAt(itemId: string): Promise<void> {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  Object.assign(mocks.ownershipState, {
+    tabId: 'test-tab',
+    isOwner: true,
+    ownerTabId: 'test-tab',
+    ownerPresent: true,
+  })
+  mocks.ensureOwner.mockImplementation(async () => {
+    setOwnership({ isOwner: true, ownerTabId: 'test-tab', ownerPresent: true })
+    return true
+  })
   nextPlayOutcome = OK
   serverSeq = 0
   server = []
@@ -598,5 +646,169 @@ describe('▶ replace — Undo', () => {
 
     expect(undone).toMatchObject({ ok: false, message: '이전 대기열을 되돌리지 못했어요' })
     expect(queueTrackIds()).toEqual(['t1'])
+  })
+})
+
+describe('single-tab ownership', () => {
+  it('forwards transport from a remote-rung mirror without executing locally', async () => {
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    expect(playbackSession.getSnapshot().ownerRung).toBe('remote')
+    mocks.sendPlayerCommand.mockClear()
+    mocks.ownershipPost.mockClear()
+
+    await playbackSession.togglePlay()
+
+    expect(mocks.sendPlayerCommand).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith({
+      type: 'command',
+      cmd: { kind: 'toggle-play' },
+    })
+  })
+
+  it('blocks an in-page mirror until takeover, then resumes from the current row', async () => {
+    nextPlayOutcome = IN_PAGE_OK
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    expect(playbackSession.getSnapshot().ownerRung).toBe('in-page')
+    mocks.play.mockClear()
+    mocks.sendPlayerCommand.mockClear()
+    mocks.ownershipPost.mockClear()
+
+    await playbackSession.togglePlay()
+    await playbackSession.playAt('b')
+
+    // The invariant is that a mirror never produces sound itself — never that it
+    // stays silent. Asking the tab that already holds the SDK device to act is
+    // exactly what ownership is for, so the presses are forwarded, not dropped.
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(mocks.sendPlayerCommand).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith({ type: 'command', cmd: { kind: 'toggle-play' } })
+    expect(mocks.ownershipPost).toHaveBeenCalledWith({ type: 'command', cmd: { kind: 'play-at', itemId: 'b' } })
+
+    const takingOver = playbackSession.takeOver()
+    await flushPlaybackStart()
+    expect(mocks.ensureOwner).toHaveBeenCalledOnce()
+    expect(mocks.play).toHaveBeenCalledWith({
+      kind: 'uris',
+      uris: ['provider:track:track-a', 'provider:track:track-b'],
+    })
+    await finishPlayback(takingOver)
+    expect(playbackSession.getSnapshot()).toMatchObject({ isOwner: true, currentItemId: 'a', playing: true })
+  })
+
+  it('forwards a drop-start to a present owner whose rung is not yet known', async () => {
+    // The state that made this worth a test: `advance()` resets `rung` to null when
+    // the queue empties, so an owner that has played and stopped advertises
+    // ownerRung === null. A forward gated on rung === 'remote' drops the command
+    // here, and the dropped row then plays in neither tab.
+    setQueue([])
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    expect(playbackSession.getSnapshot().ownerRung).toBeNull()
+    mocks.play.mockClear()
+    mocks.ownershipPost.mockClear()
+
+    setQueue([row('a')])
+    await playbackSession.onDropped()
+
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith({ type: 'command', cmd: { kind: 'play-at', itemId: 'a' } })
+  })
+
+  // ── where ownership meets the adoption that landed in #348 ─────────────────
+  it('does not read live playback in a mirror — the owner is the only adopter', async () => {
+    // Two tabs adopting independently are two writers over one state, each
+    // overwriting the other with a slightly older read. The mirror gets the same
+    // information from the owner's broadcast, so the read is not just redundant.
+    setQueue([row('a')])
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    mocks.readLivePlayback.mockClear()
+
+    await playbackSession.syncFromLive()
+
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+  })
+
+  it('still adopts when no tab owns playback', async () => {
+    setQueue([row('a')])
+    setOwnership({ isOwner: false, ownerTabId: null, ownerPresent: false })
+    mocks.readLivePlayback.mockClear()
+
+    await playbackSession.syncFromLive()
+
+    expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+  })
+
+  it('carries external now-playing across the tab boundary', async () => {
+    // Without `external` on the wire a mirror renders "nothing is playing" while
+    // the owner shows a track — confidently wrong, which is worse than blank.
+    setQueue([row('a')])
+    mocks.cachedUri.mockReturnValue('spotify:track:SOMETHING-ELSE')
+    mocks.readLivePlayback.mockResolvedValue({
+      state: 'playing',
+      trackId: 'SPOT-UNKNOWN',
+      progressMs: 1_000,
+      readAtMs: 10,
+      durationMs: 200_000,
+      track: 'Paranoid Android',
+      artist: 'Radiohead',
+      artists: [],
+      album: 'OK Computer',
+      albumSpotifyId: null,
+      albumCoverUrl: null,
+      deviceName: '거실 스피커',
+      shuffle: null,
+      repeat: null,
+      volumePercent: null,
+      contextUri: null,
+      contextType: null,
+    })
+    await playbackSession.syncFromLive()
+
+    const posted = mocks.ownershipPost.mock.calls
+      .map(([m]) => m as { type: string, state?: { external?: unknown } })
+      .filter(m => m.type === 'state')
+      .at(-1)
+    expect(posted?.state?.external).toMatchObject({ title: 'Paranoid Android', deviceName: '거실 스피커' })
+  })
+
+  it('takes the lease before ▶ replaces the queue, because ▶ can raise this tab as the device', async () => {
+    setQueue([])
+    albumTracks = { 'album-x': ['t1'] }
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    mocks.ensureOwner.mockClear()
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'album-x' })
+    await settleAll()
+    await pending
+
+    expect(mocks.ensureOwner).toHaveBeenCalledOnce()
+  })
+
+  it('translates an owner anchor through epoch time into the mirror timeline', async () => {
+    setQueue([row('a')])
+    await startAt('a')
+    const ownerAnchor = playbackSession.getSnapshot().anchor
+    const statePosts = mocks.ownershipPost.mock.calls
+      .map(([message]) => message as { type: string, state?: unknown })
+      .filter(message => message.type === 'state')
+    const payload = statePosts.at(-1)?.state as { anchor: { ms: number, anchorEpochMs: number } }
+    expect(payload.anchor).toHaveProperty('anchorEpochMs')
+    expect(payload.anchor).not.toHaveProperty('wallMs')
+
+    await vi.advanceTimersByTimeAsync(37)
+    const ownerElapsed = ownerAnchor ?
+      ownerAnchor.ms + (performance.now() - ownerAnchor.wallMs) :
+      0
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    receiveOwnership({ type: 'state', from: 'owner-tab', state: payload })
+
+    const mirrorAnchor = playbackSession.getSnapshot().anchor
+    const mirrorElapsed = mirrorAnchor ?
+      mirrorAnchor.ms + (performance.now() - mirrorAnchor.wallMs) :
+      0
+    expect(Math.abs(mirrorElapsed - ownerElapsed)).toBeLessThan(5)
   })
 })
