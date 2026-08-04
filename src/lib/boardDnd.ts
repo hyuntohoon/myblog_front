@@ -10,7 +10,14 @@ import type { BoardBucket } from './buckets'
 import { findBucket, PLAYBACK_TYPE, SLIB_KIND, subtreeHas } from './buckets'
 
 // The live drag payload (native DnD can't carry object refs reliably, so
-// BucketBoard keeps one module-level `dnd` of this shape).
+// BucketBoard keeps one module-level payload of this shape).
+//
+// ARCH-entity-interaction-v2 Step 3: surfaces now build the typed `DragPayload`
+// (@lib/entityDrag) and adapt to this shape at the rule boundary — the rules below are
+// a verified asset and were not rewritten. `kind: 'member'` is the E2 rename: it was
+// spelled 'album' but has always meant "a member of any type" (album / track / artist /
+// review / playback / snapshot rows all drag as it), which is exactly the confusion the
+// entity contract exists to end. Nothing about the value's meaning changed.
 //
 // `copy` (with `albumId`) marks a drag originating from the pinned 최근 들은 앨범
 // strip: dropping it copies the album in (addBucketItem) instead of moving a
@@ -20,7 +27,7 @@ import { findBucket, PLAYBACK_TYPE, SLIB_KIND, subtreeHas } from './buckets'
 // still be moved to the trash (only when source==='myblog_added' — a 기존/preexisting
 // album is never deletable). `albumId` is carried on every album drag so a drop INTO
 // the library bucket can copy by album id without a tree lookup.
-export interface DndItem { kind: 'album' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string | null, fromLib?: boolean, source?: string, trackId?: string | null, artistId?: string | null, srcItemType?: string }
+export interface DndItem { kind: 'member' | 'bucket', itemId?: string, fromBucketId?: string, bucketId?: string, copy?: boolean, albumId?: string | null, fromLib?: boolean, source?: string, trackId?: string | null, artistId?: string | null, srcItemType?: string }
 
 // The subset of BucketBoard's `Ops` that a drop dispatches to. Declared here (not
 // imported from the component) so this module has no dependency on BucketBoard;
@@ -48,7 +55,21 @@ export interface DropOps {
 // Rejection is drag-over styling only (the target stays in place and mutes; the
 // tray never reflows mid-drag, the D-series invariant); the server re-checks and
 // 400s, so this can only ever be a preview of the real gate, never the gate itself.
+// ARCH-entity-interaction-v2 E3 adds the fourth branch, and it is a FIX, not a new rule:
+// the sync-owned spotify_library bucket takes albums only, and `routeAlbumDrop` below has
+// always refused everything else — but this gate keyed on `type` while the library is
+// identified by `kind`, so a track / artist row dragged onto it highlighted as ACCEPTED
+// and then did nothing on drop. The outcome was already right; the drag-over preview lied
+// about it. Gating on `kind` makes the two agree. No `ops` call changes: the rows this now
+// refuses are exactly the rows `routeAlbumDrop` was already dropping on the floor.
+//
+// `!it.trackId` is belt-and-braces in the same spirit as the playback branch below: today
+// a track row carries a null `albumId`, so `!!it.albumId` alone would already refuse it,
+// but E1 defines a track ref as carrying its PARENT album — the moment a source fills that
+// in, `albumId` alone would start copying the parent album into the library.
 export function canAcceptAlbumDrag(bucket: BoardBucket, it: DndItem): boolean {
+  if (bucket.kind === SLIB_KIND)
+    return !!it.albumId && !it.trackId && it.srcItemType !== 'artist'
   if (bucket.type === PLAYBACK_TYPE)
     return it.srcItemType !== 'artist' && (!!it.albumId || !!it.trackId)
   if (bucket.type !== 'artist')
@@ -78,7 +99,7 @@ export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): 
   const isLib = target.kind === SLIB_KIND
   // The sync-owned library bucket holds only albums — a track/null-album row has nothing
   // to reconcile against Spotify, so reject it.
-  if (isLib && it.kind === 'album' && !it.albumId)
+  if (isLib && it.kind === 'member' && !it.albumId)
     return
   // FEAT-playback-bucket-player: the Playback Bucket takes tracks. A track/playback
   // member queues as ONE appended row — a COPY, not a move: the source row stays in
@@ -91,7 +112,7 @@ export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): 
   // the duplicate rule from swallowing a reorder: dragging a queue row onto its own
   // bucket is a reposition (the cover insert-before path handles it), never a request
   // for a second copy of itself.
-  if (target.type === PLAYBACK_TYPE && it.kind === 'album') {
+  if (target.type === PLAYBACK_TYPE && it.kind === 'member') {
     if (it.fromBucketId === target.id)
       return
     if (it.trackId)
@@ -103,7 +124,7 @@ export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): 
   // Artist bucket: an artist member moves/adds in; an album/track SOURCE expands into its
   // credited artists (the source row itself is never stored). A non-artist-bearing source
   // no-ops (it is rejected at drag-over upstream, so it never reaches here in practice).
-  if (target.type === 'artist' && it.kind === 'album') {
+  if (target.type === 'artist' && it.kind === 'member') {
     if (it.srcItemType === 'artist') {
       if (it.itemId && it.fromBucketId && it.fromBucketId !== target.id)
         ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
@@ -119,10 +140,10 @@ export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): 
   // COPY when dropping into the library bucket, or the source is a copy/library item;
   // otherwise a normal move/add. Bucket-into-bucket guarded against self / cycle.
   const copyIn = isLib || it.copy || it.fromLib
-  if (it.kind === 'album' && copyIn && it.albumId) {
+  if (it.kind === 'member' && copyIn && it.albumId) {
     ops.copyAlbum(it.albumId, target.id)
   }
-  else if (it.kind === 'album' && it.itemId && it.fromBucketId && it.fromBucketId !== target.id) {
+  else if (it.kind === 'member' && it.itemId && it.fromBucketId && it.fromBucketId !== target.id) {
     // Same-bucket guard (mirrors the artist branch): dropping a member on its own
     // bucket would otherwise persist a spurious reorder (PUT /api/buckets/reorder).
     ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)

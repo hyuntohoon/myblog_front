@@ -20,14 +20,15 @@
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { AddOutcome } from './AddAlbumModal'
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import type { PbBoardDndStartDetail, PbBoardDropDetail, PbDndStartDetail, PbOpenStateDetail } from '@lib/pocketBuckit/events'
+import type { PbBoardDropDetail, PbOpenStateDetail } from '@lib/pocketBuckit/events'
 import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { findBucket, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
-import type { DndItem } from '@lib/boardDnd'
 import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from '@lib/boardDnd'
+import type { DragPayload } from '@lib/entityDrag'
+import { bucketDrag, memberRef, toDndItem } from '@lib/entityDrag'
 import { crMeta, systemBucketInSubtree, systemBucketLabel } from '@lib/bucketLifecycle'
 import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
@@ -54,10 +55,15 @@ import { useSpotifyLibrary } from './useSpotifyLibrary'
 import { AlbumArt, SectionTitle } from './ui'
 
 // Module-level drag payload (native DnD can't carry live object refs reliably).
-// The payload shape (`DndItem`) and the drop routing/acceptance rules live in
-// @lib/boardDnd; this component owns only the gesture wiring + this live ref.
-let dnd: DndItem | null = null
-type DragKind = 'album' | 'bucket' | null
+// ARCH-entity-interaction-v2 Step 3 — this is now the shared `DragPayload` (E2,
+// @lib/entityDrag), built identically by every drag source here and by the Pocket tray.
+// The drop routing/acceptance rules still live in @lib/boardDnd and still consume the
+// legacy `DndItem`; each read site adapts with `toDndItem` at the boundary, so the rules
+// are reused verbatim rather than rewritten. This component owns only the gesture wiring.
+let dnd: DragPayload | null = null
+// 'member' (not 'album') — a drag of ANY member kind: album / track / artist / review /
+// playback / snapshot. Same E2 rename as `DndItem.kind`.
+type DragKind = 'member' | 'bucket' | null
 
 // Synthetic id of the read-only 최근 들은 앨범 strip (never persisted server-side).
 const RECENT_ID = '__recent__'
@@ -537,10 +543,10 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
   const isAlbum = album.itemType === 'album'
   const isArtist = album.itemType === 'artist'
   const acceptCol = (): boolean => {
-    const it = dnd
+    const it = dnd && toDndItem(dnd)
     // Reorder-insert targets reject copy drags (recent strip) AND library drags —
     // a fromLib item must bubble to the bucket's onDrop so it COPIES instead of moving.
-    if (!it || it.kind !== 'album' || it.copy || it.fromLib || !it.itemId || it.itemId === album.itemId)
+    if (!it || it.kind !== 'member' || it.copy || it.fromLib || !it.itemId || it.itemId === album.itemId)
       return false
     // FEAT-my-buckit-artist: inside an Artist bucket only an artist→artist reorder
     // inserts here; a foreign album/track must bubble to the bucket-level drop so it
@@ -568,7 +574,7 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
           return
         e.preventDefault()
         e.stopPropagation()
-        const it = dnd
+        const it = dnd && toDndItem(dnd)
         setOver(false)
         if (it && it.itemId && it.fromBucketId)
           onInsert(it.itemId, it.fromBucketId, album.itemId)
@@ -579,32 +585,31 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
       <div
 	draggable
 	onDragStart={(e) => {
+          // ARCH-entity-interaction-v2 E2 — the three origins the board actually has.
+          // `ref` says WHAT is dragged (E1 identity), `origin` says where from, which is
+          // what decides move vs copy: the recent strip is not a membership at all, and a
+          // library row is a membership that still copies out (the bucket is sync-owned).
           if (copySource)
-            dnd = { kind: 'album', copy: true, albumId: album.albumId, fromBucketId: bucketId, srcItemType: 'album' }
+            dnd = { ref: memberRef({ albumId: album.albumId }), origin: { kind: 'external', fromBucketId: bucketId, itemType: 'album', copies: true } }
           else if (fromLib)
-            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId, fromLib: true, source: libRow?.source, srcItemType: 'album' }
+            dnd = { ref: memberRef({ albumId: album.albumId }), origin: { kind: 'library', itemId: album.itemId, fromBucketId: bucketId, itemType: 'album', source: libRow?.source } }
           else
-            // srcItemType/trackId/artistId let an Artist-bucket drop route a source
-            // (album/track → expand into credited artists) vs an artist member (move).
-            dnd = { kind: 'album', itemId: album.itemId, fromBucketId: bucketId, albumId: album.albumId, trackId: album.trackId, artistId: album.artistId, srcItemType: album.itemType }
+            // The ref's entity (album / track / artist) is what lets an Artist-bucket drop
+            // route a SOURCE (album/track → expand into credited artists) apart from an
+            // artist MEMBER (move); `origin.itemType` keeps the membership kind distinct
+            // from the entity, so a queue row and a plain track row stay tellable apart.
+            dnd = { ref: memberRef(album), origin: { kind: 'internal', itemId: album.itemId, fromBucketId: bucketId, itemType: album.itemType } }
           e.dataTransfer.effectAllowed = copySource ? 'copy' : (fromLib ? 'copyMove' : 'move')
           setDraggingId(album.itemId)
-          setDragKind('album')
+          setDragKind('member')
           // FEAT-pocket-buckit-viewers Track A — REVERSE of Step 6: hand this board
           // member's drag to the Pocket island (separate React root) so a Pocket target
           // (tray chip / open drawer) can preview the drop via the General/Artist accept
           // gate. The board keeps the live `dnd`; on drop the Pocket target fires
           // PB_BOARD_DROP back here and routeAlbumDrop runs the actual add/expand.
-          if (dnd) {
-            window.dispatchEvent(new CustomEvent<PbBoardDndStartDetail>(PB_BOARD_DND_START_EVENT, {
-              detail: {
-                srcItemType: dnd.srcItemType ?? 'album',
-                albumId: dnd.albumId ?? null,
-                trackId: dnd.trackId ?? null,
-                artistId: dnd.artistId ?? null,
-              },
-            }))
-          }
+          // Step 3: the wire carries the payload itself, not a hand-rolled mirror of it.
+          if (dnd)
+            window.dispatchEvent(new CustomEvent<DragPayload>(PB_BOARD_DND_START_EVENT, { detail: dnd }))
         }}
 	onDragEnd={() => {
           dnd = null
@@ -859,11 +864,11 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
   }
 
   const onDragOver = (e: React.DragEvent) => {
-    const it = dnd
+    const it = dnd && toDndItem(dnd)
     if (!it)
       return
     // Acceptance rules live in @lib/boardDnd (pure, unit-tested).
-    if ((it.kind === 'album' && canAcceptAlbumDrag(bucket, it)) || (it.kind === 'bucket' && canAcceptBucketDrag(ops.tree, bucket, it))) {
+    if ((it.kind === 'member' && canAcceptAlbumDrag(bucket, it)) || (it.kind === 'bucket' && canAcceptBucketDrag(ops.tree, bucket, it))) {
       e.preventDefault()
       e.stopPropagation()
       setDropTarget(bucket.id)
@@ -872,7 +877,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    const it = dnd
+    const it = dnd && toDndItem(dnd)
     setDropTarget(null)
     if (!it)
       return
@@ -980,7 +985,7 @@ ops.openResearch(a.albumId, a.title)
       <div
 	draggable={!editing}
 	onDragStart={(e) => {
-          dnd = { kind: 'bucket', bucketId: bucket.id }
+          dnd = bucketDrag(bucket.id, bucket.name)
           e.dataTransfer.effectAllowed = 'move'
           setDraggingBucket(bucket.id)
           setDragKind('bucket')
@@ -1318,10 +1323,13 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
   // A 기존/preexisting Spotify-library album can't be trashed (req 4): removing it
   // wouldn't delete it from Spotify and the next sync re-pulls it anyway. myblog_added
   // library albums DO trash (→ next sync removes them from Spotify).
-  // `!!dnd.albumId`: only album members are trashable — the trash restores solely via
+  // `!!it.albumId`: only album members are trashable — the trash restores solely via
   // the album re-add path, so a track/artist/review/playback row (albumId null) would
   // vanish permanently on 복원. Reject the drop rather than offer a false recovery.
-  const accepts = (): boolean => !!dnd && ((dnd.kind === 'album' && !dnd.copy && !!dnd.albumId && !(dnd.fromLib && dnd.source === 'preexisting')) || dnd.kind === 'bucket')
+  const accepts = (): boolean => {
+    const it = dnd && toDndItem(dnd)
+    return !!it && ((it.kind === 'member' && !it.copy && !!it.albumId && !(it.fromLib && it.source === 'preexisting')) || it.kind === 'bucket')
+  }
   return (
     <div
 	className="crate-trash-dock"
@@ -1339,9 +1347,9 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
         if (!accepts())
           return
         e.preventDefault()
-        const it = dnd
+        const it = dnd && toDndItem(dnd)
         setHot(false)
-        if (it && it.kind === 'album' && it.itemId && it.fromBucketId)
+        if (it && it.kind === 'member' && it.itemId && it.fromBucketId)
           onTrashAlbum(it.itemId, it.fromBucketId)
         else if (it && it.kind === 'bucket' && it.bucketId)
           onTrashBucket(it.bucketId)
@@ -1376,7 +1384,7 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
 function BucketDropGap({ parentId, beforeId, ops, active }: { parentId: string | null, beforeId: string | null, ops: Ops, active: boolean }) {
   const [hot, setHot] = useState(false)
   const accepts = (): boolean => {
-    const it = dnd
+    const it = dnd && toDndItem(dnd)
     if (!it || it.kind !== 'bucket' || !it.bucketId)
       return false
     if (it.bucketId === beforeId)
@@ -1406,7 +1414,7 @@ function BucketDropGap({ parentId, beforeId, ops, active }: { parentId: string |
           return
         e.preventDefault()
         e.stopPropagation()
-        const it = dnd
+        const it = dnd && toDndItem(dnd)
         setHot(false)
         if (it && it.bucketId)
           ops.moveBucketTo(it.bucketId, parentId, beforeId)
@@ -1708,10 +1716,11 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   // `dragend` (drop OR cancel) always fires → `dnd` is cleared even on a missed drop.
   useEffect(() => {
     const onDndStart = (e: Event) => {
-      const d = (e as CustomEvent<PbDndStartDetail>).detail
-      if (d) {
-        dnd = { kind: 'album', itemId: d.itemId, fromBucketId: d.fromBucketId, albumId: d.albumId, trackId: d.trackId, artistId: d.artistId, srcItemType: d.srcItemType }
-      }
+      // Step 3: the tray now hands over the shared payload verbatim — no re-hydration
+      // step, so there is no second place for the two islands' shapes to drift apart.
+      const d = (e as CustomEvent<DragPayload>).detail
+      if (d)
+        dnd = d
     }
     const onDndEnd = () => {
       dnd = null
@@ -1732,7 +1741,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   useEffect(() => {
     const onBoardDrop = (e: Event) => {
       const d = (e as CustomEvent<PbBoardDropDetail>).detail
-      const it = dnd
+      const it = dnd && toDndItem(dnd)
       const ops = opsRef.current
       if (!d || !it || !ops)
         return
@@ -2570,7 +2579,7 @@ ids.push(a.albumId)
           position:fixed — so rendering in-tree pinned the dock to lf-rise's box
           instead of the viewport. Portaling escapes that. No backdrop/blur: the
           buckets behind stay crisp so you can keep dropping onto them. */}
-      {(dragKind === 'album' || dragKind === 'bucket') && typeof document !== 'undefined' && createPortal(
+      {(dragKind === 'member' || dragKind === 'bucket') && typeof document !== 'undefined' && createPortal(
         <TrashDock
 	trashCount={trash.length}
 	onTrashAlbum={trashAlbum}
