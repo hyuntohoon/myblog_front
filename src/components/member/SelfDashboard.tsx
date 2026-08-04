@@ -23,6 +23,7 @@ import type { MemberRating as PublicMemberReview } from '../album/reviews.api'
 import type { LyricsOpenTarget, NpStyle } from './NowPlaying'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ENT_OPEN_LIVE_LYRICS } from '@lib/entityEvents'
 import { OWNER_HANDLE } from '@lib/member'
 import { AlbumDetail } from './AlbumDetail'
 import { BucketBoard } from './BucketBoard'
@@ -159,6 +160,14 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 	})
 	const openLyrics = (t: LyricsOpenTarget) => setLyrics({ kind: 'live', trackId: t.trackId, progressMs: t.progressMs, progressAtMs: t.progressAtMs, durationMs: t.durationMs, albumCoverUrl: t.albumCoverUrl, track: t.track, artist: t.artist, artists: t.artists })
 	const openStaticLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => setLyrics({ kind: 'static', trackId: spotifyTrackId, meta })
+	// The playback panel (`PocketBuckit`, a separate site-wide React root) has no
+	// way to reach this dashboard-local overlay directly — same shape as
+	// `ent:open-album`, see `entityEvents.ts` for why.
+	useEffect(() => {
+		const onOpen = (e: Event) => openLyrics((e as CustomEvent<LyricsOpenTarget>).detail)
+		window.addEventListener(ENT_OPEN_LIVE_LYRICS, onOpen)
+		return () => window.removeEventListener(ENT_OPEN_LIVE_LYRICS, onOpen)
+	}, [])
 	const closeLyrics = () => {
 		setLyrics(null)
 		try {

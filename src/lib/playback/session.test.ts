@@ -402,9 +402,19 @@ describe('external playback adoption', () => {
       title: 'Paranoid Android',
       artist: 'Radiohead',
       spotifyTrackId: 'SPOT-UNKNOWN',
+      spotifyAlbumId: null,
       deviceName: '거실 스피커',
     })
     expect(state.playing).toBe(true)
+  })
+
+  it('carries the Spotify album id through so 앨범 정보 works for playback outside the queue', async () => {
+    setQueue([])
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-UNKNOWN'), albumSpotifyId: 'ALBUM-XYZ' })
+
+    await playbackSession.syncFromLive()
+
+    expect(playbackSession.getSnapshot().external?.spotifyAlbumId).toBe('ALBUM-XYZ')
   })
 
   it('adopts a track PAUSED elsewhere rather than folding it into idle', async () => {
@@ -445,6 +455,117 @@ describe('external playback adoption', () => {
 
     expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('SPOT-X')
     expect(playbackSession.getSnapshot().playing).toBe(true)
+  })
+})
+
+// Playback Step 8 preflight audit — the RFC's own Step 6b decisions log left this
+// open ("our own transport races its own adoption... owner decision pending"):
+// `MYBLOG_PLAYBACK_CHANGED` fires the instant a command is ACKNOWLEDGED, and the
+// `adoptLive()` read it triggers can land inside Spotify's ack→apply window with
+// the PREVIOUS state — overwriting a fresher local write with a staler one.
+describe('self-triggered adoption cannot overwrite a newer local write', () => {
+  it('discards a stale adoptLive() read that resolves after a newer togglePlay()', async () => {
+    setQueue([row('a')])
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+    await startAt('a')
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+
+    // A read that will not resolve until this test says so — modelling exactly the
+    // window where our own command has already been acted on locally but the read
+    // it triggered is still in flight.
+    let resolveRead!: (v: unknown) => void
+    mocks.readLivePlayback.mockReturnValue(new Promise((resolve) => {
+      resolveRead = resolve
+    }))
+    const staleAdoption = playbackSession.syncFromLive()
+
+    // A NEWER authoritative local write lands while that read is still pending.
+    const pausing = playbackSession.togglePlay()
+    await finishPlayback(pausing)
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+
+    // NOW the stale read resolves, reporting the track as still playing — exactly
+    // the RFC's recorded bug ("pause it and it snaps back to Ⅱ").
+    resolveRead({ state: 'playing', trackId: 'SPOT-A', progressMs: 1000, readAtMs: 1000, durationMs: 180_000, track: 't', artist: 'a', artists: [], album: null, albumSpotifyId: null, albumCoverUrl: null, deviceName: null, shuffle: null, repeat: null, volumePercent: null, contextUri: null, contextType: null })
+    await staleAdoption
+
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+  })
+})
+
+// A track finishing naturally (rung 1: no push signal exists — see the
+// `scheduleBoundaryCheck` boundary-check in session.ts; rung 2: the SDK's
+// `player_state_changed`) both funnel into the SAME re-adoption `adoptLive()`
+// already runs on any trigger. This pins the piece that actually removes the
+// finished row — `onCompleted()` alone was never called from anywhere shipped.
+describe('a confirmed track change away from the current row completes it', () => {
+  it('deletes the finished row and adopts whatever is live now, without replaying it', async () => {
+    setQueue([row('a'), row('b')])
+    mocks.cachedUri.mockImplementation((t: string) =>
+      t === 'track-a' ? 'spotify:track:SPOT-A' : t === 'track-b' ? 'spotify:track:SPOT-B' : null)
+    await startAt('a')
+    const playCallsBeforeAdoption = mocks.play.mock.calls.length
+
+    // Spotify moved on to the next track on its own — no command of ours caused it.
+    mocks.readLivePlayback.mockResolvedValue({
+      state: 'playing',
+      trackId: 'SPOT-B',
+      progressMs: 500,
+      readAtMs: 2_000,
+      durationMs: 180_000,
+      track: 'Title b',
+      artist: 'Artist b',
+      artists: [],
+      album: null,
+      albumSpotifyId: null,
+      albumCoverUrl: null,
+      deviceName: null,
+      shuffle: null,
+      repeat: null,
+      volumePercent: null,
+      contextUri: null,
+      contextType: null,
+    })
+
+    await playbackSession.syncFromLive()
+
+    expect(mocks.deleteBucketItem).toHaveBeenCalledWith('playback-bucket', 'a')
+    expect(queueIds()).toEqual(['b'])
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+    // Spotify was ALREADY playing 'b' — re-issuing play() would be a redundant,
+    // audible restart of a track that is already correctly playing.
+    expect(mocks.play.mock.calls.length).toBe(playCallsBeforeAdoption)
+  })
+
+  it('does not delete anything when the live track still matches the current row', async () => {
+    setQueue([row('a')])
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+    await startAt('a')
+
+    mocks.readLivePlayback.mockResolvedValue({
+      state: 'playing',
+      trackId: 'SPOT-A',
+      progressMs: 42_000,
+      readAtMs: 1_000,
+      durationMs: 180_000,
+      track: 'Title a',
+      artist: 'Artist a',
+      artists: [],
+      album: null,
+      albumSpotifyId: null,
+      albumCoverUrl: null,
+      deviceName: null,
+      shuffle: null,
+      repeat: null,
+      volumePercent: null,
+      contextUri: null,
+      contextType: null,
+    })
+    await playbackSession.syncFromLive()
+
+    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
+    expect(queueIds()).toEqual(['a'])
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
   })
 })
 

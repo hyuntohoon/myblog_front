@@ -706,7 +706,9 @@
   grid-template-columns: repeat(4, 1fr);
   border-bottom: 1px solid var(--color-border);
 }
-.pb-scope .pbp-mobile-tabs button {
+.pb-scope .pbp-mobile-tabs button,
+.pb-scope .pbp-mobile-tabs .pbp-mobile-tab-current {
+  display: block;
   padding: 12px 2px;
   border: 0;
   border-left: 1px solid var(--color-border-soft);
@@ -714,9 +716,13 @@
   background: var(--color-bg);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
+  text-align: center;
 }
-.pb-scope .pbp-mobile-tabs button:first-child { border-left: 0; }
-.pb-scope .pbp-mobile-tabs button[aria-selected="true"] { color: var(--on-accent); background: var(--color-accent); }
+.pb-scope .pbp-mobile-tabs button:first-child,
+.pb-scope .pbp-mobile-tabs .pbp-mobile-tab-current:first-child { border-left: 0; }
+/* The one entry that actually is this sheet's content, permanently — not a
+ * clickable tab, so it never claimed a switch the other three never delivered. */
+.pb-scope .pbp-mobile-tabs .pbp-mobile-tab-current { color: var(--on-accent); background: var(--color-accent); }
 
 @media (max-width: 767px) {
   .site-shell { margin-right: 0; }

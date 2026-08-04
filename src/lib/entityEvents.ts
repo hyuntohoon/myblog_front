@@ -79,3 +79,33 @@ export function notifyAlbumStateChanged(detail: AlbumStateChangedDetail): void {
     return
   window.dispatchEvent(new CustomEvent<AlbumStateChangedDetail>(ENT_ALBUM_STATE_CHANGED, { detail }))
 }
+
+// FEAT-playback-bucket-player Step 6/6b follow-up — the playback panel's 가사
+// entry is a site-wide island (`PocketBuckit`, layout-mounted) but the live
+// `LyricsViewer` overlay only exists inside `SelfDashboard` (member-dashboard
+// local, per the RFC's "two React roots, no shared context" architecture).
+// This is the "app-wide event like albums" the panel's own NOOP comment named
+// as the fix: same shape as `openAlbum`/`ENT_OPEN_ALBUM`. A listener only
+// exists where `SelfDashboard` is mounted (the member dashboard), so opening
+// it from elsewhere is a deliberate, honest no-op rather than a crash.
+export interface OpenLiveLyricsDetail {
+  /** Spotify track id — `GET /api/lyrics/{id}` takes this, not a DB id. */
+  trackId: string
+  progressMs: number | null
+  /** `performance.now()`-timeline instant `progressMs` was measured at. */
+  progressAtMs: number | null
+  durationMs: number | null
+  albumCoverUrl: string | null
+  track: string | null
+  artist: string | null
+  artists: Array<{ id: string, name: string }>
+}
+
+export const ENT_OPEN_LIVE_LYRICS = 'ent:open-live-lyrics'
+
+/** Open the live lyrics viewer for whatever is currently playing. No-op server-side. */
+export function openLiveLyrics(detail: OpenLiveLyricsDetail): void {
+  if (typeof window === 'undefined')
+    return
+  window.dispatchEvent(new CustomEvent<OpenLiveLyricsDetail>(ENT_OPEN_LIVE_LYRICS, { detail }))
+}
