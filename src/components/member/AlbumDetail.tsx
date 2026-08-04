@@ -26,6 +26,7 @@ import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { AlbumDetailView, Header } from '../album/AlbumDetailView'
 import { GenreLink } from '../shared/GenreLink'
+import { TrackRow } from '../shared/TrackRow'
 import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
 import { LyricsSheet } from './lyrics/LyricsSheet'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
@@ -419,45 +420,27 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
                 <div style={{ margin: '16px 0 9px', borderTop: '1px solid var(--color-border-soft)' }} />
                 <div className="meta" style={{ letterSpacing: '.12em' }}>{`트랙리스트 · ${data.tracks.length}곡`}</div>
                 <div className="memo-tracks">
-                  {data.tracks.map((t) => {
-                    // FEAT-lyrics-sheet: a track with a spotify_id opens the
-                    // lyrics sheet (the bucket-album entry that was missing —
-                    // the memo window replaced the shared TrackRow, so its rows
-                    // had no 가사 affordance). Without an id there is nothing to
-                    // query, so the row stays a plain read-only line.
-                    //
-                    // ⚠️ TWIN of components/shared/TrackRow.tsx. These rows are
-                    // deliberately NOT that component: here the whole row is the
-                    // button, which suits a narrow memo window and which TrackRow
-                    // cannot express. So **a track-row change made there does not
-                    // reach this list, and one made here does not reach the album
-                    // modal or LikedBoard** — check both. Both end at the same
-                    // LyricsSheet via SelfDashboard's openStaticLyrics.
-                    // docs/frontend/component-map.md → "Track-click behavior".
+                  {/* ARCH-entity-interaction-v2 Step 5 (E4) — adopted onto the
+                      shared TrackRow via `openLyrics` (the whole-row lyrics
+                      target). A track with a spotify_id opens the lyrics
+                      sheet; without one there is nothing to query, so the row
+                      renders plain (openLyrics omitted). This used to be a
+                      hand-rolled TWIN of shared/TrackRow.tsx — a change here
+                      now reaches every TrackRow consumer, and vice versa. */}
+                  {data.tracks.map((t, i) => {
                     const sid = t.spotify_id
                     const len = t.duration_sec != null ? fmtTime(t.duration_sec) : ''
                     const no = String(t.track_no ?? 0).padStart(2, '0')
-                    if (sid) {
-                      return (
-                        <button
-	type="button"
-	key={t.id}
-	className="memo-trow memo-trow-btn"
-	title="가사 보기"
-	onClick={() => openSheet(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover })}
-                        >
-                          <span className="memo-trow-no">{no}</span>
-                          <span className="memo-trow-title">{t.title}</span>
-                          <span className="memo-trow-len">{len}</span>
-                        </button>
-                      )
-                    }
                     return (
-                      <div key={t.id} className="memo-trow">
-                        <span className="memo-trow-no">{no}</span>
-                        <span className="memo-trow-title">{t.title}</span>
-                        <span className="memo-trow-len">{len}</span>
-                      </div>
+                      <TrackRow
+	key={t.id}
+	no={no}
+	title={t.title}
+	cells={len ? <span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{len}</span> : undefined}
+	actions={sid ? { openLyrics: { fire: () => openSheet(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }), title: '가사 보기' } } : {}}
+	gridTemplate="22px minmax(0,1fr) auto"
+	style={{ padding: '6px 2px', borderBottom: i === data.tracks.length - 1 ? 'none' : '1px solid var(--color-border-soft)' }}
+                      />
                     )
                   })}
                 </div>
