@@ -26,6 +26,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '@lib/api'
 import { goLogin, isLoggedIn } from '@lib/auth'
 import { listBuckets } from '@lib/buckets'
+import { artistHref } from '@lib/entityLinks'
 import { isOwnerUser } from '@lib/owner'
 import { useMusicSearch } from '@lib/useMusicSearch'
 import type { ReleaseDayGroup, ReleaseEventLike } from './releaseShared'
@@ -341,7 +342,7 @@ function ManagePanel({ tracked, onChanged }: {
 									}}
 								/>
 								<Avatar url={c.photo_url} name={c.name} className="ph" />
-								<span className="nm">{c.name}</span>
+								<a href={artistHref(c.artist_id)} className="nm" style={{ color: 'inherit', textDecorationColor: 'var(--color-faded)', textUnderlineOffset: 2 }} title={`${c.name} · 아티스트 보기`} onClick={e => e.stopPropagation()}>{c.name}</a>
 								{c.already_tracked && <span className="done mono">추적 중</span>}
 							</label>
 						))}
@@ -373,7 +374,7 @@ function ManagePanel({ tracked, onChanged }: {
 						{tracked.map(t => (
 							<span key={t.artist_id} className="rr-chip">
 								<Avatar url={t.photo_url} name={t.name} />
-								<span className="nm">{t.name}</span>
+								<a href={artistHref(t.artist_id)} className="nm" style={{ color: 'inherit', textDecorationColor: 'var(--color-faded)', textUnderlineOffset: 2 }} title={`${t.name} · 아티스트 보기`}>{t.name}</a>
 								<button
 									type="button"
 									aria-label={`${t.name} 추적 해제`}
