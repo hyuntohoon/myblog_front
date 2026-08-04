@@ -21,6 +21,8 @@ import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isLoggedIn } from '@lib/auth'
 import { isOwnerUser } from '@lib/owner'
+import type { DragPayload } from '@lib/entityDrag'
+import { memberRef } from '@lib/entityDrag'
 import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
@@ -479,7 +481,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
 	aria-label={`${bucket.name} 미니 플레이어`}
 	onPointerDownCapture={() => focusDrawer(bucketId)}
 	onDragOver={(e) => {
-          if (!boardDragAccepts(bucket.type))
+          if (!boardDragAccepts(bucket))
             return
           e.preventDefault()
           setDropHot(true)
@@ -489,7 +491,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
             setDropHot(false)
         }}
 	onDrop={(e) => {
-          if (!boardDragAccepts(bucket.type))
+          if (!boardDragAccepts(bucket))
             return
           e.preventDefault()
           setDropHot(false)
@@ -524,7 +526,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
 	// (a Pocket drop target). Gate mirrors the board's General/Artist rule; the board
 	// runs the real add/expand via fireBoardDrop → PB_BOARD_DROP.
 	onDragOver={(e) => {
-        if (!boardDragAccepts(bucket.type))
+        if (!boardDragAccepts(bucket))
           return
         e.preventDefault()
         setDropHot(true)
@@ -534,7 +536,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
           setDropHot(false)
       }}
 	onDrop={(e) => {
-        if (!boardDragAccepts(bucket.type))
+        if (!boardDragAccepts(bucket))
           return
         e.preventDefault()
         setDropHot(false)
@@ -641,16 +643,11 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
 	draggable
 	onDragStart={(e) => {
               e.dataTransfer.effectAllowed = 'move'
-              window.dispatchEvent(new CustomEvent(PB_DND_START_EVENT, {
-                detail: {
-                  itemId: a.itemId,
-                  fromBucketId: bucket.id,
-                  albumId: a.albumId ?? null,
-                  trackId: a.trackId ?? null,
-                  artistId: a.artistId ?? null,
-                  srcItemType: a.itemType,
-                },
-              }))
+              // ARCH-entity-interaction-v2 E2 — the same `DragPayload` the board's own
+              // AlbumChip builds, so the two islands share the contract rather than each
+              // keeping a copy of the other's shape.
+              const payload: DragPayload = { ref: memberRef(a), origin: { kind: 'internal', itemId: a.itemId, fromBucketId: bucket.id, itemType: a.itemType } }
+              window.dispatchEvent(new CustomEvent<DragPayload>(PB_DND_START_EVENT, { detail: payload }))
             }}
 	onDragEnd={() => window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT))}
 	style={{ display: 'flex', alignItems: 'center', gap: sc(9), cursor: 'grab' }}
@@ -939,7 +936,7 @@ export function PocketTray() {
     const isDragging = drag?.id === leaf.id
     // reverse DnD: this chip can receive the in-flight board member (dashed hint), and is
     // currently the hovered drop target (solid highlight).
-    const droppable = !!boardDrag && boardDragAccepts(leaf.type)
+    const droppable = !!boardDrag && boardDragAccepts(leaf)
     // FEAT-playback-bucket-player Step 5 — a chip that CANNOT take the in-flight
     // member is muted in place instead of silently doing nothing. It is never
     // removed, hidden, or reordered: the tray must not reflow mid-drag (D-series
@@ -967,7 +964,7 @@ export function PocketTray() {
 	// FEAT-pocket-buckit-viewers Track A — a tray chip is a reverse-DnD drop target. Gate
 	// mirrors the board's General/Artist rule; the board runs the real add/expand.
 	onDragOver={(e) => {
-            if (!boardDragAccepts(leaf.type))
+            if (!boardDragAccepts(leaf))
               return
             e.preventDefault()
             setDropOverId(leaf.id)
@@ -977,7 +974,7 @@ export function PocketTray() {
               setDropOverId(prev => (prev === leaf.id ? null : prev))
           }}
 	onDrop={(e) => {
-            if (!boardDragAccepts(leaf.type))
+            if (!boardDragAccepts(leaf))
               return
             e.preventDefault()
             setDropOverId(null)

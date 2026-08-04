@@ -33,23 +33,16 @@ export interface PbOpenStateDetail {
  * board island. So the tray hands the payload over via this synchronous window event:
  * `dragstart` fires before any board `dragover`, so the board's listener has populated
  * `dnd` in time. {@link PB_DND_END_EVENT} (on `dragend`, success OR cancel) clears it.
- * The payload mirrors the board's own member-drag `DndItem` (BucketBoard `AlbumChip`
- * onDragStart) so the existing `canAcceptAlbumDrag` / `ops.*` routing is reused verbatim.
+ *
+ * ARCH-entity-interaction-v2 Step 3 — `detail` is the shared `DragPayload` (E2), the same
+ * value the board's own drag sources build. It used to be a hand-rolled mirror of the
+ * board's `DndItem`; a mirror is a drift pair, and the point of one payload is that the
+ * wire between two islands carries the contract rather than a copy of it.
  */
 export const PB_DND_START_EVENT = 'pb:dnd-start'
 
-/** Tray → board: the tray-originated drag ended (drop or cancel) — clear the board `dnd`. */
+/** Tray → board: the tray-originated drag ended (drop or cancel) — clear the board payload. */
 export const PB_DND_END_EVENT = 'pb:dnd-end'
-
-/** detail shape for {@link PB_DND_START_EVENT} — a tray drawer item being dragged. */
-export interface PbDndStartDetail {
-  itemId: string
-  fromBucketId: string
-  albumId: string | null
-  trackId: string | null
-  artistId: string | null
-  srcItemType: string
-}
 
 /**
  * Board → tray (FEAT-pocket-buckit-viewers Track A — the REVERSE of Step 6: a board
@@ -67,15 +60,6 @@ export const PB_BOARD_DND_START_EVENT = 'pb:board-dnd-start'
 
 /** Board → tray: the board-originated drag ended (drop or cancel) — clear the Pocket mirror. */
 export const PB_BOARD_DND_END_EVENT = 'pb:board-dnd-end'
-
-/** detail shape for {@link PB_BOARD_DND_START_EVENT} — mirrors the board's `DndItem`. */
-export interface PbBoardDndStartDetail {
-  /** the source member's item type ('album' | 'track' | 'artist' | …) — drives the accept-gate. */
-  srcItemType: string
-  albumId: string | null
-  trackId: string | null
-  artistId: string | null
-}
 
 /**
  * Tray → board (FEAT-pocket-buckit-viewers Track A): a board-originated drag was dropped
