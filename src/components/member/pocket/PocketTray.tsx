@@ -17,7 +17,7 @@ import type { PlaybackTarget } from '@lib/spotifyPlayback'
 import type { PlaybackEntryHandler } from '../playback/PlaybackPanel'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { PLAYBACK_KIND } from '@lib/buckets'
-import { openAlbum } from '@lib/entityEvents'
+import { openAlbum, openLiveLyrics } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isLoggedIn } from '@lib/auth'
 import { isOwnerUser } from '@lib/owner'
@@ -26,6 +26,7 @@ import { memberRef } from '@lib/entityDrag'
 import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
+import { cachedUri } from '@lib/playback/uris'
 import { play } from '@lib/spotifyPlayback'
 import { PlaybackMini } from '../playback/PlaybackMini'
 import { PlaybackPanel } from '../playback/PlaybackPanel'
@@ -36,9 +37,36 @@ const SCALE = 'var(--pb-scale, 1)'
 const sc = (n: number) => `calc(${n}px * ${SCALE})`
 
 // Pocket is a site-wide island and cannot reach the member dashboard's local
-// lyrics/track-detail mounts. Keep those two entries explicit until they gain an
-// app-wide event like albums; the panel never invents replacement surfaces.
+// track-detail mount directly. `트랙 정보` has no destination ANYWHERE in the
+// product yet (that surface is `ARCH-entity-interaction-v2`'s canonical-track
+// scope, which `FEAT-playback-bucket-player` Step 8 is itself gated on) — so it
+// stays a deliberate, explicit no-op rather than a fabricated destination.
 const NOOP_PLAYBACK_ENTRY: PlaybackEntryHandler = () => {}
+
+/**
+ * 가사 DID gain an app-wide event (`ent:open-live-lyrics`, mirroring `ent:open-album`)
+ * — see `entityEvents.ts`. `SelfDashboard` is the only listener today, so this is
+ * still an honest no-op on any page without the member dashboard mounted, same as
+ * before; it simply stops being ALWAYS a no-op.
+ */
+const openPlaybackLyrics: PlaybackEntryHandler = (row, state) => {
+  const spotifyTrackId = row?.trackId ?
+    cachedUri(row.trackId)?.replace(/^spotify:track:/, '') ?? null :
+    state.external?.spotifyTrackId ?? null
+  if (!spotifyTrackId)
+    return
+  const anchor = state.anchor
+  openLiveLyrics({
+    trackId: spotifyTrackId,
+    progressMs: anchor?.ms ?? null,
+    progressAtMs: anchor?.wallMs ?? null,
+    durationMs: state.durationMs,
+    albumCoverUrl: row?.cover ?? null,
+    track: row?.title ?? state.external?.title ?? null,
+    artist: row?.artist ?? state.external?.artist ?? null,
+    artists: [],
+  })
+}
 
 function accentFor(leaf: PocketLeaf): string {
   return leaf.color || 'var(--color-accent)'
@@ -507,7 +535,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
 	onHeadPointerDown={onHeadDown}
 	onHeadPointerMove={onHeadMove}
 	onHeadPointerUp={onHeadUp}
-	onOpenLyrics={NOOP_PLAYBACK_ENTRY}
+	onOpenLyrics={openPlaybackLyrics}
 	onOpenTrackInfo={NOOP_PLAYBACK_ENTRY}
         />
       </div>
@@ -877,7 +905,7 @@ export function PocketTray() {
       <div className="pb-scope">
         <EntryControl design={design} count={leaves.length} onOpen={() => setOpen(true)} />
         {playbackPanelOpen && (
-          <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={NOOP_PLAYBACK_ENTRY} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
+          <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={openPlaybackLyrics} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
         )}
       </div>
     )
@@ -1060,7 +1088,7 @@ export function PocketTray() {
       <DrawerLayer design={design} editMode={editMode} onExpandPlayback={() => setPlaybackPanelOpen(true)} />
 
       {playbackPanelOpen && (
-        <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={NOOP_PLAYBACK_ENTRY} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
+        <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={openPlaybackLyrics} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
       )}
 
       {undo && (

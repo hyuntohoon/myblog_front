@@ -10,6 +10,7 @@ import { openAlbum } from '@lib/entityEvents'
 import { playbackQueue, withoutQueueItems } from '@lib/playback/queue'
 import { playbackSession } from '@lib/playback/session'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
+import { resolveDbAlbumId } from '@lib/spotifyCatalog'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 
@@ -104,11 +105,29 @@ function albumIdFor(row: BoardAlbum | null): string | null {
   return row?.trackAlbumId ?? row?.albumId ?? null
 }
 
-export function openPlaybackAlbum(row: BoardAlbum | null): void {
+/**
+ * `앨범 정보` for a queue row works from the row alone (`albumIdFor`). Playback
+ * that never touched our queue (`external` — started elsewhere) has no
+ * `BoardAlbum`, so before this fix the button silently no-opped for exactly the
+ * playback the RFC's own adoption feature (#348) exists to describe — "album
+ * info fails depending on how playback started". `ExternalNowPlaying` now
+ * carries the Spotify album id (`adoptLive`, from the same one-shot read that
+ * was already fetching it and dropping it), so it resolves through the SAME
+ * `by-spotify` catalog lookup `NowPlaying`'s live artist/album links already use
+ * — no new endpoint.
+ */
+export function openPlaybackAlbum(row: BoardAlbum | null, external?: ExternalNowPlaying | null): void {
   const albumId = albumIdFor(row)
-  if (!row || !albumId)
+  if (row && albumId) {
+    openAlbum({ albumId, artist: row.artist, cover: row.cover, year: row.year })
     return
-  openAlbum({ albumId, artist: row.artist, cover: row.cover, year: row.year })
+  }
+  if (!row && external?.spotifyAlbumId) {
+    void resolveDbAlbumId(external.spotifyAlbumId).then((id) => {
+      if (id)
+        openAlbum({ albumId: id, artist: external.artist ?? undefined })
+    })
+  }
 }
 
 /**
@@ -190,7 +209,7 @@ export function PlaybackEntries({ current, state, onOpenLyrics, onOpenTrackInfo 
     <div className="pbp-entries" role="group" aria-label="현재 곡 정보">
       <button type="button" onClick={() => onOpenLyrics(current, state)}>가사</button>
       <button type="button" onClick={() => onOpenTrackInfo(current, state)}>트랙 정보</button>
-      <button type="button" onClick={() => openPlaybackAlbum(current)}>앨범 정보</button>
+      <button type="button" onClick={() => openPlaybackAlbum(current, state.external)}>앨범 정보</button>
     </div>
   )
 }
@@ -304,19 +323,8 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
   const panelRef = useRef<HTMLElement>(null)
   const model = usePlaybackViewModel()
   const canControl = canControlPlayback(model.state)
-  const [tab, setTab] = useState<'queue' | 'lyrics' | 'track' | 'album'>('queue')
   useDismissable(true, onClose, panelRef, { trapFocus: true })
   useScrollLock()
-
-  const choose = (next: typeof tab) => {
-    setTab(next)
-    if (next === 'lyrics')
-      entries.onOpenLyrics(model.current, model.state)
-    else if (next === 'track')
-      entries.onOpenTrackInfo(model.current, model.state)
-    else if (next === 'album')
-      openPlaybackAlbum(model.current)
-  }
 
   return (
     <section ref={panelRef} className="pbp-panel is-mobile" role="dialog" aria-modal="true" aria-label="재생 대기열 플레이어">
@@ -324,15 +332,21 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
         <span className="pbp-head-title">재생 대기열</span>
         <button type="button" className="pbp-close" onClick={onClose} aria-label="닫기">✕</button>
       </div>
-      <div className="pbp-mobile-tabs" role="tablist" aria-label="플레이어 보기">
-        {([
-          ['queue', '대기열'],
-          ['lyrics', '가사'],
-          ['track', '트랙'],
-          ['album', '앨범'],
-        ] as const).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => choose(id)}>{label}</button>
-        ))}
+      {/*
+        `대기열` is the only view this sheet actually renders — 가사/트랙/앨범 are
+        entry points into OTHER surfaces (the live lyrics viewer, a future track
+        surface, the album overlay), the same as the desktop panel's
+        `PlaybackEntries` buttons. They used to be marked up as `role="tab"` with
+        `aria-selected`, which claimed an in-place content switch that never
+        happened — every tab rendered the identical queue body underneath
+        (confirmed symptom: mobile tabs not showing their own content). Plain
+        action buttons here say exactly what they do.
+      */}
+      <div className="pbp-mobile-tabs" role="group" aria-label="플레이어 진입">
+        <span className="pbp-mobile-tab-current" aria-current="true">대기열</span>
+        <button type="button" onClick={() => entries.onOpenLyrics(model.current, model.state)}>가사</button>
+        <button type="button" onClick={() => entries.onOpenTrackInfo(model.current, model.state)}>트랙 정보</button>
+        <button type="button" onClick={() => openPlaybackAlbum(model.current, model.state.external)}>앨범 정보</button>
       </div>
       <div className="pbp-body">
         <PlaybackIdentity row={model.current} external={model.state.external} />

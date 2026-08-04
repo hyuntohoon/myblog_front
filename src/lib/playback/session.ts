@@ -56,6 +56,13 @@ export interface ExternalNowPlaying {
   artist: string | null
   /** Spotify track id, so a later queue read can still match it to a row. */
   spotifyTrackId: string | null
+  /**
+   * Spotify album id — carried through so 앨범 정보 works for playback that never
+   * touched our queue (started elsewhere, so there is no `BoardAlbum` row and
+   * thus no DB album id). Resolved via the existing `resolveDbAlbumId`
+   * (`@lib/spotifyCatalog`, `by-spotify`) rather than a new lookup.
+   */
+  spotifyAlbumId: string | null
   deviceName: string | null
 }
 
@@ -147,6 +154,28 @@ function patch(p: Partial<PlaybackSessionState>): void {
   emit()
   if (current.isOwner)
     broadcastState()
+}
+
+/**
+ * Bumped by every LOCAL, authoritative write — a command WE issued and got an ok
+ * back for (`playFrom`, `togglePlay`, `advance`, `onRemoved`). NOT bumped by
+ * `adoptLive`'s own patch, which is a READ, not an action.
+ *
+ * This is the fix for the race the RFC's own Step 6b decisions log left open
+ * ("our own transport races its own adoption... owner decision pending"):
+ * `MYBLOG_PLAYBACK_CHANGED` fires the instant our command is ACKNOWLEDGED, but
+ * `adoptLive()`'s subsequent `GET /me/player` can still land inside Spotify's
+ * ack→apply window and read the PREVIOUS state — a stale answer arriving after
+ * a fresher local write. Rather than guess how wide that window is (this RFC's
+ * own rule: constants are measured, not guessed), a read simply discards itself
+ * if a newer authoritative write happened while it was in flight — correct at
+ * any window width, including one that varies per request.
+ */
+let localWriteSeq = 0
+
+function authoritativePatch(p: Partial<PlaybackSessionState>): void {
+  localWriteSeq += 1
+  patch(p)
 }
 
 function broadcastState(): void {
@@ -271,17 +300,22 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   const uris = await resolveTail(trackIdsFrom(rows.slice(index)))
   if (uris.length === 0) {
     const unresolvable: PlayFailure = { ok: false, reason: 'unresolvable', message: '이 곡을 재생할 수 없어요.' }
-    patch({ busy: false, notice: noticeForFailure(unresolvable) })
+    authoritativePatch({ busy: false, notice: noticeForFailure(unresolvable) })
     return unresolvable
   }
   const r = await play({ kind: 'uris', uris })
   if (!r.ok) {
     // T2: a play failure PRESERVES the queue. Nothing is removed, nothing is
     // reordered — the rows stay exactly as they were and only the notice changes.
-    patch({ busy: false, notice: noticeForFailure(r) })
+    authoritativePatch({ busy: false, notice: noticeForFailure(r) })
     return r
   }
-  patch({
+  // AUTHORITATIVE: this is the local action's own confirmed result. `play()` just
+  // dispatched `MYBLOG_PLAYBACK_CHANGED` (synchronously, before returning here),
+  // which may already have kicked off an `adoptLive()` read — bumping the seq
+  // HERE, before that read can land, is what makes it discard itself instead of
+  // overwriting this with a stale answer.
+  authoritativePatch({
     busy: false,
     currentItemId: head.itemId,
     playing: true,
@@ -293,6 +327,7 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
     // obligation and both forms are callers. `IN_PAGE_MESSAGE` is that sentence.
     notice: r.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
   })
+  scheduleBoundaryCheck()
   return r
 }
 
@@ -333,7 +368,23 @@ async function adoptLive(): Promise<void> {
   // harmful. With no owner at all, this tab is the only reader and proceeds.
   if (!current.isOwner && current.ownerPresent)
     return
+
+  // The row this tab believes is sounding, BEFORE the read — captured now so a
+  // completion can be detected against what we knew, not against whatever a
+  // concurrent local write may have since changed it to. (Inlined rather than
+  // `playbackSession.currentRow()` — that binding is defined later in the file.)
+  const previousRowIndex = rowIndex(current.currentItemId)
+  const previousRow = previousRowIndex < 0 ? null : queueRows()[previousRowIndex]
+  const seqAtStart = localWriteSeq
   const live = await readLivePlayback()
+
+  // A newer AUTHORITATIVE local write landed while this read was in flight — e.g.
+  // this very read was triggered by `MYBLOG_PLAYBACK_CHANGED` off our own command,
+  // and the read lands inside Spotify's ack→apply window with the PREVIOUS state.
+  // Discard rather than apply: the fresher local write is already correct, and an
+  // adoption is a read, never the tie-breaker over an action. See `localWriteSeq`.
+  if (localWriteSeq !== seqAtStart)
+    return
 
   // `unavailable` is a token/network failure, NOT "nothing is playing". Treating it
   // as silence would make a transient blip wipe a perfectly good current track —
@@ -341,8 +392,33 @@ async function adoptLive(): Promise<void> {
   if (live.state === 'unavailable')
     return
 
+  // The row we thought was playing is confirmed no longer live — natural
+  // completion (or a skip away from it that did not go through this session, e.g.
+  // another surface). T2: "completion removes" the finished row. This is the ONE
+  // place that fires the removal, replacing the never-called `onCompleted()` path
+  // — it is reached only from a CONFIRMED read, never a timer reaching duration,
+  // which is exactly the bar the RFC's own comment on `onCompleted` sets.
+  if (previousRow?.trackId) {
+    const previousUri = cachedUri(previousRow.trackId)
+    const liveUri = live.state !== 'idle' && live.trackId ? `spotify:track:${live.trackId}` : null
+    if (previousUri && liveUri !== previousUri) {
+      const { bucket } = playbackQueue()
+      if (bucket) {
+        try {
+          await deleteBucketItem(bucket.id, previousRow.itemId)
+          bucketStore.setTree(withoutQueueItems(bucketStore.getTree(), bucket.id, [previousRow.itemId]))
+        }
+        catch {
+          // Could not remove it — leave the row in place. The next adoption
+          // (mount, or the next event) re-evaluates from scratch rather than
+          // retrying here, so a transient delete failure never blocks playback.
+        }
+      }
+    }
+  }
+
   if (live.state === 'idle') {
-    patch({ playing: false, external: null })
+    patch({ playing: false, external: null, currentItemId: null })
     return
   }
 
@@ -359,9 +435,12 @@ async function adoptLive(): Promise<void> {
     { ms: live.progressMs, wallMs: live.readAtMs } :
     null
 
+  // Row lookup runs against the (possibly just-shrunk) live queue, so a completed
+  // row can never be "found" again — the deletion above always lands first.
   const row = rowForSpotifyTrack(live.trackId)
   if (row) {
     patch({ currentItemId: row.itemId, external: null, playing, anchor, durationMs: live.durationMs })
+    scheduleBoundaryCheck()
     return
   }
   patch({
@@ -370,12 +449,14 @@ async function adoptLive(): Promise<void> {
       title: live.track,
       artist: live.artist,
       spotifyTrackId: live.trackId,
+      spotifyAlbumId: live.albumSpotifyId,
       deviceName: live.deviceName,
     },
     playing,
     anchor,
     durationMs: live.durationMs,
   })
+  scheduleBoundaryCheck()
 }
 
 // ── replacing the queue ──────────────────────────────────────────────────────
@@ -524,7 +605,7 @@ async function undoReplace(bucketId: string, trackIds: string[]): Promise<UndoOu
     await rewrite.settle
     // The restored rows are NEW memberships, so the id the session was holding
     // addresses a row that no longer exists. Clear it before asking what is live.
-    patch({ currentItemId: null })
+    authoritativePatch({ currentItemId: null })
     await syncFromLive()
     return { ok: true, message: '이전 재생 대기열로 되돌렸어요' }
   }
@@ -625,7 +706,7 @@ export const playbackSession = {
         // eligible). Still play: they asked for sound, and refusing here would be a
         // regression against the behaviour these call sites shipped with.
         const r = await play(intent)
-        patch({ busy: false, notice: r.ok ? null : noticeForFailure(r) })
+        authoritativePatch({ busy: false, notice: r.ok ? null : noticeForFailure(r) })
         return { ok: r.ok, message: r.message, undo: null, play: r }
       }
 
@@ -633,7 +714,7 @@ export const playbackSession = {
       if (rewrite.added.length === 0) {
         // Nothing was written, so nothing was deleted — the queue is untouched.
         const message = intent.kind === 'album' ? NO_TRACKS : REPLACE_FAILED
-        patch({ busy: false, notice: { tone: 'error', message } })
+        authoritativePatch({ busy: false, notice: { tone: 'error', message } })
         return { ok: false, message, undo: null, play: null }
       }
 
@@ -658,7 +739,7 @@ export const playbackSession = {
     }
     catch {
       // A write threw before any delete ran, so the queue is exactly as it was.
-      patch({ busy: false, notice: { tone: 'error', message: REPLACE_FAILED } })
+      authoritativePatch({ busy: false, notice: { tone: 'error', message: REPLACE_FAILED } })
       return { ok: false, message: REPLACE_FAILED, undo: null, play: null }
     }
   },
@@ -675,12 +756,18 @@ export const playbackSession = {
     patch({ busy: true })
     const r = await sendPlayerCommand({ kind: current.playing ? 'pause' : 'play' })
     if (!r.ok) {
-      patch({ busy: false, notice: noticeForCommand(r) })
+      authoritativePatch({ busy: false, notice: noticeForCommand(r) })
       return
     }
-    patch({
+    const nowPlaying = !current.playing
+    // AUTHORITATIVE — this is exactly the RFC's own recorded bug ("start playback
+    // and the panel shows ▶, pause and it snaps back to Ⅱ"): `sendPlayerCommand`
+    // already dispatched `MYBLOG_PLAYBACK_CHANGED` before returning here, which may
+    // already be mid-flight on a stale `adoptLive()` read. Bumping the seq now is
+    // what makes that read discard itself instead of overwriting this.
+    authoritativePatch({
       busy: false,
-      playing: !current.playing,
+      playing: nowPlaying,
       // Freeze the clock where it stands on pause; re-anchor from there on resume.
       // Same trick NowPlaying uses — no extra read just to learn a position we know.
       anchor: current.anchor ? { ms: positionNow(), wallMs: performance.now() } : null,
@@ -689,6 +776,10 @@ export const playbackSession = {
       // play replaces the session.
       notice: current.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
     })
+    if (nowPlaying)
+      scheduleBoundaryCheck()
+    else
+      clearBoundaryCheck()
   },
 
   /** Skip forward. Completion and an explicit skip are the same transition for the queue. */
@@ -737,7 +828,8 @@ export const playbackSession = {
       await playbackSession.playAt(after[nextIdx].itemId)
       return
     }
-    patch({ currentItemId: null, playing: false, anchor: null, rung: null, degraded: false })
+    clearBoundaryCheck()
+    authoritativePatch({ currentItemId: null, playing: false, anchor: null, rung: null, degraded: false })
   },
 
   /** Warm the tail's URIs while the user is looking at the queue, so a tap costs no request. */
@@ -766,6 +858,7 @@ export const playbackSession = {
 
   /** Test seam. */
   __reset(): void {
+    clearBoundaryCheck()
     const ownership = playbackOwnership.getSnapshot()
     current = {
       ...EMPTY,
@@ -782,6 +875,50 @@ function positionNow(): number {
   if (!a)
     return 0
   return current.playing ? a.ms + (performance.now() - a.wallMs) : a.ms
+}
+
+// ── rung-1 boundary check ──────────────────────────────────────────────────────
+// Rung 2 (in-page SDK) gets a real push signal for "the track changed" —
+// `player_state_changed`, wired in `spotifyPlayback.ts`. Rung 1 (Connect remote —
+// the RFC's own words: "everything the owner actually uses is on this row") gets
+// NONE: the device is not in this tab, so nothing here fires when a track ends
+// naturally on it. D28 forbids a polling loop, not a single scheduled read at a
+// known boundary — T3 already licenses "reads that are 1:1 with... a track
+// boundary". This schedules exactly one `setTimeout` per track (cleared and
+// re-armed at every real boundary: play, pause, skip, adopt), never a repeating
+// interval, and the read it fires is the ordinary `adoptLive()` every other
+// trigger uses — which verifies against a real read before treating anything as
+// finished, so a wrong guess here costs one redundant read, not a false removal.
+//
+// `BOUNDARY_BUFFER_MS` is a first-pass estimate (Spotify's own ack→apply lag,
+// observed elsewhere in this RFC, plus margin), not a measured constant in the
+// Step 7 sense — flagged in the RFC as a follow-up to measure for real.
+const BOUNDARY_BUFFER_MS = 1_500
+let boundaryTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearBoundaryCheck(): void {
+  if (boundaryTimer !== null) {
+    clearTimeout(boundaryTimer)
+    boundaryTimer = null
+  }
+}
+
+function scheduleBoundaryCheck(): void {
+  clearBoundaryCheck()
+  if (!current.isOwner || current.rung !== 'remote' || !current.playing)
+    return
+  const i = rowIndex(current.currentItemId)
+  const row = i < 0 ? null : queueRows()[i]
+  const duration = current.durationMs ?? (row?.durationSec != null ? row.durationSec * 1000 : null)
+  if (duration == null)
+    return
+  const remaining = duration - positionNow()
+  const delay = Math.max(500, remaining + BOUNDARY_BUFFER_MS)
+  boundaryTimer = setTimeout(() => {
+    boundaryTimer = null
+    if (current.isOwner && current.rung === 'remote')
+      void adoptLive()
+  }, delay)
 }
 
 /**
@@ -823,7 +960,8 @@ async function advance(cause: 'completed' | 'skip'): Promise<void> {
   // After a skip it is still there, so the next track is `i + 1`.
   const nextIdx = cause === 'completed' ? i : i + 1
   if (nextIdx >= after.length) {
-    patch({ currentItemId: null, playing: false, anchor: null, rung: null, degraded: false })
+    clearBoundaryCheck()
+    authoritativePatch({ currentItemId: null, playing: false, anchor: null, rung: null, degraded: false })
     return
   }
   await playFrom(nextIdx)
@@ -856,6 +994,13 @@ function syncOwnership(): void {
     ownerPresent: ownership.ownerPresent,
     ownerRung,
   })
+  // Only the owner schedules a boundary check (same reasoning as `adoptLive`
+  // being owner-only) — losing ownership must not leave a stale timer armed to
+  // fire in a tab that is now a mirror.
+  if (!ownership.isOwner)
+    clearBoundaryCheck()
+  else if (wasOwner !== ownership.isOwner)
+    scheduleBoundaryCheck()
   if (!ownership.isOwner && (wasOwner || ownerArrived))
     playbackOwnership.post({ type: 'sync-request' })
 }

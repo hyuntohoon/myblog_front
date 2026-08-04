@@ -135,10 +135,18 @@ async function mintOnce(): Promise<TokenResult> {
 
 // ── lazy SDK loader (fires only from the live-token branch of requestPlayback) ─
 interface SpotifyListenerPayload { device_id?: string, message?: string }
+interface SpotifyPlaybackState {
+  paused: boolean
+  track_window: { current_track: { id: string | null } }
+}
+interface SpotifyPlayerAddListener {
+  (event: 'player_state_changed', cb: (state: SpotifyPlaybackState | null) => void): boolean
+  (event: string, cb: (payload: SpotifyListenerPayload) => void): boolean
+}
 interface SpotifyPlayer {
   connect: () => Promise<boolean>
   disconnect: () => void
-  addListener: (event: string, cb: (payload: SpotifyListenerPayload) => void) => boolean
+  addListener: SpotifyPlayerAddListener
 }
 interface SpotifyNamespace {
   Player: new (opts: {
@@ -189,6 +197,12 @@ function ensureSdk(): Promise<SpotifyNamespace> {
 
 let player: SpotifyPlayer | null = null
 let deviceId: string | null = null
+/**
+ * Last track id this tab's own in-page (rung 2) SDK device reported, so
+ * `player_state_changed` can tell "the track changed" from "the SDK re-fired
+ * with nothing new" (it does, e.g. on volume/position-only updates).
+ */
+let lastSdkTrackId: string | null = null
 /**
  * Which rung last produced sound, or null before any play this session.
  *
@@ -244,6 +258,21 @@ async function ensureConnectedDevice(token: string): Promise<string> {
     p.addListener('initialization_error', () => reject(new Error('init_error')))
     p.addListener('authentication_error', () => reject(new Error('auth_error')))
     p.addListener('account_error', () => reject(new Error('account_error')))
+    // Rung 2 has a real push signal for "the track changed" that rung 1 (Connect
+    // remote) simply does not — the SDK fires this on every state change,
+    // including a natural end-of-track auto-advance. Only act on an actual track
+    // change (the SDK also fires on position/volume-only updates), and route it
+    // through the SAME `MYBLOG_PLAYBACK_CHANGED` plumbing every other trigger
+    // uses — not a new signal, so the session's existing race-safe `adoptLive()`
+    // handles it identically to any other confirmed change. Not polling: this is
+    // a push event, fired zero times when nothing changes.
+    p.addListener('player_state_changed', (state) => {
+      const trackId = state?.track_window?.current_track?.id ?? null
+      if (trackId === lastSdkTrackId)
+        return
+      lastSdkTrackId = trackId
+      notifyPlaybackChanged()
+    })
     void p.connect()
   })
 }
@@ -890,4 +919,5 @@ export function __resetPlaybackState(): void {
   deviceId = null
   activeRung = null
   sdkPromise = null
+  lastSdkTrackId = null
 }
