@@ -8,6 +8,7 @@ import type { PublicCollection } from '@lib/buckets'
 import { useEffect, useState } from 'react'
 import { listPublicBuckets } from '@lib/buckets'
 import { AlbumArt, SectionTitle } from '@components/member/ui'
+import { openAlbum } from '@lib/entityLinks'
 
 function Notice({ title, sub }: { title: string, sub?: string }) {
   return (
@@ -78,18 +79,26 @@ export default function CollectionView() {
           <div style={{ display: 'grid', gap: '16px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
             {c.albums.map(a => (
               <figure key={a.albumId} style={{ margin: 0, minWidth: 0 }}>
-                <AlbumArt url={a.cover} label={a.title} />
-                <figcaption style={{ marginTop: 7 }}>
-                  <div
+                <button
+	type="button"
+	onClick={() => openAlbum({ albumId: a.albumId, title: a.title, artist: a.artist, cover: a.cover, year: a.year })}
+	title={`${a.title} · 앨범 보기`}
+	aria-label={`${a.title} — ${a.artist} 앨범 보기`}
+	style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer' }}
+                >
+                  <AlbumArt url={a.cover} label={a.title} />
+                  <div style={{ marginTop: 7 }}>
+                    <div
 	className="serif"
 	style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--color-text)', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                  >
-                    {a.title}
+                    >
+                      {a.title}
+                    </div>
+                    <div className="meta" style={{ marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {a.year ? `${a.artist} · ${a.year}` : a.artist}
+                    </div>
                   </div>
-                  <div className="meta" style={{ marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {a.year ? `${a.artist} · ${a.year}` : a.artist}
-                  </div>
-                </figcaption>
+                </button>
               </figure>
             ))}
           </div>
