@@ -9,33 +9,32 @@
 //     (`scripts/albumDetail.client.ts`) is EXCLUDED (RFC non-goal: no vanilla →
 //     React migration; revival trigger = a track action that must ship on the
 //     public review page).
-//   · `play` / `add` are reserved contract slots, not implemented: granting a
-//     surface a NEW play/add affordance is a product decision (RFC OQ2), so a
-//     consumer may only declare what it already has today + `lyrics`. When a
-//     play/add grant is approved, implement the affordance here and every
-//     consumer that declares it gets it.
 //   · Layout is a slot model (index / identity / cells / trailing) because the
 //     two consumers differ (flex list in the album modal vs sortable grid in
 //     LikedBoard); the ACTIONS — what a row can do — are what this component
 //     unifies, matching the `search/atoms.tsx` `RowAction` idea promoted to
 //     compound actions.
 //
-// ⚠️ TWIN: `member/AlbumDetail.tsx` MemoWindow renders its own `memo-trow` rows
-// with their own 가사 entry, and does NOT use this component. It is not pending
-// cleanup — its whole row is the button, which this component cannot express
-// (the closest thing, `actions.open`, means "open the album", not "open lyrics").
-// The consequence is real though: **a change to the track row here does not reach
-// the memo window.** That gap is how the bucket tracklist lost its 가사 affordance
-// once already. Merging them needs `TrackRowActions` widened to express a
-// whole-row lyrics target, which is an RFC OQ2 product decision, not a refactor.
-// Registered in docs/frontend/component-map.md → "Track-click behavior".
+// ARCH-entity-interaction-v2 E4/Step 5 — `play`/`add`/`drag` are OPEN (owner
+// scope grant, RFC OQ2/OQ3 both resolved 2026-08-04): a consumer may declare
+// any of them, none are wired to a surface by this change alone. `drag`
+// dispatches the SAME board⇄tray bridge (`@lib/pocketBuckit/events`) every
+// existing drag source uses, so a future grant is a real, working drop
+// source with no further plumbing — see `TrackRowActions.drag`.
+//
+// The former memo-trow TWIN is adopted (Step 5): `member/AlbumDetail.tsx`
+// MemoWindow now renders this component via `actions.openLyrics` (the
+// whole-row lyrics target E4 asked for), so a track-row change here reaches
+// every consumer, memo window included.
 import type { CSSProperties, ReactNode } from 'react'
+import type { DragPayload } from '@lib/entityDrag'
+import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 
 export interface TrackRowOpen {
-	/** Open detail for this track's album — the identity cell's click behavior. */
+	/** The identity cell's click behavior (open the album, or — via `openLyrics` — view lyrics). */
 	fire: () => void
 	disabled?: boolean
-	/** Tooltip on the enabled identity button (e.g. 작품 상세). */
+	/** Tooltip on the enabled identity button (e.g. 작품 상세, 가사 보기). */
 	title?: string
 	/** Tooltip explaining a disabled open (e.g. 카탈로그 미등록). */
 	disabledTitle?: string
@@ -51,8 +50,29 @@ export interface TrackRowOpen {
  */
 export interface TrackRowActions {
 	lyrics?: () => void
+	/** Identity cell → open the track's album. Mutually exclusive with `openLyrics`. */
 	open?: TrackRowOpen
-	// play?/add? — reserved (RFC OQ2); see the header comment before adding.
+	/**
+	 * View lyrics instead of opening the album — memo window's shape: since a
+	 * granted row has nothing else to click, the WHOLE row (`no` + identity +
+	 * `cells`, not just the identity cell) becomes the button (`role="button"`
+	 * + keyboard support on the row element, not a nested `<button>`). Omit
+	 * entirely for a track with nothing to open — that renders a plain,
+	 * non-interactive row, same as omitting `open`. Mutually exclusive with
+	 * `open` — a row grants one identity action, never both.
+	 */
+	openLyrics?: TrackRowOpen
+	/** Trailing ▶ button. No queue/playback logic here — the surface owns it. */
+	play?: () => void
+	/** Trailing ＋ (담기) button. No bucket logic here — the surface owns it. */
+	add?: () => void
+	/**
+	 * Native HTML5 drag source (E2/E5). Grant only with a stable id and a
+	 * browsing context (OQ3) — omit for guest reads, command rows, and
+	 * selection-mode rows. The payload is dispatched on both the tray→board
+	 * and board→tray bridges so a granted row is droppable on either target.
+	 */
+	drag?: DragPayload
 }
 
 export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells, trailing, actions = {}, gridTemplate, className, style }: {
@@ -95,8 +115,13 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 		</>
 	)
 
-	// One button around the whole identity cell (cover + text) when `open` is
-	// granted — one tab stop per row, not two separate cover/title buttons.
+	// `open` wraps ONLY the identity cell (cover + text) in a button — one tab
+	// stop, not two separate cover/title buttons. `openLyrics` (memo-trow's
+	// shape) instead makes the WHOLE ROW the click target, since there is
+	// nothing else on that row to keep separate; see the whole-row handling
+	// below. The two are mutually exclusive — `open` wins if a caller somehow
+	// grants both.
+	const wholeRowLyrics = !actions.open && actions.openLyrics ? actions.openLyrics : undefined
 	const identity = actions.open ?
 		(
 			<button
@@ -111,8 +136,41 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 		) :
 		<span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: gridTemplate ? undefined : 1 }}>{identityInner}</span>
 
+	const trailingBtnStyle: CSSProperties = { padding: '3px 9px', fontSize: 10.5, letterSpacing: '.06em', borderRadius: 3, whiteSpace: 'nowrap', flex: '0 0 auto', justifySelf: gridTemplate ? 'end' : undefined }
+
 	return (
-		<Tag className={className} style={{ ...layout, ...style }}>
+		<Tag
+			className={className}
+			style={{ ...layout, ...style, ...(wholeRowLyrics && { cursor: 'pointer' }) }}
+			{...(wholeRowLyrics ?
+				{
+					role: 'button',
+					tabIndex: 0,
+					title: wholeRowLyrics.title,
+					onClick: wholeRowLyrics.fire,
+					onKeyDown: (e: React.KeyboardEvent) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault()
+							wholeRowLyrics.fire()
+						}
+					},
+				} :
+				{})}
+			{...(actions.drag ?
+				{
+					draggable: true,
+					onDragStart: (e: React.DragEvent<HTMLElement>) => {
+						e.dataTransfer.effectAllowed = 'copy'
+						window.dispatchEvent(new CustomEvent<DragPayload>(PB_DND_START_EVENT, { detail: actions.drag! }))
+						window.dispatchEvent(new CustomEvent<DragPayload>(PB_BOARD_DND_START_EVENT, { detail: actions.drag! }))
+					},
+					onDragEnd: () => {
+						window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT))
+						window.dispatchEvent(new CustomEvent(PB_BOARD_DND_END_EVENT))
+					},
+				} :
+				{})}
+		>
 			{no != null && <span className="mono" style={{ fontSize: 11.5, color: 'var(--color-faded)', textAlign: gridTemplate ? 'center' : 'right', fontVariantNumeric: 'tabular-nums', flex: gridTemplate ? undefined : '0 0 auto', width: gridTemplate ? undefined : 22 }}>{no}</span>}
 			{identity}
 			{cells}
@@ -122,9 +180,31 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 					className="btn mono"
 					onClick={actions.lyrics}
 					aria-label={`${title} 가사 보기`}
-					style={{ padding: '3px 9px', fontSize: 10.5, letterSpacing: '.06em', borderRadius: 3, whiteSpace: 'nowrap', flex: '0 0 auto', justifySelf: gridTemplate ? 'end' : undefined }}
+					style={trailingBtnStyle}
 				>
 					가사
+				</button>
+			)}
+			{actions.play && (
+				<button
+					type="button"
+					className="btn mono"
+					onClick={actions.play}
+					aria-label={`${title} 재생`}
+					style={trailingBtnStyle}
+				>
+					▶
+				</button>
+			)}
+			{actions.add && (
+				<button
+					type="button"
+					className="btn mono"
+					onClick={actions.add}
+					aria-label={`${title} 담기`}
+					style={trailingBtnStyle}
+				>
+					＋
 				</button>
 			)}
 			{trailing}
