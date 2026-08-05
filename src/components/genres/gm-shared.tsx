@@ -7,6 +7,7 @@
 // (directed arrow) · related (lateral, dotted). A small local neighbourhood,
 // never a global web.
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useDismissable } from '@lib/useDismissable'
 import type { GmDoc, GmNode, RelType } from './gm-model'
 import {
 	GM_RELS,
@@ -350,21 +351,20 @@ export function Peek({ doc, nodeId, onNavigate, onBack, onClose, hasBack }: {
 	hasBack: boolean
 }) {
 	const node = gmNode(doc, nodeId)
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape')
-				onClose()
-		}
-		window.addEventListener('keydown', onKey)
-		return () => window.removeEventListener('keydown', onKey)
-	}, [onClose])
+	const peekRef = useRef<HTMLDivElement>(null)
+	// `Peek` stays mounted by GenreMap even when closed (nodeId null) — `open`
+	// must track `!!node`, not a hardcoded `true`, or the hook's mount-time
+	// effect fires once while `ref.current` is still null (autoFocus/Tab-trap
+	// silently no-op forever; ESC still works only because it reads onClose
+	// through a ref that updates every render, independent of effect timing).
+	useDismissable(!!node, onClose, peekRef)
 	if (!node)
 		return null
 	const parent = gmPrimaryParent(doc, node)
 	const tierLabel = node.tier === 0 ? '최상위 장르' : '하위 장르'
 	return (
 		<div className="gm-peek-scrim" onClick={onClose}>
-			<div className="gm-peek" onClick={e => e.stopPropagation()} role="dialog" aria-label={`${node.label} 관계 보기`}>
+			<div ref={peekRef} className="gm-peek" onClick={e => e.stopPropagation()} role="dialog" aria-label={`${node.label} 관계 보기`}>
 				<div className="gm-peek-top">
 					<div className="gm-peek-nav">
 						{hasBack ? <button type="button" className="gm-peek-back" onClick={onBack}>← 이전</button> : null}

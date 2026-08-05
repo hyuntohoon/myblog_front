@@ -213,15 +213,9 @@ function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) 
 const RECENT_ALBUMS_LIMIT = 6
 
 /** Modal listing every 최근 들은 앨범 (grid). Reuses the slide-over shell + scrim. */
-function RecentAlbumsModal({ items, onOpen, onClose }: { items: SampleAlbum[], onOpen: (t: DetailTarget) => void, onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')
-        onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+export function RecentAlbumsModal({ items, onOpen, onClose }: { items: SampleAlbum[], onOpen: (t: DetailTarget) => void, onClose: () => void }) {
+  const modalRef = useRef<HTMLElement>(null)
+  useDismissable(true, onClose, modalRef)
 
   const openAndClose = (t: DetailTarget) => {
     onClose()
@@ -229,7 +223,7 @@ function RecentAlbumsModal({ items, onOpen, onClose }: { items: SampleAlbum[], o
   }
   return createPortal(
     <div className="scrim" onClick={onClose} role="presentation">
-      <aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 들은 앨범 전체">
+      <aside ref={modalRef} className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 들은 앨범 전체">
         <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
         <div className="kicker" style={{ marginBottom: 4 }}>최근 들은 앨범</div>
         <div className="meta" style={{ marginBottom: 18 }}>
@@ -354,15 +348,9 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
 const RECENT_TRACKS_LIMIT = 8
 
 /** Modal listing every 최근 재생 트랙 (list). Reuses the slide-over shell + scrim. */
-function RecentTracksModal({ items, view, onOpen, onClose }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void, onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')
-        onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+export function RecentTracksModal({ items, view, onOpen, onClose }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void, onClose: () => void }) {
+  const modalRef = useRef<HTMLElement>(null)
+  useDismissable(true, onClose, modalRef)
 
   const openAndClose = (t: DetailTarget) => {
     onClose()
@@ -370,7 +358,7 @@ function RecentTracksModal({ items, view, onOpen, onClose }: { items: SampleTrac
   }
   return createPortal(
     <div className="scrim" onClick={onClose} role="presentation">
-      <aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 재생 트랙 전체">
+      <aside ref={modalRef} className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="최근 재생 트랙 전체">
         <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
         <div className="kicker" style={{ marginBottom: 4 }}>최근 재생 트랙</div>
         <div className="meta" style={{ marginBottom: 18 }}>

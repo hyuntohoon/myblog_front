@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { PostListItem } from '../../scripts/write/api'
 import { hardDeletePost } from '../../scripts/write/api'
+import { useDismissable } from '../../lib/useDismissable'
 import { ResultRow } from '../search/atoms'
 
 interface Props {
@@ -36,21 +37,11 @@ export default function DraftsInbox({ drafts, currentPostId, onDeleted, onClose 
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [errId, setErrId] = useState<string | null>(null)
+  const inboxRef = useRef<HTMLDivElement>(null)
 
   // esc disarms an armed row first, else closes (matches the ⌘K palette).
   // Outside-click is handled by the scrim.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape')
-        return
-      if (confirmId)
-        setConfirmId(null)
-      else
-        onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [confirmId, onClose])
+  useDismissable(true, () => (confirmId ? setConfirmId(null) : onClose()), inboxRef)
 
   async function runDelete(id: string) {
     setDeletingId(id)
@@ -81,7 +72,7 @@ export default function DraftsInbox({ drafts, currentPostId, onDeleted, onClose 
 
   return (
     <div className="wr-drafts-scrim" onClick={onClose} role="presentation">
-      <div className="wr-drafts" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="임시 저장함">
+      <div ref={inboxRef} className="wr-drafts" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="임시 저장함">
         <header className="wr-drafts-head">
           <div className="wr-drafts-titlewrap">
             <span className="wr-drafts-ico" aria-hidden>🗂</span>
