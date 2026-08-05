@@ -22,8 +22,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { updateBucketItemMemo } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
+import { memberRef } from '@lib/entityDrag'
 import { reviewHref } from '@lib/entityLinks'
 import { playbackSession } from '@lib/playback/session'
+import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
@@ -70,6 +72,33 @@ export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics
   // surfaces AND the rare writable-but-no-handle fallback).
   const mode: Mode = (published && album.writable) ? 'edit' : 'info'
   return <StandardModal album={album} mode={mode} published={published} onClose={onClose} onOpenLyrics={onOpenLyrics} />
+}
+
+// ARCH-entity-interaction-v2 Step 5 — the modal `.scrim` (`z-index: var(--z-
+// panel)=90`) sits above `PocketTray` (`--z-pocket:70`+2≈72), so a drag
+// started on a TrackRow in either modal below has no live drop target:
+// dragover lands on the scrim, never reaches the tray underneath. Rather than
+// permanently removing the scrim (which would also kill click-outside-to-
+// close and background dimming for the modal's whole lifetime), this only
+// drops the scrim's `pointer-events` for the duration of an actual drag —
+// listening to the SAME window events every granted TrackRow already
+// dispatches (`PB_DND_START_EVENT`/`PB_DND_END_EVENT`), no new plumbing. The
+// modal card is not interactive mid-drag anyway (the pointer is down and
+// moving), so losing pointer-events on the whole scrim subtree for that
+// window is not a regression.
+function useDragScrimPassthrough(): boolean {
+  const [dragging, setDragging] = useState(false)
+  useEffect(() => {
+    const onStart = () => setDragging(true)
+    const onEnd = () => setDragging(false)
+    window.addEventListener(PB_DND_START_EVENT, onStart)
+    window.addEventListener(PB_DND_END_EVENT, onEnd)
+    return () => {
+      window.removeEventListener(PB_DND_START_EVENT, onStart)
+      window.removeEventListener(PB_DND_END_EVENT, onEnd)
+    }
+  }, [])
+  return dragging
 }
 
 // ── standard 600px modal (info / edit) ───────────────────────────────────────
@@ -130,10 +159,12 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
     })
   }, [showPlayNotice])
 
+  const dragPassthrough = useDragScrimPassthrough()
+
   return (
     <div
 	className="scrim"
-	style={{ justifyContent: 'center', alignItems: 'center', padding: 24 }}
+	style={{ justifyContent: 'center', alignItems: 'center', padding: 24, ...(dragPassthrough ? { pointerEvents: 'none' as const } : {}) }}
 	onClick={onClose}
 	role="presentation"
     >
@@ -144,11 +175,11 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
 	role="dialog"
 	aria-modal="true"
 	aria-label="앨범 상세"
-	style={{ position: 'relative', width: '100%', maxWidth: 600, maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 34px 80px rgba(0,0,0,.42)', padding: '30px 30px 26px' }}
+	style={{ position: 'relative', width: '100%', maxWidth: 600, maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 34px 80px rgba(0,0,0,.42)', padding: '30px 30px 26px', pointerEvents: 'auto' }}
       >
         <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
         {album.albumId ?
-          <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} onPlayTrack={onPlayTrack} hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
+          <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} onPlayTrack={onPlayTrack} enableDrag hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
           <MinimalBody album={album} />}
       </div>
       {pendingAdd && (
@@ -454,11 +485,12 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
   if (a?.label)
     meta.push(a.label)
   const tags = uniqueGenres(data?.artists ?? [])
+  const dragPassthrough = useDragScrimPassthrough()
 
   return (
     <div
 	className="scrim"
-	style={{ justifyContent: 'center', alignItems: 'center', padding: 24 }}
+	style={{ justifyContent: 'center', alignItems: 'center', padding: 24, ...(dragPassthrough ? { pointerEvents: 'none' as const } : {}) }}
 	onClick={onClose}
 	role="presentation"
     >
@@ -469,7 +501,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
 	role="dialog"
 	aria-modal="true"
 	aria-labelledby="memo-dialog-title"
-	style={{ maxHeight: '92vh', overflowY: 'auto', animation: 'lf-rise .26s both' }}
+	style={{ maxHeight: '92vh', overflowY: 'auto', animation: 'lf-rise .26s both', pointerEvents: 'auto' }}
       >
        <div className="memo-dock-main">
         <button type="button" className="memo-x memo-x-abs" onClick={onClose} aria-label="닫기">
@@ -519,7 +551,10 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
 	no={no}
 	title={t.title}
 	cells={len ? <span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{len}</span> : undefined}
-	actions={sid ? { openLyrics: { fire: () => openSheet(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }), title: '가사 보기' } } : {}}
+	actions={{
+                ...(sid ? { openLyrics: { fire: () => openSheet(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }), title: '가사 보기' } } : {}),
+                drag: { ref: memberRef({ trackId: t.id, albumId: album.albumId ?? null }), origin: { kind: 'external', copies: true } },
+              }}
 	gridTemplate="22px minmax(0,1fr) auto"
 	style={{ padding: '6px 2px', borderBottom: i === data.tracks.length - 1 ? 'none' : '1px solid var(--color-border-soft)' }}
                       />
