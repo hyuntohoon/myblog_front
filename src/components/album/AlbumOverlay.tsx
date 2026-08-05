@@ -127,7 +127,8 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
 	artist={target.artist}
 	cover={target.cover}
 	year={target.year}
-	topSlot={isLoggedIn() ?
+	interactive={!target.unresolved}
+	topSlot={isLoggedIn() && !target.unresolved ?
           (
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--color-border-soft)', display: 'flex', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => { void playAlbum() }} disabled={playing} className="sans" style={{ padding: '8px 13px', borderRadius: 5, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', cursor: playing ? 'default' : 'pointer', opacity: playing ? 0.55 : 1, fontSize: 12.5 }}>

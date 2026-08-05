@@ -117,11 +117,18 @@ export interface AlbumDetailViewProps {
   hideArtists?: boolean
   /** Rendered right after the header (member edit mode: the published-review banner). */
   topSlot?: ReactNode
+  /**
+   * False when `albumId` is a display-only fallback, not a real catalog id
+   * (see OpenAlbumDetail.unresolved) — hides the rating/review write panel,
+   * which PUTs against `albumId` and must never target a foreign-namespace id.
+   * Defaults to true (every other caller passes a genuine DB id).
+   */
+  interactive?: boolean
 }
 
 // Fetch DB metadata (cover/tracklist/artists) then render header + artists +
 // tracklist. On fetch failure it degrades to header + a release-year line.
-export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, hideArtists, topSlot }: AlbumDetailViewProps) {
+export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, hideArtists, topSlot, interactive = true }: AlbumDetailViewProps) {
   const seed = getCachedAlbumDetail(albumId)
   const [data, setData] = useState<AlbumDetailResp | null>(seed)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
@@ -163,8 +170,9 @@ export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyr
       <Header cover={a?.cover_url ?? cover} title={displayTitle} artist={artist} meta={metaParts} kicker="앨범" />
       {topSlot}
       {/* FEAT-multi-user Phase 1: public community rating + signed-in write panel.
-          Renders on every album surface (public overlay + member modal). */}
-      <AlbumRatingBlock albumId={albumId} />
+          Renders on every album surface (public overlay + member modal) EXCEPT
+          when albumId is a display-only fallback (interactive=false). */}
+      {interactive && <AlbumRatingBlock albumId={albumId} />}
       {state === 'loading' ?
         <div className="meta" style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>불러오는 중…</div> :
         (state === 'error' || !data) ?
