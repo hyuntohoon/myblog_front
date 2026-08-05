@@ -2,7 +2,7 @@
 // member-island surfaces. THE contract point for track-row actions: a future
 // track action (or a new consumer surface) is wired here once instead of
 // hunting per-surface hand-rolled rows. Registered in
-// docs/frontend/component-map.md ("Track-click behavior").
+// myblog-workspace/docs/frontend/component-map.md (sibling repo — "Track-click behavior").
 //
 // Scope (deliberate):
 //   · Consumers are React islands only — the vanilla review-page tracklist
