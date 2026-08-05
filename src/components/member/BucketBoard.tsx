@@ -2074,6 +2074,15 @@ ids.push(a.albumId)
       const payload = fromBucketId === toBucketId ?
         [{ id: toBucketId, item_ids: dst.albums.map(a => a.itemId) }] :
         [{ id: fromBucketId, item_ids: src.albums.map(a => a.itemId) }, { id: toBucketId, item_ids: dst.albums.map(a => a.itemId) }]
+      // BUG-20 follow-up: reorder() validates every item_id in the batch up front
+      // and 404s the whole request if any is unknown (bucket_service.py reorder()),
+      // atomically — no partial write, but the .catch(refresh) below would still
+      // snap this drag back to the stale server order. A still-optimistic copy
+      // (copyAlbum's temp tile) has no server row yet, so skip persisting while one
+      // sits in either affected bucket; it settles into the canonical order on the
+      // next reorder in this bucket once the temp id promotes to its real one.
+      if (payload.some(b => b.item_ids.some(id => id.startsWith('temp:'))))
+        return
       api.reorderItems(payload).catch(() => void refresh())
     },
     moveBucketInto(bucketId, targetId) {

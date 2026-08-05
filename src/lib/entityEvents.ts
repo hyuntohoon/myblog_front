@@ -19,6 +19,15 @@ export interface OpenAlbumDetail {
   artist?: string
   cover?: string | null
   year?: number | null
+  /**
+   * True when `albumId` is a display-only fallback (e.g. a Spotify id used
+   * because a DB match wasn't found) — NOT a real catalog id. Callers that
+   * still need a genuine DB `albumId` (playback, rating writes) must not fire
+   * while this is set (id-namespace conflation found in
+   * ARCH-entity-interaction-domain-audit item 9 review — releaseShared.tsx's
+   * `dbId ?? spotify_album_id` fallback passing a foreign-namespace id).
+   */
+  unresolved?: boolean
 }
 
 export const ENT_OPEN_ALBUM = 'ent:open-album'
