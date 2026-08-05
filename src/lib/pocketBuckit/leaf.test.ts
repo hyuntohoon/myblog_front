@@ -4,7 +4,7 @@
 // ordinary crates did not change with it.
 import type { BoardBucket } from '@lib/buckets'
 import { describe, expect, it } from 'vitest'
-import { PLAYBACK_KIND, PLAYBACK_TYPE } from '@lib/buckets'
+import { PLAYBACK_KIND, PLAYBACK_TYPE, SLIB_KIND } from '@lib/buckets'
 import { bucketsToLeaves } from './leaf'
 
 function bucket(over: Partial<BoardBucket> = {}): BoardBucket {
@@ -46,7 +46,7 @@ describe('bucketsToLeaves — the playback leaf', () => {
   })
 
   it('stays in the tray (unlike the spotify_library mirror, which is filtered out)', () => {
-    const leaves = bucketsToLeaves([queue, bucket({ id: 'lib', kind: 'spotify_library' })], OPTS)
+    const leaves = bucketsToLeaves([queue, bucket({ id: 'lib', kind: SLIB_KIND })], OPTS)
     expect(leaves.map(l => l.id)).toEqual(['pq'])
   })
 })

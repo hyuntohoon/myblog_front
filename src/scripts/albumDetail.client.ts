@@ -1,4 +1,5 @@
 import type { components } from '../lib/api.gen'
+import { PB_ADD_TRACK_EVENT } from '../lib/pocketBuckit/events'
 import { playbackSession } from '../lib/playback/session'
 import { queueTrack } from '../lib/spotifyPlayback'
 
@@ -168,12 +169,12 @@ function onRootClick(e: Event): void {
   // FEAT-pocket-buckit Step 6 — per-track "담기" → hand off to the ReviewTrackAdder
   // island, which owns the AddToBucketMenu (picker + the logged-out pb:resume → Cognito
   // handoff). Vanilla DOM here can't mount React, so this is an event bridge (same
-  // shape as `album:detail`). Event name kept in sync with ReviewTrackAdder.PB_ADD_TRACK_EVENT.
+  // shape as `album:detail`).
   const addBtn = target?.closest<HTMLButtonElement>('.lfq-tt-add')
   if (addBtn) {
     const trackId = addBtn.dataset.addTrackId
     if (trackId)
-      window.dispatchEvent(new CustomEvent('pb:add-track', { detail: { trackId, title: addBtn.dataset.addTrackTitle } }))
+      window.dispatchEvent(new CustomEvent(PB_ADD_TRACK_EVENT, { detail: { trackId, title: addBtn.dataset.addTrackTitle } }))
   }
 }
 

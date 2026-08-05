@@ -1,9 +1,20 @@
 // Cross-island window-event bridge names for the My Buckit board ⇄ Pocket Buckit
 // tray. The board (SelfDashboard island) and the tray (PocketBuckit island)
 // are two independent React roots with NO shared context, so they communicate via
-// window CustomEvents — the established convention (see ReviewTrackAdder's
-// PB_ADD_TRACK_EVENT). Defining the names here once keeps the two .tsx bundles in
-// sync without a typo-prone duplicated literal.
+// window CustomEvents — the established convention. Defining the names here once
+// keeps the bundles in sync without a typo-prone duplicated literal.
+
+/**
+ * Review page "담기" bridge (FEAT-pocket-buckit Step 6): the read-page tracklist
+ * is vanilla DOM (`scripts/albumDetail.client.ts`, can't mount React inline), so
+ * each track's 담기 button dispatches this event and `ReviewTrackAdder` (mounted
+ * once on the review page) opens the shared `AddToBucketMenu` for that track.
+ * Lives here (not `ReviewTrackAdder.tsx`) specifically so the vanilla script can
+ * import the constant without pulling React into its bundle — see
+ * `ARCH-entity-interaction-domain-audit` G3 (`PB_ADD_TRACK_EVENT` used to be a
+ * literal string duplicated in both files instead of a shared import).
+ */
+export const PB_ADD_TRACK_EVENT = 'pb:add-track'
 
 /** Board → tray: flip the tray open/closed (in-memory `open` state only). */
 export const PB_TOGGLE_EVENT = 'pb:toggle'
