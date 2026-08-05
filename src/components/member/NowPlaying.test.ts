@@ -8,9 +8,12 @@
 // — the external read must land, and our own echo must still self-discard —
 // with explicit deferred promises (per `feedback-stub-must-model-async-lag`:
 // an instantly-resolving stub would erase the exact race being tested).
+import type { BoardAlbum } from '@lib/buckets'
+import type { PlaybackSessionState } from '@lib/playback/session'
 import type { LivePlayback } from './lyrics/playback.api'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as sessionModule from '@lib/playback/session'
 import * as playbackApi from './lyrics/playback.api'
 import { useNowPlaying } from './NowPlaying'
 import * as spotifyApi from './spotify.api'
@@ -53,10 +56,60 @@ vi.mock('@lib/mediaSession', () => ({
   publishPlaybackState: vi.fn(),
   publishPosition: vi.fn(),
 }))
+// Step 3b — NowPlaying now subscribes to `playbackSession` read-only. Mocked
+// here (rather than pulling in the real module and its own dependency graph
+// of ownership/buckets/bucketStore/queue/uris) so this file stays scoped to
+// NowPlaying's own race behaviour; the session subscription itself is a
+// no-op by default (`subscribe` never fires) so the existing Step 3a tests
+// below are unaffected — `syncFromLive` resolves immediately to a stable
+// empty snapshot, exercising the convergence effect's harmless idle no-op
+// exactly once per mount, same as if no play had ever started anywhere.
+const EMPTY_SESSION_STATE: PlaybackSessionState = {
+  currentItemId: null,
+  external: null,
+  playing: false,
+  anchor: null,
+  durationMs: null,
+  rung: null,
+  degraded: false,
+  device: null,
+  notice: null,
+  busy: false,
+  isOwner: false,
+  ownerPresent: false,
+  ownerRung: null,
+}
+vi.mock('@lib/playback/session', () => {
+  const empty = {
+    currentItemId: null,
+    external: null,
+    playing: false,
+    anchor: null,
+    durationMs: null,
+    rung: null,
+    degraded: false,
+    device: null,
+    notice: null,
+    busy: false,
+    isOwner: false,
+    ownerPresent: false,
+    ownerRung: null,
+  }
+  return {
+    playbackSession: {
+      subscribe: vi.fn(() => () => {}),
+      getSnapshot: vi.fn(() => empty),
+      getServerSnapshot: vi.fn(() => empty),
+      currentRow: vi.fn(() => null),
+      syncFromLive: vi.fn(() => Promise.resolve()),
+    },
+  }
+})
 
 const spotify = vi.mocked(spotifyApi)
 const playback = vi.mocked(playbackApi)
 const player = vi.mocked(spotifyPlayback)
+const session = vi.mocked(sessionModule.playbackSession)
 
 function livePlaying(trackId: string, over: Record<string, unknown> = {}): LivePlayback {
   return {
@@ -154,5 +207,98 @@ describe('useNowPlaying — onPlaybackChanged race (Step 3a)', () => {
 
     expect(result.current.paused).toBe(true)
     expect(result.current.moment?.trackId).not.toBe('should-be-discarded')
+  })
+})
+
+describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
+  it('converges track identity + anchor from a play started in the Playback Bucket panel, without a page reload', async () => {
+    let notify: (() => void) | null = null
+    session.subscribe.mockImplementation((cb) => {
+      notify = cb
+      return () => {}
+    })
+
+    const result = await mountReady()
+    expect(result.current.moment).toBeNull()
+
+    const bucketRow = { itemId: 'item-1', trackId: 'bucket-track', title: 'Bucket Track', artist: 'Bucket Artist', cover: 'https://example.com/c.jpg' } as BoardAlbum
+    const bucketState: PlaybackSessionState = {
+      ...EMPTY_SESSION_STATE,
+      currentItemId: 'item-1',
+      playing: true,
+      anchor: { ms: 12_000, wallMs: performance.now() },
+      durationMs: 240_000,
+    }
+    session.currentRow.mockReturnValue(bucketRow)
+    session.getSnapshot.mockReturnValue(bucketState)
+
+    // The Bucket panel's own write already landed in `playbackSession` — this
+    // is its subscriber notification, the only channel this card reacts to
+    // here. No `readLivePlayback` call of this card's own is involved.
+    act(() => {
+      notify?.()
+    })
+
+    await waitFor(() => expect(result.current.moment?.trackId).toBe('bucket-track'))
+    expect(result.current.moment?.anchor).toEqual(bucketState.anchor)
+    expect(result.current.moment?.durationMs).toBe(240_000)
+    expect(result.current.paused).toBe(false)
+    // The render gate this card actually uses (`liveSnapshot`) is `np`, not
+    // `moment` — a prior version of this fix converged `moment` alone and
+    // left the card showing IdleBox regardless (caught by real-browser
+    // verification, not this test, until this assertion was added).
+    expect(result.current.np?.is_playing).toBe(true)
+    expect(result.current.np?.track).toBe('Bucket Track')
+  })
+
+  it('defers a session update landing while this card has its own control call in flight', async () => {
+    let notify: (() => void) | null = null
+    session.subscribe.mockImplementation((cb) => {
+      notify = cb
+      return () => {}
+    })
+    const result = await mountReady()
+    // seed a moment via this card's own path first (Step 3a's onPlaybackChanged)
+    playback.readLivePlayback.mockResolvedValueOnce(livePlaying('own-track'))
+    act(() => {
+      window.dispatchEvent(new CustomEvent(EVT))
+    })
+    await waitFor(() => expect(result.current.moment?.trackId).toBe('own-track'))
+
+    // hold our own control call open
+    let resolveCommand: (v: { ok: true }) => void = () => {}
+    const commandPromise = new Promise<{ ok: true }>((res) => {
+      resolveCommand = res
+    })
+    player.sendPlayerCommand.mockReturnValueOnce(commandPromise as never)
+    act(() => {
+      void result.current.playPause()
+    })
+
+    // meanwhile a session update lands claiming a DIFFERENT track
+    session.currentRow.mockReturnValue({ itemId: 'item-2', trackId: 'other-track' } as BoardAlbum)
+    session.getSnapshot.mockReturnValue({
+      ...EMPTY_SESSION_STATE,
+      currentItemId: 'item-2',
+      playing: true,
+      anchor: { ms: 0, wallMs: performance.now() },
+      durationMs: 100_000,
+    })
+    act(() => {
+      notify?.()
+    })
+
+    // deferred — this card's own control call is still in flight
+    expect(result.current.moment?.trackId).toBe('own-track')
+
+    act(() => {
+      resolveCommand({ ok: true })
+    })
+    await waitFor(() => expect(result.current.paused).toBe(true))
+    // still our own track — nothing re-applies the deferred update without a
+    // fresh notification, which is the accepted tradeoff (the next real event
+    // — from either tracker — re-syncs both, per the RFC's own eventual-
+    // consistency framing elsewhere in this file)
+    expect(result.current.moment?.trackId).toBe('own-track')
   })
 })

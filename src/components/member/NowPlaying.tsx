@@ -37,10 +37,11 @@
 // become links only when resolvable (never a dead click).
 import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlaybackDevice, PlayerCommandOutcome, RepeatMode } from '@lib/spotifyPlayback'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
+import { playbackSession } from '@lib/playback/session'
 import { resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
 import { readSpotifyCapabilityStanding, rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe  } from '@lib/spotifyCapability'
 import { bindMediaSessionHandlers, publishNowPlaying, publishPlaybackState, publishPosition } from '@lib/mediaSession'
@@ -267,6 +268,16 @@ export function useNowPlaying() {
   const liveWonRef = useRef(false)
   const onRef = useRef(true)
   const noteTimer = useRef<number | null>(null)
+  /**
+   * ARCH-entity-interaction-domain-audit Step 3b — the Playback Bucket panel's
+   * own tracker, subscribed read-only so a play started there converges here
+   * too. `sessionReady` gates the effect below until `playbackSession`'s own
+   * first live read (kicked off in the mount effect) has actually landed —
+   * without it, the session's initial EMPTY snapshot would flash this card to
+   * idle before that first read has a chance to say otherwise.
+   */
+  const sessionState = useSyncExternalStore(playbackSession.subscribe, playbackSession.getSnapshot, playbackSession.getServerSnapshot)
+  const [sessionReady, setSessionReady] = useState(false)
 
   const flashNote = (msg: string) => {
     setNote(msg)
@@ -353,12 +364,23 @@ export function useNowPlaying() {
         })
       }
     }
-    else {
+    else if (!playbackSession.getSnapshot().currentItemId && !playbackSession.getSnapshot().external) {
       // Live says nothing is playing — force the idle branch even if the stale
       // snapshot claimed otherwise. Keep whatever fields are already there.
       // Only `idle` reaches here now; `paused` moved up to the track branch with
       // OQ4 (see there). `idle` means there is no track at all, so clearing is
       // right — that has not changed.
+      //
+      // Step 3b guard: `playbackSession` is checked fresh (not the closed-over
+      // `sessionState`) because this is the exact race real-browser
+      // verification caught — a play started in the Playback Bucket panel
+      // sets `playbackSession`'s state synchronously (`playFrom`'s
+      // `authoritativePatch`, no read involved), but THIS card's own read
+      // (fired by the very same `MYBLOG_PLAYBACK_CHANGED`) can still be
+      // in flight against Spotify's ack→apply lag and land here with a
+      // stale 'idle' a moment later, wiping the card the session's own
+      // subscription effect just correctly populated. Session's authoritative
+      // "something is playing" wins; only clear when session agrees too.
       setNp(prev => ({ ...(prev ?? {}), is_playing: false, updated_at: new Date().toISOString() }))
       setMoment(null)
       likedTrackRef.current = null
@@ -584,6 +606,13 @@ export function useNowPlaying() {
       })
     // FEAT-nowplaying-live-sync: one-shot live read on entry (never polled).
     void sync()
+    // Step 3b: mirror `PlaybackPanel`'s own mount trigger so this card also
+    // works on pages where no Playback Bucket panel is mounted to have
+    // already kicked off `playbackSession`'s first live read.
+    void playbackSession.syncFromLive().finally(() => {
+      if (onRef.current)
+        setSessionReady(true)
+    })
     // Tier resolve (optimistic controls): a minting token ⇒ full until a probe
     // says otherwise. Shares the in-flight mint with the live read above, so
     // this adds no extra request. 502 ⇒ the stored grant is broken (revoked /
@@ -639,6 +668,80 @@ export function useNowPlaying() {
         window.clearTimeout(noteTimer.current)
     }
   }, [])
+
+  /**
+   * Step 3b — converge track identity + anchor from `playbackSession`.
+   *
+   * Additive, not a replacement for this card's own reads: `sync`/
+   * `onPlaybackChanged`/`skip` above are unchanged and stay the source for
+   * everything `session.ts` has no equivalent for — tier/mode/like/device/
+   * reconnect, the RFC's own non-goal. This effect only ever writes
+   * `trackId`/`anchor`/`durationMs`/`paused`, seeding a brand-new `moment`
+   * with the rest left for this card's own next read to fill in.
+   *
+   * `np` (title/artist/cover) is seeded too, minimally, off the queue row or
+   * `external` — the render gate below is `np.is_playing && np.track`, not
+   * `moment`, so without this the card stayed on `IdleBox` even once `moment`
+   * had already converged (caught in real-browser verification: a play
+   * started from the Playback Bucket panel updated `PlaybackMini` instantly
+   * but this card sat idle until its own next read happened to land — this
+   * card's own `onPlaybackChanged` read is racing the same ack→apply lag
+   * `session.ts`'s `localWriteSeq` exists for, except THIS card never issued
+   * the command, so it has no authoritative write of its own to prefer over
+   * a stale read; `playbackSession`'s state has no such race, since
+   * `playFrom`'s `authoritativePatch` sets it from the command's own result,
+   * never from a read). This card's own next read still overwrites `np` with
+   * the fuller picture (album, cover, artists) once it lands.
+   *
+   * Gated on `controlBusyRef` for the same reason Step 3a exists: a session
+   * read landing while THIS card has its own optimistic write in flight
+   * (`playPause`/`seek`/`skip`) is that exact race, just crossing components
+   * — `playbackSession`'s `localWriteSeq` has no visibility into a write
+   * this card made directly via `sendPlayerCommand`, so it cannot guard
+   * against it on its own. Deferring here is safe: this card's own confirm
+   * read is already in flight regardless and supersedes it a moment later.
+   */
+  useEffect(() => {
+    if (!sessionReady || controlBusyRef.current)
+      return
+    const row = playbackSession.currentRow()
+    const trackId = sessionState.external?.spotifyTrackId ?? row?.trackId ?? null
+    if (!trackId) {
+      setMoment(null)
+      setNp(prev => (prev ? { ...prev, is_playing: false, updated_at: new Date().toISOString() } : prev))
+      likedTrackRef.current = null
+      setLikedState('unknown')
+      setPaused(false)
+      return
+    }
+    const isNewTrack = !(moment && moment.trackId === trackId)
+    setMoment(m => (m && m.trackId === trackId ?
+      { ...m, anchor: sessionState.anchor, durationMs: sessionState.durationMs } :
+      {
+        trackId,
+        anchor: sessionState.anchor,
+        durationMs: sessionState.durationMs,
+        artists: [],
+        albumSpotifyId: null,
+        deviceName: null,
+        shuffle: null,
+        repeat: null,
+        volumePercent: null,
+      }))
+    if (isNewTrack) {
+      setNp({
+        is_playing: true,
+        track: sessionState.external?.title ?? row?.title ?? null,
+        artist: sessionState.external?.artist ?? row?.artist ?? null,
+        album: null,
+        album_cover_url: row?.cover ?? null,
+        updated_at: new Date().toISOString(),
+      })
+    }
+    setPaused(!sessionState.playing)
+    loadLikedState(trackId)
+  }, [sessionReady, sessionState.currentItemId, sessionState.external, sessionState.anchor, sessionState.playing, sessionState.durationMs])
+
   /**
    * OS media integration (member-player Step 5) — **rung 2 only**.
    *
