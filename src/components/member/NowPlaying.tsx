@@ -42,7 +42,7 @@ import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { playbackSession } from '@lib/playback/session'
-import { resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
+import { getResolvedDbArtistId, resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
 import { readSpotifyCapabilityStanding, rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe  } from '@lib/spotifyCapability'
 import { bindMediaSessionHandlers, publishNowPlaying, publishPlaybackState, publishPosition } from '@lib/mediaSession'
 import { isLoggedIn } from '@lib/auth'
@@ -1129,14 +1129,36 @@ null}
  * artists, falls back to the snapshot's plain artist string.
  */
 export function ArtistNames({ artists, text }: { artists?: Array<{ id: string, name: string }>, text?: string | null }) {
-  const [ids, setIds] = useState<Record<string, string>>({})
   const list = artists ?? []
   const key = list.map(a => a.id).join(',')
+  // Seeded from the synchronous cache, not an empty object: an id another
+  // instance already resolved must render as a link on the very first paint,
+  // not flash to plain text while this instance re-awaits the same promise.
+  const [ids, setIds] = useState<Record<string, string>>(() => {
+    const seed: Record<string, string> = {}
+    for (const { id } of list) {
+      const dbId = getResolvedDbArtistId(id)
+      if (dbId)
+        seed[id] = dbId
+    }
+    return seed
+  })
   useEffect(() => {
     if (!key)
       return
     let on = true
     for (const { id } of list) {
+      // Route every id through the synchronous cache (E1 Rule 0, G5): render
+      // state must always equal what `getResolvedDbArtistId` would return, so
+      // a future drag source reading that getter at `dragstart` never diverges
+      // from what's on screen. `resolveDbArtistId` still does the actual
+      // network round-trip (module-cached, so a warm id costs no fetch) —
+      // only the source of truth for `ids` changes, not the resolution path.
+      const cached = getResolvedDbArtistId(id)
+      if (cached) {
+        setIds(prev => (prev[id] === cached ? prev : { ...prev, [id]: cached }))
+        continue
+      }
       void resolveDbArtistId(id).then((dbId) => {
         if (on && dbId)
           setIds(prev => (prev[id] === dbId ? prev : { ...prev, [id]: dbId }))
