@@ -13,6 +13,7 @@ import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@l
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
+import { memberRef } from '@lib/entityDrag'
 import { artistHref } from '@lib/entityLinks'
 import { TrackRow } from '../shared/TrackRow'
 import { AlbumArt, fmtTime } from '../member/ui'
@@ -61,8 +62,10 @@ export function Header({ cover, title, artist, meta, kicker }: { cover?: string 
 // bucket to add into) and `play` (omitted whenever onPlayTrack is absent —
 // unlike `add`, BOTH hosts supply it: `AlbumOverlay` already offers an
 // album-level ▶ to any logged-in visitor, so there is no semantic reason to
-// withhold the track-level one).
-export function Tracklist({ tracks, onOpenLyrics, onAddTrack, onPlayTrack, albumMeta }: { tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, onAddTrack?: OnAddTrack, onPlayTrack?: OnPlayTrack, albumMeta?: AlbumLyricsMeta }) {
+// withhold the track-level one). `drag` (`enableDrag`) is member-modal ONLY —
+// `AlbumOverlay` omits it, same reasoning as `add`: a public visitor has no
+// Pocket tray to drop onto in the first place.
+export function Tracklist({ tracks, onOpenLyrics, onAddTrack, onPlayTrack, albumId, enableDrag, albumMeta }: { tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, onAddTrack?: OnAddTrack, onPlayTrack?: OnPlayTrack, albumId?: string, enableDrag?: boolean, albumMeta?: AlbumLyricsMeta }) {
   if (tracks.length === 0)
     return null
   return (
@@ -87,6 +90,7 @@ export function Tracklist({ tracks, onOpenLyrics, onAddTrack, onPlayTrack, album
                 ...(onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid, { track: t.title, ...albumMeta }) } : {}),
                 ...(onPlayTrack ? { play: () => onPlayTrack(t.id, t.title) } : {}),
                 ...(onAddTrack ? { add: () => onAddTrack(t.id, t.title) } : {}),
+                ...(enableDrag ? { drag: { ref: memberRef({ trackId: t.id, albumId: albumId ?? null }), origin: { kind: 'external' as const, copies: true } } } : {}),
               }}
 	style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border-soft)' }}
             />
@@ -137,6 +141,8 @@ export interface AlbumDetailViewProps {
   onAddTrack?: OnAddTrack
   /** Both member and public (logged-in) surfaces pass this to grant the per-track ▶ entry. */
   onPlayTrack?: OnPlayTrack
+  /** Member surfaces pass this to grant the per-track drag source; public `AlbumOverlay` omits it. */
+  enableDrag?: boolean
   /** Edit mode hides the artists block (the published banner takes the top). */
   hideArtists?: boolean
   /** Rendered right after the header (member edit mode: the published-review banner). */
@@ -152,7 +158,7 @@ export interface AlbumDetailViewProps {
 
 // Fetch DB metadata (cover/tracklist/artists) then render header + artists +
 // tracklist. On fetch failure it degrades to header + a release-year line.
-export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, onAddTrack, onPlayTrack, hideArtists, topSlot, interactive = true }: AlbumDetailViewProps) {
+export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, onAddTrack, onPlayTrack, enableDrag, hideArtists, topSlot, interactive = true }: AlbumDetailViewProps) {
   const seed = getCachedAlbumDetail(albumId)
   const [data, setData] = useState<AlbumDetailResp | null>(seed)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
@@ -209,7 +215,7 @@ export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyr
             <>
               {!hideArtists && <Artists artists={data.artists} />}
               {data.tracks.length > 0 ?
-                <Tracklist tracks={data.tracks} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} onPlayTrack={onPlayTrack} albumMeta={albumMeta} /> :
+                <Tracklist tracks={data.tracks} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} onPlayTrack={onPlayTrack} albumId={albumId} enableDrag={enableDrag} albumMeta={albumMeta} /> :
                 (
                   <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
                     <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{year ? `${year}년 발매` : '발매 정보 없음'}</div>
