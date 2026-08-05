@@ -21,6 +21,11 @@ import AlbumRatingBlock from './AlbumRatingBlock'
 // Static-lyrics entry (FEAT-lyrics-sheet). `meta` carries the header identity
 // the lyrics read itself does not (title/artist/album/cover).
 export type OnOpenLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => void
+// ARCH-entity-interaction-v2 Step 5 — the per-track ➕ 담기 grant (DB `t.id`,
+// always present). Same gating shape as `OnOpenLyrics`: omitted ⇒ the row
+// renders no add button. The host owns the actual bucket-picker flow
+// (`AddToBucketMenu`) — this module stays free of member-only imports.
+export type OnAddTrack = (trackId: string, title: string) => void
 // Album-level identity for the lyrics header; the per-track title is added at
 // each row.
 export type AlbumLyricsMeta = Omit<LyricsSheetMeta, 'track'>
@@ -43,10 +48,12 @@ export function Header({ cover, title, artist, meta, kicker }: { cover?: string 
 }
 
 // ── read-only tracklist ──────────────────────────────────────────────────────
-// Rows are the shared TrackRow (ARCH-entity-interaction-contract): the only
-// action granted is `lyrics` (rows stay otherwise read-only), omitted for
-// tracks without a spotify_id AND whenever onOpenLyrics is absent (public).
-export function Tracklist({ tracks, onOpenLyrics, albumMeta }: { tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, albumMeta?: AlbumLyricsMeta }) {
+// Rows are the shared TrackRow (ARCH-entity-interaction-contract): `lyrics`
+// (omitted for tracks without a spotify_id AND whenever onOpenLyrics is
+// absent — public) and, since Step 5, `add` (omitted whenever onAddTrack is
+// absent — public omits it, same as lyrics: an anonymous reader has no
+// bucket to add into).
+export function Tracklist({ tracks, onOpenLyrics, onAddTrack, albumMeta }: { tracks: MusicTrack[], onOpenLyrics?: OnOpenLyrics, onAddTrack?: OnAddTrack, albumMeta?: AlbumLyricsMeta }) {
   if (tracks.length === 0)
     return null
   return (
@@ -67,7 +74,10 @@ export function Tracklist({ tracks, onOpenLyrics, albumMeta }: { tracks: MusicTr
 	cells={t.duration_sec != null ?
                 <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
                 undefined}
-	actions={onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid, { track: t.title, ...albumMeta }) } : {}}
+	actions={{
+                ...(onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid, { track: t.title, ...albumMeta }) } : {}),
+                ...(onAddTrack ? { add: () => onAddTrack(t.id, t.title) } : {}),
+              }}
 	style={{ padding: '8px 0', borderBottom: '1px solid var(--color-border-soft)' }}
             />
           )
@@ -113,6 +123,8 @@ export interface AlbumDetailViewProps {
   year?: number | null
   /** Member surfaces pass this to grant the per-track 가사 entry; public omits it. */
   onOpenLyrics?: OnOpenLyrics
+  /** Member surfaces pass this to grant the per-track ➕ 담기 entry; public omits it. */
+  onAddTrack?: OnAddTrack
   /** Edit mode hides the artists block (the published banner takes the top). */
   hideArtists?: boolean
   /** Rendered right after the header (member edit mode: the published-review banner). */
@@ -128,7 +140,7 @@ export interface AlbumDetailViewProps {
 
 // Fetch DB metadata (cover/tracklist/artists) then render header + artists +
 // tracklist. On fetch failure it degrades to header + a release-year line.
-export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, hideArtists, topSlot, interactive = true }: AlbumDetailViewProps) {
+export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, onAddTrack, hideArtists, topSlot, interactive = true }: AlbumDetailViewProps) {
   const seed = getCachedAlbumDetail(albumId)
   const [data, setData] = useState<AlbumDetailResp | null>(seed)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
@@ -185,7 +197,7 @@ export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyr
             <>
               {!hideArtists && <Artists artists={data.artists} />}
               {data.tracks.length > 0 ?
-                <Tracklist tracks={data.tracks} onOpenLyrics={onOpenLyrics} albumMeta={albumMeta} /> :
+                <Tracklist tracks={data.tracks} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} albumMeta={albumMeta} /> :
                 (
                   <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
                     <div className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>{year ? `${year}년 발매` : '발매 정보 없음'}</div>

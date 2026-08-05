@@ -29,6 +29,7 @@ import { GenreLink } from '../shared/GenreLink'
 import { TrackRow } from '../shared/TrackRow'
 import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
 import { LyricsSheet } from './lyrics/LyricsSheet'
+import { AddToBucketMenu } from './pocket/AddToBucketMenu'
 import { AlbumArt, fmtTime, Seg, Stars } from './ui'
 
 // The memo window is a dock host: below this width (mobile) header-drag would
@@ -76,6 +77,18 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
   // Freeze the page behind the scrim (else the profile scrolls under the modal).
   useScrollLock()
 
+  // ARCH-entity-interaction-v2 Step 5 — TrackRow's `add` grant. Mirrors
+  // ReviewTrackAdder's pending-intent shape (same AddToBucketMenu, same
+  // per-request `seq` so re-filing the SAME track remounts the menu and
+  // autoOpen fires again), minus the window-event indirection — this modal
+  // and the tracklist share one React tree, so a plain callback is enough.
+  const addSeq = useRef(0)
+  const [pendingAdd, setPendingAdd] = useState<{ trackId: string, title: string, seq: number } | null>(null)
+  const onAddTrack = useCallback((trackId: string, title: string) => {
+    addSeq.current += 1
+    setPendingAdd({ trackId, title, seq: addSeq.current })
+  }, [])
+
   return (
     <div
 	className="scrim"
@@ -94,9 +107,18 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
       >
         <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
         {album.albumId ?
-          <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
+          <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
           <MinimalBody album={album} />}
       </div>
+      {pendingAdd && (
+        <AddToBucketMenu
+	key={pendingAdd.seq}
+	item={{ itemType: 'track', trackId: pendingAdd.trackId, title: pendingAdd.title }}
+	autoOpen
+	render={() => null}
+	onResolved={() => setPendingAdd(null)}
+        />
+      )}
     </div>
   )
 }
