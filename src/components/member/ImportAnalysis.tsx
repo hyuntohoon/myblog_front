@@ -10,7 +10,8 @@
 // plays) so the time total is marked 추정 once live > 0. All edge_guard GET reads (rule #9).
 import type { ChartDatum, ChartStyle } from './charts'
 import type { DrillType, Range, Retrospective, StreamAlbumRank, StreamClock, StreamClockCell, StreamItemDetail, StreamMetric, StreamRank } from './analysis.api'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useDismissable } from '@lib/useDismissable'
 import { AddToBucketMenu } from './pocket/AddToBucketMenu'
 import {
 	getStreamClock,
@@ -423,9 +424,11 @@ function MiniTrackList({ items, metric }: { items: NonNullable<StreamItemDetail[
 	)
 }
 
-function ItemDetailSlideover({ target, metric, period, onClose }: { target: { type: DrillType, id: string, label: string }, metric: StreamMetric, period: Period, onClose: () => void }) {
+export function ItemDetailSlideover({ target, metric, period, onClose }: { target: { type: DrillType, id: string, label: string }, metric: StreamMetric, period: Period, onClose: () => void }) {
 	const [detail, setDetail] = useState<StreamItemDetail | null>(null)
 	const [err, setErr] = useState(false)
+	const slideoverRef = useRef<HTMLElement>(null)
+	useDismissable(true, onClose, slideoverRef)
 
 	useEffect(() => {
 		let on = true
@@ -439,22 +442,13 @@ function ItemDetailSlideover({ target, metric, period, onClose }: { target: { ty
 		}
 	}, [target.type, target.id, metric, period])
 
-	useEffect(() => {
-		const h = (e: KeyboardEvent) => {
-			if (e.key === 'Escape')
-				onClose()
-		}
-		window.addEventListener('keydown', h)
-		return () => window.removeEventListener('keydown', h)
-	}, [onClose])
-
 	const typeLabel = target.type === 'artist' ? '아티스트' : target.type === 'album' ? '앨범' : '트랙'
 	const estimated = (detail?.live_streams ?? 0) > 0
 	const span = detail ? [fmtDate(detail.first_listen), fmtDate(detail.last_listen)].filter(Boolean).join(' – ') : ''
 
 	return (
 		<div className="scrim" onClick={onClose} role="presentation">
-			<aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${target.label} 청취 상세`}>
+			<aside ref={slideoverRef} className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${target.label} 청취 상세`}>
 				<button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
 
 				<div style={{ marginBottom: 18, paddingRight: 36 }}>

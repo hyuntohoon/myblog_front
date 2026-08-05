@@ -16,6 +16,7 @@ import {
 } from '../../scripts/write/artistApi'
 import type { AlbumHit, ArtistHit, TrackHit } from '../../lib/useMusicSearch'
 import { useMusicSearch } from '../../lib/useMusicSearch'
+import { useDismissable } from '../../lib/useDismissable'
 import { ResultRow, SourceTag } from '../search/atoms'
 import ArtistDetail from './ArtistDetail'
 
@@ -90,6 +91,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
   // status so a lookup error isn't clobbered by a stale search message.
   const [pickStatus, setPickStatus] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const paletteRef = useRef<HTMLDivElement>(null)
   // Artist drill-in state. When set, the result list is hidden and ArtistDetail
   // renders instead. `viewArtistSource` remembers which source the click came
   // from so the panel labels itself and the artist-as-subject pick keeps
@@ -121,23 +123,11 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 
   const inDrillIn = viewArtistHero !== null || viewArtistPending || viewArtistFailed
 
+  useDismissable(true, () => (inDrillIn ? closeArtistDrillIn() : onClose()), paletteRef, { autoFocus: false })
+
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
-
-  // esc closes the palette (unless drilled into an artist — there esc backs out).
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== 'Escape')
-        return
-      if (inDrillIn)
-        closeArtistDrillIn()
-      else
-        onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [inDrillIn, onClose])
 
   useEffect(() => () => cancelArtistPoll(), [])
 
@@ -423,7 +413,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 
   return (
     <div className="wr-palette-scrim" onClick={onClose}>
-      <div className="wr-palette" onClick={e => e.stopPropagation()} role="dialog" aria-label="작품 검색">
+      <div ref={paletteRef} className="wr-palette" onClick={e => e.stopPropagation()} role="dialog" aria-label="작품 검색">
         {inDrillIn ?
           (
             <div className="wr-palette-drillin">

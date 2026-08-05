@@ -1466,18 +1466,12 @@ function BucketList({ items, parentId, depth, shared }: { items: BoardBucket[], 
 // ── trash drawer (recoverable albums) ────────────────────────────────────────
 interface TrashEntry { tid: string, album: BoardAlbum, fromBucketId: string, fromName: string }
 
-function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: TrashEntry[], onRestore: (tid: string) => void, onPurge: (tid: string) => void, onEmpty: () => void, onClose: () => void }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')
-        onClose()
-    }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
-  }, [onClose])
+export function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: TrashEntry[], onRestore: (tid: string) => void, onPurge: (tid: string) => void, onEmpty: () => void, onClose: () => void }) {
+  const drawerRef = useRef<HTMLElement>(null)
+  useDismissable(true, onClose, drawerRef)
   return (
     <div className="scrim" onClick={onClose} role="presentation">
-      <aside className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="휴지통">
+      <aside ref={drawerRef} className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="휴지통">
         <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)' }}>✕</button>
         <div className="kicker" style={{ marginBottom: 6 }}>휴지통</div>
         <h2 className="serif" style={{ fontSize: 24, fontWeight: 500 }}>
