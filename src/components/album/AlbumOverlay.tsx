@@ -103,6 +103,34 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
     showNotice(outcome.message, runUndo)
   }
 
+  // ARCH-entity-interaction-v2 Step 5 — the track-level twin of `playAlbum`,
+  // same primitive (`replaceQueueAndPlay`, `kind: 'track'`) the vanilla review
+  // page's per-track ▶ already uses in production (`albumDetail.client.ts`).
+  // No local busy guard, matching that same precedent — a double click races
+  // two `rewriteQueue` calls in theory, but the shipped vanilla version has
+  // carried that exact risk with no reported issue.
+  const playTrack = async (trackId: string, title: string) => {
+    if (!isLoggedIn())
+      return
+    const outcome = await playbackSession.replaceQueueAndPlay({ kind: 'track', trackId, title })
+    const undo = outcome.undo
+    const runUndo = undo ? () => void undo().then(r => showNotice(r.message)) : null
+    if (outcome.ok) {
+      rememberSpotifyTransportProbe('available')
+      showNotice(outcome.message, runUndo)
+      return
+    }
+    if (outcome.play?.ok === false) {
+      if (outcome.play.reason === 'no-capability')
+        rememberSpotifyTransportProbe('no-capability')
+      if (outcome.play.reason === 'token' && outcome.play.status === 'disconnected') {
+        showNotice('Spotify를 연동하면 이 곡을 재생할 수 있어요.', runUndo)
+        return
+      }
+    }
+    showNotice(outcome.message, runUndo)
+  }
+
   return (
     <>
       <div
@@ -128,6 +156,7 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
 	cover={target.cover}
 	year={target.year}
 	interactive={!target.unresolved}
+	onPlayTrack={isLoggedIn() && !target.unresolved ? playTrack : undefined}
 	topSlot={isLoggedIn() && !target.unresolved ?
           (
             <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--color-border-soft)', display: 'flex', justifyContent: 'flex-end' }}>
