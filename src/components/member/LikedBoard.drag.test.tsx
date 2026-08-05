@@ -26,7 +26,7 @@ const FIXTURE: SavedTracks = {
 	lastSyncedAt: null,
 }
 
-vi.mock('./analysis.api', async (importOriginal) => ({
+vi.mock('./analysis.api', async importOriginal => ({
 	...(await importOriginal<typeof import('./analysis.api')>()),
 	listSavedTracks: () => Promise.resolve(FIXTURE),
 }))
