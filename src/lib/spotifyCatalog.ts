@@ -21,6 +21,7 @@ export function resolveDbAlbumId(spotifyId: string): Promise<string | null> {
 }
 
 const artistCache = new Map<string, Promise<string | null>>()
+const resolvedArtistIds = new Map<string, string | null>()
 
 /** Catalog artist id for a Spotify artist id, or null when not in the catalog. */
 export function resolveDbArtistId(spotifyId: string): Promise<string | null> {
@@ -31,6 +32,21 @@ export function resolveDbArtistId(spotifyId: string): Promise<string | null> {
     .then(r => (r.ok ? r.json() as Promise<{ id?: string | null }> : null))
     .then(j => j?.id ?? null)
     .catch(() => null)
+    .then((id) => {
+      resolvedArtistIds.set(spotifyId, id)
+      return id
+    })
   artistCache.set(spotifyId, p)
   return p
+}
+
+/**
+ * Synchronous read of an already-resolved artist id (E1 Rule 0, G5).
+ * `resolveDbArtistId` is a promise — a drag source that awaited it at
+ * `dragstart` could fire after the id it captured has gone stale. This is
+ * the only id read a drag source may use: undefined (not yet resolved) must
+ * be treated exactly like a null id — not draggable.
+ */
+export function getResolvedDbArtistId(spotifyId: string): string | null | undefined {
+  return resolvedArtistIds.get(spotifyId)
 }
