@@ -236,7 +236,7 @@ function AlbumCoverLink({ id, title, artist, cover, label, size, radius = 4 }: {
  * the variants) so a banner↔full↔list toggle re-renders without re-firing the
  * snapshot GET + live Spotify read.
  */
-function useNowPlaying() {
+export function useNowPlaying() {
   const [np, setNp] = useState<NowPlayingData | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [syncing, setSyncing] = useState(false)
@@ -253,6 +253,15 @@ function useNowPlaying() {
   const [note, setNote] = useState<string | null>(null)
   const busyRef = useRef(false)
   const controlBusyRef = useRef(false)
+  /**
+   * Bumped once per LOCAL authoritative write (a control call whose command
+   * came back ok) — same shape as `session.ts`'s `localWriteSeq`. `onPlaybackChanged`
+   * captures this before starting its own read and discards that read if the
+   * counter moved in the meantime, rather than `controlBusyRef`'s old blanket
+   * "ignore every event while ANY control call is in flight", which dropped a
+   * genuinely external change landing in the same window along with our own echo.
+   */
+  const localWriteSeqRef = useRef(0)
   const libraryBusyRef = useRef(false)
   const likedTrackRef = useRef<string | null>(null)
   const liveWonRef = useRef(false)
@@ -408,6 +417,7 @@ function useNowPlaying() {
         return
       }
       rememberSpotifyTransportProbe('available')
+      localWriteSeqRef.current += 1
       if (paused) {
         // Resume: restart the clock from the frozen position.
         setMoment(m => (m?.anchor ? { ...m, anchor: { ms: m.anchor.ms, wallMs: performance.now() } } : m))
@@ -443,6 +453,7 @@ function useNowPlaying() {
         return
       }
       rememberSpotifyTransportProbe('available')
+      localWriteSeqRef.current += 1
       // Optimistic re-anchor at the seek target…
       setMoment(m => (m ? { ...m, anchor: { ms: target, wallMs: performance.now() } } : m))
       // …then the OQ2 confirmation one-shot (accepted 2026-07-19): the PUT
@@ -470,6 +481,7 @@ function useNowPlaying() {
         return
       }
       rememberSpotifyTransportProbe('available')
+      localWriteSeqRef.current += 1
       // POST has no body: exactly one one-shot read refreshes identity + anchor.
       const live = await readLivePlayback()
       if (onRef.current)
@@ -597,19 +609,26 @@ function useNowPlaying() {
     })
     const onPlaybackChanged = () => {
       // Since OQ4 (2026-08-03) every successful transport command dispatches this,
-      // including the ones this card issues itself — so ignore the event while a
-      // command of ours is in flight. Each of our own commands already owns its
-      // handling: `seek` and `skip` do their own confirmation read, and `playPause`
-      // deliberately does NONE (it is fully optimistic; a read racing the pause is
-      // how the button used to flip back to ▶). Without this guard the dispatch
-      // would double those reads and undo that decision. Events from elsewhere —
-      // the lyrics viewer's bar, a headset, `sendConnectPlay` — still land.
-      if (controlBusyRef.current)
-        return
-      // One event ⇒ one confirmation read; no timer or polling is introduced.
+      // including the ones this card issues itself — `playPause`/`seek`/`skip`
+      // already dispatch it synchronously, BEFORE their own `await sendPlayerCommand`
+      // resolves back to them (same ordering `session.ts` relies on for
+      // `localWriteSeq`). So this handler's read always starts before that control
+      // call bumps `localWriteSeqRef` a moment later, and self-discards once it
+      // does — the same echo `controlBusyRef`'s old blanket guard used to swallow,
+      // but now discarded per-read instead of by refusing to even start the read.
+      // That is the fix: a blanket "ignore every event while ANY control call is in
+      // flight" also dropped a genuinely external change landing in the same
+      // window (someone pausing from their phone mid-flight of our own pause) —
+      // this only discards a read raced by a newer LOCAL write, so an external
+      // event's read lands normally. `playPause` stays fully optimistic (no local
+      // read of its own), so its bump still wins the race against its own echo.
+      const seqAtStart = localWriteSeqRef.current
       void readLivePlayback().then((r) => {
-        if (onRef.current)
-          applyLive(r)
+        if (!onRef.current)
+          return
+        if (localWriteSeqRef.current !== seqAtStart)
+          return
+        applyLive(r)
       })
     }
     window.addEventListener(MYBLOG_PLAYBACK_CHANGED, onPlaybackChanged)
