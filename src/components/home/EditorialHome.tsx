@@ -16,7 +16,7 @@
 import type { components } from '@lib/api.gen'
 import type { ReviewCard } from '@lib/reviews'
 import type { CSSProperties, ReactNode } from 'react'
-import { reviewHref } from '@lib/entityLinks'
+import { openAlbum, reviewHref } from '@lib/entityLinks'
 import BrowseGenres from './BrowseGenres'
 import ByTheNumbers from './ByTheNumbers'
 import ForYouReleasesCard from './ForYouReleasesCard'
@@ -37,6 +37,8 @@ interface BnmPick {
 	cover: string | null
 	dateLabel: string
 	agoLabel: string
+	/** ARCH-entity-interaction-v2 E7 — first linked DB album id, null when none. */
+	albumId: string | null
 }
 
 interface Stats {
@@ -74,16 +76,18 @@ interface Feature {
 	year: number
 	cover: string | null
 	date: string
+	/** ARCH-entity-interaction-v2 E7 — first linked DB album id, null when none. */
+	albumId: string | null
 }
 
 /** The hero feature: the top Best New Music pick, else the latest review. */
 function toFeature(bnm: BnmPick[], reviews: ReviewCard[]): Feature | null {
 	const b = bnm[0]
 	if (b)
-		return { slug: b.slug, album: b.album, artist: b.artist, pull: b.excerpt, score: b.rating, genre: b.genre, year: b.year, cover: b.cover, date: b.dateLabel }
+		return { slug: b.slug, album: b.album, artist: b.artist, pull: b.excerpt, score: b.rating, genre: b.genre, year: b.year, cover: b.cover, date: b.dateLabel, albumId: b.albumId }
 	const r = reviews[0]
 	if (r)
-		return { slug: r.slug, album: r.album, artist: r.artist, pull: r.excerpt, score: r.rating, genre: r.genres[0] ?? '', year: r.year, cover: r.cover, date: fmtDate(r.date) }
+		return { slug: r.slug, album: r.album, artist: r.artist, pull: r.excerpt, score: r.rating, genre: r.genres[0] ?? '', year: r.year, cover: r.cover, date: fmtDate(r.date), albumId: r.albumIds[0] ?? null }
 	return null
 }
 
@@ -100,9 +104,23 @@ function Hero({ feature }: { feature: Feature }) {
 					<span className="mono" style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--color-accent)' }}>★ Best New Music</span>
 					<span className="meta">금주의 선정</span>
 				</div>
-				<a href={reviewHref(feature.slug)} className="bk-heroB">
-					<div className="bk-lift"><Cover label={feature.album} src={feature.cover} square radius={4} /></div>
-					<div style={{ minWidth: 0 }}>
+				<div className="bk-heroB">
+					{/* ARCH-entity-interaction-v2 E7 — cover peeks the album overlay;
+					    the rest of the card stays the review link (two hosts, E6). */}
+					{feature.albumId ?
+						(
+							<button
+								type="button"
+								className="bk-lift"
+								style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}
+								aria-label={`${feature.album} 앨범 정보 보기`}
+								onClick={() => openAlbum({ albumId: feature.albumId!, title: feature.album, artist: feature.artist || undefined, cover: feature.cover, year: feature.year })}
+							>
+								<Cover label={feature.album} src={feature.cover} square radius={4} />
+							</button>
+						) :
+						<div className="bk-lift"><Cover label={feature.album} src={feature.cover} square radius={4} /></div>}
+					<a href={reviewHref(feature.slug)} style={{ display: 'block', minWidth: 0, textDecoration: 'none', color: 'inherit' }}>
 						<div className="mono" style={{ fontSize: 12, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-subtle)', marginBottom: 12 }}>{feature.artist}</div>
 						<h1 className="serif italic bk-album" style={{ fontSize: 'clamp(34px, 3.8vw, 54px)', fontWeight: 500, lineHeight: 0.98, letterSpacing: '-.02em', margin: 0, textWrap: 'balance', overflowWrap: 'anywhere', minWidth: 0 }}>{feature.album}</h1>
 						<p className="serif" style={{ fontSize: 18, lineHeight: 1.55, color: 'var(--color-subtle)', margin: '18px 0 22px', maxWidth: '46ch', textWrap: 'pretty' }}>{feature.pull}</p>
@@ -113,8 +131,8 @@ function Hero({ feature }: { feature: Feature }) {
 							)}
 						</div>
 						{feature.date && <div className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', marginTop: 16, letterSpacing: '.04em' }}>{`평론 · ${feature.date}`}</div>}
-					</div>
-				</a>
+					</a>
+				</div>
 			</Measure>
 			<Measure><hr className="rule-strong" /></Measure>
 		</section>
@@ -147,20 +165,37 @@ function Latest({ reviews, excludeSlug }: { reviews: ReviewCard[], excludeSlug?:
 			<Measure style={{ paddingTop: 56 }}>
 				<SectionTitle kicker="LATEST · 평론" title="최신 평론" right={<a href="/reviews" className="btn">{`모두 보기 · ${reviews.length}편`}</a>} />
 				<div>
-					{items.map(r => (
-						<a key={r.slug} href={reviewHref(r.slug)} className="bk-revrow">
-							<div className="bk-lift" style={{ width: '100%' }}><Cover label={r.album} src={r.cover} square radius={3} /></div>
-							<div style={{ minWidth: 0 }}>
-								<div className="mono" style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[r.artist, r.genres[0], r.year].filter(Boolean).join(' · ')}</div>
-								<h3 className="serif italic bk-album" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.12, margin: '2px 0 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.album}</h3>
-								<p className="serif" style={{ fontSize: 14.5, lineHeight: 1.5, color: 'var(--color-subtle)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.excerpt}</p>
+					{items.map((r) => {
+						const albumId = r.albumIds[0]
+						return (
+							<div key={r.slug} className="bk-revrow">
+								{/* ARCH-entity-interaction-v2 E7 — cover peeks the album overlay;
+								    the rest of the row stays the review link. */}
+								{albumId ?
+									(
+										<button
+											type="button"
+											className="bk-lift"
+											style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}
+											aria-label={`${r.album} 앨범 정보 보기`}
+											onClick={() => openAlbum({ albumId, title: r.album, artist: r.artist || undefined, cover: r.cover, year: r.year })}
+										>
+											<Cover label={r.album} src={r.cover} square radius={3} />
+										</button>
+									) :
+									<div className="bk-lift" style={{ width: '100%' }}><Cover label={r.album} src={r.cover} square radius={3} /></div>}
+								<a href={reviewHref(r.slug)} style={{ display: 'block', minWidth: 0, textDecoration: 'none', color: 'inherit' }}>
+									<div className="mono" style={{ fontSize: 10.5, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[r.artist, r.genres[0], r.year].filter(Boolean).join(' · ')}</div>
+									<h3 className="serif italic bk-album" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.12, margin: '2px 0 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.album}</h3>
+									<p className="serif" style={{ fontSize: 14.5, lineHeight: 1.5, color: 'var(--color-subtle)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.excerpt}</p>
+								</a>
+								<div className="bk-revrow-aside">
+									<Stars rating={r.rating} size={18} />
+									<span className="meta">{fmtDate(r.date)}</span>
+								</div>
 							</div>
-							<div className="bk-revrow-aside">
-								<Stars rating={r.rating} size={18} />
-								<span className="meta">{fmtDate(r.date)}</span>
-							</div>
-						</a>
-					))}
+						)
+					})}
 				</div>
 			</Measure>
 		</section>

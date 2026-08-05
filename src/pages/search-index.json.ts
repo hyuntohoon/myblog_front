@@ -33,6 +33,9 @@ export const GET: APIRoute = async () => {
 		cover: c.cover,
 		excerpt: c.excerpt,
 		body: bodyBySlug.get(c.slug) ?? '',
+		// ARCH-entity-interaction-v2 E7 — lets the search review card peek the
+		// album overlay from its cover.
+		albumId: c.albumIds[0] ?? null,
 	}))
 	return new Response(JSON.stringify(index), {
 		headers: { 'Content-Type': 'application/json' },
