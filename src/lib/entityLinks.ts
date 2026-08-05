@@ -2,7 +2,7 @@
 // navigation hrefs. Every artist/review href in `components/` and `scripts/`
 // is built here; hand-rolled `/artist/${…}` / `/review/${…}` template literals
 // outside this file and `pages/` must not exist (grep-gated in the RFC).
-// Registered in docs/frontend/component-map.md.
+// Registered in myblog-workspace/docs/frontend/component-map.md (sibling repo).
 //
 // Canonical form is TRAILING SLASH (RFC OQ3, probed 2026-07-03): the site is
 // Astro directory output on S3+CloudFront, and the viewer-request function
