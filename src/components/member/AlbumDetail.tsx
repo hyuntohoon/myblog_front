@@ -19,9 +19,12 @@ import type { AlbumDetail as AlbumDetailResp, MusicArtist } from '@lib/albumDeta
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { OnOpenLyrics } from '../album/AlbumDetailView'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { updateBucketItemMemo } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { reviewHref } from '@lib/entityLinks'
+import { playbackSession } from '@lib/playback/session'
+import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { AlbumDetailView, Header } from '../album/AlbumDetailView'
@@ -89,6 +92,44 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
     setPendingAdd({ trackId, title, seq: addSeq.current })
   }, [])
 
+  // ARCH-entity-interaction-v2 Step 5 — TrackRow's `play` grant. Same primitive
+  // and toast shape as `AlbumOverlay`'s per-track ▶ (`replaceQueueAndPlay`,
+  // `kind: 'track'`) — this modal previously had no play affordance at all, so
+  // there is no existing notice mechanism here to fold into; the toast is
+  // ported verbatim rather than invented fresh.
+  const noticeTimer = useRef<number | null>(null)
+  const [playNotice, setPlayNotice] = useState<{ label: string, undo: (() => void) | null } | null>(null)
+  const showPlayNotice = useCallback((label: string, undo: (() => void) | null = null) => {
+    setPlayNotice({ label, undo })
+    if (noticeTimer.current != null)
+      window.clearTimeout(noticeTimer.current)
+    noticeTimer.current = window.setTimeout(() => setPlayNotice(null), 4200)
+  }, [])
+  useEffect(() => () => {
+    if (noticeTimer.current != null)
+      window.clearTimeout(noticeTimer.current)
+  }, [])
+  const onPlayTrack = useCallback((trackId: string, title: string) => {
+    void playbackSession.replaceQueueAndPlay({ kind: 'track', trackId, title }).then((outcome) => {
+      const undo = outcome.undo
+      const runUndo = undo ? () => void undo().then(r => showPlayNotice(r.message)) : null
+      if (outcome.ok) {
+        rememberSpotifyTransportProbe('available')
+        showPlayNotice(outcome.message, runUndo)
+        return
+      }
+      if (outcome.play?.ok === false) {
+        if (outcome.play.reason === 'no-capability')
+          rememberSpotifyTransportProbe('no-capability')
+        if (outcome.play.reason === 'token' && outcome.play.status === 'disconnected') {
+          showPlayNotice('Spotify를 연동하면 이 곡을 재생할 수 있어요.', runUndo)
+          return
+        }
+      }
+      showPlayNotice(outcome.message, runUndo)
+    })
+  }, [showPlayNotice])
+
   return (
     <div
 	className="scrim"
@@ -107,7 +148,7 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
       >
         <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
         {album.albumId ?
-          <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
+          <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} onPlayTrack={onPlayTrack} hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
           <MinimalBody album={album} />}
       </div>
       {pendingAdd && (
@@ -118,6 +159,25 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
 	render={() => null}
 	onResolved={() => setPendingAdd(null)}
         />
+      )}
+      {playNotice && createPortal(
+        <div className="rise" role="status" style={{ position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 200, padding: '11px 16px', borderRadius: 7, background: 'var(--color-text)', color: 'var(--color-bg)', boxShadow: '0 16px 40px rgba(0,0,0,.3)', maxWidth: 'min(90vw, 560px)' }}>
+          <span className="sans" style={{ fontSize: 13 }}>{playNotice.label}</span>
+          {playNotice.undo && (
+            <button
+	type="button"
+	className="sans"
+	onClick={() => {
+                playNotice.undo?.()
+                setPlayNotice(null)
+              }}
+	style={{ marginLeft: 12, background: 'none', border: 'none', padding: 0, color: 'inherit', font: 'inherit', fontSize: 13, textDecoration: 'underline', cursor: 'pointer' }}
+            >
+              되돌리기
+            </button>
+          )}
+        </div>,
+        document.body,
       )}
     </div>
   )
