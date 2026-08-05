@@ -12,6 +12,7 @@ import type { SavedTrack } from './analysis.api'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { addBucketItem, isManualAddTarget } from '@lib/buckets'
+import { memberRef } from '@lib/entityDrag'
 import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { TrackRow } from '../shared/TrackRow'
@@ -265,7 +266,13 @@ function TableHead({ cols, withLyrics, sort, sortDir, onSort }: { cols: string, 
 // ── table row ─────────────────────────────────────────────────────────────
 // Shared-TrackRow consumer (ARCH-entity-interaction-contract Step 2). Declared
 // actions = what the surface already had (open-detail) + lyrics; 담기/평론쓰기
-// stay in the surface-specific ⋯ menu (trailing).
+// stay in the surface-specific ⋯ menu (trailing). `drag` is ARCH-entity-
+// interaction-v2 Step 5's grant onto this surface — a liked track is not a
+// bucket membership, so it is `origin: { kind: 'external', copies: true }`,
+// the same shape `TrackRow.test.tsx` already pins. Drops onto the globally-
+// mounted PocketTray (`layout.astro`), which coexists with this tab (no
+// scrim, no tab exclusivity) — the modal surfaces (AlbumDetail/MemoWindow)
+// remain ungranted; their scrim occludes the tray (out of scope here).
 function Row({ row, n, cols, onOpen, onPromote, onLyrics }: {
 	row: LikedRowVM
 	n: number
@@ -293,6 +300,7 @@ function Row({ row, n, cols, onOpen, onPromote, onLyrics }: {
 			actions={{
 				open: { fire: () => openDetail(row, onOpen), disabled: !catalogued, title: '작품 상세', disabledTitle: '카탈로그 미등록' },
 				...(onLyrics ? { lyrics: () => onLyrics(row.id) } : {}),
+				drag: { ref: memberRef({ trackId: row.id, albumId: row.albumId }), origin: { kind: 'external', copies: true } },
 			}}
 			trailing={<span style={{ display: 'inline-flex', justifyContent: 'flex-end' }}><RowMenu row={row} onOpen={onOpen} onPromote={onPromote} /></span>}
 			style={{ padding: '9px 12px', borderRadius: 4 }}
