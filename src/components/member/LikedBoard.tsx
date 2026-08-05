@@ -11,7 +11,7 @@ import type { DetailTarget } from '@lib/member'
 import type { SavedTrack } from './analysis.api'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { addBucketItem } from '@lib/buckets'
+import { addBucketItem, isManualAddTarget } from '@lib/buckets'
 import { artistHref } from '@lib/entityLinks'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { TrackRow } from '../shared/TrackRow'
@@ -641,6 +641,7 @@ export function LikedBoard({ onOpen, onOpenLyrics }: { onOpen?: (t: DetailTarget
 				<BucketPickerSheet
 					title="My Buckit에 담기"
 					tree={bucketTree}
+					skip={b => !isManualAddTarget(b)}
 					onPick={onPickBucket}
 					onClose={() => setPromoting(null)}
 				/>

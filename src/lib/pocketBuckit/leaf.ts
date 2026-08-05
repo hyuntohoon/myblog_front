@@ -8,7 +8,7 @@
 
 import type { BoardBucket } from '@lib/buckets'
 import type { PocketOrder, PocketTreeDepth } from './design'
-import { PLAYBACK_KIND } from '@lib/buckets'
+import { isManualAddTarget, PLAYBACK_KIND } from '@lib/buckets'
 
 export type PocketAction = 'add' | 'queue' | 'play' | 'summarize'
 
@@ -70,7 +70,7 @@ function flatten(
 ): { bucket: BoardBucket, path: string[] }[] {
   const out: { bucket: BoardBucket, path: string[] }[] = []
   for (const b of buckets) {
-    if (b.kind === 'spotify_library')
+    if (!isManualAddTarget(b))
       continue
     const path = [...trail, b.name]
     const isLeaf = b.children.length === 0

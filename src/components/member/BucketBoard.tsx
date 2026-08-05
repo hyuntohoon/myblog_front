@@ -25,7 +25,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
-import { findBucket, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
+import { findBucket, isManualAddTarget, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
 import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from '@lib/boardDnd'
 import type { DragPayload } from '@lib/entityDrag'
 import { bucketDrag, memberRef, toDndItem } from '@lib/entityDrag'
@@ -1658,6 +1658,11 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const newTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   // FEAT-pocket-buckit-viewers Track A — latest ops/tree for the reverse-DnD listener.
   const opsRef = useRef<Ops | null>(null)
+  // BUG-20: temp ids (copyAlbum's optimistic tile) trashed before their
+  // addBucketItem POST resolves — trashAlbum can't DELETE a row that doesn't
+  // exist yet server-side, so it marks the temp id here instead; copyAlbum's
+  // own resolution handler reads this set to clean up the real row once it lands.
+  const trashedTempIdsRef = useRef<Set<string>>(new Set())
   const markNew = useCallback((id: string) => {
     setNewItemIds((prev) => {
       const n = new Set(prev)
@@ -1794,7 +1799,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     [tree],
   )
   const normalTree = useMemo(
-    () => (tree ?? []).filter(b => b.kind !== SLIB_KIND),
+    () => (tree ?? []).filter(isManualAddTarget),
     [tree],
   )
 
@@ -2007,6 +2012,15 @@ ids.push(a.albumId)
       })
       api.addBucketItem(toBucketId, albumId)
         .then(({ item, conflict }) => {
+          // BUG-20: the tile was already trashed (and spliced from `tree`) while
+          // this add was in flight — don't re-insert it, and if the server did
+          // create a real row, delete it too so the trash decision actually
+          // sticks server-side instead of silently resurrecting on refresh.
+          if (trashedTempIdsRef.current.delete(tempId)) {
+            if (!conflict && item)
+              api.deleteBucketItem(toBucketId, item.itemId).catch(() => void refresh())
+            return
+          }
           setTree((prev) => {
             if (prev == null)
               return prev
@@ -2300,6 +2314,14 @@ ids.push(a.albumId)
     setTree(t)
     if (found)
       setTrash(prev => [{ tid: itemId, album: found.album, fromBucketId, fromName: found.bucketName }, ...prev])
+    // BUG-20: a still-optimistic copy (copyAlbum's temp tile) has no server row
+    // yet — DELETE-ing its temp id would be a garbage request the server can't
+    // map to anything. Mark it instead; copyAlbum's own resolution handler reads
+    // this set and deletes the real row once (if) it lands.
+    if (itemId.startsWith('temp:')) {
+      trashedTempIdsRef.current.add(itemId)
+      return
+    }
     api.deleteBucketItem(fromBucketId, itemId).catch(() => void refresh())
   }
 

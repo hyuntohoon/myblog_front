@@ -603,6 +603,21 @@ export async function reorderItems(buckets: { id: string, item_ids: string[] }[]
 // is filtered out of the normal crate tree and rendered as its own section.
 export const SLIB_KIND = 'spotify_library'
 
+/**
+ * BUG-20: the single owner of "may a user manually add/move an item into this
+ * bucket?" — the spotify_library bucket is sync-owned and must never be a
+ * manual-add target. Before this, three call sites enforced it independently
+ * (two by hardcoding the string literal `'spotify_library'`, one via
+ * `SLIB_KIND`) and a fourth (`LikedBoard`'s promote-to-bucket flow) omitted the
+ * check entirely, letting a member insert a row into the sync mirror that the
+ * backend's `_assert_item_type_allowed` does not guard either (it keys on
+ * `bucket.type`, never `kind`). Every "add to bucket" surface must filter/skip
+ * through this function rather than re-testing `kind` itself.
+ */
+export function isManualAddTarget(bucket: BoardBucket): boolean {
+  return bucket.kind !== SLIB_KIND
+}
+
 // FEAT-playback-bucket-player (V51) — the per-user, system-owned Playback Bucket,
 // whose ordered item list IS the playback queue. Two orthogonal axes, both needed:
 //   · `kind` marks it system-owned (the free-TEXT role axis, like SLIB_KIND) — it is
