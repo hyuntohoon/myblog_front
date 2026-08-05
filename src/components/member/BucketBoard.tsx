@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
 import { findBucket, isManualAddTarget, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
-import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from '@lib/boardDnd'
+import { canAcceptAlbumDrag, canAcceptBucketDrag, memberAcceptsLabel, routeAlbumDrop } from '@lib/boardDnd'
 import type { DragPayload } from '@lib/entityDrag'
 import { bucketDrag, memberRef, toDndItem } from '@lib/entityDrag'
 import { crMeta, systemBucketInSubtree, systemBucketLabel } from '@lib/bucketLifecycle'
@@ -793,6 +793,14 @@ interface SharedProps {
   markedAlbumIds: Set<string>
   dropTarget: string | null
   setDropTarget: (fn: string | null | ((t: string | null) => string | null)) => void
+  /**
+   * ARCH-entity-interaction-v2 E3 — the bucket currently rejecting the in-flight
+   * drag, plus why. At most one at a time (mirrors `dropTarget`'s single-hot
+   * model). Drives the "stays in place, muted, with a reason" reject visual —
+   * the target never disappears or reflows, it just mutes.
+   */
+  dropReject: { id: string, reason: string } | null
+  setDropReject: (fn: { id: string, reason: string } | null | ((t: { id: string, reason: string } | null) => { id: string, reason: string } | null)) => void
   draggingId: string | null
   setDraggingId: (id: string | null) => void
   draggingBucket: string | null
@@ -821,8 +829,8 @@ interface AlbumSheet { album: BoardAlbum, bucketId: string, copySource: boolean,
 
 type CardProps = SharedProps & { bucket: BoardBucket, depth: number }
 
-function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
-  const shared: SharedProps = { ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
+function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, dropReject, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }: CardProps) {
+  const shared: SharedProps = { ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, dropReject, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds }
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
@@ -831,6 +839,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
   const [viewing, setViewing] = useState(false)
   const accent = crColor(bucket, depth)
   const hot = dropTarget === bucket.id
+  const rejectReason = dropReject?.id === bucket.id ? dropReject.reason : null
   const isLib = bucket.kind === SLIB_KIND
 
   // This bucket's view + a functional setter (per-bucket; missing → default).
@@ -872,6 +881,18 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
       e.preventDefault()
       e.stopPropagation()
       setDropTarget(bucket.id)
+      setDropReject(r => (r?.id === bucket.id ? null : r))
+      return
+    }
+    // ARCH-entity-interaction-v2 E3 — a member drag this bucket refuses: stay in
+    // place, mute, name what IS accepted. No preventDefault — the drop stays
+    // genuinely disallowed, this only paints the reason. Bucket-drag self/cycle
+    // guards are left silent (unchanged): the matrix labels only these member
+    // cells "reject"; the bucket-into-bucket cell is "nest, cycle-guarded".
+    if (it.kind === 'member') {
+      const label = memberAcceptsLabel(bucket)
+      if (label)
+        setDropReject({ id: bucket.id, reason: `${label}만 받아요` })
     }
   }
   const onDrop = (e: React.DragEvent) => {
@@ -879,6 +900,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
     e.stopPropagation()
     const it = dnd && toDndItem(dnd)
     setDropTarget(null)
+    setDropReject(null)
     if (!it)
       return
     // Route via the shared helper so the board card and the reverse-DnD PB_BOARD_DROP
@@ -962,10 +984,14 @@ ops.openResearch(a.albumId, a.title)
 
   return (
     <div
+	title={rejectReason ?? undefined}
+	data-dropreject={rejectReason ? 'true' : undefined}
 	onDragOver={onDragOver}
 	onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node))
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
           setDropTarget(t => (t === bucket.id ? null : t))
+          setDropReject(r => (r?.id === bucket.id ? null : r))
+        }
       }}
 	onDrop={onDrop}
 	style={{
@@ -975,8 +1001,8 @@ ops.openResearch(a.albumId, a.title)
         borderRadius: 8,
         padding: 14,
         boxShadow: hot ? '0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent)' : (depth ? 'none' : '0 1px 2px rgba(26,26,26,0.05)'),
-        opacity: draggingBucket === bucket.id ? 0.45 : 1,
-        transition: 'box-shadow 0.12s, border-color 0.12s',
+        opacity: draggingBucket === bucket.id ? 0.45 : (rejectReason ? 0.4 : 1),
+        transition: 'opacity 0.12s, box-shadow 0.12s, border-color 0.12s',
       }}
     >
       {/* header — the WHOLE row is the bucket drag handle now (was just the tiny
@@ -994,6 +1020,7 @@ ops.openResearch(a.albumId, a.title)
           dnd = null
           setDraggingBucket(null)
           setDropTarget(null)
+          setDropReject(null)
           setDragKind(null)
         }}
 	style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12, cursor: editing ? 'default' : 'grab' }}
@@ -1330,6 +1357,21 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
     const it = dnd && toDndItem(dnd)
     return !!it && ((it.kind === 'member' && !it.copy && !!it.albumId && !(it.fromLib && it.source === 'preexisting')) || it.kind === 'bucket')
   }
+  // ARCH-entity-interaction-v2 E3 — names WHY a rejected member row can't trash,
+  // mirroring the three sub-cases `accepts()` above already refuses. Bucket drags
+  // always accept here (no reject cell), so this only ever runs for `it.kind ===
+  // 'member'`.
+  const [reject, setReject] = useState<string | null>(null)
+  const rejectReason = (): string | null => {
+    const it = dnd && toDndItem(dnd)
+    if (!it || it.kind !== 'member' || accepts())
+      return null
+    if (it.copy)
+      return '복사한 항목은 휴지통에 넣을 수 없어요'
+    if (it.fromLib && it.source === 'preexisting')
+      return '기존 라이브러리 앨범은 휴지통에 넣을 수 없어요'
+    return '앨범만 휴지통에 넣을 수 있어요'
+  }
   return (
     <div
 	className="crate-trash-dock"
@@ -1337,11 +1379,17 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
         if (accepts()) {
           e.preventDefault()
           setHot(true)
+          setReject(null)
+        }
+        else {
+          setReject(rejectReason())
         }
       }}
 	onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node))
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
           setHot(false)
+          setReject(null)
+        }
       }}
 	onDrop={(e) => {
         if (!accepts())
@@ -1349,6 +1397,7 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
         e.preventDefault()
         const it = dnd && toDndItem(dnd)
         setHot(false)
+        setReject(null)
         if (it && it.kind === 'member' && it.itemId && it.fromBucketId)
           onTrashAlbum(it.itemId, it.fromBucketId)
         else if (it && it.kind === 'bucket' && it.bucketId)
@@ -1356,19 +1405,25 @@ function TrashDock({ trashCount, onTrashAlbum, onTrashBucket }: { trashCount: nu
         dnd = null
       }}
     >
-      <div className="crate-trash-card" data-hot={hot ? 'true' : 'false'}>
+      <div className="crate-trash-card" data-hot={hot ? 'true' : 'false'} data-reject={reject ? 'true' : undefined} title={reject ?? undefined}>
         <span className="crate-trash-ring"><CrTrashIcon s={28} /></span>
         <div>
           <div className="serif" style={{ fontSize: 21, fontWeight: 500, lineHeight: 1.2, color: hot ? 'var(--color-accent)' : 'var(--color-text)' }}>휴지통</div>
-          {trashCount > 0 && (
-            <div className="mono" style={{ marginTop: 7, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, letterSpacing: '0.06em', whiteSpace: 'nowrap', color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>
-              <span style={{ width: 5, height: 5, borderRadius: 5, background: 'currentColor' }} />
-              보관
-              {' '}
-              {trashCount}
-              개
-            </div>
-          )}
+          {reject ?
+            (
+                <div className="mono" style={{ marginTop: 7, fontSize: 10, letterSpacing: '0.02em', whiteSpace: 'nowrap', color: 'var(--color-faded)' }}>
+                  {reject}
+                </div>
+              ) :
+            trashCount > 0 && (
+              <div className="mono" style={{ marginTop: 7, display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, letterSpacing: '0.06em', whiteSpace: 'nowrap', color: hot ? 'var(--color-accent)' : 'var(--color-faded)' }}>
+                <span style={{ width: 5, height: 5, borderRadius: 5, background: 'currentColor' }} />
+                보관
+                {' '}
+                {trashCount}
+                개
+              </div>
+            )}
         </div>
       </div>
     </div>
@@ -1574,6 +1629,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   }, [bucketViews])
 
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [dropReject, setDropReject] = useState<{ id: string, reason: string } | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind>(null)
@@ -1623,6 +1679,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
       setDraggingBucket(null)
       setDragKind(null)
       setDropTarget(null)
+      setDropReject(null)
       dnd = null
     }
     document.addEventListener('drop', reset)
@@ -1963,6 +2020,7 @@ ids.push(a.albumId)
     setDraggingBucket(null)
     setDragKind(null)
     setDropTarget(null)
+    setDropReject(null)
     dnd = null
   }
 
@@ -2446,7 +2504,7 @@ ids.push(a.albumId)
 
   // Props shared by every card / list in the tree — bundled so BucketList can
   // forward them with one spread.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, dropReject, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
   // FEAT-my-buckit-artist Step 4: the tree narrowed by the board-level type filter.
   const visibleTree = pruneByType(normalTree, boardType)
 

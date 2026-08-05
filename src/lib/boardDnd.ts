@@ -77,6 +77,23 @@ export function canAcceptAlbumDrag(bucket: BoardBucket, it: DndItem): boolean {
   return it.srcItemType === 'artist' || !!it.albumId || !!it.trackId
 }
 
+// ARCH-entity-interaction-v2 E3 — the reject-cell reason label. NOT a gate: this reads
+// the same three branches `canAcceptAlbumDrag` already answers and names what the
+// target DOES accept, for the "muted + concise reason" reject visual the matrix
+// requires (§E3 state table). General is omitted on purpose — it accepts every member,
+// so it never has a reject cell to explain. Mirrors the tray's `${leaf.accepts}만
+// 받아요` line (`PocketTray.tsx`) so the board's reject wording matches the precedent
+// that already ships this contract.
+export function memberAcceptsLabel(bucket: BoardBucket): string | null {
+  if (bucket.kind === SLIB_KIND)
+    return '앨범'
+  if (bucket.type === PLAYBACK_TYPE)
+    return '트랙 · 앨범'
+  if (bucket.type === 'artist')
+    return '아티스트 · 앨범 · 트랙'
+  return null
+}
+
 // A bucket drag is accepted onto `bucket` when it is a different bucket and `bucket`
 // is not inside the dragged bucket's own subtree (cycle guard).
 export function canAcceptBucketDrag(tree: BoardBucket[], bucket: BoardBucket, it: DndItem): boolean {

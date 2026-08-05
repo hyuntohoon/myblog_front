@@ -14,7 +14,7 @@ import type { DndItem, DropOps } from './boardDnd'
 import type { DragPayload } from './entityDrag'
 import { describe, expect, it, vi } from 'vitest'
 import { PLAYBACK_KIND, PLAYBACK_TYPE, SLIB_KIND } from './buckets'
-import { canAcceptAlbumDrag, canAcceptBucketDrag, routeAlbumDrop } from './boardDnd'
+import { canAcceptAlbumDrag, canAcceptBucketDrag, memberAcceptsLabel, routeAlbumDrop } from './boardDnd'
 import { fromDndItem, toDndItem } from './entityDrag'
 import { boardDragAccepts } from './pocketBuckit/boardDnd'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT } from './pocketBuckit/events'
@@ -238,6 +238,34 @@ describe('boardDragAccepts mirrors canAcceptAlbumDrag (drift guard)', () => {
   it('rejects everything with no drag in flight', () => {
     expect(boardDragAccepts(bucket({ type: 'general' }))).toBe(false)
     expect(boardDragAccepts(playback)).toBe(false)
+  })
+})
+
+// ARCH-entity-interaction-v2 E3 Step 5 — the reject-cell reason label. Pins that the
+// label agrees with `canAcceptAlbumDrag`'s own branches (General has no label because
+// it never rejects) and that every target `canAcceptAlbumDrag` can reject has a
+// non-null reason to show.
+describe('memberAcceptsLabel', () => {
+  it('a general bucket has no label — it never rejects a member drag', () => {
+    expect(memberAcceptsLabel(bucket())).toBeNull()
+  })
+  it('an artist bucket names artist/album/track', () => {
+    expect(memberAcceptsLabel(bucket({ type: 'artist' }))).toBe('아티스트 · 앨범 · 트랙')
+  })
+  it('a playback bucket names track/album', () => {
+    expect(memberAcceptsLabel(playback)).toBe('트랙 · 앨범')
+  })
+  it('a spotify-library bucket names album only', () => {
+    expect(memberAcceptsLabel(bucket({ kind: SLIB_KIND }))).toBe('앨범')
+  })
+  it('every reject answer from canAcceptAlbumDrag has a non-null label to explain it', () => {
+    const targets = [bucket({ type: 'artist' }), playback, bucket({ kind: SLIB_KIND })]
+    for (const target of targets) {
+      for (const drag of ADAPTER_CORPUS) {
+        if (drag.kind === 'member' && !canAcceptAlbumDrag(target, drag))
+          expect(memberAcceptsLabel(target)).not.toBeNull()
+      }
+    }
   })
 })
 
