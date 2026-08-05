@@ -8,12 +8,12 @@
 // route through the menu's pb:resume → Cognito → home PocketResume handoff, so a
 // public reader can file a track too. Mirrors the existing `album:detail` bridge.
 //
-// Event name is duplicated as a string literal in albumDetail.client.ts (a .ts
-// script must not import this .tsx, or it would pull React into that bundle).
+// PB_ADD_TRACK_EVENT lives in `lib/pocketBuckit/events.ts`, not here — that lets
+// the vanilla albumDetail.client.ts import the constant too without pulling React
+// into its bundle.
 import { useEffect, useState } from 'react'
 import { AddToBucketMenu } from '@components/member/pocket/AddToBucketMenu'
-
-export const PB_ADD_TRACK_EVENT = 'pb:add-track'
+import { PB_ADD_TRACK_EVENT } from '@lib/pocketBuckit/events'
 
 interface AddTrackDetail { trackId: string, title?: string }
 
