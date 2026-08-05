@@ -18,7 +18,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { goLogin, isLoggedIn } from '@lib/auth'
-import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, listBuckets } from '@lib/buckets'
+import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, isManualAddTarget, listBuckets } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { playbackSession } from '@lib/playback/session'
 import { writePocketIntent } from '@lib/pocketBuckit/intent'
@@ -41,7 +41,7 @@ interface FlatBucket { id: string, name: string, depth: number }
 // manual add target (it's sync-owned), so its subtree is skipped.
 function flatten(buckets: BoardBucket[], depth: number, out: FlatBucket[]) {
   for (const b of buckets) {
-    if (b.kind === 'spotify_library')
+    if (!isManualAddTarget(b))
       continue
     out.push({ id: b.id, name: b.name, depth })
     flatten(b.children, depth + 1, out)
