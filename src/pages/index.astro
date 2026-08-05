@@ -46,6 +46,8 @@ const bnm = reviews
     cover: r.cover,
     dateLabel: fmtDate(r.date),
     agoLabel: agoLabel(r.date),
+    // ARCH-entity-interaction-v2 E7 — Hero() opens the album overlay from the cover.
+    albumId: r.albumIds[0] ?? null,
   }))
 
 const stats = {

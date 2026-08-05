@@ -11,17 +11,34 @@
  */
 import type { ReviewCard } from '@lib/reviews'
 import { Cover, SectionTitle, Stars } from '@components/home/ui'
-import { reviewHref } from '@lib/entityLinks'
+import { openAlbum, reviewHref } from '@lib/entityLinks'
 
 const THRESHOLD = 4.0
 
 function CanonCard({ item }: { item: ReviewCard }) {
+	const albumId = item.albumIds[0]
 	return (
-		<a href={reviewHref(item.slug)} className="canon-card" style={{ display: 'block' }}>
-			<div className="canon-cover">
-				<Cover label={item.album} src={item.cover} square radius={4} />
-			</div>
-			<div style={{ marginTop: 13, minWidth: 0 }}>
+		<div className="canon-card" style={{ display: 'block' }}>
+			{/* ARCH-entity-interaction-v2 E7 — cover peeks the album overlay; the
+			    rest of the card stays the review link. */}
+			{albumId ?
+				(
+					<button
+						type="button"
+						className="canon-cover"
+						style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}
+						aria-label={`${item.album} 앨범 정보 보기`}
+						onClick={() => openAlbum({ albumId, title: item.album, artist: item.artist || undefined, cover: item.cover, year: item.year })}
+					>
+						<Cover label={item.album} src={item.cover} square radius={4} />
+					</button>
+				) :
+				(
+					<div className="canon-cover">
+						<Cover label={item.album} src={item.cover} square radius={4} />
+					</div>
+				)}
+			<a href={reviewHref(item.slug)} style={{ display: 'block', marginTop: 13, minWidth: 0, textDecoration: 'none', color: 'inherit' }}>
 				{item.artist && (
 					<div className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)', letterSpacing: '.01em', overflowWrap: 'anywhere' }}>{item.artist}</div>
 				)}
@@ -31,8 +48,8 @@ function CanonCard({ item }: { item: ReviewCard }) {
 					<span className="meta" style={{ fontSize: 10 }}>{[item.year, item.genres[0]].filter(Boolean).join(' · ')}</span>
 				</div>
 				{item.excerpt && <p className="serif italic canon-verdict">{item.excerpt}</p>}
-			</div>
-		</a>
+			</a>
+		</div>
 	)
 }
 

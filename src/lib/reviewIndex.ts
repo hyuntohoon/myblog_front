@@ -14,6 +14,8 @@ export interface ReviewHit {
 	cover: string | null
 	excerpt: string
 	body: string
+	/** ARCH-entity-interaction-v2 E7 — first linked DB album id, null when none. */
+	albumId: string | null
 }
 
 let cache: ReviewHit[] | null = null

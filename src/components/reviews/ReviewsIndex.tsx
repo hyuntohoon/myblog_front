@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { reviewHref } from '@lib/entityLinks'
+import { openAlbum, reviewHref } from '@lib/entityLinks'
 import { allTags, allYears, selectFeatured } from '@lib/reviews'
 import type { ReviewCard } from '@lib/reviews'
 
@@ -116,6 +116,16 @@ function Cover({ r, badge, ph }: { r: ReviewCard, badge: 'full' | 'mini' | null,
   )
 }
 
+const coverBtnStyle: CSSProperties = { display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }
+
+/** ARCH-entity-interaction-v2 E7 — peek the album overlay from a card's cover. */
+function openReviewAlbum(r: ReviewCard) {
+  const albumId = r.albumIds[0]
+  if (!albumId)
+    return
+  openAlbum({ albumId, title: r.album, artist: r.artist || undefined, cover: r.cover, year: r.year })
+}
+
 export default function ReviewsIndex({
   reviews,
   variant = 'default',
@@ -206,9 +216,23 @@ export default function ReviewsIndex({
     <>
       {isEditorial && heroLead != null && (
         <section className="rev-c-hero" aria-label="주요 리뷰">
-          <a href={reviewHref(heroLead.slug)} className="rev-c-hero-cover" tabIndex={-1} aria-hidden="true">
-            <Cover r={heroLead} badge={null} ph={80} />
-          </a>
+          {heroLead.albumIds[0] ?
+            (
+              <button
+	type="button"
+	className="rev-c-hero-cover"
+	style={coverBtnStyle}
+	aria-label={`${heroLead.album} 앨범 정보 보기`}
+	onClick={() => openReviewAlbum(heroLead)}
+              >
+                <Cover r={heroLead} badge={null} ph={80} />
+              </button>
+            ) :
+            (
+              <div className="rev-c-hero-cover" aria-hidden="true">
+                <Cover r={heroLead} badge={null} ph={80} />
+              </div>
+            )}
           <div className="rev-c-hero-body">
             {heroLead.bestNew && <span className="rev-c-hero-badge">Best New Album</span>}
             {heroLead.artist && <p className="rev-artist">{heroLead.artist}</p>}
@@ -226,9 +250,15 @@ export default function ReviewsIndex({
 
       {!isEditorial && lead != null && (
         <section className="rev-featured" aria-label="주요 리뷰">
-          <a href={reviewHref(lead.slug)} className="rev-lead">
-            <Cover r={lead} badge="full" ph={64} />
-            <div className="rev-lead-body">
+          <div className="rev-lead">
+            {lead.albumIds[0] ?
+              (
+                <button type="button" style={coverBtnStyle} aria-label={`${lead.album} 앨범 정보 보기`} onClick={() => openReviewAlbum(lead)}>
+                  <Cover r={lead} badge="full" ph={64} />
+                </button>
+              ) :
+              <Cover r={lead} badge="full" ph={64} />}
+            <a href={reviewHref(lead.slug)} className="rev-lead-body" style={{ textDecoration: 'none', color: 'inherit' }}>
               <p className="rev-meta">{metaLine(lead)}</p>
               {lead.artist && <p className="rev-artist">{lead.artist}</p>}
               <h2 className="rev-lead-album">{lead.album}</h2>
@@ -236,20 +266,26 @@ export default function ReviewsIndex({
               <div className="rev-foot">
                 <Stars value={lead.rating} size={26} />
               </div>
-            </div>
-          </a>
+            </a>
+          </div>
 
           {sides.length > 0 && (
             <div className="rev-side">
               {sides.map(r => (
-                <a key={r.slug} href={reviewHref(r.slug)} className="rev-side-card">
-                  <Cover r={r} badge="mini" ph={24} />
-                  <div className="rev-side-body">
+                <div key={r.slug} className="rev-side-card">
+                  {r.albumIds[0] ?
+                    (
+                      <button type="button" style={coverBtnStyle} aria-label={`${r.album} 앨범 정보 보기`} onClick={() => openReviewAlbum(r)}>
+                        <Cover r={r} badge="mini" ph={24} />
+                      </button>
+                    ) :
+                    <Cover r={r} badge="mini" ph={24} />}
+                  <a href={reviewHref(r.slug)} className="rev-side-body" style={{ textDecoration: 'none', color: 'inherit' }}>
                     <p className="rev-meta">{metaLine(r)}</p>
                     <h3 className="rev-side-album">{r.album}</h3>
                     <Stars value={r.rating} size={14} />
-                  </div>
-                </a>
+                  </a>
+                </div>
               ))}
             </div>
           )}
@@ -365,16 +401,22 @@ export default function ReviewsIndex({
               <ul className="rev-list">
                 {shown.map(r => (
                   <li key={r.slug}>
-                    <a href={reviewHref(r.slug)} className="rev-row">
-                      <Cover r={r} badge="mini" ph={18} />
-                      <div className="rev-row-main">
+                    <div className="rev-row">
+                      {r.albumIds[0] ?
+                        (
+                          <button type="button" style={coverBtnStyle} aria-label={`${r.album} 앨범 정보 보기`} onClick={() => openReviewAlbum(r)}>
+                            <Cover r={r} badge="mini" ph={18} />
+                          </button>
+                        ) :
+                        <Cover r={r} badge="mini" ph={18} />}
+                      <a href={reviewHref(r.slug)} className="rev-row-main" style={{ textDecoration: 'none', color: 'inherit' }}>
                         <h3 className="rev-row-album">{r.album}</h3>
                         <span className="rev-row-sub">
                           {[r.artist, r.genres.join(', '), fmtDate(r.date)].filter(Boolean).join(' · ')}
                         </span>
-                      </div>
+                      </a>
                       <span className="rev-row-stars"><Stars value={r.rating} size={15} /></span>
-                    </a>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -383,9 +425,15 @@ export default function ReviewsIndex({
               <ul className={isEditorial ? `rev-grid rev-c-grid${shown.length < 3 ? ' rev-c-grid--few' : ''}` : 'rev-grid'}>
                 {shown.map(r => (
                   <li key={r.slug}>
-                    <a href={reviewHref(r.slug)} className="rev-card">
-                      <Cover r={r} badge="full" ph={34} />
-                      <div className="rev-card-body">
+                    <div className="rev-card">
+                      {r.albumIds[0] ?
+                        (
+                          <button type="button" style={coverBtnStyle} aria-label={`${r.album} 앨범 정보 보기`} onClick={() => openReviewAlbum(r)}>
+                            <Cover r={r} badge="full" ph={34} />
+                          </button>
+                        ) :
+                        <Cover r={r} badge="full" ph={34} />}
+                      <a href={reviewHref(r.slug)} className="rev-card-body" style={{ textDecoration: 'none', color: 'inherit' }}>
                         <p className="rev-meta">{metaLine(r)}</p>
                         {r.artist && <p className="rev-artist">{r.artist}</p>}
                         <h3 className="rev-card-album">{r.album}</h3>
@@ -398,8 +446,8 @@ export default function ReviewsIndex({
                         <div className="rev-foot">
                           <Stars value={r.rating} size={16} />
                         </div>
-                      </div>
-                    </a>
+                      </a>
+                    </div>
                   </li>
                 ))}
               </ul>

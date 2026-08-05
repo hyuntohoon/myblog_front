@@ -160,15 +160,19 @@ a.gs-acard:hover .gs-acard-go { color: var(--color-accent); }
    composed card still matches the <a> review card / static album card. */
 .gs-albcard-open { display: block; appearance: none; border: 0; background: none; padding: 0; margin: 0; color: inherit; font: inherit; text-align: left; width: 100%; cursor: pointer; }
 .gs-albcard-cov { position: relative; transition: transform .28s cubic-bezier(.2, .7, .2, 1), box-shadow .28s; }
-a.gs-albcard:hover .gs-albcard-cov, .gs-albcard-open:hover .gs-albcard-cov { transform: translateY(-4px); box-shadow: 0 18px 34px -22px rgba(0, 0, 0, .55); }
+.gs-albcard-open:hover .gs-albcard-cov { transform: translateY(-4px); box-shadow: 0 18px 34px -22px rgba(0, 0, 0, .55); }
 .gs-albcard-cov .gs-cover { width: 100% !important; height: auto !important; aspect-ratio: 1 / 1; }
 .gs-albcard-sp { position: absolute; left: 8px; bottom: 8px; }
 .gs-albcard.is-static { cursor: default; }
-.gs-albcard-body { margin-top: 12px; }
+/* ARCH-entity-interaction-v2 E7: the review card's text (title/meta) is its own
+   link (→ review), separate from the gs-albcard-open cover button (→ album
+   overlay) above — so its hover needs its own rule, not the cover's. */
+.gs-albcard-body { display: block; margin-top: 12px; text-decoration: none; color: inherit; }
+.gs-albcard-body:hover .gs-albcard-title { color: var(--color-accent); }
 .gs-albcard-stars { min-height: 16px; display: flex; align-items: center; gap: 8px; }
 .gs-bnm-badge { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #fff; background: var(--color-accent); padding: 3px 6px; border-radius: 2px; }
 .gs-albcard-title { font-size: 16px; font-weight: 500; letter-spacing: -.01em; line-height: 1.2; margin: 8px 0 0; text-wrap: pretty; overflow-wrap: anywhere; }
-a.gs-albcard:hover .gs-albcard-title, .gs-albcard-open:hover .gs-albcard-title { color: var(--color-accent); }
+.gs-albcard-open:hover .gs-albcard-title { color: var(--color-accent); }
 .gs-albcard-meta { font-size: var(--text-xs); color: var(--color-faded); margin: 6px 0 0; letter-spacing: .01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gs-albcard-artist { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--color-faded); }
 

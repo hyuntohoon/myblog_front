@@ -28,6 +28,16 @@ export interface ReviewCard {
   bestNew: boolean
   cover: string | null
   excerpt: string
+  /**
+   * DB album/artist ids linked to this review (ARCH-entity-interaction-v2 E7 —
+   * already written by publish_service.py + validated in content.config.ts;
+   * this is the projection onto the public payload). May be empty. Consumers
+   * address the first id (one album per review in practice, mirrors
+   * `artistReviews.ts`'s `albumId: d.albumIds?.[0]`) — never route, always
+   * `openAlbum()`.
+   */
+  albumIds: string[]
+  artistIds: string[]
 }
 
 /**
@@ -143,6 +153,8 @@ export function buildReviewCards(entries: CollectionEntry<'blog'>[]): ReviewCard
         bestNew: d.bestNew,
         cover: d.albumCover ?? d.image ?? mr?.cover?.src ?? null,
         excerpt: d.description || stripExcerpt(entry.body),
+        albumIds: d.albumIds,
+        artistIds: d.artistIds,
       } satisfies ReviewCard
     })
 }

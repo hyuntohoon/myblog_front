@@ -23,18 +23,32 @@ function getQuery(): string {
 
 // ── cards ─────────────────────────────────────────────────────────
 function ReviewCard({ r }: { r: ReviewHit }) {
+	const cover = <div className="gs-albcard-cov"><GCover name={r.album} src={r.cover} size={0} /></div>
 	return (
-		<a href={reviewHref(r.slug)} className="gs-albcard">
-			<div className="gs-albcard-cov"><GCover name={r.album} src={r.cover} size={0} /></div>
-			<div className="gs-albcard-body">
+		<div className="gs-albcard">
+			{/* ARCH-entity-interaction-v2 E7 — cover peeks the album overlay
+			    (mirrors AlbumCard below); the rest of the card stays the review link. */}
+			{r.albumId ?
+				(
+					<button
+						type="button"
+						className="gs-albcard-open"
+						onClick={() => openAlbum({ albumId: r.albumId!, title: r.album, artist: r.artist || undefined, cover: r.cover, year: r.year })}
+						aria-label={`${r.album} 앨범 상세 보기`}
+					>
+						{cover}
+					</button>
+				) :
+				cover}
+			<a href={reviewHref(r.slug)} className="gs-albcard-body">
 				<div className="gs-albcard-stars">
 					<GStars rating={r.rating} size={15} />
 					{r.bestNew && <span className="gs-bnm-badge">BNM</span>}
 				</div>
 				<h3 className="serif gs-albcard-title">{r.album}</h3>
 				<p className="mono gs-albcard-meta">{[r.artist, r.year].filter(Boolean).join(' · ')}</p>
-			</div>
-		</a>
+			</a>
+		</div>
 	)
 }
 
