@@ -153,6 +153,14 @@
 		0 0 0 5px color-mix(in srgb, var(--color-accent) 14%, transparent),
 		0 16px 44px rgba(200, 51, 43, 0.2);
 }
+/* ARCH-entity-interaction-v2 E3 — a member row the dock refuses (track/artist,
+   a copy source, a preexisting library album) mutes IN PLACE rather than doing
+   nothing: the dock never disappears or reflows mid-drag. Opacity only, same
+   invariant as the tray's `[data-dropreject]` (pocket.css). */
+.crate-trash-card[data-reject='true'] {
+	opacity: 0.45;
+	transition: opacity 0.12s;
+}
 .crate-trash-ring {
 	width: 60px;
 	height: 60px;
