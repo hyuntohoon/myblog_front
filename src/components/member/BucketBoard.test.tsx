@@ -1,0 +1,168 @@
+import type { AddItemOutcome, BoardAlbum, BoardBucket } from '@lib/buckets'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as api from '@lib/buckets'
+import { bucketStore } from '@lib/pocketBuckit/bucketStore'
+import * as spotifyApi from './spotify.api'
+import { BucketBoard } from './BucketBoard'
+
+vi.mock('@lib/buckets', async importOriginal => ({
+	...(await importOriginal<typeof import('@lib/buckets')>()),
+	listBuckets: vi.fn(),
+	addBucketItem: vi.fn(),
+	reorderItems: vi.fn(),
+}))
+
+vi.mock('../album/reviews.api', () => ({
+	fetchMyAlbumStates: vi.fn().mockResolvedValue([]),
+	putMyAlbumState: vi.fn(),
+}))
+
+vi.mock('./spotify.api', () => ({
+	listRecentlyListened: vi.fn(),
+}))
+
+vi.mock('./useSpotifyLibrary', () => ({
+	useSpotifyLibrary: () => ({
+		libState: null,
+		libAlbumMap: new Map(),
+		listenedAlbumIds: new Set(),
+		syncing: false,
+		runLibrarySync: vi.fn(),
+	}),
+}))
+
+vi.mock('@lib/research', async importOriginal => ({
+	...(await importOriginal<typeof import('@lib/research')>()),
+	useResearchStatusMap: () => ({}),
+}))
+
+const ALBUM_ID = 'album-race-1'
+const ALBUM_TITLE = 'Deferred Copy'
+const ALBUM_ARTIST = 'Race Condition'
+const TILE_TITLE = `${ALBUM_TITLE} — ${ALBUM_ARTIST}`
+
+function bucket(id: string, name: string): BoardBucket {
+	return {
+		id,
+		name,
+		color: null,
+		isDone: false,
+		kind: 'review',
+		type: 'general',
+		isPublic: false,
+		researchMode: 'off',
+		albums: [],
+		children: [],
+	}
+}
+
+function album(itemId: string): BoardAlbum {
+	return {
+		itemId,
+		itemType: 'album',
+		albumId: ALBUM_ID,
+		trackId: null,
+		reviewTargetId: null,
+		artistId: null,
+		title: ALBUM_TITLE,
+		artist: ALBUM_ARTIST,
+		cover: null,
+		year: 2026,
+		alreadyReviewed: false,
+		postId: null,
+		researchSelected: false,
+	}
+}
+
+function storedBucket(id: string): BoardBucket {
+	const found = bucketStore.getTree().find(b => b.id === id)
+	if (!found)
+		throw new Error(`Missing bucket ${id}`)
+	return found
+}
+
+function bucketRegion(name: string): HTMLElement {
+	const titleButton = screen.getByRole('button', { name })
+	const region = titleButton.parentElement?.parentElement
+	if (!(region instanceof HTMLElement))
+		throw new Error(`Missing rendered bucket region ${name}`)
+	return region
+}
+
+function allItems(tree: BoardBucket[]): BoardAlbum[] {
+	return tree.flatMap(b => [...b.albums, ...allItems(b.children)])
+}
+
+beforeEach(() => {
+	localStorage.clear()
+	sessionStorage.clear()
+	bucketStore.clear()
+	vi.clearAllMocks()
+	vi.mocked(api.listBuckets).mockResolvedValue([])
+	vi.mocked(api.reorderItems).mockResolvedValue()
+	vi.mocked(spotifyApi.listRecentlyListened).mockResolvedValue({
+		items: [{
+			album_id: ALBUM_ID,
+			last_played_at: '2026-08-06T00:00:00Z',
+			album: {
+				id: ALBUM_ID,
+				title: ALBUM_TITLE,
+				artist_names: [ALBUM_ARTIST],
+				cover_url: null,
+				release_date: '2026-01-01',
+			},
+		}],
+		lastSyncedAt: null,
+	})
+})
+
+describe('bucketBoard optimistic album copy', () => {
+	it('promotes a pending copy in the bucket it moved to before the add resolved', async () => {
+		let resolveAdd!: (outcome: AddItemOutcome) => void
+		const pendingAdd = new Promise<AddItemOutcome>((resolve) => {
+			resolveAdd = resolve
+		})
+		vi.mocked(api.addBucketItem).mockReturnValue(pendingAdd)
+		bucketStore.setTree([
+			bucket('bucket-a', 'A'),
+			bucket('bucket-b', 'B'),
+		])
+
+		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+
+		const recentTile = await screen.findByTitle(TILE_TITLE)
+		fireEvent.click(within(recentTile).getByRole('button', { name: '앨범 동작' }))
+		fireEvent.click(within(screen.getByRole('dialog', { name: ALBUM_TITLE })).getByRole('button', { name: '버킷에 추가' }))
+		fireEvent.click(within(screen.getByRole('dialog', { name: '버킷에 추가' })).getByRole('button', { name: 'A' }))
+
+		await waitFor(() => expect(storedBucket('bucket-a').albums).toHaveLength(1))
+		const tempId = storedBucket('bucket-a').albums[0].itemId
+		expect(tempId).toMatch(/^temp:/)
+		expect(within(bucketRegion('A')).getByTitle(TILE_TITLE)).toBeInTheDocument()
+		expect(api.addBucketItem).toHaveBeenCalledWith('bucket-a', ALBUM_ID)
+
+		const tempTile = within(bucketRegion('A')).getByTitle(TILE_TITLE)
+		fireEvent.click(within(tempTile).getByRole('button', { name: '앨범 동작' }))
+		fireEvent.click(within(screen.getByRole('dialog', { name: ALBUM_TITLE })).getByRole('button', { name: '다른 버킷으로 이동' }))
+		fireEvent.click(within(screen.getByRole('dialog', { name: '다른 버킷으로 이동' })).getByRole('button', { name: 'B' }))
+
+		await waitFor(() => expect(storedBucket('bucket-b').albums.map(a => a.itemId)).toEqual([tempId]))
+		expect(storedBucket('bucket-a').albums).toHaveLength(0)
+		expect(within(bucketRegion('B')).getByTitle(TILE_TITLE)).toBeInTheDocument()
+		expect(within(bucketRegion('A')).queryByTitle(TILE_TITLE)).not.toBeInTheDocument()
+
+		await act(async () => {
+			resolveAdd({ item: album('real-item-1'), conflict: false })
+			await pendingAdd
+		})
+
+		// This intentionally asserts only client-tree promotion. The accepted residual
+		// edge case may leave the server-side row in the original bucket A for now.
+		await waitFor(() => expect(storedBucket('bucket-b').albums.map(a => a.itemId)).toEqual(['real-item-1']))
+		expect(storedBucket('bucket-a').albums).toHaveLength(0)
+		expect(allItems(bucketStore.getTree()).some(a => a.itemId.startsWith('temp:'))).toBe(false)
+		expect(within(bucketRegion('B')).getByTitle(TILE_TITLE)).toBeInTheDocument()
+		expect(within(bucketRegion('A')).queryByTitle(TILE_TITLE)).not.toBeInTheDocument()
+	})
+})

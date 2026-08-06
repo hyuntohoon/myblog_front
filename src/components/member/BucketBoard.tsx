@@ -165,6 +165,19 @@ function findAlbum(buckets: BoardBucket[], itemId: string): { album: BoardAlbum,
   return f
 }
 
+// The bucket that currently holds an item with this itemId, wherever in the tree
+// it now lives — BUG-21: a temp tile from copyAlbum can be dragged to a different
+// bucket (insertAlbum) before its addBucketItem round-trip resolves, so the
+// resolve handler must not assume it's still in the bucket the copy started in.
+function findBucketByItemId(buckets: BoardBucket[], itemId: string): BoardBucket | null {
+  let f: BoardBucket | null = null
+  visit(buckets, (b) => {
+    if (!f && b.albums.some(a => a.itemId === itemId))
+      f = b
+  })
+  return f
+}
+
 // First album anywhere in the tree with this albumId — used to paint a copy's
 // optimistic tile with real cover/title (a cross-bucket / library copy isn't in the
 // recent strip), instead of a "…" placeholder until the server round-trip lands.
@@ -2077,7 +2090,10 @@ ids.push(a.albumId)
             if (prev == null)
               return prev
             const t = clone(prev)
-            const dst = findBucket(t, toBucketId)
+            // Look up the temp tile by id across the whole tree, not just toBucketId
+            // (the closure's original destination) — insertAlbum may have moved it
+            // to a different bucket while this add was still in flight (BUG-21).
+            const dst = findBucketByItemId(t, tempId)
             if (!dst)
               return t
             const i = dst.albums.findIndex(a => a.itemId === tempId)
@@ -2087,7 +2103,7 @@ ids.push(a.albumId)
               dst.albums.splice(i, 1) // already present elsewhere / no row → drop the temp
             }
             else {
-              dst.albums[i] = item // promote temp → canonical (real itemId)
+              dst.albums[i] = item // promote temp → canonical (real itemId, wherever it now sits)
             }
             return t
           })
