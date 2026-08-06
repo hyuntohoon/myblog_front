@@ -290,6 +290,19 @@ describe('drop semantics', () => {
     expect(mocks.play).toHaveBeenCalledTimes(calls)
     expect(playbackSession.getSnapshot().currentItemId).toBe('a')
   })
+
+  it('appends without interrupting while external playback is sounding (BUG-29)', async () => {
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-EXTERNAL'))
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot()).toMatchObject({ currentItemId: null, external: expect.objectContaining({ spotifyTrackId: 'SPOT-EXTERNAL' }) })
+
+    setQueue([row('a')])
+    await playbackSession.onDropped()
+
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('SPOT-EXTERNAL')
+  })
 })
 
 describe('queue-preserving transitions', () => {
@@ -446,6 +459,20 @@ describe('external playback adoption', () => {
 
     expect(mocks.sendPlayerCommand).toHaveBeenCalledWith({ kind: 'pause' })
     expect(playbackSession.getSnapshot().playing).toBe(false)
+  })
+
+  it.each(['next', 'previous'] as const)('%s sends a raw transport command during external playback instead of no-oping (BUG-27)', async (kind) => {
+    setQueue([])
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-X'))
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot()).toMatchObject({ currentItemId: null, external: expect.objectContaining({ spotifyTrackId: 'SPOT-X' }) })
+
+    const pending = kind === 'next' ? playbackSession.next() : playbackSession.previous()
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+    await pending
+
+    expect(mocks.sendPlayerCommand).toHaveBeenCalledWith({ kind })
+    expect(playbackSession.getSnapshot().busy).toBe(false)
   })
 
   it('keeps the current track when the read is unavailable (transient, not silence)', async () => {
