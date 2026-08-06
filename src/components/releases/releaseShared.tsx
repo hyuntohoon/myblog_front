@@ -15,7 +15,7 @@
  * assembly stays in ReleaseRadar.
  */
 import { prefetchAlbumDetail } from '@lib/albumDetail'
-import { artistHref, openAlbum } from '@lib/entityLinks'
+import { artistHref, openAlbum, openAlbumUnresolved } from '@lib/entityLinks'
 import { resolveDbAlbumId } from '@lib/spotifyCatalog'
 
 /**
@@ -211,11 +211,10 @@ export async function openReleased(ev: ReleaseEventLike): Promise<void> {
 		return
 	const dbId = await resolveDbAlbumId(ev.spotify_album_id!)
 	const year = Number(ev.release_date.slice(0, 4)) || null
-	// dbId ?? spotify_album_id keeps the header-only degrade openable (AlbumOverlay
-	// requires a truthy albumId to open at all) — but a Spotify id is a foreign
-	// namespace for this field, so `unresolved` tells the overlay not to trust it
-	// for anything beyond display (no play, no rating write).
-	openAlbum({ albumId: dbId ?? ev.spotify_album_id!, title: ev.title, artist: ev.artist_name, year, unresolved: dbId == null })
+	const display = { title: ev.title, artist: ev.artist_name, year }
+	openAlbum(dbId ?
+		{ albumId: dbId, ...display } :
+		openAlbumUnresolved(ev.spotify_album_id!, display))
 }
 
 // ── shared row/card pieces ──────────────────────────────────────────────────
