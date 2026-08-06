@@ -30,6 +30,26 @@ export interface OpenAlbumDetail {
   unresolved?: boolean
 }
 
+/** Display fields allowed on a Spotify-only album fallback. */
+export type UnresolvedAlbumDisplay = Omit<OpenAlbumDetail, 'albumId' | 'unresolved'>
+
+/**
+ * Build a display-only album target from a Spotify album id.
+ *
+ * Keeping `albumId` and `unresolved` out of `display` makes the foreign-id
+ * namespace explicit and prevents callers from constructing a mismatched pair.
+ */
+export function openAlbumUnresolved(
+  spotifyAlbumId: string,
+  display: UnresolvedAlbumDisplay,
+): OpenAlbumDetail {
+  return {
+    ...display,
+    albumId: spotifyAlbumId,
+    unresolved: true,
+  }
+}
+
 export const ENT_OPEN_ALBUM = 'ent:open-album'
 
 /** Open the app-wide read-only album detail overlay. No-op server-side. */
