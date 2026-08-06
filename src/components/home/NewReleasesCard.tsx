@@ -31,6 +31,7 @@ import type { components } from '@lib/api.gen'
 import { useEffect, useState } from 'react'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { artistHref, openAlbum } from '@lib/entityLinks'
+import { AlbumCard } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
 import { Cover, SectionTitle } from './ui'
 
@@ -55,6 +56,10 @@ const SCOPED_CSS = `
 .nrl-mod .nrl-artist{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--color-subtle);text-decoration:none}
 .nrl-mod a.nrl-artist:hover{color:var(--color-text);text-decoration:underline}
 .nrl-mod .nrl-date{display:block;margin-top:3px;color:var(--color-faded)}
+.nrl-mod .nrl-card>.album-card{width:100%}
+.nrl-mod .nrl-card .album-card__byline{margin-top:2px}
+.nrl-mod .nrl-card .album-card__secondary{margin-top:3px;color:var(--color-faded)}
+.nrl-mod .nrl-card .album-card__badge{padding:3px 7px;border-radius:999px;background:var(--color-accent);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22)}
 .nrl-mod .nrl-cal{color:var(--color-faded);text-decoration:none;transition:color .15s}
 .nrl-mod .nrl-cal:hover{color:var(--color-accent)}
 .nrl-mod .nrl-cal:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:2px}
@@ -74,7 +79,8 @@ function dateLabel(iso: string): string {
 	return `${pad(m)}.${pad(d)} 발매`
 }
 
-function CardItem({ it }: { it: NewReleaseItem }) {
+/** Stage 4 parity fixture. Kept out of the live render path until Stage 9. */
+export function LegacyCardItem({ it }: { it: NewReleaseItem }) {
 	const primary = it.artists?.[0]
 	const year = Number(it.release_date.slice(0, 4)) || null
 	const others = (it.artists?.length ?? 0) - 1
@@ -103,6 +109,65 @@ function CardItem({ it }: { it: NewReleaseItem }) {
 				<span className="nrl-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }}>{artistLabel}</span>)}
 			<span className="nrl-date mono" style={{ fontSize: 10.5, letterSpacing: '.03em' }}>{dateLabel(it.release_date)}</span>
 		</article>
+	)
+}
+
+/**
+ * Home adapter for the public new-release surface. Feed state and intent
+ * prefetch stay here; the shared card receives display data and only the two
+ * navigation capabilities this read-only surface genuinely owns.
+ */
+export function NewReleaseAlbumCardAdapter({ it }: { it: NewReleaseItem }) {
+	const primary = it.artists?.[0]
+	const year = Number(it.release_date.slice(0, 4)) || null
+	const others = (it.artists?.length ?? 0) - 1
+	const artistLabel = primary ? (others > 0 ? `${primary.name} 외 ${others}` : primary.name) : null
+	const open = () => openAlbum({
+		albumId: it.album_id,
+		title: it.title,
+		artist: primary?.name,
+		cover: it.cover_url,
+		year,
+	})
+
+	return (
+		<div
+			className="nrl-card"
+			title={`${it.title} · 앨범 보기`}
+			onPointerEnter={(event) => {
+				if ((event.target as Element).closest('.album-card__open-hit'))
+					prefetchAlbumDetail(it.album_id)
+			}}
+			onFocusCapture={(event) => {
+				if ((event.target as Element).closest('.album-card__open-hit'))
+					prefetchAlbumDetail(it.album_id)
+			}}
+		>
+			<AlbumCard
+				data={{
+					catalogAlbumId: it.album_id,
+					spotifyAlbumId: null,
+					title: it.title,
+					artist: artistLabel,
+					artistId: primary?.id ?? null,
+					cover: it.cover_url ?? null,
+					// This surface shows the full MM.DD release label below. Keep the
+					// canonical year slot empty so migration does not duplicate it.
+					year: null,
+				}}
+				layout="grid"
+				capabilities={{
+					open,
+					...(primary?.id ? { artistOpen: () => window.location.assign(artistHref(primary.id)) } : {}),
+				}}
+				badge={it.reviewed_artist ?
+					<span className="mono" style={{ fontSize: 10, letterSpacing: '.04em' }} aria-hidden="true">★ 평론</span> :
+					undefined}
+				secondaryLine={(
+					<span className="mono" style={{ fontSize: 10.5, letterSpacing: '.03em' }}>{dateLabel(it.release_date)}</span>
+				)}
+			/>
+		</div>
 	)
 }
 
@@ -146,7 +211,7 @@ export default function NewReleasesCard({ initial }: { initial?: NewReleaseItem[
 					)}
 				/>
 				<HomeStrip>
-					{items.map(it => <CardItem key={it.album_id} it={it} />)}
+					{items.map(it => <NewReleaseAlbumCardAdapter key={it.album_id} it={it} />)}
 				</HomeStrip>
 			</div>
 		</section>
