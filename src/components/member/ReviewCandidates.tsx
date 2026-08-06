@@ -16,11 +16,13 @@ import type { ReviewCandidate } from '../album/reviews.api'
 import { useEffect, useState } from 'react'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
+import { AlbumCard } from '@components/shared/AlbumCard'
 import { fetchMyReviewCandidates } from '../album/reviews.api'
 import { boardTabHref } from './dashboardLinks'
 import { AlbumArt, SectionTitle, Stars } from './ui'
 
-function CandidateCard({ c }: { c: ReviewCandidate }) {
+/** Stage 5 parity fixture. Kept out of the live render path until Stage 9. */
+export function LegacyReviewCandidateCard({ c }: { c: ReviewCandidate }) {
 	const open = () => openAlbum({ albumId: c.album_id, title: c.album_title, cover: c.album_cover_url })
 	return (
 		<article className="panel" style={{ padding: 12, display: 'flex', gap: 12, alignItems: 'center', background: 'var(--color-bg)' }}>
@@ -58,6 +60,49 @@ function CandidateCard({ c }: { c: ReviewCandidate }) {
 			    this is not the unified entry of Step 4, just the album carried through. */}
 			<a href={`/write?album=${encodeURIComponent(c.album_id)}`} className="chip" style={{ flex: '0 0 auto', textDecoration: 'none' }}>평론 쓰기</a>
 		</article>
+	)
+}
+
+const CANDIDATE_CARD_CSS = `
+.review-candidate-card .album-card{--album-card-cover-size:56px}
+.review-candidate-card .album-card__cover{border-radius:3px}
+.review-candidate-card .album-card__title{font-size:17px;line-height:var(--leading-tight)}
+.review-candidate-card .album-card__badge{max-width:calc(100% - 8px);left:4px;bottom:4px;padding:2px 4px;border-radius:3px;background:color-mix(in srgb,var(--color-bg) 88%,transparent);backdrop-filter:blur(3px)}
+.review-candidate-card .album-card__badge .unrated{font-size:9px;color:var(--color-subtle)}
+.review-candidate-card .album-card__secondary{display:flex;align-items:center;gap:10px;min-width:0}
+.review-candidate-card .review-candidate-comment{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-subtle)}
+.review-candidate-card .review-candidate-write{flex:0 0 auto;margin-left:auto;color:inherit;text-decoration:none}
+`
+
+/** Private review-queue adapter. Editorial state stays entirely in the slots. */
+export function ReviewCandidateAlbumCardAdapter({ c }: { c: ReviewCandidate }) {
+	const open = () => openAlbum({ albumId: c.album_id, title: c.album_title, cover: c.album_cover_url })
+	return (
+		<div className="panel review-candidate-card" style={{ padding: 12, background: 'var(--color-bg)' }}>
+			<AlbumCard
+				data={{
+					catalogAlbumId: c.album_id,
+					spotifyAlbumId: null,
+					title: c.album_title,
+					artist: c.artist_name ?? null,
+					artistId: c.artist_id ?? null,
+					cover: c.album_cover_url ?? null,
+					year: null,
+				}}
+				layout="row"
+				capabilities={{
+					open,
+					...(c.artist_id ? { artistOpen: () => window.location.assign(artistHref(c.artist_id!)) } : {}),
+				}}
+				badge={<Stars score={c.rating ?? null} size={11} />}
+				secondaryLine={(
+					<span className="sans" style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', fontSize: 'var(--text-xs)' }}>
+						{c.comment && <span className="review-candidate-comment">{c.comment}</span>}
+						<a href={`/write?album=${encodeURIComponent(c.album_id)}`} className="chip review-candidate-write">평론 쓰기 →</a>
+					</span>
+				)}
+			/>
+		</div>
 	)
 }
 
@@ -107,12 +152,13 @@ export function ReviewCandidates() {
 
 	return (
 		<div style={{ marginBottom: 30 }}>
+			<style>{CANDIDATE_CARD_CSS}</style>
 			<SectionTitle kicker={rows.length > 0 ? `${rows.length}개` : undefined} title="평론 쓸 것" />
 			{rows.length === 0 ?
 				<NoCandidatesYet /> :
 				(
 					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px,1fr))', gap: 12 }}>
-						{rows.map(c => <CandidateCard key={c.album_id} c={c} />)}
+						{rows.map(c => <ReviewCandidateAlbumCardAdapter key={c.album_id} c={c} />)}
 					</div>
 				)}
 		</div>

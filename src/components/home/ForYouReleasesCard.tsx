@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { getAuthHeader, isLoggedIn, refreshAccessToken } from '@lib/auth'
 import { artistHref, openAlbum } from '@lib/entityLinks'
+import { AlbumCard } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
 import { Cover, SectionTitle } from './ui'
 
@@ -48,6 +49,9 @@ const SCOPED_CSS = `
 .fyr-mod .fyr-artist{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--color-subtle);text-decoration:none}
 .fyr-mod a.fyr-artist:hover{color:var(--color-text);text-decoration:underline}
 .fyr-mod .fyr-date{display:block;margin-top:3px;color:var(--color-faded)}
+.fyr-mod .fyr-card>.album-card{width:100%}
+.fyr-mod .fyr-card .album-card__byline{margin-top:2px}
+.fyr-mod .fyr-card .album-card__secondary{margin-top:3px;color:var(--color-faded)}
 .fyr-mod .fyr-radar{color:var(--color-faded);text-decoration:none;transition:color .15s}
 .fyr-mod .fyr-radar:hover{color:var(--color-accent)}
 .fyr-mod .fyr-radar:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:2px}
@@ -68,7 +72,8 @@ function dateLabel(it: ReleaseFeedItem): string {
 	return `${pad(m)}.${pad(d)} 발매${type}`
 }
 
-function CardItem({ it }: { it: ReleaseFeedItem }) {
+/** Stage 5 parity fixture. Kept out of the live render path until Stage 9. */
+export function LegacyForYouReleaseCard({ it }: { it: ReleaseFeedItem }) {
 	const year = Number(it.release_date.slice(0, 4)) || null
 	const cover = (
 		<>
@@ -98,6 +103,61 @@ function CardItem({ it }: { it: ReleaseFeedItem }) {
 			<a className="fyr-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }} href={artistHref(it.artist_id)} title={`${it.artist_name} 아티스트`}>{it.artist_name}</a>
 			<span className="fyr-date mono" style={{ fontSize: 10.5, letterSpacing: '.03em' }}>{dateLabel(it)}</span>
 		</article>
+	)
+}
+
+/**
+ * Home adapter for the member release feed. A Spotify-only/unmatched release
+ * still renders its full identity, but receives no `open` capability: the
+ * album overlay requires a catalog id and the legacy card was intentionally
+ * static in this state.
+ */
+export function ForYouReleaseAlbumCardAdapter({ it }: { it: ReleaseFeedItem }) {
+	const year = Number(it.release_date.slice(0, 4)) || null
+	const open = it.album_id ?
+		() => openAlbum({
+			albumId: it.album_id!,
+			title: it.title,
+			artist: it.artist_name,
+			cover: it.cover_url ?? undefined,
+			year,
+		}) :
+		undefined
+
+	return (
+		<div
+			className="fyr-card"
+			title={open ? `${it.title} · 앨범 보기` : undefined}
+			onPointerEnter={(event) => {
+				if (it.album_id && (event.target as Element).closest('.album-card__open-hit'))
+					prefetchAlbumDetail(it.album_id)
+			}}
+			onFocusCapture={(event) => {
+				if (it.album_id && (event.target as Element).closest('.album-card__open-hit'))
+					prefetchAlbumDetail(it.album_id)
+			}}
+		>
+			<AlbumCard
+				data={{
+					catalogAlbumId: it.album_id ?? null,
+					spotifyAlbumId: it.album_id ? null : it.spotify_album_id ?? null,
+					title: it.title,
+					artist: it.artist_name,
+					artistId: it.artist_id,
+					cover: it.cover_url ?? null,
+					// The full date/type label remains below; avoid a duplicate year.
+					year: null,
+				}}
+				layout="grid"
+				capabilities={{
+					...(open ? { open } : {}),
+					artistOpen: () => window.location.assign(artistHref(it.artist_id)),
+				}}
+				secondaryLine={(
+					<span className="mono" style={{ fontSize: 10.5, letterSpacing: '.03em' }}>{dateLabel(it)}</span>
+				)}
+			/>
+		</div>
 	)
 }
 
@@ -154,7 +214,7 @@ export default function ForYouReleasesCard() {
 					)}
 				/>
 				<HomeStrip>
-					{items.map(it => <CardItem key={`${it.artist_id}-${it.release_date}-${it.title}`} it={it} />)}
+					{items.map(it => <ForYouReleaseAlbumCardAdapter key={`${it.artist_id}-${it.release_date}-${it.title}`} it={it} />)}
 				</HomeStrip>
 			</div>
 		</section>

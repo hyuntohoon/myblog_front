@@ -16,6 +16,7 @@
  */
 import { useEffect, useState } from 'react'
 import { artistHref, openAlbum } from '@lib/entityLinks'
+import { AlbumCard } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
 import { Cover, SectionTitle } from './ui'
 
@@ -50,10 +51,14 @@ const SCOPED_CSS = `
 .otd-mod .otd-open:hover .otd-title{color:var(--color-accent)}
 .otd-mod .otd-artist{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--color-subtle);text-decoration:none}
 .otd-mod .otd-artist:hover{color:var(--color-text);text-decoration:underline}
+.otd-mod .otd-card>.album-card{width:100%}
+.otd-mod .otd-card .album-card__byline{margin-top:2px}
+.otd-mod .otd-card .album-card__badge{padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--color-bg) 82%,transparent);backdrop-filter:blur(3px);color:var(--color-text);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 @media (prefers-reduced-motion:reduce){.otd-mod .otd-cover-wrap{transition:none}}
 `
 
-function Card({ it }: { it: OtdItem }) {
+/** Stage 5 parity fixture. Kept out of the live render path until Stage 9. */
+export function LegacyTodayAlbumCard({ it }: { it: OtdItem }) {
   const primary = it.artists[0]
   const year = Number(it.release_date.slice(0, 4)) || null
   return (
@@ -74,6 +79,34 @@ function Card({ it }: { it: OtdItem }) {
         <a className="otd-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }} href={artistHref(primary.id)} title={`${primary.name} 아티스트`}>{primary.name}</a> :
         <span className="otd-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }}>{primary.name}</span>)}
     </article>
+  )
+}
+
+/** Public on-this-day adapter: open-only, with the anniversary in the badge slot. */
+export function TodayAlbumCardAdapter({ it }: { it: OtdItem }) {
+  const primary = it.artists[0]
+  const year = Number(it.release_date.slice(0, 4)) || null
+  return (
+    <div className="otd-card" title={`${it.title} · 앨범 보기`}>
+      <AlbumCard
+	data={{
+          catalogAlbumId: it.album_id,
+          spotifyAlbumId: null,
+          title: it.title,
+          artist: primary?.name ?? null,
+          artistId: primary?.id ?? null,
+          cover: it.cover_url,
+          // The legacy surface did not print the release year in its byline.
+          year: null,
+        }}
+	layout="grid"
+	capabilities={{
+          open: () => openAlbum({ albumId: it.album_id, title: it.title, artist: primary?.name, cover: it.cover_url, year }),
+          ...(primary?.id ? { artistOpen: () => window.location.assign(artistHref(primary.id)) } : {}),
+        }}
+	badge={<span className="mono" style={{ fontSize: 10.5, letterSpacing: '.02em' }}>{`${it.years_ago}년 전`}</span>}
+      />
+    </div>
   )
 }
 
@@ -149,7 +182,7 @@ export default function TodayAlbumBuckit() {
       {status === 'ready' && data ?
         (
           <HomeStrip>
-            {data.items.map(it => <Card key={it.album_id} it={it} />)}
+            {data.items.map(it => <TodayAlbumCardAdapter key={it.album_id} it={it} />)}
           </HomeStrip>
         ) :
         <Skeleton />}
