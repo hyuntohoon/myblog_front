@@ -1,10 +1,12 @@
 import type { AddItemOutcome, BoardAlbum, BoardBucket } from '@lib/buckets'
+import type { ComponentProps } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
+import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import * as spotifyApi from './spotify.api'
-import { BucketBoard } from './BucketBoard'
+import { BucketAlbumCardAdapter, BucketBoard, LegacyAlbumChip } from './BucketBoard'
 
 vi.mock('@lib/buckets', async importOriginal => ({
 	...(await importOriginal<typeof import('@lib/buckets')>()),
@@ -164,5 +166,119 @@ describe('bucketBoard optimistic album copy', () => {
 		expect(allItems(bucketStore.getTree()).some(a => a.itemId.startsWith('temp:'))).toBe(false)
 		expect(within(bucketRegion('B')).getByTitle(TILE_TITLE)).toBeInTheDocument()
 		expect(within(bucketRegion('A')).queryByTitle(TILE_TITLE)).not.toBeInTheDocument()
+	})
+})
+
+function adapterProps(overrides: Partial<ComponentProps<typeof BucketAlbumCardAdapter>> = {}): ComponentProps<typeof BucketAlbumCardAdapter> {
+	return {
+		album: album('item-1'),
+		bucketId: 'bucket-a',
+		bucketType: 'general',
+		rated: false,
+		score: null,
+		onOpen: vi.fn(),
+		draggingId: null,
+		setDraggingId: vi.fn(),
+		setDragKind: vi.fn(),
+		onTouchActions: vi.fn(),
+		...overrides,
+	}
+}
+
+describe('bucketAlbumCardAdapter', () => {
+	it('projects bucket state onto the canonical card without changing open or touch actions', () => {
+		const onOpen = vi.fn()
+		const onTouchActions = vi.fn()
+		const { container } = render(<BucketAlbumCardAdapter {...adapterProps({ onOpen, onTouchActions })} />)
+
+		expect(container.querySelector('[data-album-card-layout="grid"]')).toBeInTheDocument()
+		expect(screen.getByText(ALBUM_TITLE)).toBeInTheDocument()
+		expect(screen.getByText(ALBUM_ARTIST)).toBeInTheDocument()
+		expect(screen.queryByText('2026')).toBeNull()
+		fireEvent.click(screen.getByRole('button', { name: `${ALBUM_TITLE} — ${ALBUM_ARTIST} 앨범 보기` }))
+		expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({
+			albumId: ALBUM_ID,
+			bucketId: 'bucket-a',
+			itemId: 'item-1',
+			writable: true,
+		}))
+
+		fireEvent.click(screen.getByRole('button', { name: '앨범 동작' }))
+		expect(onTouchActions).toHaveBeenCalledTimes(1)
+		expect(onOpen).toHaveBeenCalledTimes(1)
+	})
+
+	it('injects the existing membership drag payload and clears adapter drag state', () => {
+		const start = vi.fn()
+		const boardStart = vi.fn()
+		const end = vi.fn()
+		const boardEnd = vi.fn()
+		const setDraggingId = vi.fn()
+		const setDragKind = vi.fn()
+		window.addEventListener(PB_DND_START_EVENT, start)
+		window.addEventListener(PB_BOARD_DND_START_EVENT, boardStart)
+		window.addEventListener(PB_DND_END_EVENT, end)
+		window.addEventListener(PB_BOARD_DND_END_EVENT, boardEnd)
+		const { container } = render(<BucketAlbumCardAdapter {...adapterProps({ setDraggingId, setDragKind })} />)
+		const card = container.querySelector('[draggable="true"]')!
+		const dataTransfer = { effectAllowed: 'uninitialized' }
+
+		fireEvent.dragStart(card, { dataTransfer })
+		expect(dataTransfer.effectAllowed).toBe('move')
+		expect((start.mock.calls[0][0] as CustomEvent).detail).toEqual({
+			ref: { entity: 'album', albumId: ALBUM_ID },
+			origin: { kind: 'internal', itemId: 'item-1', fromBucketId: 'bucket-a', itemType: 'album' },
+		})
+		expect((boardStart.mock.calls[0][0] as CustomEvent).detail).toEqual((start.mock.calls[0][0] as CustomEvent).detail)
+		expect(setDraggingId).toHaveBeenCalledWith('item-1')
+		expect(setDragKind).toHaveBeenCalledWith('member')
+
+		fireEvent.dragEnd(card)
+		expect(end).toHaveBeenCalledTimes(1)
+		expect(boardEnd).toHaveBeenCalledTimes(1)
+		expect(setDraggingId).toHaveBeenLastCalledWith(null)
+		expect(setDragKind).toHaveBeenLastCalledWith(null)
+		window.removeEventListener(PB_DND_START_EVENT, start)
+		window.removeEventListener(PB_BOARD_DND_START_EVENT, boardStart)
+		window.removeEventListener(PB_DND_END_EVENT, end)
+		window.removeEventListener(PB_BOARD_DND_END_EVENT, boardEnd)
+	})
+
+	it('keeps the legacy identity and controls as the Stage 9 parity fixture', () => {
+		const legacy = render(<LegacyAlbumChip {...adapterProps()} />)
+		const canonical = render(<BucketAlbumCardAdapter {...adapterProps()} />)
+
+		for (const view of [legacy, canonical]) {
+			expect(within(view.container).getByText(ALBUM_TITLE)).toBeInTheDocument()
+			expect(within(view.container).getByText(ALBUM_ARTIST)).toBeInTheDocument()
+			expect(within(view.container).getByTitle(TILE_TITLE)).toBeInTheDocument()
+			expect(within(view.container).getByRole('button', { name: '앨범 동작' })).toHaveTextContent('⋯')
+			expect(view.container.querySelector('[data-cover-state="fallback"], .cover-ph')).toHaveTextContent('DE')
+		}
+	})
+
+	it('makes a catalog-id-less album inert instead of emitting a mixed-namespace operation', () => {
+		const unresolved = album('item-unresolved')
+		unresolved.albumId = null
+		const { container } = render(<BucketAlbumCardAdapter {...adapterProps({ album: unresolved })} />)
+
+		expect(container.querySelector('[draggable]')).toBeNull()
+		expect(screen.queryByRole('button', { name: /앨범 보기|앨범 동작/ })).toBeNull()
+	})
+
+	it('leaves generalized non-album bucket members on their existing renderer', async () => {
+		const track = album('track-item-1')
+		track.itemType = 'track'
+		track.albumId = null
+		track.trackId = 'track-1'
+		track.title = 'Track member'
+		const target = bucket('bucket-a', 'A')
+		target.albums = [track]
+		bucketStore.setTree([target])
+
+		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		const tile = await screen.findByTitle(`Track member — ${ALBUM_ARTIST}`)
+		expect(tile.querySelector('[data-album-card-layout]')).toBeNull()
+		expect(within(tile).getByText('트랙')).toBeInTheDocument()
 	})
 })
