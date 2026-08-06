@@ -4,10 +4,17 @@
 // render-nothing-then-insert behavior. TodayAlbumBuckit's error path must keep
 // its skeleton (no mid-read collapse); only a confirmed-empty response hides it.
 import type { components } from '@lib/api.gen'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import NewReleasesCard from './NewReleasesCard'
+import { openAlbum } from '@lib/entityLinks'
+import NewReleasesCard, { LegacyCardItem, NewReleaseAlbumCardAdapter } from './NewReleasesCard'
 import TodayAlbumBuckit from './TodayAlbumBuckit'
+
+vi.mock('@lib/albumDetail', () => ({ prefetchAlbumDetail: vi.fn() }))
+vi.mock('@lib/entityLinks', async () => ({
+	...await vi.importActual<typeof import('@lib/entityLinks')>('@lib/entityLinks'),
+	openAlbum: vi.fn(),
+}))
 
 // jsdom has no ResizeObserver; HomeStrip's arrow-state effect needs one.
 beforeEach(() => {
@@ -67,6 +74,47 @@ describe('newReleasesCard (FIX-home-module-cls)', () => {
 		vi.stubGlobal('fetch', vi.fn(() => okJson({ items: [ITEM] })))
 		render(<NewReleasesCard />)
 		expect(await screen.findByText('Set In Stone')).toBeInTheDocument()
+	})
+})
+
+describe('newReleasesCard (album-card Stage 4)', () => {
+	const reviewed = { ...ITEM, reviewed_artist: true } as NewReleaseItem
+
+	it('injects the open-only album capability with the canonical catalog id', () => {
+		vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+		render(<NewReleasesCard initial={[ITEM]} />)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Set In Stone — Rick Ross 앨범 보기' }))
+		expect(openAlbum).toHaveBeenCalledWith({
+			albumId: 'a1',
+			title: 'Set In Stone',
+			artist: 'Rick Ross',
+			cover: null,
+			year: 2026,
+		})
+		expect(screen.queryByLabelText('Set In Stone 재생')).toBeNull()
+		expect(screen.queryByLabelText('Set In Stone 담기')).toBeNull()
+	})
+
+	it('preserves the legacy card visual content while changing the renderer', () => {
+		const legacy = render(<LegacyCardItem it={reviewed} />)
+		const canonical = render(<NewReleaseAlbumCardAdapter it={reviewed} />)
+
+		const signature = (container: HTMLElement) => {
+			const image = within(container).queryByRole('img', { name: 'Set In Stone' })
+			const artist = within(container).getByRole('link', { name: 'Rick Ross' })
+			return {
+				cover: image ? { src: image.getAttribute('src'), alt: image.getAttribute('alt') } : null,
+				fallback: container.querySelector('.cover-ph')?.textContent,
+				title: within(container).getByText('Set In Stone').textContent,
+				artist: { text: artist.textContent, href: artist.getAttribute('href') },
+				date: within(container).getByText('07.17 발매').textContent,
+				badge: within(container).getByText('★ 평론').textContent,
+			}
+		}
+
+		expect(signature(canonical.container)).toEqual(signature(legacy.container))
+		expect(canonical.container.querySelector('[data-album-card-layout="grid"]')).toBeInTheDocument()
 	})
 })
 
