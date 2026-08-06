@@ -90,7 +90,13 @@ function CardItem({ it }: { it: NewReleaseItem }) {
 				onFocus={() => prefetchAlbumDetail(it.album_id)}
 				onClick={() => openAlbum({ albumId: it.album_id, title: it.title, artist: primary?.name, cover: it.cover_url, year })}
 			>
-				<span className="nrl-cover-wrap">
+				{/* Decorative: the album art repeats the title rendered just below, and
+				    when `cover_url` is null Cover falls back to 2-letter initials that
+				    land INSIDE the button as visible text ("RE" + "Reality Awaits"),
+				    which is not contained in aria-label — WCAG 2.5.3 (audit E-4).
+				    Hiding it makes the button's visible text exactly the title, cover
+				    or no cover. */}
+				<span className="nrl-cover-wrap" aria-hidden="true">
 					<Cover label={it.title} src={it.cover_url} square radius={4} />
 					{it.reviewed_artist && (
 						<span className="nrl-rev mono" style={{ fontSize: 10, letterSpacing: '.04em' }} aria-hidden="true">★ 평론</span>

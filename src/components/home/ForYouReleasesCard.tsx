@@ -72,7 +72,10 @@ function CardItem({ it }: { it: ReleaseFeedItem }) {
 	const year = Number(it.release_date.slice(0, 4)) || null
 	const cover = (
 		<>
-			<span className="fyr-cover-wrap">
+			{/* Decorative — same WCAG 2.5.3 case as NewReleasesCard (audit E-4 twin):
+			    a cover-less item renders initials as visible text inside the button,
+			    which aria-label does not contain. */}
+			<span className="fyr-cover-wrap" aria-hidden="true">
 				<Cover label={it.title} src={it.cover_url ?? null} square radius={4} />
 			</span>
 			<span className="fyr-title serif italic" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, color: 'var(--color-text)' }}>{it.title}</span>
