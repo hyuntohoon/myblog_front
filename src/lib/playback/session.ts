@@ -683,17 +683,22 @@ export const playbackSession = {
   /**
    * A drop landed. T2's whole drop rule lives here:
    *   · nothing current  → the first dropped track starts immediately;
-   *   · playing OR PAUSED → append only, never interrupt.
+   *   · playing OR PAUSED, queue-anchored OR external → append only, never interrupt.
    *
    * Paused counts as busy on purpose — resuming someone's paused queue because they
    * dropped a track is the interruption the rule exists to prevent.
+   *
+   * BUG-29: `currentItemId` alone is null for BOTH "nothing playing" and "something
+   * IS playing, just not from our queue" (`external`) — the same distinction
+   * `togglePlay()`/`externalAdvance()` already treat as first-class. A drop landing
+   * during genuinely external playback must append, not interrupt it.
    *
    * The write has ALREADY happened when this is called (write first, play after), so
    * a play failure here cannot roll the write back — and must not try to.
    */
   async onDropped(): Promise<void> {
-    if (current.currentItemId !== null)
-      return // playing or paused → append only
+    if (current.currentItemId !== null || current.external !== null)
+      return // playing or paused, queue-anchored or external → append only
     const rows = queueRows()
     if (rows.length === 0)
       return
@@ -828,11 +833,15 @@ export const playbackSession = {
 
   /** Skip forward. Completion and an explicit skip are the same transition for the queue. */
   async next(): Promise<void> {
+    if (!current.currentItemId && current.external)
+      return externalAdvance('next')
     if (current.isOwner || await gate({ kind: 'next' }))
       await advance('skip')
   },
 
   async previous(): Promise<void> {
+    if (!current.currentItemId && current.external)
+      return externalAdvance('previous')
     const i = rowIndex(current.currentItemId)
     if (i > 0 && (current.isOwner || await gate({ kind: 'previous' })))
       await playFrom(i - 1)
@@ -963,6 +972,21 @@ function scheduleBoundaryCheck(): void {
     if (current.isOwner && current.rung === 'remote')
       void adoptLive()
   }, delay)
+}
+
+/**
+ * BUG-27: next()/previous() during `external` playback (playing, but not anchored
+ * to a queue row — `currentItemId` is null in this state too, same as truly idle).
+ * There is no row to advance to, so the only correct action is the same raw
+ * transport command `togglePlay()` already sends for this state — "anything we can
+ * SEE, we can control" applies to skip exactly as much as it does to pause.
+ */
+async function externalAdvance(cause: 'next' | 'previous'): Promise<void> {
+  if (!current.isOwner && !await gate({ kind: cause }))
+    return
+  patch({ busy: true })
+  const r = await sendPlayerCommand({ kind: cause })
+  authoritativePatch({ busy: false, notice: r.ok ? null : noticeForCommand(r) })
 }
 
 /**
