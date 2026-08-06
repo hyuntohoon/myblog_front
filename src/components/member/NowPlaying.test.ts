@@ -301,4 +301,55 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     // consistency framing elsewhere in this file)
     expect(result.current.moment?.trackId).toBe('own-track')
   })
+
+  it('replays a session update deferred during a setMode call (BUG-22), which has no confirmation read of its own', async () => {
+    let notify: (() => void) | null = null
+    session.subscribe.mockImplementation((cb) => {
+      notify = cb
+      return () => {}
+    })
+    const result = await mountReady()
+    // seed a moment via this card's own path first (Step 3a's onPlaybackChanged)
+    playback.readLivePlayback.mockResolvedValueOnce(livePlaying('own-track'))
+    act(() => {
+      window.dispatchEvent(new CustomEvent(EVT))
+    })
+    await waitFor(() => expect(result.current.moment?.trackId).toBe('own-track'))
+
+    // hold our own setMode call open — unlike playPause/seek/skip, this
+    // dispatches no MYBLOG_PLAYBACK_CHANGED and has no confirmation read, so
+    // nothing else will ever re-check the session state once this resolves
+    let resolveMode: (v: { ok: true }) => void = () => {}
+    const modePromise = new Promise<{ ok: true }>((res) => {
+      resolveMode = res
+    })
+    player.sendPlaybackMode.mockReturnValueOnce(modePromise as never)
+    act(() => {
+      void result.current.setMode({ kind: 'shuffle', on: true })
+    })
+
+    // meanwhile a session update lands claiming a DIFFERENT track
+    session.currentRow.mockReturnValue({ itemId: 'item-2', trackId: 'other-track' } as BoardAlbum)
+    session.getSnapshot.mockReturnValue({
+      ...EMPTY_SESSION_STATE,
+      currentItemId: 'item-2',
+      playing: true,
+      anchor: { ms: 0, wallMs: performance.now() },
+      durationMs: 100_000,
+    })
+    act(() => {
+      notify?.()
+    })
+
+    // deferred — this card's own setMode call is still in flight
+    expect(result.current.moment?.trackId).toBe('own-track')
+
+    // once setMode resolves, the deferred session update must be replayed —
+    // there is no other channel that will ever apply it
+    act(() => {
+      resolveMode({ ok: true })
+    })
+    await waitFor(() => expect(result.current.moment?.trackId).toBe('other-track'))
+    expect(result.current.moment?.durationMs).toBe(100_000)
+  })
 })

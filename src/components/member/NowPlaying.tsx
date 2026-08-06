@@ -263,6 +263,13 @@ export function useNowPlaying() {
    * genuinely external change landing in the same window along with our own echo.
    */
   const localWriteSeqRef = useRef(0)
+  /**
+   * BUG-22 — bumped only in `setMode`'s `finally`, to replay the playbackSession
+   * convergence effect (below) once `setMode`'s busy window closes. See that
+   * effect's own comment for why `setMode` specifically needs this and
+   * `playPause`/`seek`/`skip` do not.
+   */
+  const [controlGen, setControlGen] = useState(0)
   const libraryBusyRef = useRef(false)
   const likedTrackRef = useRef<string | null>(null)
   const liveWonRef = useRef(false)
@@ -557,6 +564,11 @@ export function useNowPlaying() {
     }
     finally {
       controlBusyRef.current = false
+      // BUG-22: unlike playPause/seek/skip, setMode dispatches no confirmation
+      // read of its own — nothing else replays a session update the
+      // convergence effect deferred while this call was in flight. Bump so
+      // that effect re-checks the (already-current) session state now.
+      setControlGen(g => g + 1)
     }
   }
 
@@ -698,8 +710,18 @@ export function useNowPlaying() {
    * (`playPause`/`seek`/`skip`) is that exact race, just crossing components
    * — `playbackSession`'s `localWriteSeq` has no visibility into a write
    * this card made directly via `sendPlayerCommand`, so it cannot guard
-   * against it on its own. Deferring here is safe: this card's own confirm
-   * read is already in flight regardless and supersedes it a moment later.
+   * against it on its own. Deferring here is safe for `playPause`/`seek`/
+   * `skip` specifically: this card's own confirm read is already in flight
+   * regardless and supersedes it a moment later.
+   *
+   * `setMode` (shuffle/repeat/volume) is the one control call that claim does
+   * NOT cover (BUG-22) — it dispatches no `MYBLOG_PLAYBACK_CHANGED` and has no
+   * confirmation read of its own, so a session update deferred during a
+   * `setMode` call had nothing to ever replay it. `controlGen` closes that:
+   * bumped only in `setMode`'s `finally`, it re-runs this effect once that
+   * call's busy window closes, re-checking the (already-current, since
+   * `sessionState` is a live subscription) session state. `playPause`/`seek`/
+   * `skip` do not bump it — their existing confirm-read path is unchanged.
    */
   useEffect(() => {
     if (!sessionReady || controlBusyRef.current)
@@ -740,7 +762,7 @@ export function useNowPlaying() {
     }
     setPaused(!sessionState.playing)
     loadLikedState(trackId)
-  }, [sessionReady, sessionState.currentItemId, sessionState.external, sessionState.anchor, sessionState.playing, sessionState.durationMs])
+  }, [sessionReady, sessionState.currentItemId, sessionState.external, sessionState.anchor, sessionState.playing, sessionState.durationMs, controlGen])
 
   /**
    * OS media integration (member-player Step 5) — **rung 2 only**.
