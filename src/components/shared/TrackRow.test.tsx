@@ -1,8 +1,9 @@
 // ARCH-entity-interaction-v2 Step 5 (E4) — the play/add/drag slots and the
 // whole-row `openLyrics` identity action (memo-trow's adopted shape). Pins:
 // (1) `open` keeps its existing identity-only-button behavior unchanged, (2)
-// `openLyrics` makes the WHOLE row the click/keyboard target and disappears
-// to a plain row when omitted, (3) `play`/`add` are plain callback buttons,
+// `openLyrics` makes the WHOLE row the click/keyboard target while it is the
+// sole control, but becomes an identity-cell sibling when trailing controls
+// exist, (3) `play`/`add` are plain callback buttons,
 // (4) `drag` dispatches both the tray→board and board→tray bridge events on
 // dragstart, and clears them on dragend — the same wire every existing drag
 // source uses, so a future consumer needs no extra plumbing.
@@ -58,6 +59,26 @@ describe('trackRow — play/add', () => {
 		fireEvent.click(screen.getByLabelText('Track A 담기'))
 		expect(play).toHaveBeenCalledTimes(1)
 		expect(add).toHaveBeenCalledTimes(1)
+	})
+
+	it('keeps trailing actions separate from a whole-row lyrics action', () => {
+		const openLyrics = vi.fn()
+		const play = vi.fn()
+		const add = vi.fn()
+		render(<TrackRow title="Track A" actions={{ openLyrics: { fire: openLyrics, title: '가사 보기' }, play, add }} />)
+
+		const playButton = screen.getByLabelText('Track A 재생')
+		const addButton = screen.getByLabelText('Track A 담기')
+		const lyricsButton = screen.getByTitle('가사 보기')
+		expect(addButton.parentElement?.closest('[role="button"]')).toBeNull()
+		fireEvent.click(playButton)
+		fireEvent.click(addButton)
+		fireEvent.keyDown(addButton, { key: 'Enter' })
+		fireEvent.click(lyricsButton)
+
+		expect(play).toHaveBeenCalledTimes(1)
+		expect(add).toHaveBeenCalledTimes(1)
+		expect(openLyrics).toHaveBeenCalledTimes(1)
 	})
 
 	it('omits play/add buttons when not granted', () => {

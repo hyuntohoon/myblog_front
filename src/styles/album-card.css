@@ -96,11 +96,17 @@
 
 .album-card__title,
 .album-card__byline,
+.album-card__eyebrow,
 .album-card__secondary {
 	display: block;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.album-card__eyebrow {
+	display: block;
+	margin-bottom: 7px;
 }
 
 .album-card__title {

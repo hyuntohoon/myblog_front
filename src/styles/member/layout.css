@@ -205,6 +205,39 @@
 .size-l .memo-cover-wrap { max-width: 200px; }
 .size-xl .memo-cover-wrap { max-width: 240px; }
 
+/* ARCH-album-card-contract-and-composition Stage 7 — Memo owns dimensions
+   and contextual metadata; the canonical card owns cover/title/artist
+   rendering. The legacy .memo-cover-wrap rules stay through Stage 9 as the
+   parity fixture and rollback path. */
+.memo-album-card { width: 100%; }
+.memo-album-card .album-card--grid { gap: 12px; }
+.memo-album-card .album-card__cover { max-width: 180px; }
+.size-l .memo-album-card .album-card__cover { max-width: 200px; }
+.size-xl .memo-album-card .album-card__cover { max-width: 240px; }
+.memo-album-card .album-card__title {
+  font-size: 25px;
+  line-height: 1.12;
+  letter-spacing: -.01em;
+  white-space: normal;
+}
+.memo-album-card .album-card__byline {
+  margin-top: 5px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+.memo-album-card .album-card__secondary { overflow: visible; }
+.memo-album-card__context { display: flex; flex-direction: column; align-items: flex-start; }
+.memo-album-card__meta {
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: .04em;
+  line-height: 1.5;
+  color: var(--color-faded);
+}
+.memo-album-card__rating { margin-top: 12px; }
+.memo-album-card__tags { margin-top: 14px; }
+
 .memo-lg-grid {
   display: grid;
   grid-template-columns: 286px minmax(0, 1fr);
@@ -261,6 +294,9 @@
   .memo-cover-wrap,
   .size-l .memo-cover-wrap,
   .size-xl .memo-cover-wrap { max-width: 116px; }
+  .memo-album-card .album-card__cover,
+  .size-l .memo-album-card .album-card__cover,
+  .size-xl .memo-album-card .album-card__cover { max-width: 116px; }
   .memo-tracks { max-height: 120px; }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -53,11 +53,11 @@ export interface TrackRowActions {
 	/** Identity cell → open the track's album. Mutually exclusive with `openLyrics`. */
 	open?: TrackRowOpen
 	/**
-	 * View lyrics instead of opening the album — memo window's shape: since a
-	 * granted row has nothing else to click, the WHOLE row (`no` + identity +
-	 * `cells`, not just the identity cell) becomes the button (`role="button"`
-	 * + keyboard support on the row element, not a nested `<button>`). Omit
-	 * entirely for a track with nothing to open — that renders a plain,
+	 * View lyrics instead of opening the album — memo window's shape. When it
+	 * is the only control the WHOLE row (`no` + identity + `cells`) becomes the
+	 * button (`role="button"` + keyboard support). When trailing controls are
+	 * granted, lyrics moves to the identity cell so native buttons never nest.
+	 * Omit entirely for a track with nothing to open — that renders a plain,
 	 * non-interactive row, same as omitting `open`. Mutually exclusive with
 	 * `open` — a row grants one identity action, never both.
 	 */
@@ -117,19 +117,21 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 
 	// `open` wraps ONLY the identity cell (cover + text) in a button — one tab
 	// stop, not two separate cover/title buttons. `openLyrics` (memo-trow's
-	// shape) instead makes the WHOLE ROW the click target, since there is
-	// nothing else on that row to keep separate; see the whole-row handling
-	// below. The two are mutually exclusive — `open` wins if a caller somehow
-	// grants both.
-	const wholeRowLyrics = !actions.open && actions.openLyrics ? actions.openLyrics : undefined
-	const identity = actions.open ?
+	// shape) makes the WHOLE ROW the target only while it is the row's sole
+	// control. Once play/add/another trailing control is granted, lyrics moves
+	// to the identity cell so no interactive control is nested inside a row
+	// with role=button. `open` still wins if both identity actions are supplied.
+	const hasTrailingControl = Boolean(actions.lyrics || actions.play || actions.add || trailing)
+	const wholeRowLyrics = !actions.open && actions.openLyrics && !hasTrailingControl ? actions.openLyrics : undefined
+	const identityAction = actions.open ?? (!actions.open && actions.openLyrics && hasTrailingControl ? actions.openLyrics : undefined)
+	const identity = identityAction ?
 		(
 			<button
 				type="button"
-				onClick={actions.open.fire}
-				disabled={actions.open.disabled}
-				title={actions.open.disabled ? actions.open.disabledTitle : actions.open.title}
-				style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, textAlign: 'left', padding: 0, border: 'none', background: 'none', cursor: actions.open.disabled ? 'default' : 'pointer' }}
+				onClick={identityAction.fire}
+				disabled={identityAction.disabled}
+				title={identityAction.disabled ? identityAction.disabledTitle : identityAction.title}
+				style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, textAlign: 'left', padding: 0, border: 'none', background: 'none', cursor: identityAction.disabled ? 'default' : 'pointer' }}
 			>
 				{identityInner}
 			</button>
@@ -178,7 +180,11 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 				<button
 					type="button"
 					className="btn mono"
-					onClick={actions.lyrics}
+					onClick={(event) => {
+						event.stopPropagation()
+						actions.lyrics?.()
+					}}
+					onKeyDown={event => event.stopPropagation()}
 					aria-label={`${title} 가사 보기`}
 					style={trailingBtnStyle}
 				>
@@ -189,7 +195,11 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 				<button
 					type="button"
 					className="btn mono"
-					onClick={actions.play}
+					onClick={(event) => {
+						event.stopPropagation()
+						actions.play?.()
+					}}
+					onKeyDown={event => event.stopPropagation()}
 					aria-label={`${title} 재생`}
 					style={trailingBtnStyle}
 				>
@@ -200,7 +210,11 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 				<button
 					type="button"
 					className="btn mono"
-					onClick={actions.add}
+					onClick={(event) => {
+						event.stopPropagation()
+						actions.add?.()
+					}}
+					onKeyDown={event => event.stopPropagation()}
 					aria-label={`${title} 담기`}
 					style={trailingBtnStyle}
 				>

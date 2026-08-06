@@ -22,6 +22,7 @@ import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, a
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { playbackSession } from '@lib/playback/session'
 import { writePocketIntent } from '@lib/pocketBuckit/intent'
+import { useDismissable } from '@lib/useDismissable'
 
 // What to add: an album (default, back-compat), a track (FEAT-pocket-buckit
 // Step 6), or — member authoring follow-on — a review / an analysis snapshot.
@@ -74,6 +75,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
   // starts in the default collection mode.
   const [asQueue, setAsQueue] = useState(false)
   const busy = useRef(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Flatten the union to primitives so `open`/`pick` stay referentially stable
@@ -139,6 +141,11 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
     setSheetOpen(false)
     onResolved?.()
   }, [onResolved])
+
+  // The picker is often opened above another dismissable (album detail,
+  // lyrics, etc.). Register the portal as the top layer so focus and Escape
+  // stay in this sheet until it closes instead of acting on the host behind it.
+  useDismissable(sheetOpen && tree !== null, cancel, sheetRef)
 
   const pick = useCallback(async (bucketId: string) => {
     if (busy.current)
@@ -211,7 +218,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
 
       {sheetOpen && tree && createPortal(
         <div style={SCRIM} onClick={cancel} role="presentation">
-          <div style={SHEET} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="버킷 선택">
+          <div ref={sheetRef} style={SHEET} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="버킷 선택">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8, padding: '0 4px' }}>
               <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--color-text)' }}>
                 «
