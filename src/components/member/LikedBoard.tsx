@@ -340,7 +340,7 @@ function Card({ row, onOpen, onPromote }: {
 }
 
 /** Real cover image when available, else the editorial letter tile. */
-function LkCover({ label, cover, size = 42, square = false }: { label: string, cover: string | null, size?: number, square?: boolean }) {
+export function LkCover({ label, cover, size = 42, square = false }: { label: string, cover: string | null, size?: number, square?: boolean }) {
 	if (cover) {
 		const dim = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }
 		return <img src={cover} alt={label} loading="lazy" decoding="async" style={{ ...dim, objectFit: 'cover', borderRadius: square ? 4 : 3, display: 'block', border: '1px solid var(--color-border)' }} />

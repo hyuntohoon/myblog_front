@@ -1,0 +1,201 @@
+/* ARCH-album-card-contract-and-composition Stage 3.
+   Domain-neutral album presentation; surface adapters own dimensions outside
+   the card, contextual slot contents, and every action callback. */
+.album-card {
+	position: relative;
+	min-width: 0;
+	color: var(--color-text);
+}
+
+.album-card--grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 9px;
+}
+
+.album-card--row {
+	display: grid;
+	grid-template-columns: var(--album-card-cover-size, 72px) minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 12px;
+}
+
+.album-card__open-hit {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	width: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+
+.album-card__open-hit:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 3px;
+	border-radius: 6px;
+}
+
+.album-card__cover {
+	width: 100%;
+	aspect-ratio: 1 / 1;
+	border-radius: 4px;
+	transition: transform 0.18s;
+}
+
+.album-card--row .album-card__cover {
+	width: var(--album-card-cover-size, 72px);
+	height: var(--album-card-cover-size, 72px);
+	grid-row: 1 / span 2;
+}
+
+.album-card:has(.album-card__open-hit:hover) .album-card__cover {
+	transform: translateY(-3px);
+}
+
+.album-card--row:has(.album-card__open-hit:hover) .album-card__cover {
+	transform: translateX(2px);
+}
+
+.album-card__cover .cover-ph {
+	font-size: clamp(20px, 4vw, 40px);
+}
+
+.album-card__badge,
+.album-card__artist,
+.album-card__secondary,
+.album-card__actions {
+	position: relative;
+	z-index: 2;
+}
+
+/* Context slots are display content by default, so their empty area remains
+   part of the whole-card open target. A surface may still place a deliberate
+   link/button in a slot; that control rises above the open hit-area. */
+.album-card__badge,
+.album-card__secondary {
+	pointer-events: none;
+}
+
+.album-card__badge :is(a, button, [role='button']),
+.album-card__secondary :is(a, button, [role='button']) {
+	pointer-events: auto;
+}
+
+.album-card__badge {
+	position: absolute;
+	left: 7px;
+	bottom: 7px;
+	max-width: calc(100% - 14px);
+}
+
+.album-card__meta {
+	min-width: 0;
+}
+
+.album-card__title,
+.album-card__byline,
+.album-card__secondary {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.album-card__title {
+	font-size: 15.5px;
+	font-weight: 500;
+	line-height: 1.15;
+	white-space: nowrap;
+	transition: color 0.16s;
+}
+
+.album-card:has(.album-card__open-hit:hover) .album-card__title {
+	color: var(--color-accent);
+}
+
+.album-card__byline {
+	margin-top: 3px;
+	font-size: 11.5px;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	color: var(--color-subtle);
+}
+
+.album-card__artist {
+	display: inline-block;
+	max-width: 100%;
+	color: inherit;
+	font: inherit;
+	letter-spacing: inherit;
+	text-decoration: none;
+}
+
+.album-card__artist:hover {
+	color: var(--color-text);
+	text-decoration: underline;
+}
+
+.album-card__artist:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+
+.album-card__secondary {
+	margin-top: 4px;
+}
+
+.album-card__actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	justify-self: end;
+}
+
+.album-card--grid .album-card__actions {
+	justify-self: start;
+}
+
+.album-card__action {
+	padding: 3px 9px;
+	font-size: 10.5px;
+	letter-spacing: 0.06em;
+	border-radius: 3px;
+}
+
+.album-card__cover--loading {
+	border-color: transparent;
+}
+
+.album-card__skeleton-cover,
+.album-card__skeleton-line {
+	display: block;
+	border-radius: 3px;
+	background: var(--color-border-soft);
+}
+
+.album-card__skeleton-cover {
+	position: absolute;
+	inset: 0;
+}
+
+.album-card__skeleton-line {
+	height: 0.78em;
+}
+
+.album-card__skeleton-line--title {
+	width: 78%;
+}
+
+.album-card__skeleton-line--artist {
+	width: 52%;
+	margin-top: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.album-card__cover,
+	.album-card__title {
+		transition: none;
+	}
+}
