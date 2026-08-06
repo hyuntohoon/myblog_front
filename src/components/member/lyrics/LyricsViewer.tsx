@@ -88,8 +88,9 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } fro
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import type { QueueEntry, QueueResult } from './queue.api'
 import type { JumpContext } from './queueJump'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
+import { playbackSession } from '@lib/playback/session'
 import { MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
@@ -184,9 +185,12 @@ const PLAY_STATE_GUARD_MS = JUMP_CONFIRM_TRIES * JUMP_CONFIRM_GAP_MS
  * What triggered a re-anchor (FEAT-lyrics-sync-precision Step 2). Recorded with
  * the residual so the accuracy series can be read per trigger — a `visibility`
  * residual means something happened off-tab, a `command` residual is our own
- * transport round-trip, a `manual` one is the owner noticing drift.
+ * transport round-trip, a `manual` one is the owner noticing drift. `session`
+ * (ARCH-entity-interaction-domain-audit Step 3c) means `playbackSession` had a
+ * fresher anchor for this same track and the viewer adopted it without a read
+ * of its own.
  */
-type ResyncSource = 'manual' | 'command' | 'visibility' | 'end'
+type ResyncSource = 'manual' | 'command' | 'visibility' | 'end' | 'session'
 
 type Phase =
 	| { k: 'loading' } |
@@ -481,6 +485,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       live = false
     }
   }, [view, trackId, queueSeq])
+
+  // ARCH-entity-interaction-domain-audit Step 3c — a live subscription to the
+  // playback session, so this viewer can adopt its anchor when the session
+  // confirms it is describing the SAME track (see the effect below). Read
+  // unconditionally; the debug/static entries simply never match anything
+  // (`trackId` there is not a track the session's queue or external read would
+  // ever name), so the subscription is harmless dead weight for them rather
+  // than something worth gating behind `canRefresh`.
+  const sessionState = useSyncExternalStore(playbackSession.subscribe, playbackSession.getSnapshot, playbackSession.getServerSnapshot)
 
   // Clock-estimate anchor (shared idiom in @lib/clockEstimate since
   // member-player Step 3): position `ms` captured at wall instant `wallMs`.
@@ -1016,6 +1029,49 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [canRefresh])
+
+  /**
+   * ARCH-entity-interaction-domain-audit Step 3c — adopt `playbackSession`'s
+   * anchor when it is CONFIRMED the same track, additive to everything above.
+   * This never replaces the viewer's own read: that stays the only source
+   * whenever `playbackSession` cannot confirm the match (a different tab's
+   * playback the session has not adopted yet, no session at all, a cold URI
+   * cache making `currentSpotifyTrackId()` unable to name the queue-matched
+   * row). When it CAN confirm the match, the session's write is frequently
+   * fresher than a fresh round-trip — a local optimistic write (pause freeze,
+   * `playFrom`'s own authoritative patch) or another surface's already-landed
+   * read — the same class of gain Step 3a/3b shipped for `NowPlaying`.
+   *
+   * Guarded by the SAME refs `refresh()` guards itself with, and for the same
+   * reason: this viewer's OWN ⏸/▶/⏭/⏮ go through `sendPlayerCommand` directly
+   * (not through `playbackSession`), so `playbackSession`'s own re-adoption of
+   * the resulting `MYBLOG_PLAYBACK_CHANGED` is racing the identical ack→apply
+   * lag `awaitingPlayState`/`awaitingTrack`/`awaitingChangeFrom` exist to
+   * survive — session has no visibility into a command THIS component issued,
+   * so it cannot guard against it on its own. Deferring here is safe: the
+   * guarded window is short and this viewer's own confirmation read (or the
+   * next session update once the guard clears) supersedes it a moment later.
+   *
+   * Keyed on the session's own anchor/playing/durationMs (not on `trackId`):
+   * re-checking only when the SESSION actually wrote something new means a
+   * local track swap can never re-apply a stale, merely-coincidentally-
+   * matching session anchor left over from an earlier session update.
+   */
+  useEffect(() => {
+    if (sessionState.anchor == null)
+      return
+    if (playbackSession.currentSpotifyTrackId() !== trackId)
+      return
+    if (awaitingTrack.current !== null || awaitingChangeFrom.current !== null)
+      return
+    const guard = awaitingPlayState.current
+    if (guard && performance.now() <= guard.untilMs)
+      return
+    logResidual('session', sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing ? 'playing' : 'paused')
+    setDurationMs(sessionState.durationMs)
+    setPlaying(sessionState.playing)
+    applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs)
+  }, [sessionState.anchor, sessionState.playing, sessionState.durationMs])
 
   const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
   const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])

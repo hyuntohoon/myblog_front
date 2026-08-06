@@ -147,6 +147,29 @@ function setQueue(items: BoardAlbum[]): void {
   bucketStore.setTree([bucket(server)])
 }
 
+/** A `readLivePlayback()` result naming a live/held track, shared across describes. */
+function liveTrack(trackId: string, state: 'playing' | 'paused' = 'playing') {
+  return {
+    state,
+    trackId,
+    progressMs: 42_000,
+    readAtMs: 1_000,
+    durationMs: 240_000,
+    track: 'Paranoid Android',
+    artist: 'Radiohead',
+    artists: [],
+    album: 'OK Computer',
+    albumSpotifyId: null,
+    albumCoverUrl: null,
+    deviceName: '거실 스피커',
+    shuffle: null,
+    repeat: null,
+    volumePercent: null,
+    contextUri: null,
+    contextType: null,
+  }
+}
+
 function queueTrackIds(): (string | null)[] {
   return playbackQueue().items.map(item => item.trackId)
 }
@@ -352,26 +375,6 @@ describe('queue-preserving transitions', () => {
 // itself, so an album played from anywhere else was invisible here and the
 // transport beside it was dead. These cover the fix.
 describe('external playback adoption', () => {
-  const liveTrack = (trackId: string, state: 'playing' | 'paused' = 'playing') => ({
-    state,
-    trackId,
-    progressMs: 42_000,
-    readAtMs: 1_000,
-    durationMs: 240_000,
-    track: 'Paranoid Android',
-    artist: 'Radiohead',
-    artists: [],
-    album: 'OK Computer',
-    albumSpotifyId: null,
-    albumCoverUrl: null,
-    deviceName: '거실 스피커',
-    shuffle: null,
-    repeat: null,
-    volumePercent: null,
-    contextUri: null,
-    contextType: null,
-  })
-
   it('matches live playback to a queue row when the track is ours', async () => {
     setQueue([row('a'), row('b')])
     // `cachedUri` is what the matcher consults — mirror how uris.ts would have it.
@@ -455,6 +458,49 @@ describe('external playback adoption', () => {
 
     expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('SPOT-X')
     expect(playbackSession.getSnapshot().playing).toBe(true)
+  })
+})
+
+// ARCH-entity-interaction-domain-audit Step 3c — the reverse lookup a consumer
+// (the lyrics viewer) uses to confirm the session's anchor is for the SAME
+// track before trusting it.
+describe('currentSpotifyTrackId', () => {
+  it('returns null when nothing is playing', () => {
+    setQueue([])
+    expect(playbackSession.currentSpotifyTrackId()).toBeNull()
+  })
+
+  it('reads straight off `external` when playback matched no queue row', async () => {
+    setQueue([])
+    mocks.cachedUri.mockReturnValue(null)
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-UNKNOWN'))
+    await playbackSession.syncFromLive()
+
+    expect(playbackSession.currentSpotifyTrackId()).toBe('SPOT-UNKNOWN')
+  })
+
+  it('reverse-looks-up a queue-matched row through the SAME cache rowForSpotifyTrack used forward', async () => {
+    setQueue([row('a'), row('b')])
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-b' ? 'spotify:track:SPOT-B' : null))
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-B'))
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b') // matched, not external
+
+    expect(playbackSession.currentSpotifyTrackId()).toBe('SPOT-B')
+  })
+
+  it('is null, not a request, when the matched row\'s URI is not cached yet', async () => {
+    setQueue([row('a')])
+    // Matches via a DIFFERENT mechanism than the URI cache (readLivePlayback's
+    // own trackId), so the row can be "current" while its cache entry is cold —
+    // exactly the case `cachedUri` (never `resolveUri`) is built to just miss.
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-A'))
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+
+    mocks.cachedUri.mockReturnValue(undefined) // cache evicted/never warmed
+    expect(playbackSession.currentSpotifyTrackId()).toBeNull()
   })
 })
 
