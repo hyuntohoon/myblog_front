@@ -15,9 +15,10 @@
 //             with an "이미 발행됨" banner → 평론 보기 (/review/{slug}) + 수정 (/write?id).
 import type { DockState } from './lyrics/DockableLyricsSheet'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
-import type { AlbumDetail as AlbumDetailResp, MusicArtist } from '@lib/albumDetail'
+import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { OnOpenLyrics } from '../album/AlbumDetailView'
+import type { TrackRowActions } from '../shared/TrackRow'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { updateBucketItemMemo } from '@lib/buckets'
@@ -30,6 +31,7 @@ import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { AlbumDetailView, Header } from '../album/AlbumDetailView'
+import { AlbumCard } from '../shared/AlbumCard'
 import { GenreLink } from '../shared/GenreLink'
 import { TrackRow } from '../shared/TrackRow'
 import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
@@ -414,6 +416,141 @@ function uniqueGenres(artists: MusicArtist[]): string[] {
   return [...seen].slice(0, 4)
 }
 
+type PairedMemoTrackActions = TrackRowActions & {
+  add: NonNullable<TrackRowActions['add']>
+  drag: NonNullable<TrackRowActions['drag']>
+}
+
+function memoTrackActions({ track, album, cover, onOpenLyrics, onAddTrack }: {
+  track: MusicTrack
+  album: DetailTarget
+  cover: string | null | undefined
+  onOpenLyrics: OnOpenLyrics
+  onAddTrack: (trackId: string, title: string) => void
+}): PairedMemoTrackActions {
+  const openLyrics: Pick<TrackRowActions, 'openLyrics'> = {}
+  if (track.spotify_id) {
+    openLyrics.openLyrics = {
+      fire: () => onOpenLyrics(track.spotify_id!, { track: track.title, artist: album.artist, album: album.album, cover }),
+      title: '가사 보기',
+    }
+  }
+  return {
+    ...openLyrics,
+    add: () => onAddTrack(track.id, track.title),
+    drag: { ref: memberRef({ trackId: track.id, albumId: album.albumId ?? null }), origin: { kind: 'external', copies: true } },
+  }
+}
+
+/** Stage 9 parity fixture: the pre-canonical MemoWindow album header. */
+export function LegacyMemoAlbumHeader({ album, data }: { album: DetailTarget, data: AlbumDetailResp | null }) {
+  const a = data?.album
+  const meta: string[] = []
+  if (a?.album_type)
+    meta.push(a.album_type.toUpperCase())
+  if (a?.release_date)
+    meta.push(a.release_date)
+  if (a?.label)
+    meta.push(a.label)
+  const tags = uniqueGenres(data?.artists ?? [])
+
+  return (
+    <>
+      <div className="memo-cover-wrap"><AlbumArt url={a?.cover_url ?? album.cover} label={album.album} size={220} /></div>
+      <div className="kicker" style={{ marginBottom: 7 }}>앨범</div>
+      <h2 className="serif italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.12, letterSpacing: '-.01em', margin: 0 }}>{album.album}</h2>
+      {album.artist && <div className="sans" style={{ fontSize: 14, color: 'var(--color-subtle)', marginTop: 5 }}>{album.artist}</div>}
+      {meta.length > 0 && <div className="mono" style={{ fontSize: 11, letterSpacing: '.04em', color: 'var(--color-faded)', marginTop: 8, lineHeight: 1.5 }}>{meta.join(' · ')}</div>}
+      <div style={{ marginTop: 12 }}><span className="unrated">미평가</span></div>
+      {tags.length > 0 && (
+        <div className="memo-tags" style={{ marginTop: 14 }}>
+          {tags.map(t => <span key={t} className="memo-tag">{t}</span>)}
+        </div>
+      )}
+    </>
+  )
+}
+
+/**
+ * Memo-owned adapter. AlbumCard receives display data only; the paired track
+ * add/drag operations remain closed over the MemoWindow host. The
+ * PairedMemoTrackActions return type makes Rule #14 a compile-time invariant
+ * at this adapter boundary instead of another call-site convention.
+ */
+export function MemoAlbumCardAdapter({ album, data, onOpenLyrics, onAddTrack }: {
+  album: DetailTarget
+  data: AlbumDetailResp | null
+  onOpenLyrics: OnOpenLyrics
+  onAddTrack: (trackId: string, title: string) => void
+}) {
+  const a = data?.album
+  const meta: string[] = []
+  if (a?.album_type)
+    meta.push(a.album_type.toUpperCase())
+  if (a?.release_date)
+    meta.push(a.release_date)
+  if (a?.label)
+    meta.push(a.label)
+  const tags = uniqueGenres(data?.artists ?? [])
+  const cover = a?.cover_url ?? album.cover ?? null
+
+  return (
+    <>
+      <div className="memo-album-card">
+        <AlbumCard
+	data={{
+            catalogAlbumId: album.albumId ?? null,
+            spotifyAlbumId: null,
+            title: album.album,
+            artist: album.artist ?? null,
+            artistId: data?.artists[0]?.id ?? null,
+            cover,
+            // Keep the full release date in the contextual line, as before.
+            year: null,
+          }}
+	layout="grid"
+	eyebrow={<span className="kicker">앨범</span>}
+	secondaryLine={(
+            <span className="memo-album-card__context">
+              {meta.length > 0 && <span className="memo-album-card__meta mono">{meta.join(' · ')}</span>}
+              <span className="memo-album-card__rating"><span className="unrated">미평가</span></span>
+              {tags.length > 0 && (
+                <span className="memo-tags memo-album-card__tags">
+                  {tags.map(t => <span key={t} className="memo-tag">{t}</span>)}
+                </span>
+              )}
+            </span>
+          )}
+        />
+      </div>
+
+      {data && data.tracks.length > 0 && (
+        <>
+          <div style={{ margin: '16px 0 9px', borderTop: '1px solid var(--color-border-soft)' }} />
+          <div className="meta" style={{ letterSpacing: '.12em' }}>{`트랙리스트 · ${data.tracks.length}곡`}</div>
+          <div className="memo-tracks">
+            {data.tracks.map((track, i) => {
+              const len = track.duration_sec != null ? fmtTime(track.duration_sec) : ''
+              const no = String(track.track_no ?? 0).padStart(2, '0')
+              return (
+                <TrackRow
+	key={track.id}
+	no={no}
+	title={track.title}
+	cells={len ? <span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{len}</span> : undefined}
+	actions={memoTrackActions({ track, album, cover, onOpenLyrics, onAddTrack })}
+	gridTemplate="22px minmax(0,1fr) auto auto"
+	style={{ padding: '6px 2px', borderBottom: i === data.tracks.length - 1 ? 'none' : '1px solid var(--color-border-soft)' }}
+                />
+              )
+            })}
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
 function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore. autoFocus off so MemoBody's own autoFocus
@@ -475,16 +612,12 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
 
   const { text, grow, save, onText, onToggle } = useBucketMemo(album, onMemoSaved)
   const empty = text.trim().length === 0
-
-  const a = data?.album
-  const meta: string[] = []
-  if (a?.album_type)
-    meta.push(a.album_type.toUpperCase())
-  if (a?.release_date)
-    meta.push(a.release_date)
-  if (a?.label)
-    meta.push(a.label)
-  const tags = uniqueGenres(data?.artists ?? [])
+  const addSeq = useRef(0)
+  const [pendingAdd, setPendingAdd] = useState<{ trackId: string, title: string, seq: number } | null>(null)
+  const onAddTrack = useCallback((trackId: string, title: string) => {
+    addSeq.current += 1
+    setPendingAdd({ trackId, title, seq: addSeq.current })
+  }, [])
   const dragPassthrough = useDragScrimPassthrough()
 
   return (
@@ -500,7 +633,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
 	onClick={e => e.stopPropagation()}
 	role="dialog"
 	aria-modal="true"
-	aria-labelledby="memo-dialog-title"
+	aria-label={album.album}
 	style={{ maxHeight: '92vh', overflowY: 'auto', animation: 'lf-rise .26s both', pointerEvents: 'auto' }}
       >
        <div className="memo-dock-main">
@@ -518,51 +651,7 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
         <div className="memo-lg-grid">
           {/* left — album identity (the subject of the memo, not an aside) */}
           <div className="memo-info">
-            <div className="memo-cover-wrap"><AlbumArt url={a?.cover_url ?? album.cover} label={album.album} size={220} /></div>
-            <div className="kicker" style={{ marginBottom: 7 }}>앨범</div>
-            <h2 id="memo-dialog-title" className="serif italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.12, letterSpacing: '-.01em', margin: 0 }}>{album.album}</h2>
-            {album.artist && <div className="sans" style={{ fontSize: 14, color: 'var(--color-subtle)', marginTop: 5 }}>{album.artist}</div>}
-            {meta.length > 0 && <div className="mono" style={{ fontSize: 11, letterSpacing: '.04em', color: 'var(--color-faded)', marginTop: 8, lineHeight: 1.5 }}>{meta.join(' · ')}</div>}
-            <div style={{ marginTop: 12 }}><span className="unrated">미평가</span></div>
-            {tags.length > 0 && (
-              <div className="memo-tags" style={{ marginTop: 14 }}>
-                {tags.map(t => <span key={t} className="memo-tag">{t}</span>)}
-              </div>
-            )}
-            {data && data.tracks.length > 0 && (
-              <>
-                <div style={{ margin: '16px 0 9px', borderTop: '1px solid var(--color-border-soft)' }} />
-                <div className="meta" style={{ letterSpacing: '.12em' }}>{`트랙리스트 · ${data.tracks.length}곡`}</div>
-                <div className="memo-tracks">
-                  {/* ARCH-entity-interaction-v2 Step 5 (E4) — adopted onto the
-                      shared TrackRow via `openLyrics` (the whole-row lyrics
-                      target). A track with a spotify_id opens the lyrics
-                      sheet; without one there is nothing to query, so the row
-                      renders plain (openLyrics omitted). This used to be a
-                      hand-rolled TWIN of shared/TrackRow.tsx — a change here
-                      now reaches every TrackRow consumer, and vice versa. */}
-                  {data.tracks.map((t, i) => {
-                    const sid = t.spotify_id
-                    const len = t.duration_sec != null ? fmtTime(t.duration_sec) : ''
-                    const no = String(t.track_no ?? 0).padStart(2, '0')
-                    return (
-                      <TrackRow
-	key={t.id}
-	no={no}
-	title={t.title}
-	cells={len ? <span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)', fontVariantNumeric: 'tabular-nums' }}>{len}</span> : undefined}
-	actions={{
-                ...(sid ? { openLyrics: { fire: () => openSheet(sid, { track: t.title, artist: album.artist, album: album.album, cover: a?.cover_url ?? album.cover }), title: '가사 보기' } } : {}),
-                drag: { ref: memberRef({ trackId: t.id, albumId: album.albumId ?? null }), origin: { kind: 'external', copies: true } },
-              }}
-	gridTemplate="22px minmax(0,1fr) auto"
-	style={{ padding: '6px 2px', borderBottom: i === data.tracks.length - 1 ? 'none' : '1px solid var(--color-border-soft)' }}
-                      />
-                    )
-                  })}
-                </div>
-              </>
-            )}
+            <MemoAlbumCardAdapter album={album} data={data} onOpenLyrics={openSheet} onAddTrack={onAddTrack} />
           </div>
 
           {/* right — the memo (쓰레기통) */}
@@ -607,6 +696,15 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
               <DockableLyricsSheet key={sheet.trackId} spotifyTrackId={sheet.trackId} meta={sheet.meta} onClose={closeSheet} hostRef={cardRef} dock={dock} patch={patchDock} />
             </>
           ))}
+      {pendingAdd && (
+        <AddToBucketMenu
+	key={pendingAdd.seq}
+	item={{ itemType: 'track', trackId: pendingAdd.trackId, title: pendingAdd.title }}
+	autoOpen
+	render={() => null}
+	onResolved={() => setPendingAdd(null)}
+        />
+      )}
     </div>
   )
 }

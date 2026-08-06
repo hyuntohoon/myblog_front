@@ -58,6 +58,7 @@ export interface AlbumCardProps {
 	capabilities?: AlbumCardCapabilities
 	layout: 'grid' | 'row'
 	badge?: ReactNode
+	eyebrow?: ReactNode
 	secondaryLine?: ReactNode
 }
 
@@ -120,9 +121,10 @@ function Actions({ title, play, add }: {
 	)
 }
 
-function Meta({ data, artistOpen, secondaryLine }: {
+function Meta({ data, artistOpen, eyebrow, secondaryLine }: {
 	data: AlbumCardData
 	artistOpen?: () => void
+	eyebrow?: ReactNode
 	secondaryLine?: ReactNode
 }) {
 	if (data.loading) {
@@ -136,6 +138,7 @@ function Meta({ data, artistOpen, secondaryLine }: {
 
 	return (
 		<div className="album-card__meta">
+			{eyebrow != null && <span className="album-card__eyebrow">{eyebrow}</span>}
 			<span className="album-card__title serif italic">{data.title}</span>
 			{(data.artist || data.year != null) && (
 				<span className="album-card__byline mono">
@@ -169,7 +172,7 @@ function Meta({ data, artistOpen, secondaryLine }: {
  * ids, memo/editorial state, or routing; adapters close over those concerns in
  * the callbacks and drag payload they inject.
  */
-export function AlbumCard({ data, capabilities = {}, layout, badge, secondaryLine }: AlbumCardProps) {
+export function AlbumCard({ data, capabilities = {}, layout, badge, eyebrow, secondaryLine }: AlbumCardProps) {
 	const loading = data.loading === true
 	const drag = loading ? undefined : capabilities.drag
 	const actions = !loading ? <Actions title={data.title} play={capabilities.play} add={capabilities.add} /> : null
@@ -212,6 +215,7 @@ export function AlbumCard({ data, capabilities = {}, layout, badge, secondaryLin
 			<Meta
 				data={data}
 				artistOpen={!loading && data.artist ? capabilities.artistOpen : undefined}
+				eyebrow={loading ? undefined : eyebrow}
 				secondaryLine={loading ? undefined : secondaryLine}
 			/>
 			{layout === 'row' && actions}

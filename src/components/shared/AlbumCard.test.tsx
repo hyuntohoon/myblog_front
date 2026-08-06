@@ -30,7 +30,7 @@ const DRAG: DragPayload = {
 describe('albumCard — layouts and slots', () => {
 	it.each(['grid', 'row'] as const)('renders the literal %s layout with canonical metadata', (layout) => {
 		const { container } = render(
-			<AlbumCard data={DATA} layout={layout} badge={<span>★ 평론</span>} secondaryLine={<span>선정 이유</span>} />,
+			<AlbumCard data={DATA} layout={layout} badge={<span>★ 평론</span>} eyebrow={<span>앨범</span>} secondaryLine={<span>선정 이유</span>} />,
 		)
 
 		const card = container.querySelector('.album-card')
@@ -40,6 +40,7 @@ describe('albumCard — layouts and slots', () => {
 		expect(screen.getByText('Miles Davis')).toBeInTheDocument()
 		expect(screen.getByText('1959')).toBeInTheDocument()
 		expect(screen.getByText('★ 평론')).toBeInTheDocument()
+		expect(screen.getByText('앨범')).toBeInTheDocument()
 		expect(screen.getByText('선정 이유')).toBeInTheDocument()
 	})
 
