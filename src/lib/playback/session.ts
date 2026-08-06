@@ -173,6 +173,22 @@ function patch(p: Partial<PlaybackSessionState>): void {
  */
 let localWriteSeq = 0
 
+/**
+ * BUG-23: `replaceQueueAndPlay()` chains onto this so a second ▶ press waits for
+ * an in-flight one to fully settle (write, play, AND its deletes) before it takes
+ * its own `rewriteQueue` snapshot. Without it, two overlapping presses — the
+ * untested double-click race `AlbumOverlay.tsx`'s own comment already accepted —
+ * each snapshot the SAME pre-press tree, so the second press's own diff wrongly
+ * includes rows the first press had already added; `playFrom(0)` then names the
+ * FIRST press's track as current no matter which press actually landed last. A
+ * narrower fix that only guards the final `authoritativePatch` (this bug's
+ * original recommendation in `ARCH-album-card-contract-and-composition.md` §19)
+ * does NOT close this — confirmed by a delayed-promise regression test — because
+ * the corruption happens upstream, in the snapshot itself. `.catch()` before
+ * chaining so one press's rejection never wedges every later press behind it.
+ */
+let replaceChain: Promise<unknown> = Promise.resolve()
+
 function authoritativePatch(p: Partial<PlaybackSessionState>): void {
   localWriteSeq += 1
   patch(p)
@@ -690,58 +706,67 @@ export const playbackSession = {
    * flight would race two rewrites over one list and could leave duplicates.
    */
   async replaceQueueAndPlay(intent: ReplaceIntent): Promise<ReplaceOutcome> {
-    // ▶ is the most explicit "make sound HERE" there is, and this path can reach
-    // rung 2, which raises *this* tab as the SDK device. So it takes the lease
-    // rather than forwarding: T4 makes an explicit claim unconditional precisely
-    // so a deliberate press is never argued with. Forwarding instead would also
-    // strand the Undo — the toast belongs to the tab that pressed, and its rows
-    // were replaced by this tab's own rewrite.
-    await playbackOwnership.ensureOwner()
-    patch({ busy: true, notice: null })
-    try {
-      await bucketStore.ensureFresh()
-      const { bucket } = playbackQueue()
-      if (!bucket) {
-        // No Playback Bucket ⇒ no queue to replace (the account is not playback
-        // eligible). Still play: they asked for sound, and refusing here would be a
-        // regression against the behaviour these call sites shipped with.
-        const r = await play(intent)
-        authoritativePatch({ busy: false, notice: r.ok ? null : noticeForFailure(r) })
-        return { ok: r.ok, message: r.message, undo: null, play: r }
-      }
+    // BUG-23: this press waits for any still-in-flight press ahead of it — see
+    // `replaceChain`. Queued here, before the lease/tree work below, so a second
+    // press's `rewriteQueue` snapshot can never be taken while an earlier press's
+    // own snapshot-to-settle window is still open.
+    const run = async (): Promise<ReplaceOutcome> => {
+      // ▶ is the most explicit "make sound HERE" there is, and this path can reach
+      // rung 2, which raises *this* tab as the SDK device. So it takes the lease
+      // rather than forwarding: T4 makes an explicit claim unconditional precisely
+      // so a deliberate press is never argued with. Forwarding instead would also
+      // strand the Undo — the toast belongs to the tab that pressed, and its rows
+      // were replaced by this tab's own rewrite.
+      await playbackOwnership.ensureOwner()
+      patch({ busy: true, notice: null })
+      try {
+        await bucketStore.ensureFresh()
+        const { bucket } = playbackQueue()
+        if (!bucket) {
+          // No Playback Bucket ⇒ no queue to replace (the account is not playback
+          // eligible). Still play: they asked for sound, and refusing here would be a
+          // regression against the behaviour these call sites shipped with.
+          const r = await play(intent)
+          authoritativePatch({ busy: false, notice: r.ok ? null : noticeForFailure(r) })
+          return { ok: r.ok, message: r.message, undo: null, play: r }
+        }
 
-      const rewrite = await rewriteQueue(bucket.id, () => appendIntent(bucket.id, intent))
-      if (rewrite.added.length === 0) {
-        // Nothing was written, so nothing was deleted — the queue is untouched.
-        const message = intent.kind === 'album' ? NO_TRACKS : REPLACE_FAILED
-        authoritativePatch({ busy: false, notice: { tone: 'error', message } })
-        return { ok: false, message, undo: null, play: null }
-      }
+        const rewrite = await rewriteQueue(bucket.id, () => appendIntent(bucket.id, intent))
+        if (rewrite.added.length === 0) {
+          // Nothing was written, so nothing was deleted — the queue is untouched.
+          const message = intent.kind === 'album' ? NO_TRACKS : REPLACE_FAILED
+          authoritativePatch({ busy: false, notice: { tone: 'error', message } })
+          return { ok: false, message, undo: null, play: null }
+        }
 
-      const outcome = await playFrom(0)
-      const failedDeletes = await rewrite.settle
-      const undo = rewrite.displacedTrackIds.length > 0 ?
-        () => undoReplace(bucket.id, rewrite.displacedTrackIds) :
-        null
+        const outcome = await playFrom(0)
+        const failedDeletes = await rewrite.settle
+        const undo = rewrite.displacedTrackIds.length > 0 ?
+          () => undoReplace(bucket.id, rewrite.displacedTrackIds) :
+          null
 
-      if (!outcome || !outcome.ok) {
-        // The queue WAS replaced — that write succeeded and stands. Only the play
-        // failed, so its own sentence is what the member needs, and the Undo is
-        // still offered because their old queue is still gone.
-        return { ok: false, message: outcome?.message ?? REPLACE_FAILED, undo, play: outcome }
+        if (!outcome || !outcome.ok) {
+          // The queue WAS replaced — that write succeeded and stands. Only the play
+          // failed, so its own sentence is what the member needs, and the Undo is
+          // still offered because their old queue is still gone.
+          return { ok: false, message: outcome?.message ?? REPLACE_FAILED, undo, play: outcome }
+        }
+        return {
+          ok: true,
+          message: replacedMessage(intent, rewrite.added.length, failedDeletes, outcome.degraded),
+          undo,
+          play: outcome,
+        }
       }
-      return {
-        ok: true,
-        message: replacedMessage(intent, rewrite.added.length, failedDeletes, outcome.degraded),
-        undo,
-        play: outcome,
+      catch {
+        // A write threw before any delete ran, so the queue is exactly as it was.
+        authoritativePatch({ busy: false, notice: { tone: 'error', message: REPLACE_FAILED } })
+        return { ok: false, message: REPLACE_FAILED, undo: null, play: null }
       }
     }
-    catch {
-      // A write threw before any delete ran, so the queue is exactly as it was.
-      authoritativePatch({ busy: false, notice: { tone: 'error', message: REPLACE_FAILED } })
-      return { ok: false, message: REPLACE_FAILED, undo: null, play: null }
-    }
+    const settled = replaceChain.catch(() => undefined).then(run)
+    replaceChain = settled
+    return settled
   },
 
   async togglePlay(): Promise<void> {
