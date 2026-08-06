@@ -53,6 +53,8 @@ import { listRecentlyListened } from './spotify.api'
 import type { SpotifyLibraryAlbumState } from './spotify.api'
 import { useSpotifyLibrary } from './useSpotifyLibrary'
 import { AlbumArt, SectionTitle } from './ui'
+import { AlbumCard } from '@components/shared/AlbumCard'
+import type { AlbumCardCapabilities } from '@components/shared/AlbumCard'
 
 // Module-level drag payload (native DnD can't carry live object refs reliably).
 // ARCH-entity-interaction-v2 Step 3 — this is now the shared `DragPayload` (E2,
@@ -482,11 +484,7 @@ function CoverResearchBadge({ status, active, onOpen }: { status: ResearchStatus
   )
 }
 
-// ── album cover tile ──────────────────────────────────────────────────────--
-// Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
-// (both directions). Click opens detail. Rating chips show only inside the
-// is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, listened, marked, onToggleMark, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: {
+interface AlbumChipProps {
   album: BoardAlbum
   bucketId: string
   /**
@@ -547,7 +545,160 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
    * pass it as a copy source).
    */
   onTouchActions?: () => void
-}) {
+}
+
+function albumChipDrag(album: BoardAlbum, bucketId: string, copySource?: boolean, fromLib?: boolean, source?: string): DragPayload {
+  if (copySource)
+    return { ref: memberRef({ albumId: album.albumId }), origin: { kind: 'external', fromBucketId: bucketId, itemType: 'album', copies: true } }
+  if (fromLib)
+    return { ref: memberRef({ albumId: album.albumId }), origin: { kind: 'library', itemId: album.itemId, fromBucketId: bucketId, itemType: 'album', source } }
+  return { ref: memberRef(album), origin: { kind: 'internal', itemId: album.itemId, fromBucketId: bucketId, itemType: album.itemType } }
+}
+
+function BucketAlbumBadges({ album, rated, score, copySource, libRow, listened, marked, onToggleMark, research, isNew }: Pick<AlbumChipProps,  'album' | 'rated' | 'score' | 'copySource' | 'libRow' | 'listened' | 'marked' | 'onToggleMark' | 'research' | 'isNew'>) {
+  return (
+    <>
+      {isNew && (
+        <span
+	aria-label="새로 추가됨"
+	style={{ position: 'absolute', top: -4, right: -4, width: 10, height: 10, borderRadius: '50%', background: 'var(--color-accent)', boxShadow: '0 0 0 2px var(--color-bg)' }}
+        />
+      )}
+      {copySource && (
+        <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
+      )}
+      {libRow && <SlibBadges row={libRow} />}
+      {!copySource && !libRow && !rated && album.alreadyReviewed && (
+        <span className="mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
+      )}
+      {rated && score != null && (
+        <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-bg)', background: 'var(--color-text)', padding: '2px 6px', borderRadius: 3 }}>{score.toFixed(1)}</span>
+      )}
+      {rated && score == null && (
+        <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
+      )}
+      {listened && (
+        <span
+	title="이미 들음 → 평론 가능"
+	aria-label="이미 들음 — 평론 가능"
+	style={{ position: 'absolute', bottom: 6, right: 6, width: 10, height: 10, borderRadius: '50%', background: 'var(--color-bg)', border: '2px solid oklch(0.62 0.10 155)', boxShadow: '0 0 0 1px var(--color-bg)' }}
+        />
+      )}
+      {research && (
+        <CoverResearchBadge status={research.status} active={research.mode !== 'off'} onOpen={research.onOpen} />
+      )}
+      {research && research.mode === 'selected' && (
+        <input
+	type="checkbox"
+	className="rsh-cover-check"
+	checked={research.selected}
+	title="자동 조사 대상"
+	aria-label="자동 조사 대상으로 선택"
+	onClick={e => e.stopPropagation()}
+	onChange={e => research.onToggleSelected(e.target.checked)}
+        />
+      )}
+      {onToggleMark && (
+        <button
+	type="button"
+	className={`bb-tile-mark${marked ? ' is-marked' : ''}`}
+	title={marked ? '평론 쓸 것 — 표시 해제' : '평론 쓸 것으로 표시 (나만 봅니다)'}
+	aria-label={marked ? '평론 쓸 것 표시 해제' : '평론 쓸 것으로 표시'}
+	aria-pressed={marked}
+	draggable={false}
+	onClick={(e) => {
+            e.stopPropagation()
+            onToggleMark()
+          }}
+        >
+          ✎
+        </button>
+      )}
+    </>
+  )
+}
+
+/**
+ * Bucket-owned adapter. Membership identity and every operation remain closed
+ * over here; AlbumCard receives only display data and declared capabilities.
+ */
+export function BucketAlbumCardAdapter({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, listened, marked, onToggleMark, draggingId, setDraggingId, setDragKind, research, onTouchActions, isNew }: AlbumChipProps) {
+  const albumId = album.albumId
+  const open = albumId ?
+    () => onOpen({
+      album: album.title,
+      artist: album.artist,
+      real: true,
+      albumId,
+      cover: album.cover,
+      year: album.year,
+      writable: !copySource && !fromLib,
+      bucketId,
+      itemId: album.itemId,
+      note: album.note ?? null,
+      prepTonight: album.prepTonight ?? false,
+    }) :
+    undefined
+  const capabilities: AlbumCardCapabilities = albumId && onTouchActions ?
+    {
+      ...(open ? { open } : {}),
+      add: { fire: onTouchActions, label: '앨범 동작', content: '⋯', className: 'bb-tile-kebab' },
+      drag: albumChipDrag(album, bucketId, copySource, fromLib, libRow?.source),
+    } :
+    (open ? { open } : {})
+
+  return (
+    <div
+	className={`lf-drag-handle bb-tile${draggingId === album.itemId ? ' lf-is-dragging' : ''}`}
+	title={`${album.title} — ${album.artist}`}
+	onPointerEnter={() => albumId && prefetchAlbumDetail(albumId)}
+	onPointerDown={() => albumId && prefetchAlbumDetail(albumId)}
+	onDragStart={() => {
+        setDraggingId(album.itemId)
+        setDragKind('member')
+      }}
+	onDragEnd={() => {
+        setDraggingId(null)
+        setDragKind(null)
+      }}
+    >
+      <AlbumCard
+	data={{
+          catalogAlbumId: albumId,
+          spotifyAlbumId: null,
+          title: album.title,
+          artist: album.artist,
+          artistId: album.artistId,
+          cover: album.cover,
+          // Bucket cards historically show title + artist only.
+          year: null,
+        }}
+	layout="grid"
+	capabilities={capabilities}
+	badge={(
+          <BucketAlbumBadges
+	album={album}
+	rated={rated}
+	score={score}
+	copySource={copySource}
+	libRow={libRow}
+	listened={listened}
+	marked={marked}
+	onToggleMark={onToggleMark}
+	research={research}
+	isNew={isNew}
+          />
+        )}
+      />
+    </div>
+  )
+}
+
+// ── album cover tile ──────────────────────────────────────────────────────--
+// Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
+// (both directions). Click opens detail. Rating chips show only inside the
+// is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
+function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, listened, marked, onToggleMark, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew, canonical }: AlbumChipProps & { canonical: boolean }) {
   const [over, setOver] = useState(false)
   const dragging = draggingId === album.itemId
   // FEAT-pocket-buckit Step 5/6 — only an 'album' member has a DB album to open +
@@ -595,7 +746,32 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
       }}
     >
       {over && <div style={{ position: 'absolute', left: -7, top: 0, bottom: 26, width: 3, borderRadius: 2, background: 'var(--color-accent)' }} />}
-      <div
+      {canonical && isAlbum ?
+        (
+            <BucketAlbumCardAdapter
+	album={album}
+	bucketId={bucketId}
+	bucketType={bucketType}
+	rated={rated}
+	score={score}
+	onOpen={onOpen}
+	copySource={copySource}
+	fromLib={fromLib}
+	libRow={libRow}
+	listened={listened}
+	marked={marked}
+	onToggleMark={onToggleMark}
+	draggingId={draggingId}
+	setDraggingId={setDraggingId}
+	setDragKind={setDragKind}
+	onInsert={onInsert}
+	research={research}
+	onTouchActions={onTouchActions}
+	isNew={isNew}
+            />
+          ) :
+        (
+            <div
 	draggable
 	onDragStart={(e) => {
           // ARCH-entity-interaction-v2 E2 — the three origins the board actually has.
@@ -650,7 +826,7 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
 	onPointerDown={() => prefetchAlbumDetail(album.albumId)}
 	className={`lf-drag-handle bb-tile${dragging ? ' lf-is-dragging' : ''}`}
 	title={`${album.title} — ${album.artist}`}
-      >
+            >
         <div style={{ position: 'relative' }}>
           <AlbumArt url={album.cover} label={album.title} />
           {isNew && (
@@ -735,9 +911,19 @@ function AlbumChip({ album, bucketId, bucketType, rated, score, onOpen, copySour
           <div className="serif italic" style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{album.title}</div>
           <div className="mono" style={{ fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{album.artist}</div>
         </div>
-      </div>
+            </div>
+          )}
     </div>
   )
+}
+
+function AlbumChip(props: AlbumChipProps) {
+  return <AlbumChipRenderer {...props} canonical />
+}
+
+/** Stage 9 parity fixture; no live render path calls this legacy card. */
+export function LegacyAlbumChip(props: AlbumChipProps) {
+  return <AlbumChipRenderer {...props} canonical={false} />
 }
 
 interface Ops {

@@ -25,8 +25,20 @@ export interface AlbumCardData {
 interface AlbumCardCapabilitySlots {
 	/** Whole-card album open. Omit for a display-only card. */
 	open?: () => void
-	play?: () => void
+	play?: AlbumCardAction
 	artistOpen?: () => void
+}
+
+/**
+ * A capability may use the canonical control (callback shorthand) or describe
+ * its domain-neutral presentation. The latter keeps a surface's established
+ * accessible name/glyph without teaching AlbumCard what that surface is.
+ */
+export type AlbumCardAction = (() => void) | {
+	fire: () => void
+	label: string
+	content: ReactNode
+	className?: string
 }
 
 /**
@@ -37,8 +49,8 @@ interface AlbumCardCapabilitySlots {
  * a call-site convention (ARCH-entity-interaction-v2 Rule #14).
  */
 export type AlbumCardCapabilities = AlbumCardCapabilitySlots & (
-	{ add?: () => void, drag?: never } |
-	{ add: () => void, drag: DragPayload }
+	{ add?: AlbumCardAction, drag?: never } |
+	{ add: AlbumCardAction, drag: DragPayload }
 )
 
 export interface AlbumCardProps {
@@ -57,11 +69,12 @@ function dragEffect(payload: DragPayload): DataTransfer['effectAllowed'] {
 	return payload.origin.copies ? 'copy' : 'all'
 }
 
-function CoverArt({ title, cover, loading, badge }: {
+function CoverArt({ title, cover, loading, badge, actions }: {
 	title: string
 	cover: string | null
 	loading: boolean
 	badge?: ReactNode
+	actions?: ReactNode
 }) {
 	return (
 		<div
@@ -74,7 +87,36 @@ function CoverArt({ title, cover, loading, badge }: {
 					<img src={cover} alt={title} loading="lazy" decoding="async" /> :
 					<span className="cover-ph" aria-hidden="true">{(title || '?').slice(0, 2).toUpperCase()}</span>}
 			{!loading && badge != null && <span className="album-card__badge">{badge}</span>}
+			{actions}
 		</div>
+	)
+}
+
+function actionProps(action: AlbumCardAction, defaults: { label: string, content: ReactNode }) {
+	if (typeof action === 'function')
+		return { fire: action, label: defaults.label, content: defaults.content, className: '' }
+	return action
+}
+
+function Actions({ title, play, add }: {
+	title: string
+	play?: AlbumCardAction
+	add?: AlbumCardAction
+}) {
+	if (!play && !add)
+		return null
+
+	const playAction = play ? actionProps(play, { label: `${title} 재생`, content: '▶' }) : null
+	const addAction = add ? actionProps(add, { label: `${title} 담기`, content: '＋' }) : null
+	return (
+		<span className="album-card__actions">
+			{playAction && (
+				<button type="button" className={`btn mono album-card__action ${playAction.className ?? ''}`.trim()} onClick={playAction.fire} aria-label={playAction.label}>{playAction.content}</button>
+			)}
+			{addAction && (
+				<button type="button" className={`btn mono album-card__action ${addAction.className ?? ''}`.trim()} onClick={addAction.fire} aria-label={addAction.label}>{addAction.content}</button>
+			)}
+		</span>
 	)
 }
 
@@ -130,6 +172,7 @@ function Meta({ data, artistOpen, secondaryLine }: {
 export function AlbumCard({ data, capabilities = {}, layout, badge, secondaryLine }: AlbumCardProps) {
 	const loading = data.loading === true
 	const drag = loading ? undefined : capabilities.drag
+	const actions = !loading ? <Actions title={data.title} play={capabilities.play} add={capabilities.add} /> : null
 
 	return (
 		<article
@@ -156,26 +199,22 @@ export function AlbumCard({ data, capabilities = {}, layout, badge, secondaryLin
 				<button
 					type="button"
 					className="album-card__open-hit"
+					// The open hit-area covers the entire card. Make it a native drag
+					// source too, otherwise it intercepts the pointer before the
+					// draggable article can start an HTML5 drag. The event bubbles to
+					// the article's single bridge handler; ordinary clicks still open.
+					draggable={Boolean(drag)}
 					onClick={capabilities.open}
 					aria-label={`${data.title}${data.artist ? ` — ${data.artist}` : ''} 앨범 보기`}
 				/>
 			)}
-			<CoverArt title={data.title} cover={data.cover} loading={loading} badge={badge} />
+			<CoverArt title={data.title} cover={data.cover} loading={loading} badge={badge} actions={layout === 'grid' ? actions : null} />
 			<Meta
 				data={data}
 				artistOpen={!loading && data.artist ? capabilities.artistOpen : undefined}
 				secondaryLine={loading ? undefined : secondaryLine}
 			/>
-			{!loading && (capabilities.play || capabilities.add) && (
-				<span className="album-card__actions">
-					{capabilities.play && (
-						<button type="button" className="btn mono album-card__action" onClick={capabilities.play} aria-label={`${data.title} 재생`}>▶</button>
-					)}
-					{capabilities.add && (
-						<button type="button" className="btn mono album-card__action" onClick={capabilities.add} aria-label={`${data.title} 담기`}>＋</button>
-					)}
-				</span>
-			)}
+			{layout === 'row' && actions}
 		</article>
 	)
 }

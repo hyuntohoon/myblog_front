@@ -154,7 +154,9 @@
 }
 
 .album-card--grid .album-card__actions {
-	justify-self: start;
+	position: absolute;
+	right: 6px;
+	bottom: 6px;
 }
 
 .album-card__action {

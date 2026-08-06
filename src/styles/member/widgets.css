@@ -32,6 +32,41 @@
 	box-shadow: 0 6px 18px rgba(26, 26, 26, 0.16);
 }
 
+/* ARCH-album-card-contract-and-composition Stage 6 — the canonical card now
+   owns album presentation while this adapter keeps the established Bucket
+   dimensions and overlay positions. Non-album member tiles stay on the
+   generalized legacy renderer because they are not album cards. */
+.bb-tile > .album-card {
+	width: 100%;
+	gap: 0;
+}
+.bb-tile .album-card__cover {
+	border-color: var(--color-border);
+	border-radius: 3px;
+}
+.bb-tile:hover .album-card__cover {
+	transform: translateY(-3px);
+	box-shadow: 0 6px 18px rgba(26, 26, 26, 0.16);
+}
+.bb-tile .album-card__meta { margin-top: 7px; }
+.bb-tile .album-card__title {
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.2;
+}
+.bb-tile .album-card__byline {
+	margin-top: 2px;
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+.bb-tile .album-card__badge {
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	max-width: none;
+}
+
 /* ── touch fallback — per-cover ⋯ action button (크레이트 갤러리) ────────────
    HTML5 drag-and-drop never fires on touch, so each cover gets a ⋯ button that
    opens the album action sheet. Hover-revealed on desktop (drag still primary),
@@ -56,6 +91,12 @@
 }
 .bb-tile:hover .bb-tile-kebab { opacity: 1; }
 .bb-tile-kebab:hover { background: rgba(26, 26, 26, 0.82); }
+.bb-tile .album-card__action.bb-tile-kebab {
+	position: static;
+	padding: 0;
+	font-size: var(--text-md);
+	letter-spacing: normal;
+}
 /* ── FEAT-album-review-authoring Step 1 — the private "평론 쓸 것" mark ──────
    Bottom-LEFT so it never lands on the ⋯ (bottom-right) or the listened ring.
 

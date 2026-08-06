@@ -106,6 +106,26 @@ describe('albumCard — declared capabilities', () => {
 		expect(open).not.toHaveBeenCalled()
 	})
 
+	it('lets an adapter preserve an established action name and glyph', () => {
+		const fire = vi.fn()
+		render(
+			<AlbumCard
+				data={DATA}
+				layout="grid"
+				capabilities={{
+					add: { fire, label: '앨범 동작', content: '⋯', className: 'surface-action' },
+				}}
+			/>,
+		)
+
+		const action = screen.getByRole('button', { name: '앨범 동작' })
+		expect(action).toHaveTextContent('⋯')
+		expect(action).toHaveClass('surface-action')
+		expect(action.closest('.album-card__cover')).toBeInTheDocument()
+		fireEvent.click(action)
+		expect(fire).toHaveBeenCalledTimes(1)
+	})
+
 	it('renders no affordance for omitted capabilities', () => {
 		render(<AlbumCard data={DATA} layout="row" />)
 		expect(screen.queryByRole('button')).toBeNull()
@@ -137,12 +157,17 @@ describe('albumCard — declared capabilities', () => {
 		window.addEventListener(PB_BOARD_DND_START_EVENT, boardStart)
 		window.addEventListener(PB_DND_END_EVENT, end)
 		window.addEventListener(PB_BOARD_DND_END_EVENT, boardEnd)
-		const { container } = render(<AlbumCard data={DATA} layout="grid" capabilities={{ add: vi.fn(), drag: DRAG }} />)
-		const card = container.querySelector('[draggable="true"]')!
+		const { container } = render(<AlbumCard data={DATA} layout="grid" capabilities={{ open: vi.fn(), add: vi.fn(), drag: DRAG }} />)
+		const card = container.querySelector('article[draggable="true"]')!
+		const openHit = screen.getByRole('button', { name: 'Kind of Blue — Miles Davis 앨범 보기' })
+		expect(card).toHaveAttribute('draggable', 'true')
+		expect(openHit).toHaveAttribute('draggable', 'true')
 
 		const dataTransfer = { effectAllowed: 'uninitialized' }
-		fireEvent.dragStart(card, { dataTransfer })
-		fireEvent.dragEnd(card)
+		// The full-card open control is the real pointer hit target. Its native
+		// drag must bubble into the article bridge instead of collapsing to a click.
+		fireEvent.dragStart(openHit, { dataTransfer })
+		fireEvent.dragEnd(openHit)
 		expect(dataTransfer.effectAllowed).toBe('copy')
 		expect(start).toHaveBeenCalledTimes(1)
 		expect(boardStart).toHaveBeenCalledTimes(1)
@@ -163,7 +188,7 @@ describe('albumCard — declared capabilities', () => {
 	] as Array<[DragPayload, string]>)('maps the drag origin to effectAllowed=%s', (drag, expected) => {
 		const { container } = render(<AlbumCard data={DATA} layout="grid" capabilities={{ add: vi.fn(), drag }} />)
 		const dataTransfer = { effectAllowed: 'uninitialized' }
-		fireEvent.dragStart(container.querySelector('[draggable="true"]')!, { dataTransfer })
+		fireEvent.dragStart(container.querySelector('article[draggable="true"]')!, { dataTransfer })
 		expect(dataTransfer.effectAllowed).toBe(expected)
 	})
 
