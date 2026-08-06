@@ -649,6 +649,27 @@ describe('▶ replaces the queue', () => {
     }
     expect(queueTrackIds()).toEqual(['t1', 't2'])
   })
+
+  it('serializes overlapping presses so the second replace is not corrupted by the first (BUG-23)', async () => {
+    setQueue([row('a')])
+    albumTracks = { 'alb-1': ['t1', 't2'] }
+
+    const first = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await flushPlaybackStart()
+    const second = playbackSession.replaceQueueAndPlay({ kind: 'track', trackId: 't9' })
+    await settleAll()
+    await Promise.all([first, second])
+
+    // The second press is what the member actually meant to land on. Before the
+    // fix, both presses snapshotted `rewriteQueue`'s `beforeIds` off the SAME
+    // pre-press tree, so the second press's own diff wrongly folded in the first
+    // press's rows too — the queue ended up holding all three tracks and
+    // `playFrom(0)` named the FIRST press's track as current regardless of which
+    // press actually landed last.
+    expect(queueTrackIds()).toEqual(['t9'])
+    expect(playbackSession.currentRow()?.trackId).toBe('t9')
+    expect(playbackSession.getSnapshot()).toMatchObject({ playing: true, busy: false })
+  })
 })
 
 describe('▶ replace — failures preserve', () => {
