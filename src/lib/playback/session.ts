@@ -662,6 +662,25 @@ export const playbackSession = {
   },
 
   /**
+   * Spotify track id for whatever the session believes is sounding, or null.
+   * `external` already carries one; a queue-matched row only has the DB id, so
+   * it goes through the same cache-only reverse lookup `rowForSpotifyTrack`
+   * uses in the other direction — never triggers a resolve, so a cold cache is
+   * a null here rather than a request (ARCH-entity-interaction-domain-audit
+   * Step 3c: this is how a consumer, e.g. the lyrics viewer, confirms the
+   * session's anchor is actually for the track it has open before trusting it).
+   */
+  currentSpotifyTrackId(): string | null {
+    if (current.external)
+      return current.external.spotifyTrackId
+    const row = playbackSession.currentRow()
+    if (!row?.trackId)
+      return null
+    const uri = cachedUri(row.trackId)
+    return uri?.startsWith('spotify:track:') ? uri.slice('spotify:track:'.length) : null
+  },
+
+  /**
    * A drop landed. T2's whole drop rule lives here:
    *   · nothing current  → the first dropped track starts immediately;
    *   · playing OR PAUSED → append only, never interrupt.
