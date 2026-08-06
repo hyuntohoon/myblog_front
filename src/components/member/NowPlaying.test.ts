@@ -101,6 +101,12 @@ vi.mock('@lib/playback/session', () => {
       getSnapshot: vi.fn(() => empty),
       getServerSnapshot: vi.fn(() => empty),
       currentRow: vi.fn(() => null),
+      // CHORE-nowplaying-trackid-namespace: the Step 3b effect now reads
+      // identity through this cache-only resolver (mirrors the real module's
+      // `rowForSpotifyTrack` direction) rather than a raw `BoardAlbum.trackId`
+      // (a DB catalog UUID, not a Spotify id). Default null — tests that need
+      // a converged identity set it explicitly, same as `currentRow`.
+      currentSpotifyTrackId: vi.fn(() => null),
       syncFromLive: vi.fn(() => Promise.resolve()),
     },
   }
@@ -145,6 +151,17 @@ async function mountReady() {
 
 afterEach(() => {
   vi.clearAllMocks()
+  // `vi.clearAllMocks()` clears call history, not `mockReturnValue`
+  // implementations — without resetting these explicitly, a test that sets
+  // `session.currentSpotifyTrackId`/`currentRow`/`getSnapshot` (Step 3b tests)
+  // would leak its value into the next test. Previously invisible because
+  // nothing outside the Step 3b effect itself consulted these; now `applyLive`
+  // (BUG-28's guard) reads `currentSpotifyTrackId()` too, on every EVT
+  // dispatch, so leakage into an unrelated Step 3a-style test is now directly
+  // observable rather than silently ignored.
+  session.currentRow.mockReturnValue(null)
+  session.currentSpotifyTrackId.mockReturnValue(null)
+  session.getSnapshot.mockReturnValue(EMPTY_SESSION_STATE)
 })
 
 describe('useNowPlaying — onPlaybackChanged race (Step 3a)', () => {
@@ -210,6 +227,40 @@ describe('useNowPlaying — onPlaybackChanged race (Step 3a)', () => {
   })
 })
 
+describe('useNowPlaying — mount-time double-read race (BUG-28)', () => {
+  it('does not flash back to a stale track when playbackSession has already converged on a different one', async () => {
+    const result = await mountReady()
+
+    // This card's own read (mount `sync()` / `onPlaybackChanged`) is in
+    // flight, unresolved — models the real HTTP round trip.
+    let resolveOwnRead: (v: LivePlayback) => void = () => {}
+    const ownRead = new Promise<LivePlayback>((res) => {
+      resolveOwnRead = res
+    })
+    playback.readLivePlayback.mockReturnValueOnce(ownRead)
+    act(() => {
+      window.dispatchEvent(new CustomEvent(EVT))
+    })
+
+    // Meanwhile `playbackSession`'s own adoption — a structurally identical
+    // but entirely independent `readLivePlayback()` round trip — already
+    // converged on a DIFFERENT track. It has its own freshness guard
+    // (`localWriteSeq`) unrelated to this card's own read, so this ordering
+    // is ordinary, not contrived (per `feedback-stub-must-model-async-lag`:
+    // an instantly-resolving stub would erase the exact race this pins).
+    session.currentSpotifyTrackId.mockReturnValue('session-converged-track')
+
+    // This card's own read finally lands, holding the now-stale track.
+    await act(async () => {
+      resolveOwnRead(livePlaying('stale-own-read'))
+    })
+
+    // Applying it would revert the card to a track that, per the session's
+    // own already-authoritative answer, is no longer playing.
+    expect(result.current.moment?.trackId).not.toBe('stale-own-read')
+  })
+})
+
 describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
   it('converges track identity + anchor from a play started in the Playback Bucket panel, without a page reload', async () => {
     let notify: (() => void) | null = null
@@ -230,6 +281,11 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
       durationMs: 240_000,
     }
     session.currentRow.mockReturnValue(bucketRow)
+    // `bucketRow.trackId` is a DB catalog UUID; `currentSpotifyTrackId()` is
+    // the already-resolved Spotify id the real module derives from it via
+    // `cachedUri` — deliberately shaped differently here so a regression back
+    // to the raw DB id (CHORE-nowplaying-trackid-namespace) fails loudly.
+    session.currentSpotifyTrackId.mockReturnValue('spotify-bucket-track')
     session.getSnapshot.mockReturnValue(bucketState)
 
     // The Bucket panel's own write already landed in `playbackSession` — this
@@ -239,7 +295,7 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
       notify?.()
     })
 
-    await waitFor(() => expect(result.current.moment?.trackId).toBe('bucket-track'))
+    await waitFor(() => expect(result.current.moment?.trackId).toBe('spotify-bucket-track'))
     expect(result.current.moment?.anchor).toEqual(bucketState.anchor)
     expect(result.current.moment?.durationMs).toBe(240_000)
     expect(result.current.paused).toBe(false)
@@ -249,6 +305,12 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     // verification, not this test, until this assertion was added).
     expect(result.current.np?.is_playing).toBe(true)
     expect(result.current.np?.track).toBe('Bucket Track')
+    // CHORE-nowplaying-trackid-namespace: the liked-heart lookup must receive
+    // the resolved Spotify id, never `bucketRow.trackId` (the raw DB catalog
+    // UUID) — that mismatch previously hit Spotify's `/me/tracks/contains`
+    // with a Postgres UUID and briefly flashed the heart to "unknown".
+    await waitFor(() => expect(player.getTrackLiked).toHaveBeenCalledWith('spotify-bucket-track'))
+    expect(player.getTrackLiked).not.toHaveBeenCalledWith('bucket-track')
   })
 
   it('defers a session update landing while this card has its own control call in flight', async () => {
@@ -330,6 +392,7 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
 
     // meanwhile a session update lands claiming a DIFFERENT track
     session.currentRow.mockReturnValue({ itemId: 'item-2', trackId: 'other-track' } as BoardAlbum)
+    session.currentSpotifyTrackId.mockReturnValue('spotify-other-track')
     session.getSnapshot.mockReturnValue({
       ...EMPTY_SESSION_STATE,
       currentItemId: 'item-2',
@@ -349,7 +412,7 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     act(() => {
       resolveMode({ ok: true })
     })
-    await waitFor(() => expect(result.current.moment?.trackId).toBe('other-track'))
+    await waitFor(() => expect(result.current.moment?.trackId).toBe('spotify-other-track'))
     expect(result.current.moment?.durationMs).toBe(100_000)
   })
 })

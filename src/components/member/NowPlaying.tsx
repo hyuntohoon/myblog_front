@@ -326,6 +326,19 @@ export function useNowPlaying() {
       return
     liveWonRef.current = true
     if (r.state === 'playing' || r.state === 'paused') {
+      // BUG-28: this card's own read (`sync()` on mount, `onPlaybackChanged`)
+      // and `playbackSession`'s own adoption both fire off the same
+      // `MYBLOG_PLAYBACK_CHANGED`/mount trigger, each with its own independent
+      // `readLivePlayback()` round trip — HTTP response order is not
+      // guaranteed to match send order. If the session has ALREADY converged
+      // on a track (its own `adoptLive()` has its own freshness guard,
+      // `localWriteSeq`) and this read disagrees, this read is the stale one:
+      // applying it would flash the card back to a track that already
+      // stopped. Mirrors the idle branch below, which already re-checks
+      // `playbackSession` fresh before clearing for the identical reason.
+      const sessionTrackId = playbackSession.currentSpotifyTrackId()
+      if (sessionTrackId && sessionTrackId !== r.trackId)
+        return
       // `paused` joins `playing` here as of OQ4 (2026-08-03). It used to fall to
       // the idle branch below, which cleared `moment` and reset `paused` — fine
       // while nothing could deliver a paused read mid-session, but OQ4 makes
@@ -727,7 +740,14 @@ export function useNowPlaying() {
     if (!sessionReady || controlBusyRef.current)
       return
     const row = playbackSession.currentRow()
-    const trackId = sessionState.external?.spotifyTrackId ?? row?.trackId ?? null
+    // CHORE-nowplaying-trackid-namespace: `row?.trackId` is a DB catalog UUID,
+    // not a Spotify id — using it raw here fed `getTrackLiked()` (below,
+    // `/me/tracks/contains`) a DB id whenever the sounding track was matched to
+    // a queue row. `currentSpotifyTrackId()` already resolves it through the
+    // same cache-only lookup `rowForSpotifyTrack` uses in the other direction,
+    // exactly the pattern `PocketTray.tsx`'s `openPlaybackLyrics` already gets
+    // right for the identical field.
+    const trackId = playbackSession.currentSpotifyTrackId()
     if (!trackId) {
       setMoment(null)
       setNp(prev => (prev ? { ...prev, is_playing: false, updated_at: new Date().toISOString() } : prev))
