@@ -174,6 +174,20 @@ function patch(p: Partial<PlaybackSessionState>): void {
 let localWriteSeq = 0
 
 /**
+ * BUG-26(a): true when the row currently anchored by `currentItemId` was matched
+ * against a track id that more than one queue row shares (D8 legally allows
+ * duplicate tracks in the queue, and Spotify's API gives no occurrence-instance id
+ * to tell them apart). Set/cleared only where identity is actually (re)established:
+ * `playFrom()` clears it (a direct index-based play is certain by construction),
+ * `adoptLive()`'s track-id match sets it whenever more than one row still shares
+ * the matched track — even across reads that keep landing on the same row via
+ * continuity, since the duplicate coexisting is what makes the NEXT transition
+ * away untrustworthy, not just this one. Consulted only by `adoptLive()`'s delete
+ * gate — see BUG-26 there.
+ */
+let anchorAmbiguous = false
+
+/**
  * BUG-23: `replaceQueueAndPlay()` chains onto this so a second ▶ press waits for
  * an in-flight one to fully settle (write, play, AND its deletes) before it takes
  * its own `rewriteQueue` snapshot. Without it, two overlapping presses — the
@@ -343,6 +357,10 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
     // obligation and both forms are callers. `IN_PAGE_MESSAGE` is that sentence.
     notice: r.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
   })
+  // A direct, index-based play is certain by construction — there is no guessing
+  // involved, so any ambiguity carried over from a prior track-id match no longer
+  // applies.
+  anchorAmbiguous = false
   scheduleBoundaryCheck()
   return r
 }
@@ -355,13 +373,42 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
  * a request per row, and an unmatched row simply falls through to the external
  * branch, which is a correct outcome rather than a failure. The panel prefetches the
  * visible queue anyway, so by the time this runs the URIs are usually known.
+ *
+ * BUG-26(a): the queue intentionally allows duplicate tracks (D8), and Spotify's API
+ * gives no occurrence-instance id — so when more than one row shares the live track,
+ * there is no signal that tells them apart. `anchorItemId` (the row already believed
+ * current) is the only thing that can narrow it: if it is still among the matches,
+ * the track simply has not changed under us and it is still that same occurrence.
+ * Absent that, this falls back to the first match — a display-only best-effort guess,
+ * never a claim of certainty — and callers MUST read `ambiguous` before trusting the
+ * result for anything destructive (see `adoptLive()`'s delete gate).
  */
-function rowForSpotifyTrack(spotifyTrackId: string | null): BoardAlbum | null {
+function rowForSpotifyTrack(
+  spotifyTrackId: string | null,
+  anchorItemId: string | null,
+): { row: BoardAlbum | null, ambiguous: boolean } {
   if (!spotifyTrackId)
-    return null
+    return { row: null, ambiguous: false }
   const uri = `spotify:track:${spotifyTrackId}`
-  return queueRows().find(r => r.trackId && cachedUri(r.trackId) === uri) ?? null
+  const matches = queueRows().filter(r => r.trackId && cachedUri(r.trackId) === uri)
+  if (matches.length === 0)
+    return { row: null, ambiguous: false }
+  if (matches.length === 1)
+    return { row: matches[0], ambiguous: false }
+  // Multiple rows share this track. Ambiguity is a property of the QUEUE (a
+  // duplicate coexists), not of this one read — it stays true even when continuity
+  // picks the same row again, because the next transition AWAY from it is exactly
+  // where a wrong guess would otherwise cause a destructive delete.
+  const anchored = anchorItemId ? matches.find(r => r.itemId === anchorItemId) : undefined
+  return { row: anchored ?? matches[0], ambiguous: true }
 }
+
+// `BOUNDARY_BUFFER_MS` is a first-pass estimate (Spotify's own ack→apply lag,
+// observed elsewhere in this RFC, plus margin), not a measured constant in the
+// Step 7 sense — flagged in the RFC as a follow-up to measure for real. Used both
+// by the rung-1 boundary-check scheduler below and, as of BUG-26, as `adoptLive()`'s
+// own completion tolerance.
+const BOUNDARY_BUFFER_MS = 1_500
 
 /**
  * Ask Spotify what is actually playing and adopt it.
@@ -408,26 +455,41 @@ async function adoptLive(): Promise<void> {
   if (live.state === 'unavailable')
     return
 
-  // The row we thought was playing is confirmed no longer live — natural
-  // completion (or a skip away from it that did not go through this session, e.g.
-  // another surface). T2: "completion removes" the finished row. This is the ONE
-  // place that fires the removal, replacing the never-called `onCompleted()` path
-  // — it is reached only from a CONFIRMED read, never a timer reaching duration,
-  // which is exactly the bar the RFC's own comment on `onCompleted` sets.
+  // The row we thought was playing is no longer live — natural completion (or a
+  // skip away from it that did not go through this session, e.g. another surface).
+  // T2: "completion removes" the finished row. This is the ONE place that fires the
+  // removal, replacing the never-called `onCompleted()` path — it is reached only
+  // from a CONFIRMED read, never a timer reaching duration, which is exactly the bar
+  // the RFC's own comment on `onCompleted` sets.
+  //
+  // BUG-26(b): a URI change is NOT the same claim as "the row finished". A
+  // phone/native-client skip, or another surface changing the track mid-song, looks
+  // identical to natural completion here — so before deleting, confirm the row's own
+  // last-known position actually reached its end (within `BOUNDARY_BUFFER_MS`, the
+  // same tolerance the boundary-check scheduler already uses for "close enough").
+  // BUG-26(a): and if `previousRow` was itself only an ambiguous guess among
+  // duplicate-track rows (`anchorAmbiguous`), it cannot be trusted to BE the row
+  // that just finished at all — deleting it could destroy a never-played occurrence
+  // while the one that actually played lingers, uncounted, in the queue.
   if (previousRow?.trackId) {
     const previousUri = cachedUri(previousRow.trackId)
     const liveUri = live.state !== 'idle' && live.trackId ? `spotify:track:${live.trackId}` : null
     if (previousUri && liveUri !== previousUri) {
-      const { bucket } = playbackQueue()
-      if (bucket) {
-        try {
-          await deleteBucketItem(bucket.id, previousRow.itemId)
-          bucketStore.setTree(withoutQueueItems(bucketStore.getTree(), bucket.id, [previousRow.itemId]))
-        }
-        catch {
-          // Could not remove it — leave the row in place. The next adoption
-          // (mount, or the next event) re-evaluates from scratch rather than
-          // retrying here, so a transient delete failure never blocks playback.
+      const fallbackDurationMs = previousRow.durationSec != null ? previousRow.durationSec * 1000 : null
+      const previousDurationMs = current.durationMs ?? fallbackDurationMs
+      const completed = previousDurationMs != null && positionNow() >= previousDurationMs - BOUNDARY_BUFFER_MS
+      if (completed && !anchorAmbiguous) {
+        const { bucket } = playbackQueue()
+        if (bucket) {
+          try {
+            await deleteBucketItem(bucket.id, previousRow.itemId)
+            bucketStore.setTree(withoutQueueItems(bucketStore.getTree(), bucket.id, [previousRow.itemId]))
+          }
+          catch {
+            // Could not remove it — leave the row in place. The next adoption
+            // (mount, or the next event) re-evaluates from scratch rather than
+            // retrying here, so a transient delete failure never blocks playback.
+          }
         }
       }
     }
@@ -435,6 +497,7 @@ async function adoptLive(): Promise<void> {
 
   if (live.state === 'idle') {
     patch({ playing: false, external: null, currentItemId: null })
+    anchorAmbiguous = false
     return
   }
 
@@ -453,12 +516,18 @@ async function adoptLive(): Promise<void> {
 
   // Row lookup runs against the (possibly just-shrunk) live queue, so a completed
   // row can never be "found" again — the deletion above always lands first.
-  const row = rowForSpotifyTrack(live.trackId)
+  // `current.currentItemId` is still `previousRow`'s id here (nothing has patched
+  // it yet this call) — passing it as the anchor is what lets a live track that
+  // hasn't actually changed stay resolved to the SAME occurrence instead of
+  // re-guessing via first-match every read (BUG-26a).
+  const { row, ambiguous } = rowForSpotifyTrack(live.trackId, current.currentItemId)
   if (row) {
     patch({ currentItemId: row.itemId, external: null, playing, anchor, durationMs: live.durationMs })
+    anchorAmbiguous = ambiguous
     scheduleBoundaryCheck()
     return
   }
+  anchorAmbiguous = false
   patch({
     currentItemId: null,
     external: {
@@ -912,6 +981,7 @@ export const playbackSession = {
   /** Test seam. */
   __reset(): void {
     clearBoundaryCheck()
+    anchorAmbiguous = false
     const ownership = playbackOwnership.getSnapshot()
     current = {
       ...EMPTY,
@@ -943,10 +1013,7 @@ function positionNow(): number {
 // trigger uses — which verifies against a real read before treating anything as
 // finished, so a wrong guess here costs one redundant read, not a false removal.
 //
-// `BOUNDARY_BUFFER_MS` is a first-pass estimate (Spotify's own ack→apply lag,
-// observed elsewhere in this RFC, plus margin), not a measured constant in the
-// Step 7 sense — flagged in the RFC as a follow-up to measure for real.
-const BOUNDARY_BUFFER_MS = 1_500
+// `BOUNDARY_BUFFER_MS` is defined above `adoptLive()` now (BUG-26 reuses it there).
 let boundaryTimer: ReturnType<typeof setTimeout> | null = null
 
 function clearBoundaryCheck(): void {

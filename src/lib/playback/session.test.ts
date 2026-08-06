@@ -572,14 +572,16 @@ describe('self-triggered adoption cannot overwrite a newer local write', () => {
 // already runs on any trigger. This pins the piece that actually removes the
 // finished row — `onCompleted()` alone was never called from anywhere shipped.
 describe('a confirmed track change away from the current row completes it', () => {
-  it('deletes the finished row and adopts whatever is live now, without replaying it', async () => {
+  it('deletes the finished row once its own elapsed position actually reached the end, and adopts whatever is live now, without replaying it', async () => {
     setQueue([row('a'), row('b')])
     mocks.cachedUri.mockImplementation((t: string) =>
       t === 'track-a' ? 'spotify:track:SPOT-A' : t === 'track-b' ? 'spotify:track:SPOT-B' : null)
     await startAt('a')
     const playCallsBeforeAdoption = mocks.play.mock.calls.length
 
-    // Spotify moved on to the next track on its own — no command of ours caused it.
+    // 'a' (180s, from `row()`'s durationSec) genuinely played to the end before
+    // Spotify moved on — no command of ours caused it.
+    await vi.advanceTimersByTimeAsync(179_000)
     mocks.readLivePlayback.mockResolvedValue({
       state: 'playing',
       trackId: 'SPOT-B',
@@ -608,6 +610,110 @@ describe('a confirmed track change away from the current row completes it', () =
     // Spotify was ALREADY playing 'b' — re-issuing play() would be a redundant,
     // audible restart of a track that is already correctly playing.
     expect(mocks.play.mock.calls.length).toBe(playCallsBeforeAdoption)
+  })
+
+  // BUG-26(b): the row above pins the correct case (genuine completion). This pins
+  // the one the shipped fix was over-broad on: a URI mismatch that happens WITHOUT
+  // the previous row having actually reached its end — e.g. a phone/native-client
+  // skip mid-song. That is not "completion", and the shipped `adoptLive()` deleted
+  // the row anyway on URI mismatch alone, silently and with no Undo.
+  it('does NOT delete the previous row when the live track changes far from its own completion (BUG-26b)', async () => {
+    setQueue([row('a'), row('b')])
+    mocks.cachedUri.mockImplementation((t: string) =>
+      t === 'track-a' ? 'spotify:track:SPOT-A' : t === 'track-b' ? 'spotify:track:SPOT-B' : null)
+    await startAt('a')
+
+    // Barely any time has passed — 'a' (180s) is nowhere near its end when the
+    // live track jumps to 'b', e.g. skipped from a phone.
+    mocks.readLivePlayback.mockResolvedValue({
+      state: 'playing',
+      trackId: 'SPOT-B',
+      progressMs: 500,
+      readAtMs: 2_000,
+      durationMs: 180_000,
+      track: 'Title b',
+      artist: 'Artist b',
+      artists: [],
+      album: null,
+      albumSpotifyId: null,
+      albumCoverUrl: null,
+      deviceName: null,
+      shuffle: null,
+      repeat: null,
+      volumePercent: null,
+      contextUri: null,
+      contextType: null,
+    })
+
+    await playbackSession.syncFromLive()
+
+    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
+    expect(queueIds()).toEqual(['a', 'b'])
+    // The panel still honestly reports whatever is now live.
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+  })
+
+  // BUG-26(a): the queue intentionally allows duplicate tracks (D8). With no prior
+  // anchor to disambiguate, the live-track matcher falls back to a first-match
+  // guess — the SECOND occurrence may actually be the one playing. Because that
+  // guess is only ever a display best-effort, it must not later be deleted as if
+  // it were a confirmed completion — that would destroy a never-played row while
+  // the one that actually played lingers, uncounted, in the queue.
+  it('does NOT delete an ambiguously-matched duplicate-track row on the next live-track change', async () => {
+    setQueue([row('a1'), row('b'), row('a2')])
+    mocks.cachedUri.mockImplementation((t: string) =>
+      (t === 'track-a1' || t === 'track-a2') ? 'spotify:track:SPOT-A' : t === 'track-b' ? 'spotify:track:SPOT-B' : null)
+
+    // Fresh mount: nothing in this tab has a prior anchor, and Spotify is already
+    // mid-playback of SPOT-A — could be either 'a1' or 'a2', no signal says which.
+    mocks.readLivePlayback.mockResolvedValue({
+      state: 'playing',
+      trackId: 'SPOT-A',
+      progressMs: 42_000,
+      readAtMs: 1_000,
+      durationMs: 180_000,
+      track: 'Title a',
+      artist: 'Artist a',
+      artists: [],
+      album: null,
+      albumSpotifyId: null,
+      albumCoverUrl: null,
+      deviceName: null,
+      shuffle: null,
+      repeat: null,
+      volumePercent: null,
+      contextUri: null,
+      contextType: null,
+    })
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a1') // best-effort guess, not a claim of certainty
+
+    // Even letting a full track's worth of time pass, a change to a genuinely
+    // different track must not delete the guessed row.
+    await vi.advanceTimersByTimeAsync(179_000)
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-B'))
+    await playbackSession.syncFromLive()
+
+    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
+    expect(queueIds()).toEqual(['a1', 'b', 'a2'])
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+  })
+
+  // BUG-26(a): once a row IS anchored (certain, via `playAt`/`playFrom`), a read
+  // confirming the SAME track is still live must not re-derive via first-match and
+  // flap back to the other duplicate occurrence.
+  it('keeps a certainly-anchored duplicate-track row anchored across repeated live reads instead of flapping to the other occurrence', async () => {
+    setQueue([row('a1'), row('a2')])
+    mocks.cachedUri.mockImplementation((t: string) =>
+      (t === 'track-a1' || t === 'track-a2') ? 'spotify:track:SPOT-A' : null)
+    await startAt('a2')
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a2')
+
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-A'))
+    await playbackSession.syncFromLive()
+
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a2')
+    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
   })
 
   it('does not delete anything when the live track still matches the current row', async () => {
