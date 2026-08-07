@@ -6,7 +6,7 @@ import * as api from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import * as spotifyApi from './spotify.api'
-import { BucketAlbumCardAdapter, BucketBoard, LegacyAlbumChip } from './BucketBoard'
+import { BucketAlbumCardAdapter, BucketBoard } from './BucketBoard'
 
 vi.mock('@lib/buckets', async importOriginal => ({
 	...(await importOriginal<typeof import('@lib/buckets')>()),
@@ -244,17 +244,14 @@ describe('bucketAlbumCardAdapter', () => {
 		window.removeEventListener(PB_BOARD_DND_END_EVENT, boardEnd)
 	})
 
-	it('keeps the legacy identity and controls as the Stage 9 parity fixture', () => {
-		const legacy = render(<LegacyAlbumChip {...adapterProps()} />)
-		const canonical = render(<BucketAlbumCardAdapter {...adapterProps()} />)
+	it('keeps the frozen bucket identity and controls after legacy removal', () => {
+		const { container } = render(<BucketAlbumCardAdapter {...adapterProps()} />)
 
-		for (const view of [legacy, canonical]) {
-			expect(within(view.container).getByText(ALBUM_TITLE)).toBeInTheDocument()
-			expect(within(view.container).getByText(ALBUM_ARTIST)).toBeInTheDocument()
-			expect(within(view.container).getByTitle(TILE_TITLE)).toBeInTheDocument()
-			expect(within(view.container).getByRole('button', { name: '앨범 동작' })).toHaveTextContent('⋯')
-			expect(view.container.querySelector('[data-cover-state="fallback"], .cover-ph')).toHaveTextContent('DE')
-		}
+		expect(screen.getByText(ALBUM_TITLE)).toBeInTheDocument()
+		expect(screen.getByText(ALBUM_ARTIST)).toBeInTheDocument()
+		expect(screen.getByTitle(TILE_TITLE)).toBeInTheDocument()
+		expect(screen.getByRole('button', { name: '앨범 동작' })).toHaveTextContent('⋯')
+		expect(container.querySelector('[data-cover-state="fallback"]')).toHaveTextContent('DE')
 	})
 
 	it('makes a catalog-id-less album inert instead of emitting a mixed-namespace operation', () => {

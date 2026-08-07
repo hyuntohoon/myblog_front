@@ -37,7 +37,7 @@ import { TrackRow } from '../shared/TrackRow'
 import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
 import { LyricsSheet } from './lyrics/LyricsSheet'
 import { AddToBucketMenu } from './pocket/AddToBucketMenu'
-import { AlbumArt, fmtTime, Seg, Stars } from './ui'
+import { fmtTime, Seg, Stars } from './ui'
 
 // The memo window is a dock host: below this width (mobile) header-drag would
 // fight scrolling, so the sheet opens as a plain float instead of docking.
@@ -440,35 +440,6 @@ function memoTrackActions({ track, album, cover, onOpenLyrics, onAddTrack }: {
     add: () => onAddTrack(track.id, track.title),
     drag: { ref: memberRef({ trackId: track.id, albumId: album.albumId ?? null }), origin: { kind: 'external', copies: true } },
   }
-}
-
-/** Stage 9 parity fixture: the pre-canonical MemoWindow album header. */
-export function LegacyMemoAlbumHeader({ album, data }: { album: DetailTarget, data: AlbumDetailResp | null }) {
-  const a = data?.album
-  const meta: string[] = []
-  if (a?.album_type)
-    meta.push(a.album_type.toUpperCase())
-  if (a?.release_date)
-    meta.push(a.release_date)
-  if (a?.label)
-    meta.push(a.label)
-  const tags = uniqueGenres(data?.artists ?? [])
-
-  return (
-    <>
-      <div className="memo-cover-wrap"><AlbumArt url={a?.cover_url ?? album.cover} label={album.album} size={220} /></div>
-      <div className="kicker" style={{ marginBottom: 7 }}>앨범</div>
-      <h2 className="serif italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.12, letterSpacing: '-.01em', margin: 0 }}>{album.album}</h2>
-      {album.artist && <div className="sans" style={{ fontSize: 14, color: 'var(--color-subtle)', marginTop: 5 }}>{album.artist}</div>}
-      {meta.length > 0 && <div className="mono" style={{ fontSize: 11, letterSpacing: '.04em', color: 'var(--color-faded)', marginTop: 8, lineHeight: 1.5 }}>{meta.join(' · ')}</div>}
-      <div style={{ marginTop: 12 }}><span className="unrated">미평가</span></div>
-      {tags.length > 0 && (
-        <div className="memo-tags" style={{ marginTop: 14 }}>
-          {tags.map(t => <span key={t} className="memo-tag">{t}</span>)}
-        </div>
-      )}
-    </>
-  )
 }
 
 /**

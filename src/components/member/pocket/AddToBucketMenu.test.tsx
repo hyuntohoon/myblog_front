@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRef } from 'react'
+import * as buckets from '@lib/buckets'
 import { useDismissable } from '@lib/useDismissable'
+import { HomeAlbumCardAdapter } from '@components/home/HomeAlbumCardAdapter'
 import { AddToBucketMenu } from './AddToBucketMenu'
 
 vi.mock('@lib/auth', () => ({
@@ -79,5 +81,45 @@ describe('addToBucketMenu dismissable stack', () => {
 
 		fireEvent.keyDown(document, { key: 'Escape' })
 		expect(onHostClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe('home album-card add fallback', () => {
+	it('opens the existing picker and writes the catalog album id', async () => {
+		vi.mocked(buckets.listBuckets).mockResolvedValue([{
+			id: 'bucket-1',
+			name: 'Pocket Buckit',
+			color: null,
+			isDone: false,
+			kind: 'review',
+			type: 'general',
+			isPublic: false,
+			researchMode: 'off',
+			albums: [],
+			children: [],
+		}])
+		vi.mocked(buckets.addBucketItem).mockResolvedValue({ item: null, conflict: true })
+
+		render(
+			<HomeAlbumCardAdapter
+				data={{
+					catalogAlbumId: 'album-1',
+					spotifyAlbumId: null,
+					title: 'Kind of Blue',
+					artist: 'Miles Davis',
+					artistId: 'artist-1',
+					cover: null,
+					year: 1959,
+				}}
+				layout="grid"
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole('button', { name: 'Kind of Blue 버킷에 담기' }))
+		const picker = await screen.findByRole('dialog', { name: '버킷 선택' })
+		expect(picker).toHaveTextContent('«Kind of Blue» 담기')
+		fireEvent.click(screen.getByRole('button', { name: 'Pocket Buckit' }))
+
+		await waitFor(() => expect(buckets.addBucketItem).toHaveBeenCalledWith('bucket-1', 'album-1'))
 	})
 })

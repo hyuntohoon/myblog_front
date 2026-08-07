@@ -14,9 +14,10 @@ import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
-import { addBucketItem, deleteBucket as apiDeleteBucket, deleteBucketItem, moveBucket } from '@lib/buckets'
+import { addBucketItem, deleteBucket as apiDeleteBucket, deleteBucketItem, expandAlbumTracks, expandSourceArtists, findBucket, isManualAddTarget, moveBucket } from '@lib/buckets'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { normalizeDesign, POCKET_DESIGN_DEFAULTS, readDesign, writeDesign } from '@lib/pocketBuckit/design'
+import { completeExternalAlbumDrop } from '@lib/pocketBuckit/externalAlbumDrop'
 import { bucketsToLeaves } from '@lib/pocketBuckit/leaf'
 
 // Stable empty tree so a null cache doesn't churn the leaves/flatBuckets memos.
@@ -76,6 +77,12 @@ interface PocketContextValue {
   setEditMode: (b: boolean) => void
   // ── data ────────────────────────────────────────────────────────────────────
   bucketById: (id: string) => BoardBucket | undefined
+  /**
+   * Complete an external, copy-style album drop without relying on the member
+   * dashboard's BucketBoard island. Home only mounts Pocket, so handing the
+   * drop back to BucketBoard would make a highlighted target silently no-op.
+   */
+  dropExternalAlbum: (bucketId: string, albumId: string, title: string) => Promise<void>
   removeItem: (bucketId: string, itemId: string, albumId: string | null, title: string) => Promise<void>
   /**
    * Reorder a TOP-LEVEL bucket in the tray, persisted via PUT /api/buckets/{id}/move
@@ -257,6 +264,29 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     undoTimer.current = setTimeout(() => setUndo(null), 6000)
   }, [])
 
+  const dropExternalAlbum = useCallback(async (bucketId: string, albumId: string, title: string) => {
+    // Read the live shared tree at action time. A same-tab navigation or another
+    // island may have refreshed it since this provider rendered.
+    const target = findBucket(bucketStore.getTree(), bucketId)
+    if (!target || !isManualAddTarget(target))
+      return
+    try {
+      const label = await completeExternalAlbumDrop(target, albumId, title, {
+        addAlbum: addBucketItem,
+        expandArtists: expandSourceArtists,
+        expandTracks: expandAlbumTracks,
+      })
+      if (label)
+        showUndo({ label })
+      // Every branch writes past the shared SWR tree. Reconcile Pocket and any
+      // mounted member board to the server response after the copy/expansion.
+      void bucketStore.ensureFresh(true)
+    }
+    catch {
+      showUndo({ label: '담기에 실패했어요' })
+    }
+  }, [showUndo])
+
   const removeItem = useCallback(async (bucketId: string, itemId: string, albumId: string | null, title: string) => {
     await deleteBucketItem(bucketId, itemId)
     void bucketStore.ensureFresh(true)
@@ -345,6 +375,7 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     editMode,
     setEditMode,
     bucketById,
+    dropExternalAlbum,
     removeItem,
     reorderBucket,
     deleteBucket,
@@ -369,6 +400,7 @@ drawerPosFor,
 isDrawerOpen,
     editMode,
 bucketById,
+dropExternalAlbum,
 removeItem,
 reorderBucket,
 deleteBucket,

@@ -694,11 +694,10 @@ export function BucketAlbumCardAdapter({ album, bucketId, rated, score, onOpen, 
   )
 }
 
-// ── album cover tile ──────────────────────────────────────────────────────--
-// Drag = move/reorder; dropping ON a cover inserts the dragged item BEFORE it
-// (both directions). Click opens detail. Rating chips show only inside the
-// is_done ("rated") bucket. `copySource` tiles (최근 들은 앨범) drag as a copy.
-function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, listened, marked, onToggleMark, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew, canonical }: AlbumChipProps & { canonical: boolean }) {
+// ── bucket member tile ────────────────────────────────────────────────────--
+// Album memberships use the canonical adapter. Track/review/playback/snapshot
+// members retain their generalized tile because they are not album cards.
+function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, copySource, fromLib, libRow, listened, marked, onToggleMark, draggingId, setDraggingId, setDragKind, onInsert, research, onTouchActions, isNew }: AlbumChipProps) {
   const [over, setOver] = useState(false)
   const dragging = draggingId === album.itemId
   // FEAT-pocket-buckit Step 5/6 — only an 'album' member has a DB album to open +
@@ -746,7 +745,7 @@ function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, 
       }}
     >
       {over && <div style={{ position: 'absolute', left: -7, top: 0, bottom: 26, width: 3, borderRadius: 2, background: 'var(--color-accent)' }} />}
-      {canonical && isAlbum ?
+      {isAlbum ?
         (
             <BucketAlbumCardAdapter
 	album={album}
@@ -774,21 +773,8 @@ function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, 
             <div
 	draggable
 	onDragStart={(e) => {
-          // ARCH-entity-interaction-v2 E2 — the three origins the board actually has.
-          // `ref` says WHAT is dragged (E1 identity), `origin` says where from, which is
-          // what decides move vs copy: the recent strip is not a membership at all, and a
-          // library row is a membership that still copies out (the bucket is sync-owned).
-          if (copySource)
-            dnd = { ref: memberRef({ albumId: album.albumId }), origin: { kind: 'external', fromBucketId: bucketId, itemType: 'album', copies: true } }
-          else if (fromLib)
-            dnd = { ref: memberRef({ albumId: album.albumId }), origin: { kind: 'library', itemId: album.itemId, fromBucketId: bucketId, itemType: 'album', source: libRow?.source } }
-          else
-            // The ref's entity (album / track / artist) is what lets an Artist-bucket drop
-            // route a SOURCE (album/track → expand into credited artists) apart from an
-            // artist MEMBER (move); `origin.itemType` keeps the membership kind distinct
-            // from the entity, so a queue row and a plain track row stay tellable apart.
-            dnd = { ref: memberRef(album), origin: { kind: 'internal', itemId: album.itemId, fromBucketId: bucketId, itemType: album.itemType } }
-          e.dataTransfer.effectAllowed = copySource ? 'copy' : (fromLib ? 'copyMove' : 'move')
+          dnd = { ref: memberRef(album), origin: { kind: 'internal', itemId: album.itemId, fromBucketId: bucketId, itemType: album.itemType } }
+          e.dataTransfer.effectAllowed = 'move'
           setDraggingId(album.itemId)
           setDragKind('member')
           // FEAT-pocket-buckit-viewers Track A — REVERSE of Step 6: hand this board
@@ -810,20 +796,10 @@ function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, 
           // FEAT-my-buckit-artist: an artist member navigates to its /artist/[id]
           // hub (the canonical detail surface, not a modal). A drag never fires a
           // click (HTML5 DnD), so no suppressClick guard is needed.
-          if (isArtist) {
-            if (album.artistId)
-              window.location.assign(artistHref(album.artistId))
-            return
-          }
-          // A non-album member has no album-detail target — clicking it is a no-op.
-          if (!isAlbum)
-            return
-          onOpen({ album: album.title, artist: album.artist, real: true, albumId: album.albumId ?? undefined, cover: album.cover, year: album.year, writable: !copySource && !fromLib, bucketId, itemId: album.itemId, note: album.note ?? null, prepTonight: album.prepTonight ?? false })
+          if (isArtist && album.artistId)
+            window.location.assign(artistHref(album.artistId))
+          // Other non-album members have no canonical detail target.
         }}
-	// Warm the album-detail cache on intent (hover / tap-start) so the modal
-	// opens on an edge hit instead of a ~1s miss (see lib/albumDetail.ts).
-	onPointerEnter={() => prefetchAlbumDetail(album.albumId)}
-	onPointerDown={() => prefetchAlbumDetail(album.albumId)}
 	className={`lf-drag-handle bb-tile${dragging ? ' lf-is-dragging' : ''}`}
 	title={`${album.title} — ${album.artist}`}
             >
@@ -835,62 +811,7 @@ function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, 
 	style={{ position: 'absolute', top: -4, right: -4, width: 10, height: 10, borderRadius: '50%', background: 'var(--color-accent)', boxShadow: '0 0 0 2px var(--color-bg)' }}
             />
           )}
-          {copySource && (
-            <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
-          )}
-          {!isAlbum && (
-            <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-bg)', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '2px 5px', borderRadius: 3 }}>{ITEM_TYPE_LABEL[album.itemType] ?? album.itemType}</span>
-          )}
-          {libRow && <SlibBadges row={libRow} />}
-          {!copySource && !libRow && !rated && album.alreadyReviewed && (
-            <span className="mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
-          )}
-          {rated && score != null && (
-            <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-bg)', background: 'var(--color-text)', padding: '2px 6px', borderRadius: 3 }}>{score.toFixed(1)}</span>
-          )}
-          {rated && score == null && (
-            <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
-          )}
-          {/* FEAT-bucket-identity Direction B — quiet "이미 들음 → 평론 가능" hint:
-              a small hollow ring at the bottom-right. Listened implies not-yet-
-              reviewed, so it never collides with the 평론함 badge or rating chips. */}
-          {listened && (
-            <span
-	title="이미 들음 → 평론 가능"
-	aria-label="이미 들음 — 평론 가능"
-	style={{ position: 'absolute', bottom: 6, right: 6, width: 10, height: 10, borderRadius: '50%', background: 'var(--color-bg)', border: '2px solid oklch(0.62 0.10 155)', boxShadow: '0 0 0 1px var(--color-bg)' }}
-            />
-          )}
-          {research && (
-            <CoverResearchBadge status={research.status} active={research.mode !== 'off'} onOpen={research.onOpen} />
-          )}
-          {research && research.mode === 'selected' && (
-            <input
-	type="checkbox"
-	className="rsh-cover-check"
-	checked={research.selected}
-	title="자동 조사 대상"
-	aria-label="자동 조사 대상으로 선택"
-	onClick={e => e.stopPropagation()}
-	onChange={e => research.onToggleSelected(e.target.checked)}
-            />
-          )}
-          {onToggleMark && (
-            <button
-	type="button"
-	className={`bb-tile-mark${marked ? ' is-marked' : ''}`}
-	title={marked ? '평론 쓸 것 — 표시 해제' : '평론 쓸 것으로 표시 (나만 봅니다)'}
-	aria-label={marked ? '평론 쓸 것 표시 해제' : '평론 쓸 것으로 표시'}
-	aria-pressed={marked}
-	draggable={false}
-	onClick={(e) => {
-                e.stopPropagation()
-                onToggleMark()
-              }}
-            >
-              ✎
-            </button>
-          )}
+          <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: 'var(--color-bg)', background: 'color-mix(in srgb, var(--color-text) 78%, transparent)', padding: '2px 5px', borderRadius: 3 }}>{ITEM_TYPE_LABEL[album.itemType] ?? album.itemType}</span>
           {onTouchActions && (
             <button
 	type="button"
@@ -918,12 +839,7 @@ function AlbumChipRenderer({ album, bucketId, bucketType, rated, score, onOpen, 
 }
 
 function AlbumChip(props: AlbumChipProps) {
-  return <AlbumChipRenderer {...props} canonical />
-}
-
-/** Stage 9 parity fixture; no live render path calls this legacy card. */
-export function LegacyAlbumChip(props: AlbumChipProps) {
-  return <AlbumChipRenderer {...props} canonical={false} />
+  return <AlbumChipRenderer {...props} />
 }
 
 interface Ops {

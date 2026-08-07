@@ -5,9 +5,9 @@
 // pins the NEW glue — clicking a track's ➕ mounts the menu with the right
 // track id/title, and repeat clicks on different tracks remount it (fresh
 // `key`), matching the seq-bump ReviewTrackAdder already established.
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { AlbumDetail, LegacyMemoAlbumHeader, MemoAlbumCardAdapter } from './AlbumDetail'
+import { AlbumDetail, MemoAlbumCardAdapter } from './AlbumDetail'
 
 const FIXTURE = {
 	album: { id: 'album-1', title: 'Kind of Blue', release_date: '1959-08-17', cover_url: null, album_type: 'album', label: null },
@@ -88,19 +88,16 @@ describe('albumDetail add-track wiring', () => {
 		expect(await screen.findByTestId('add-to-bucket-menu')).toHaveTextContent('track:track-db-2:Freddie Freeloader')
 	})
 
-	it('memo adapter preserves the legacy identity while moving it onto AlbumCard', () => {
+	it('memo adapter preserves the frozen identity after legacy removal', () => {
 		const album = { album: 'Kind of Blue', artist: 'Miles Davis', albumId: 'album-1' }
-		const legacy = render(<LegacyMemoAlbumHeader album={album} data={FIXTURE} />)
-		const canonical = render(<MemoAlbumCardAdapter album={album} data={FIXTURE} onOpenLyrics={vi.fn()} onAddTrack={vi.fn()} />)
+		const { container } = render(<MemoAlbumCardAdapter album={album} data={FIXTURE} onOpenLyrics={vi.fn()} onAddTrack={vi.fn()} />)
 
-		for (const view of [legacy, canonical]) {
-			expect(within(view.container).getByText('Kind of Blue')).toBeInTheDocument()
-			expect(within(view.container).getByText('Miles Davis')).toBeInTheDocument()
-			expect(within(view.container).getByText('ALBUM · 1959-08-17')).toBeInTheDocument()
-			expect(within(view.container).getByText('미평가')).toBeInTheDocument()
-		}
-		expect(canonical.container.querySelector('[data-album-card-layout="grid"]')).toBeInTheDocument()
-		expect(canonical.container.querySelector('[data-cover-state="fallback"]')).toHaveTextContent('KI')
-		expect(within(canonical.container).getByText('트랙리스트 · 2곡')).toBeInTheDocument()
+		expect(screen.getByText('Kind of Blue')).toBeInTheDocument()
+		expect(screen.getByText('Miles Davis')).toBeInTheDocument()
+		expect(screen.getByText('ALBUM · 1959-08-17')).toBeInTheDocument()
+		expect(screen.getByText('미평가')).toBeInTheDocument()
+		expect(container.querySelector('[data-album-card-layout="grid"]')).toBeInTheDocument()
+		expect(container.querySelector('[data-cover-state="fallback"]')).toHaveTextContent('KI')
+		expect(screen.getByText('트랙리스트 · 2곡')).toBeInTheDocument()
 	})
 })

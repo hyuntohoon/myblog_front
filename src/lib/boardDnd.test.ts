@@ -16,7 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { PLAYBACK_KIND, PLAYBACK_TYPE, SLIB_KIND } from './buckets'
 import { canAcceptAlbumDrag, canAcceptBucketDrag, memberAcceptsLabel, routeAlbumDrop } from './boardDnd'
 import { fromDndItem, toDndItem } from './entityDrag'
-import { boardDragAccepts } from './pocketBuckit/boardDnd'
+import { boardDragAccepts, externalAlbumCopy } from './pocketBuckit/boardDnd'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT } from './pocketBuckit/events'
 
 function bucket(over: Partial<BoardBucket> = {}): BoardBucket {
@@ -238,6 +238,23 @@ describe('boardDragAccepts mirrors canAcceptAlbumDrag (drift guard)', () => {
   it('rejects everything with no drag in flight', () => {
     expect(boardDragAccepts(bucket({ type: 'general' }))).toBe(false)
     expect(boardDragAccepts(playback)).toBe(false)
+  })
+})
+
+describe('pocket external album copy bridge', () => {
+  it('accepts only a catalog-backed external copy payload', () => {
+    expect(externalAlbumCopy({
+      ref: { entity: 'album', albumId: 'album-1', title: 'Album One' },
+      origin: { kind: 'external', copies: true },
+    })).toEqual({ albumId: 'album-1', title: 'Album One' })
+    expect(externalAlbumCopy({
+      ref: { entity: 'album', albumId: 'album-1' },
+      origin: { kind: 'external', copies: false },
+    })).toBeNull()
+    expect(externalAlbumCopy({
+      ref: { entity: 'track', trackId: 'track-1', albumId: 'album-1' },
+      origin: { kind: 'external', copies: true },
+    })).toBeNull()
   })
 })
 

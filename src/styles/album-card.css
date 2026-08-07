@@ -152,6 +152,20 @@
 	margin-top: 4px;
 }
 
+.album-card__catalog-note {
+	display: block;
+	margin-top: 3px;
+	font-size: 9.5px;
+	letter-spacing: 0.03em;
+	color: var(--color-faded);
+}
+
+.home-album-card__add {
+	font-size: 14px;
+	line-height: 1;
+	padding: 4px 7px;
+}
+
 .album-card__actions {
 	display: inline-flex;
 	align-items: center;

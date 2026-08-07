@@ -31,9 +31,9 @@ import type { components } from '@lib/api.gen'
 import { useEffect, useState } from 'react'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { artistHref, openAlbum } from '@lib/entityLinks'
-import { AlbumCard } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
-import { Cover, SectionTitle } from './ui'
+import { HomeAlbumCardAdapter } from './HomeAlbumCardAdapter'
+import { SectionTitle } from './ui'
 
 type NewReleaseItem = components['schemas']['Music_NewReleaseItem']
 type NewReleasesResult = components['schemas']['Music_NewReleasesResult']
@@ -46,16 +46,6 @@ export const NRL_LIMIT = 12
 // (same strip idiom as TodayAlbumBuckit's `.otd-mod`).
 const SCOPED_CSS = `
 .nrl-mod .nrl-card{flex:0 0 auto;width:clamp(128px,32vw,150px);scroll-snap-align:start;min-width:0}
-.nrl-mod .nrl-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
-.nrl-mod .nrl-cover-wrap{position:relative;display:block;transition:transform .18s}
-.nrl-mod .nrl-open:hover .nrl-cover-wrap{transform:translateY(-3px)}
-.nrl-mod .nrl-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;border-radius:6px}
-.nrl-mod .nrl-rev{position:absolute;left:7px;bottom:7px;padding:3px 7px;border-radius:999px;background:var(--color-accent);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.22)}
-.nrl-mod .nrl-title{display:block;margin:9px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .16s}
-.nrl-mod .nrl-open:hover .nrl-title{color:var(--color-accent)}
-.nrl-mod .nrl-artist{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--color-subtle);text-decoration:none}
-.nrl-mod a.nrl-artist:hover{color:var(--color-text);text-decoration:underline}
-.nrl-mod .nrl-date{display:block;margin-top:3px;color:var(--color-faded)}
 .nrl-mod .nrl-card>.album-card{width:100%}
 .nrl-mod .nrl-card .album-card__byline{margin-top:2px}
 .nrl-mod .nrl-card .album-card__secondary{margin-top:3px;color:var(--color-faded)}
@@ -63,7 +53,6 @@ const SCOPED_CSS = `
 .nrl-mod .nrl-cal{color:var(--color-faded);text-decoration:none;transition:color .15s}
 .nrl-mod .nrl-cal:hover{color:var(--color-accent)}
 .nrl-mod .nrl-cal:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:2px}
-@media (prefers-reduced-motion:reduce){.nrl-mod .nrl-cover-wrap{transition:none}}
 `
 
 function pad(n: number) {
@@ -77,39 +66,6 @@ function dateLabel(iso: string): string {
 	if (!m || !d)
 		return ''
 	return `${pad(m)}.${pad(d)} 발매`
-}
-
-/** Stage 4 parity fixture. Kept out of the live render path until Stage 9. */
-export function LegacyCardItem({ it }: { it: NewReleaseItem }) {
-	const primary = it.artists?.[0]
-	const year = Number(it.release_date.slice(0, 4)) || null
-	const others = (it.artists?.length ?? 0) - 1
-	const artistLabel = primary ? (others > 0 ? `${primary.name} 외 ${others}` : primary.name) : ''
-	return (
-		<article className="nrl-card">
-			<button
-				type="button"
-				className="nrl-open"
-				title={`${it.title} · 앨범 보기`}
-				aria-label={`${it.title}${artistLabel ? ` — ${artistLabel}` : ''} 앨범 보기${it.reviewed_artist ? ' (평론한 아티스트)' : ''}`}
-				onPointerEnter={() => prefetchAlbumDetail(it.album_id)}
-				onFocus={() => prefetchAlbumDetail(it.album_id)}
-				onClick={() => openAlbum({ albumId: it.album_id, title: it.title, artist: primary?.name, cover: it.cover_url, year })}
-			>
-				<span className="nrl-cover-wrap">
-					<Cover label={it.title} src={it.cover_url} square radius={4} />
-					{it.reviewed_artist && (
-						<span className="nrl-rev mono" style={{ fontSize: 10, letterSpacing: '.04em' }} aria-hidden="true">★ 평론</span>
-					)}
-				</span>
-				<span className="nrl-title serif italic" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, color: 'var(--color-text)' }}>{it.title}</span>
-			</button>
-			{primary && (primary.id ?
-				<a className="nrl-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }} href={artistHref(primary.id)} title={`${primary.name} 아티스트`}>{artistLabel}</a> :
-				<span className="nrl-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }}>{artistLabel}</span>)}
-			<span className="nrl-date mono" style={{ fontSize: 10.5, letterSpacing: '.03em' }}>{dateLabel(it.release_date)}</span>
-		</article>
-	)
 }
 
 /**
@@ -143,7 +99,7 @@ export function NewReleaseAlbumCardAdapter({ it }: { it: NewReleaseItem }) {
 					prefetchAlbumDetail(it.album_id)
 			}}
 		>
-			<AlbumCard
+			<HomeAlbumCardAdapter
 				data={{
 					catalogAlbumId: it.album_id,
 					spotifyAlbumId: null,

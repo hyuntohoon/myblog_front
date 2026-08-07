@@ -16,9 +16,9 @@
  */
 import { useEffect, useState } from 'react'
 import { artistHref, openAlbum } from '@lib/entityLinks'
-import { AlbumCard } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
-import { Cover, SectionTitle } from './ui'
+import { HomeAlbumCardAdapter } from './HomeAlbumCardAdapter'
+import { SectionTitle } from './ui'
 
 interface OtdArtist { id: string, name: string, spotify_id: string | null }
 interface OtdItem {
@@ -42,45 +42,12 @@ function pad(n: number) {
 const SCOPED_CSS = `
 .otd-mod .otd-skel{display:flex;gap:clamp(14px,2vw,20px);overflow-x:auto;padding:2px 2px 14px;margin:0 -2px}
 .otd-mod .otd-card{flex:0 0 auto;width:clamp(128px,32vw,150px);scroll-snap-align:start;min-width:0}
-.otd-mod .otd-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
-.otd-mod .otd-cover-wrap{position:relative;display:block;transition:transform .18s}
-.otd-mod .otd-open:hover .otd-cover-wrap{transform:translateY(-3px)}
-.otd-mod .otd-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;border-radius:6px}
-.otd-mod .otd-ago{position:absolute;left:7px;bottom:7px;padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--color-bg) 82%,transparent);backdrop-filter:blur(3px);color:var(--color-text);box-shadow:0 1px 3px rgba(0,0,0,.18)}
-.otd-mod .otd-title{display:block;margin:9px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .16s}
-.otd-mod .otd-open:hover .otd-title{color:var(--color-accent)}
-.otd-mod .otd-artist{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--color-subtle);text-decoration:none}
-.otd-mod .otd-artist:hover{color:var(--color-text);text-decoration:underline}
 .otd-mod .otd-card>.album-card{width:100%}
 .otd-mod .otd-card .album-card__byline{margin-top:2px}
 .otd-mod .otd-card .album-card__badge{padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--color-bg) 82%,transparent);backdrop-filter:blur(3px);color:var(--color-text);box-shadow:0 1px 3px rgba(0,0,0,.18)}
-@media (prefers-reduced-motion:reduce){.otd-mod .otd-cover-wrap{transition:none}}
+.otd-mod .otd-skel-title{display:block;margin:9px 0 2px;line-height:1.15}
+.otd-mod .otd-skel-artist{display:inline-block;margin-top:2px}
 `
-
-/** Stage 5 parity fixture. Kept out of the live render path until Stage 9. */
-export function LegacyTodayAlbumCard({ it }: { it: OtdItem }) {
-  const primary = it.artists[0]
-  const year = Number(it.release_date.slice(0, 4)) || null
-  return (
-    <article className="otd-card">
-      <button
-	type="button"
-	className="otd-open"
-	title={`${it.title} · 앨범 보기`}
-	onClick={() => openAlbum({ albumId: it.album_id, title: it.title, artist: primary?.name, cover: it.cover_url, year })}
-      >
-        <span className="otd-cover-wrap">
-          <Cover label={it.title} src={it.cover_url} square radius={4} />
-          <span className="otd-ago mono" style={{ fontSize: 10.5, letterSpacing: '.02em' }}>{`${it.years_ago}년 전`}</span>
-        </span>
-        <span className="otd-title serif italic" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, color: 'var(--color-text)' }}>{it.title}</span>
-      </button>
-      {primary && (primary.id ?
-        <a className="otd-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }} href={artistHref(primary.id)} title={`${primary.name} 아티스트`}>{primary.name}</a> :
-        <span className="otd-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }}>{primary.name}</span>)}
-    </article>
-  )
-}
 
 /** Public on-this-day adapter: open-only, with the anniversary in the badge slot. */
 export function TodayAlbumCardAdapter({ it }: { it: OtdItem }) {
@@ -88,7 +55,7 @@ export function TodayAlbumCardAdapter({ it }: { it: OtdItem }) {
   const year = Number(it.release_date.slice(0, 4)) || null
   return (
     <div className="otd-card" title={`${it.title} · 앨범 보기`}>
-      <AlbumCard
+      <HomeAlbumCardAdapter
 	data={{
           catalogAlbumId: it.album_id,
           spotifyAlbumId: null,
@@ -128,8 +95,8 @@ function Skeleton() {
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} className="otd-card">
           <span style={{ display: 'block', width: '100%', aspectRatio: '1 / 1', borderRadius: 4, background: 'var(--color-border-soft)' }} />
-          <span className="otd-title serif italic" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15 }}>{bar('78%', '0.72em')}</span>
-          <span className="otd-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }}>{bar('52%', '0.78em')}</span>
+          <span className="otd-skel-title serif italic" style={{ fontSize: 15.5, fontWeight: 500 }}>{bar('78%', '0.72em')}</span>
+          <span className="otd-skel-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }}>{bar('52%', '0.78em')}</span>
         </div>
       ))}
     </div>

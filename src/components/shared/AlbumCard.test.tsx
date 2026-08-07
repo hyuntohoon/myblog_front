@@ -1,15 +1,9 @@
-// ARCH-album-card-contract-and-composition Stage 3 — pins the shared album
-// renderer before a live surface adopts it. The cover matrix records the
-// semantics of the four legacy paths this primitive replaces over Stages 4-9.
+// Canonical AlbumCard presentation and capability contract.
 import type { DragPayload } from '@lib/entityDrag'
 import type { AlbumCardCapabilities, AlbumCardData } from './AlbumCard'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
-import { Cover as HomeCover } from '../home/ui'
-import { LkCover } from '../member/LikedBoard'
-import { AlbumArt } from '../member/ui'
-import { LegacySubjectHero } from '../writer/SubjectHero'
 import { AlbumCard, unresolvedAlbumCardData } from './AlbumCard'
 
 const DATA: AlbumCardData = {
@@ -216,116 +210,25 @@ describe('albumCard — declared capabilities', () => {
 	})
 })
 
-describe('albumCard — legacy cover parity matrix', () => {
-	const subject = (cover: string | null) => ({
-		id: 'album-1',
-		title: 'Kind of Blue',
-		cover_url: cover,
-		release_date: '1959-08-17',
-		artists: [{ id: 'artist-1', name: 'Miles Davis' }],
-		tracks: [],
-		kind: 'album' as const,
+describe('albumCard — canonical cover behavior', () => {
+	it('renders the normalized two-letter fallback', () => {
+		const { container } = render(<AlbumCard data={DATA} layout="grid" />)
+		expect(container.querySelector('[data-cover-state="fallback"]')).toHaveTextContent('KI')
 	})
 
-	function legacyCover(name: 'home Cover' | 'member AlbumArt' | 'LikedBoard LkCover' | 'writer SubjectHero', cover: string | null) {
-		if (name === 'home Cover')
-			return <HomeCover label="Kind of Blue" src={cover} square />
-		if (name === 'member AlbumArt')
-			return <AlbumArt label="Kind of Blue" url={cover} />
-		if (name === 'LikedBoard LkCover')
-			return <LkCover label="Kind of Blue" cover={cover} square />
-		return <LegacySubjectHero subject={subject(cover)} score={0} onScoreChange={vi.fn()} subjectBestNew={false} onSubjectBestNewChange={vi.fn()} onOpenSearch={vi.fn()} />
-	}
-
-	function coverSignature(container: HTMLElement, subjectHero = false) {
-		const node = subjectHero ? container.querySelector('.wr-hero-cover')! : container.firstElementChild!
-		const image = node.matches('img') ? node : node.querySelector('img')
-		const fallback = node.querySelector('.cover-ph, .wr-hero-cover-fallback')
-		return {
-			tag: node.tagName.toLowerCase(),
-			className: node.getAttribute('class'),
-			style: node.getAttribute('style'),
-			image: image ?
-				{
-					src: image.getAttribute('src'),
-					alt: image.getAttribute('alt'),
-					loading: image.getAttribute('loading'),
-					decoding: image.getAttribute('decoding'),
-					style: image.getAttribute('style'),
-				} :
-				null,
-			fallback: fallback ?
-				{
-					className: fallback.getAttribute('class'),
-					text: fallback.textContent,
-					style: fallback.getAttribute('style'),
-				} :
-				null,
-		}
-	}
-
-	it('freezes the actual legacy DOM/style signatures instead of claiming they were identical', () => {
-		const names = ['home Cover', 'member AlbumArt', 'LikedBoard LkCover', 'writer SubjectHero'] as const
-		const image = names.map((legacy) => {
-			const view = render(legacyCover(legacy, '/kind-of-blue.jpg'))
-			return coverSignature(view.container, legacy === 'writer SubjectHero')
-		})
-		const fallback = names.map((legacy) => {
-			const view = render(legacyCover(legacy, null))
-			return coverSignature(view.container, legacy === 'writer SubjectHero')
-		})
-
-		expect(image).toEqual([
-			{ tag: 'div', className: 'cover', style: 'width: 100%; aspect-ratio: 1 / 1; border-radius: 3px;', image: { src: '/kind-of-blue.jpg', alt: 'Kind of Blue', loading: 'lazy', decoding: null, style: null }, fallback: null },
-			{ tag: 'img', className: null, style: 'width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 3px; display: block; border: 1px solid var(--color-border);', image: { src: '/kind-of-blue.jpg', alt: 'Kind of Blue', loading: 'lazy', decoding: 'async', style: 'width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 3px; display: block; border: 1px solid var(--color-border);' }, fallback: null },
-			{ tag: 'img', className: null, style: 'width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 4px; display: block; border: 1px solid var(--color-border);', image: { src: '/kind-of-blue.jpg', alt: 'Kind of Blue', loading: 'lazy', decoding: 'async', style: 'width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 4px; display: block; border: 1px solid var(--color-border);' }, fallback: null },
-			{ tag: 'div', className: 'wr-hero-cover', style: null, image: { src: '/kind-of-blue.jpg', alt: 'Kind of Blue', loading: null, decoding: null, style: null }, fallback: null },
-		])
-		expect(fallback).toEqual([
-			{ tag: 'div', className: 'cover', style: 'width: 100%; aspect-ratio: 1 / 1; border-radius: 3px;', image: null, fallback: { className: 'cover-ph', text: 'KI', style: null } },
-			{ tag: 'div', className: 'cover', style: 'width: 100%; aspect-ratio: 1 / 1; border-radius: 3px;', image: null, fallback: { className: 'cover-ph', text: 'KI', style: null } },
-			{ tag: 'div', className: 'cover', style: 'width: 100%; aspect-ratio: 1 / 1; border-radius: 4px;', image: null, fallback: { className: 'cover-ph', text: 'KI', style: null } },
-			{ tag: 'div', className: 'wr-hero-cover', style: null, image: null, fallback: { className: 'wr-hero-cover-fallback serif', text: 'K', style: null } },
-		])
+	it('renders image identity with lazy async loading hints', () => {
+		render(<AlbumCard data={{ ...DATA, cover: '/kind-of-blue.jpg' }} layout="grid" />)
+		const image = screen.getByRole('img', { name: 'Kind of Blue' })
+		expect(image).toHaveAttribute('src', '/kind-of-blue.jpg')
+		expect(image).toHaveAttribute('loading', 'lazy')
+		expect(image).toHaveAttribute('decoding', 'async')
 	})
 
-	it.each(['home Cover', 'member AlbumArt', 'LikedBoard LkCover', 'writer SubjectHero'] as const)('matches the %s image identity and source', (legacy) => {
-		const old = render(legacyCover(legacy, '/kind-of-blue.jpg'))
-		const oldImage = within(old.container).getByRole('img', { name: 'Kind of Blue' })
-		const canonical = render(<AlbumCard data={{ ...DATA, cover: '/kind-of-blue.jpg' }} layout="grid" />)
-		const newImage = within(canonical.container).getByRole('img', { name: 'Kind of Blue' })
-
-		expect(newImage).toHaveAttribute('src', oldImage.getAttribute('src'))
-		expect(newImage).toHaveAttribute('alt', oldImage.getAttribute('alt'))
-		// Canonical normalization: lazy+async matches AlbumArt/LkCover and adds
-		// non-visual loading hints to HomeCover/SubjectHero.
-		expect(newImage).toHaveAttribute('loading', 'lazy')
-		expect(newImage).toHaveAttribute('decoding', 'async')
-	})
-
-	it('freezes the four actual no-image outputs and the chosen canonical normalization', () => {
-		const actual = (['home Cover', 'member AlbumArt', 'LikedBoard LkCover', 'writer SubjectHero'] as const).map((legacy) => {
-			const view = render(legacyCover(legacy, null))
-			return view.container.querySelector('.cover-ph, .wr-hero-cover-fallback')?.textContent
-		})
-		const canonical = render(<AlbumCard data={DATA} layout="grid" />)
-
-		expect(actual).toEqual(['KI', 'KI', 'KI', 'K'])
-		// The shared primitive takes the already-shared two-letter Cover output;
-		// The writer single-glyph path remains only as a Stage 9 parity fixture.
-		expect(canonical.container.querySelector('[data-cover-state="fallback"]')).toHaveTextContent('KI')
-	})
-
-	it.each(['home Cover', 'member AlbumArt', 'LikedBoard LkCover', 'writer SubjectHero'] as const)('keeps a broken URL in the image branch like %s', (legacy) => {
-		const old = render(legacyCover(legacy, '/missing.jpg'))
-		const oldImage = within(old.container).getByRole('img', { name: 'Kind of Blue' })
-		const canonical = render(<AlbumCard data={{ ...DATA, cover: '/missing.jpg' }} layout="grid" />)
-		const newImage = within(canonical.container).getByRole('img', { name: 'Kind of Blue' })
-
-		fireEvent.error(oldImage)
-		fireEvent.error(newImage)
-		expect(oldImage).toBeInTheDocument()
-		expect(newImage).toBeInTheDocument()
-		expect(canonical.container.querySelector('[data-cover-state="fallback"]')).toBeNull()
+	it('keeps a broken URL in the image branch', () => {
+		const { container } = render(<AlbumCard data={{ ...DATA, cover: '/missing.jpg' }} layout="grid" />)
+		const image = screen.getByRole('img', { name: 'Kind of Blue' })
+		fireEvent.error(image)
+		expect(image).toBeInTheDocument()
+		expect(container.querySelector('[data-cover-state="fallback"]')).toBeNull()
 	})
 })

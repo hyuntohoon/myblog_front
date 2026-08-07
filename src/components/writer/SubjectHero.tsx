@@ -92,15 +92,13 @@ export function EditorialAlbumTargetAdapter({
   )
 }
 
-/** Stage 9 parity fixture; live album subjects no longer use this renderer. */
-export function LegacySubjectHero({
+/** Empty and artist subjects intentionally remain outside the album-card contract. */
+function NonAlbumSubjectHero({
   subject,
   score,
   onScoreChange,
-  subjectBestNew,
-  onSubjectBestNewChange,
   onOpenSearch,
-}: Props) {
+}: Pick<Props, 'subject' | 'score' | 'onScoreChange' | 'onOpenSearch'>) {
   if (!subject) {
     return (
       <section className="wr-hero-empty-wrap">
@@ -116,16 +114,12 @@ export function LegacySubjectHero({
     )
   }
 
-  const isArtist = subject.kind === 'artist'
   const hue = hueFor(subject.id || subject.title)
   const coverColor = `oklch(0.68 0.105 ${hue})`
   const heroStyle = {
     '--wr-hero-cover-color': coverColor,
     '--wr-hero-glow': `oklch(0.72 0.13 ${hue})`,
   } as CSSProperties
-  const artist = subject.artists[0]?.name
-  const year = subject.release_date ? subject.release_date.slice(0, 4) : null
-
   return (
     <section className="wr-hero" style={heroStyle}>
       <div className="wr-hero-glow" aria-hidden />
@@ -136,25 +130,8 @@ export function LegacySubjectHero({
             <span className="wr-hero-cover-fallback serif">{(subject.title || '?')[0]}</span>}
         </div>
         <div className="wr-hero-meta">
-          {!isArtist && (
-            <button
-	type="button"
-	className={`wr-bnm-badge${subjectBestNew ? ' on' : ''}`}
-	aria-pressed={subjectBestNew}
-	onClick={() => onSubjectBestNewChange(!subjectBestNew)}
-	title={subjectBestNew ? '베스트 신보 해제' : '베스트 신보로 표시'}
-            >
-              BEST NEW MUSIC
-            </button>
-          )}
-          <span className="wr-hero-kicker mono">
-            리뷰 ·
-            {' '}
-            {isArtist ? '아티스트' : '앨범'}
-            {year ? ` · ${year}` : ''}
-          </span>
+          <span className="wr-hero-kicker mono">리뷰 · 아티스트</span>
           <h1 className="wr-hero-title serif">{subject.title}</h1>
-          {artist && !isArtist && <span className="wr-hero-artist serif">{artist}</span>}
           <div className="wr-hero-controls">
             <DragRatingInput value={score} onChange={onScoreChange} max={5} size={30} />
             <button type="button" className="wr-btn ghost" onClick={onOpenSearch}>작품 변경 ↺</button>
@@ -168,7 +145,7 @@ export function LegacySubjectHero({
 export default function SubjectHero(props: Props) {
   const { subject } = props
   if (!subject || !isEditorialAlbumSubject(subject))
-    return <LegacySubjectHero {...props} />
+    return <NonAlbumSubjectHero {...props} />
 
   const hue = hueFor(subject.id || subject.title)
   const heroStyle = {
