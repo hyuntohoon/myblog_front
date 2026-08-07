@@ -25,7 +25,8 @@ import { useEffect, useState } from 'react'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { getAuthHeader, isLoggedIn, refreshAccessToken } from '@lib/auth'
 import { artistHref, openAlbum } from '@lib/entityLinks'
-import { AlbumCard } from '@components/shared/AlbumCard'
+import type { AlbumCardData } from '@components/shared/AlbumCard'
+import { AlbumCard, unresolvedAlbumCardData } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
 import { Cover, SectionTitle } from './ui'
 
@@ -114,6 +115,19 @@ export function LegacyForYouReleaseCard({ it }: { it: ReleaseFeedItem }) {
  */
 export function ForYouReleaseAlbumCardAdapter({ it }: { it: ReleaseFeedItem }) {
 	const year = Number(it.release_date.slice(0, 4)) || null
+	const display = {
+		title: it.title,
+		artist: it.artist_name,
+		artistId: it.artist_id,
+		cover: it.cover_url ?? null,
+		// The full date/type label remains below; avoid a duplicate year.
+		year: null,
+	}
+	const data: AlbumCardData = it.album_id ?
+		{ ...display, catalogAlbumId: it.album_id, spotifyAlbumId: null } :
+		it.spotify_album_id ?
+			unresolvedAlbumCardData(it.spotify_album_id, display) :
+			{ ...display, catalogAlbumId: null, spotifyAlbumId: null }
 	const open = it.album_id ?
 		() => openAlbum({
 			albumId: it.album_id!,
@@ -138,16 +152,7 @@ export function ForYouReleaseAlbumCardAdapter({ it }: { it: ReleaseFeedItem }) {
 			}}
 		>
 			<AlbumCard
-				data={{
-					catalogAlbumId: it.album_id ?? null,
-					spotifyAlbumId: it.album_id ? null : it.spotify_album_id ?? null,
-					title: it.title,
-					artist: it.artist_name,
-					artistId: it.artist_id,
-					cover: it.cover_url ?? null,
-					// The full date/type label remains below; avoid a duplicate year.
-					year: null,
-				}}
+				data={data}
 				layout="grid"
 				capabilities={{
 					...(open ? { open } : {}),

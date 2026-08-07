@@ -15,6 +15,18 @@
     gap: 18px;
     padding: 28px 20px 24px;
   }
+  .wr-hero-inner > .album-card--row {
+    --album-card-cover-size: 130px;
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 18px;
+  }
+  .wr-hero .album-card--row .album-card__cover {
+    grid-row: auto;
+  }
+  .wr-hero .album-card__meta { width: 100%; }
+  .wr-hero .album-card__cover .cover-ph { font-size: 48px; }
+  .wr-hero .album-card__title { font-size: clamp(26px, 7vw, 34px); }
   .wr-hero-cover { width: 130px; height: 130px; }
   .wr-hero-cover-fallback { font-size: 48px; }
   .wr-hero-title { font-size: clamp(26px, 7vw, 34px); }

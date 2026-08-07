@@ -7,12 +7,8 @@ import { artistHref } from '@lib/entityLinks'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import '@styles/album-card.css'
 
-/** Display-only album identity. Bucket-item and surface state never belong here. */
-export interface AlbumCardData {
-	/** Catalog DB id. Null is a first-class unresolved state. */
-	catalogAlbumId: string | null
-	/** Display/navigation fallback, present only while catalogAlbumId is null. */
-	spotifyAlbumId: string | null
+/** Display-only album fields. Bucket-item and surface state never belong here. */
+interface AlbumCardDisplayData {
 	title: string
 	artist: string | null
 	artistId: string | null
@@ -22,11 +18,41 @@ export interface AlbumCardData {
 	loading?: boolean
 }
 
-interface AlbumCardCapabilitySlots {
-	/** Whole-card album open. Omit for a display-only card. */
-	open?: () => void
-	play?: AlbumCardAction
-	artistOpen?: () => void
+const unresolvedAlbumCardBrand: unique symbol = Symbol('unresolved-album-card')
+
+/**
+ * Canonical album identity. A Spotify fallback is branded so callers cannot
+ * construct the foreign-id state without `unresolvedAlbumCardData()`.
+ */
+export type AlbumCardData = AlbumCardDisplayData & (
+	{
+		/** Catalog DB id. */
+		catalogAlbumId: string
+		spotifyAlbumId: null
+	} |
+	{
+		/** Null is a first-class display-only state. */
+		catalogAlbumId: null
+		spotifyAlbumId: null
+	} |
+	{
+		catalogAlbumId: null
+		spotifyAlbumId: string
+		readonly [unresolvedAlbumCardBrand]: true
+	}
+)
+
+/** The only construction path for a Spotify-only AlbumCardData fallback. */
+export function unresolvedAlbumCardData(
+	spotifyAlbumId: string,
+	display: AlbumCardDisplayData,
+): AlbumCardData {
+	return {
+		...display,
+		catalogAlbumId: null,
+		spotifyAlbumId,
+		[unresolvedAlbumCardBrand]: true,
+	}
 }
 
 /**
@@ -39,6 +65,18 @@ export type AlbumCardAction = (() => void) | {
 	label: string
 	content: ReactNode
 	className?: string
+}
+
+export type AlbumCardOpenAction = (() => void) | {
+	fire: () => void
+	label: string
+}
+
+interface AlbumCardCapabilitySlots {
+	/** Whole-card album open. Omit for a display-only card. */
+	open?: AlbumCardOpenAction
+	play?: AlbumCardAction
+	artistOpen?: () => void
 }
 
 /**
@@ -57,6 +95,8 @@ export interface AlbumCardProps {
 	data: AlbumCardData
 	capabilities?: AlbumCardCapabilities
 	layout: 'grid' | 'row'
+	/** Semantic title element; visual typography remains canonical. */
+	titleAs?: 'span' | 'h1' | 'h2' | 'h3'
 	badge?: ReactNode
 	eyebrow?: ReactNode
 	secondaryLine?: ReactNode
@@ -99,6 +139,12 @@ function actionProps(action: AlbumCardAction, defaults: { label: string, content
 	return action
 }
 
+function openActionProps(action: AlbumCardOpenAction, defaultLabel: string) {
+	if (typeof action === 'function')
+		return { fire: action, label: defaultLabel }
+	return action
+}
+
 function Actions({ title, play, add }: {
 	title: string
 	play?: AlbumCardAction
@@ -121,11 +167,12 @@ function Actions({ title, play, add }: {
 	)
 }
 
-function Meta({ data, artistOpen, eyebrow, secondaryLine }: {
+function Meta({ data, artistOpen, eyebrow, secondaryLine, titleAs: Title }: {
 	data: AlbumCardData
 	artistOpen?: () => void
 	eyebrow?: ReactNode
 	secondaryLine?: ReactNode
+	titleAs: NonNullable<AlbumCardProps['titleAs']>
 }) {
 	if (data.loading) {
 		return (
@@ -139,7 +186,7 @@ function Meta({ data, artistOpen, eyebrow, secondaryLine }: {
 	return (
 		<div className="album-card__meta">
 			{eyebrow != null && <span className="album-card__eyebrow">{eyebrow}</span>}
-			<span className="album-card__title serif italic">{data.title}</span>
+			<Title className="album-card__title serif italic">{data.title}</Title>
 			{(data.artist || data.year != null) && (
 				<span className="album-card__byline mono">
 					{data.artist && (artistOpen && data.artistId ?
@@ -162,7 +209,7 @@ function Meta({ data, artistOpen, eyebrow, secondaryLine }: {
 					{data.year != null && <span className="album-card__year">{data.year}</span>}
 				</span>
 			)}
-			{secondaryLine != null && <span className="album-card__secondary">{secondaryLine}</span>}
+			{secondaryLine != null && <div className="album-card__secondary">{secondaryLine}</div>}
 		</div>
 	)
 }
@@ -172,9 +219,12 @@ function Meta({ data, artistOpen, eyebrow, secondaryLine }: {
  * ids, memo/editorial state, or routing; adapters close over those concerns in
  * the callbacks and drag payload they inject.
  */
-export function AlbumCard({ data, capabilities = {}, layout, badge, eyebrow, secondaryLine }: AlbumCardProps) {
+export function AlbumCard({ data, capabilities = {}, layout, titleAs = 'span', badge, eyebrow, secondaryLine }: AlbumCardProps) {
 	const loading = data.loading === true
 	const drag = loading ? undefined : capabilities.drag
+	const openAction = !loading && capabilities.open ?
+		openActionProps(capabilities.open, `${data.title}${data.artist ? ` — ${data.artist}` : ''} 앨범 보기`) :
+		null
 	const actions = !loading ? <Actions title={data.title} play={capabilities.play} add={capabilities.add} /> : null
 
 	return (
@@ -198,7 +248,7 @@ export function AlbumCard({ data, capabilities = {}, layout, badge, eyebrow, sec
 				} :
 				{})}
 		>
-			{!loading && capabilities.open && (
+			{openAction && (
 				<button
 					type="button"
 					className="album-card__open-hit"
@@ -207,8 +257,8 @@ export function AlbumCard({ data, capabilities = {}, layout, badge, eyebrow, sec
 					// draggable article can start an HTML5 drag. The event bubbles to
 					// the article's single bridge handler; ordinary clicks still open.
 					draggable={Boolean(drag)}
-					onClick={capabilities.open}
-					aria-label={`${data.title}${data.artist ? ` — ${data.artist}` : ''} 앨범 보기`}
+					onClick={openAction.fire}
+					aria-label={openAction.label}
 				/>
 			)}
 			<CoverArt title={data.title} cover={data.cover} loading={loading} badge={badge} actions={layout === 'grid' ? actions : null} />
@@ -217,6 +267,7 @@ export function AlbumCard({ data, capabilities = {}, layout, badge, eyebrow, sec
 				artistOpen={!loading && data.artist ? capabilities.artistOpen : undefined}
 				eyebrow={loading ? undefined : eyebrow}
 				secondaryLine={loading ? undefined : secondaryLine}
+				titleAs={titleAs}
 			/>
 			{layout === 'row' && actions}
 		</article>
