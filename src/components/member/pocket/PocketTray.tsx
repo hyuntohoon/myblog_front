@@ -23,7 +23,7 @@ import { isLoggedIn } from '@lib/auth'
 import { isOwnerUser } from '@lib/owner'
 import type { DragPayload } from '@lib/entityDrag'
 import { memberRef } from '@lib/entityDrag'
-import { boardDragAccepts, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
+import { boardDragAccepts, externalAlbumCopy, getBoardDnd, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { cachedUri } from '@lib/playback/uris'
@@ -72,10 +72,23 @@ function accentFor(leaf: PocketLeaf): string {
   return leaf.color || 'var(--color-accent)'
 }
 
-// FEAT-pocket-buckit-viewers Track A — a board member was dropped on a Pocket target.
-// The Pocket island can't run the board's ops, so hand the target bucket back to the board
-// (which still holds the live `dnd`); its PB_BOARD_DROP listener runs the real add/expand.
-function fireBoardDrop(targetBucketId: string): void {
+// FEAT-pocket-buckit-viewers Track A — a member was dropped on a Pocket target.
+// Board/library memberships still hand the target back to BucketBoard so its verified
+// move/source routing remains authoritative. A copy-style external album is different:
+// Home has no BucketBoard island, so Pocket completes that catalog-id write itself.
+function firePocketDrop(
+  targetBucketId: string,
+  payload: DragPayload | null,
+  dropExternalAlbum: (bucketId: string, albumId: string, title: string) => Promise<void>,
+): void {
+  // Home has no BucketBoard island to receive PB_BOARD_DROP. Execute a genuine
+  // external album COPY in Pocket itself; internal/library drags still go back
+  // to BucketBoard so its verified move/source routing remains authoritative.
+  const external = externalAlbumCopy(payload)
+  if (external) {
+    void dropExternalAlbum(targetBucketId, external.albumId, external.title)
+    return
+  }
   window.dispatchEvent(new CustomEvent<PbBoardDropDetail>(PB_BOARD_DROP_EVENT, { detail: { targetBucketId } }))
 }
 
@@ -363,7 +376,7 @@ function cascadeDefault(w: number, h: number, inspect: PocketBuckitDesign['inspe
 // front via z). The per-item remove (−) controls appear ONLY in edit mode (request §5 —
 // removal is never implied by a drawer simply being open).
 function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }: { bucketId: string, z: number, index: number, design: PocketBuckitDesign, editMode: boolean, onExpandPlayback: () => void }) {
-  const { bucketById, removeItem, closeDrawer, focusDrawer, moveDrawer, drawerPosFor } = usePocket()
+  const { bucketById, dropExternalAlbum, removeItem, closeDrawer, focusDrawer, moveDrawer, drawerPosFor } = usePocket()
   const panelRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{ dx: number, dy: number } | null>(null)
   const [pos, setPos] = useState<DrawerPos | null>(null)
@@ -523,7 +536,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
             return
           e.preventDefault()
           setDropHot(false)
-          fireBoardDrop(bucket.id)
+          firePocketDrop(bucket.id, getBoardDnd(), dropExternalAlbum)
         }}
       >
         <PlaybackMini
@@ -552,7 +565,8 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
 	onPointerDownCapture={() => focusDrawer(bucketId)}
 	// FEAT-pocket-buckit-viewers Track A — accept a board member dropped on this drawer
 	// (a Pocket drop target). Gate mirrors the board's General/Artist rule; the board
-	// runs the real add/expand via fireBoardDrop → PB_BOARD_DROP.
+	// runs the real add/expand via firePocketDrop (direct for an external album,
+	// PB_BOARD_DROP for a board/library membership).
 	onDragOver={(e) => {
         if (!boardDragAccepts(bucket))
           return
@@ -568,7 +582,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
           return
         e.preventDefault()
         setDropHot(false)
-        fireBoardDrop(bucket.id)
+          firePocketDrop(bucket.id, getBoardDnd(), dropExternalAlbum)
       }}
     >
       <div className="pb-dhead" onPointerDown={onHeadDown} onPointerMove={onHeadMove} onPointerUp={onHeadUp}>
@@ -736,7 +750,7 @@ function TreeNav({ folders, folder, setFolder, bottom }: { folders: string[], fo
 
 // ── the dispatcher ───────────────────────────────────────────────────────────
 export function PocketTray() {
-  const { design, leaves, open, setOpen, openDrawer, isDrawerOpen, closeAllDrawers, editMode, setEditMode, deleteBucket, undo, runUndo, reorderBucket } = usePocket()
+  const { design, leaves, open, setOpen, openDrawer, isDrawerOpen, closeAllDrawers, editMode, setEditMode, deleteBucket, undo, runUndo, reorderBucket, dropExternalAlbum } = usePocket()
   const [folder, setFolder] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   // edit-mode tray bucket-delete: the first × tap arms a per-bucket confirm, the
@@ -1006,7 +1020,7 @@ export function PocketTray() {
               return
             e.preventDefault()
             setDropOverId(null)
-            fireBoardDrop(leaf.id)
+            firePocketDrop(leaf.id, boardDrag, dropExternalAlbum)
           }}
         >
           {chip}

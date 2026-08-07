@@ -45,6 +45,17 @@ export function getBoardDnd(): DragPayload | null {
 }
 
 /**
+ * Resolve the one drag Pocket can complete without BucketBoard: a catalog-backed
+ * external album COPY. Home mounts Pocket but not BucketBoard, so forwarding this
+ * payload through PB_BOARD_DROP would acknowledge the gesture and then no-op.
+ */
+export function externalAlbumCopy(payload: DragPayload | null): { albumId: string, title: string } | null {
+  if (payload?.origin.kind !== 'external' || !payload.origin.copies || payload.ref?.entity !== 'album')
+    return null
+  return { albumId: payload.ref.albumId, title: payload.ref.title ?? '앨범' }
+}
+
+/**
  * Does this Pocket bucket accept the current board drag? **The twin of the board's
  * `canAcceptAlbumDrag`** — the sync-owned Spotify-library bucket takes albums only; General
  * accepts all; an Artist bucket needs an artist member or an album/track SOURCE (which

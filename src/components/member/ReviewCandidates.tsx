@@ -16,52 +16,10 @@ import type { ReviewCandidate } from '../album/reviews.api'
 import { useEffect, useState } from 'react'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
-import { AlbumCard } from '@components/shared/AlbumCard'
+import { HomeAlbumCardAdapter } from '@components/home/HomeAlbumCardAdapter'
 import { fetchMyReviewCandidates } from '../album/reviews.api'
 import { boardTabHref } from './dashboardLinks'
-import { AlbumArt, SectionTitle, Stars } from './ui'
-
-/** Stage 5 parity fixture. Kept out of the live render path until Stage 9. */
-export function LegacyReviewCandidateCard({ c }: { c: ReviewCandidate }) {
-	const open = () => openAlbum({ albumId: c.album_id, title: c.album_title, cover: c.album_cover_url })
-	return (
-		<article className="panel" style={{ padding: 12, display: 'flex', gap: 12, alignItems: 'center', background: 'var(--color-bg)' }}>
-			<button type="button" onClick={open} title={c.album_title} style={{ flex: '0 0 auto', width: 56, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}>
-				<AlbumArt url={c.album_cover_url} label={c.album_title} size={56} />
-			</button>
-			<div style={{ flex: 1, minWidth: 0 }}>
-				<button
-					type="button"
-					onClick={open}
-					className="serif italic"
-					style={{ display: 'block', maxWidth: '100%', fontSize: 17, fontWeight: 500, lineHeight: 'var(--leading-tight)', padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-				>
-					{c.album_title}
-				</button>
-				{c.artist_name && (
-					<div className="sans" style={{ marginTop: 3, fontSize: 'var(--text-xs)', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-						{c.artist_id ?
-							<a href={artistHref(c.artist_id)} style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)' }}>{c.artist_name}</a> :
-							c.artist_name}
-					</div>
-				)}
-				{/* What is already done, so the queue distinguishes "marked, not heard"
-				    from "heard and rated, still to write". Stars renders 미평가 for null. */}
-				<div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, minWidth: 0 }}>
-					<Stars score={c.rating ?? null} size={13} />
-					{c.comment && (
-						<span className="sans" style={{ fontSize: 'var(--text-xs)', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.comment}</span>
-					)}
-				</div>
-			</div>
-			{/* ?album= prefills the editor's subject (same entry AlbumDetail uses). The
-			    queue exists to remove a lookup, so handing the editor a blank subject
-			    and making the owner find the album again would undo its whole point —
-			    this is not the unified entry of Step 4, just the album carried through. */}
-			<a href={`/write?album=${encodeURIComponent(c.album_id)}`} className="chip" style={{ flex: '0 0 auto', textDecoration: 'none' }}>평론 쓰기</a>
-		</article>
-	)
-}
+import { SectionTitle, Stars } from './ui'
 
 const CANDIDATE_CARD_CSS = `
 .review-candidate-card .album-card{--album-card-cover-size:56px}
@@ -79,7 +37,7 @@ export function ReviewCandidateAlbumCardAdapter({ c }: { c: ReviewCandidate }) {
 	const open = () => openAlbum({ albumId: c.album_id, title: c.album_title, cover: c.album_cover_url })
 	return (
 		<div className="panel review-candidate-card" style={{ padding: 12, background: 'var(--color-bg)' }}>
-			<AlbumCard
+			<HomeAlbumCardAdapter
 				data={{
 					catalogAlbumId: c.album_id,
 					spotifyAlbumId: null,

@@ -172,11 +172,6 @@
   line-height: 1.05;
   color: var(--ink);
 }
-.wr-hero-artist {
-  font-family: var(--serif);
-  font-size: var(--text-lg);
-  color: var(--ink-soft);
-}
 .wr-hero-controls {
   display: flex;
   align-items: center;

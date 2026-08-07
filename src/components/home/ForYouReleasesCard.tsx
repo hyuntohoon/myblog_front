@@ -26,9 +26,10 @@ import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { getAuthHeader, isLoggedIn, refreshAccessToken } from '@lib/auth'
 import { artistHref, openAlbum } from '@lib/entityLinks'
 import type { AlbumCardData } from '@components/shared/AlbumCard'
-import { AlbumCard, unresolvedAlbumCardData } from '@components/shared/AlbumCard'
+import { unresolvedAlbumCardData } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
-import { Cover, SectionTitle } from './ui'
+import { HomeAlbumCardAdapter } from './HomeAlbumCardAdapter'
+import { SectionTitle } from './ui'
 
 type ReleaseFeedItem = components['schemas']['Backend_ReleaseFeedItem']
 type ReleaseFeedResponse = components['schemas']['Backend_ReleaseFeedResponse']
@@ -40,23 +41,12 @@ const LIMIT = 12
 // (same strip idiom as NewReleasesCard's `.nrl-mod`).
 const SCOPED_CSS = `
 .fyr-mod .fyr-card{flex:0 0 auto;width:clamp(128px,32vw,150px);scroll-snap-align:start;min-width:0}
-.fyr-mod .fyr-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
-.fyr-mod .fyr-static{display:block;width:100%;text-align:left;color:inherit}
-.fyr-mod .fyr-cover-wrap{position:relative;display:block;transition:transform .18s}
-.fyr-mod .fyr-open:hover .fyr-cover-wrap{transform:translateY(-3px)}
-.fyr-mod .fyr-open:focus-visible{outline:2px solid var(--color-accent);outline-offset:3px;border-radius:6px}
-.fyr-mod .fyr-title{display:block;margin:9px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .16s}
-.fyr-mod .fyr-open:hover .fyr-title{color:var(--color-accent)}
-.fyr-mod .fyr-artist{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--color-subtle);text-decoration:none}
-.fyr-mod a.fyr-artist:hover{color:var(--color-text);text-decoration:underline}
-.fyr-mod .fyr-date{display:block;margin-top:3px;color:var(--color-faded)}
 .fyr-mod .fyr-card>.album-card{width:100%}
 .fyr-mod .fyr-card .album-card__byline{margin-top:2px}
 .fyr-mod .fyr-card .album-card__secondary{margin-top:3px;color:var(--color-faded)}
 .fyr-mod .fyr-radar{color:var(--color-faded);text-decoration:none;transition:color .15s}
 .fyr-mod .fyr-radar:hover{color:var(--color-accent)}
 .fyr-mod .fyr-radar:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px;border-radius:2px}
-@media (prefers-reduced-motion:reduce){.fyr-mod .fyr-cover-wrap{transition:none}}
 `
 
 function pad(n: number) {
@@ -71,40 +61,6 @@ function dateLabel(it: ReleaseFeedItem): string {
 		return ''
 	const type = it.release_type === 'single' ? ' · 싱글' : it.release_type === 'ep' ? ' · EP' : ''
 	return `${pad(m)}.${pad(d)} 발매${type}`
-}
-
-/** Stage 5 parity fixture. Kept out of the live render path until Stage 9. */
-export function LegacyForYouReleaseCard({ it }: { it: ReleaseFeedItem }) {
-	const year = Number(it.release_date.slice(0, 4)) || null
-	const cover = (
-		<>
-			<span className="fyr-cover-wrap">
-				<Cover label={it.title} src={it.cover_url ?? null} square radius={4} />
-			</span>
-			<span className="fyr-title serif italic" style={{ fontSize: 15.5, fontWeight: 500, lineHeight: 1.15, color: 'var(--color-text)' }}>{it.title}</span>
-		</>
-	)
-	return (
-		<article className="fyr-card">
-			{it.album_id ?
-				(
-					<button
-						type="button"
-						className="fyr-open"
-						title={`${it.title} · 앨범 보기`}
-						aria-label={`${it.title} — ${it.artist_name} 앨범 보기`}
-						onPointerEnter={() => prefetchAlbumDetail(it.album_id!)}
-						onFocus={() => prefetchAlbumDetail(it.album_id!)}
-						onClick={() => openAlbum({ albumId: it.album_id!, title: it.title, artist: it.artist_name, cover: it.cover_url ?? undefined, year })}
-					>
-						{cover}
-					</button>
-				) :
-				<span className="fyr-static">{cover}</span>}
-			<a className="fyr-artist mono" style={{ fontSize: 11.5, letterSpacing: '.02em' }} href={artistHref(it.artist_id)} title={`${it.artist_name} 아티스트`}>{it.artist_name}</a>
-			<span className="fyr-date mono" style={{ fontSize: 10.5, letterSpacing: '.03em' }}>{dateLabel(it)}</span>
-		</article>
-	)
 }
 
 /**
@@ -151,7 +107,7 @@ export function ForYouReleaseAlbumCardAdapter({ it }: { it: ReleaseFeedItem }) {
 					prefetchAlbumDetail(it.album_id)
 			}}
 		>
-			<AlbumCard
+			<HomeAlbumCardAdapter
 				data={data}
 				layout="grid"
 				capabilities={{

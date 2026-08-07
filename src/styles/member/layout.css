@@ -201,14 +201,8 @@
 
 .memo-lg-bar { display: flex; align-items: center; gap: 12px; padding-right: 40px; margin-bottom: 18px; }
 
-.memo-cover-wrap { width: 100%; max-width: 180px; margin-bottom: 16px; }
-.size-l .memo-cover-wrap { max-width: 200px; }
-.size-xl .memo-cover-wrap { max-width: 240px; }
-
-/* ARCH-album-card-contract-and-composition Stage 7 — Memo owns dimensions
-   and contextual metadata; the canonical card owns cover/title/artist
-   rendering. The legacy .memo-cover-wrap rules stay through Stage 9 as the
-   parity fixture and rollback path. */
+/* Memo owns dimensions and contextual metadata; the canonical card owns
+   cover/title/artist rendering. */
 .memo-album-card { width: 100%; }
 .memo-album-card .album-card--grid { gap: 12px; }
 .memo-album-card .album-card__cover { max-width: 180px; }
@@ -291,9 +285,6 @@
   .memo-lg-grid,
   .size-l .memo-lg-grid,
   .size-xl .memo-lg-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .memo-cover-wrap,
-  .size-l .memo-cover-wrap,
-  .size-xl .memo-cover-wrap { max-width: 116px; }
   .memo-album-card .album-card__cover,
   .size-l .memo-album-card .album-card__cover,
   .size-xl .memo-album-card .album-card__cover { max-width: 116px; }
