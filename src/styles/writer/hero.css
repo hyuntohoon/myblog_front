@@ -67,6 +67,72 @@
   gap: 28px;
   align-items: center;
 }
+
+/* ARCH-album-card-contract-and-composition Stage 8: the writer keeps the
+   editorial shell/state while AlbumCard owns album identity presentation. */
+.wr-hero-inner > .album-card--row {
+  --album-card-cover-size: 180px;
+  grid-column: 1 / -1;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+}
+.wr-hero .album-card__cover {
+  overflow: hidden;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  background: var(--paper);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22);
+}
+.wr-hero .album-card:has(.album-card__open-hit:hover) .album-card__cover {
+  transform: none;
+}
+.wr-hero .album-card__cover .cover-ph {
+  font-size: 64px;
+  font-style: italic;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.wr-hero .album-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wr-hero .album-card__eyebrow {
+  position: relative;
+  z-index: 2;
+  margin: 0;
+  overflow: visible;
+}
+.wr-hero-eyebrow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.wr-hero .album-card__title {
+  margin: 0;
+  overflow: visible;
+  white-space: normal;
+  font-family: var(--serif);
+  font-size: clamp(30px, 4vw, 46px);
+  font-weight: 600;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.wr-hero .album-card__byline {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--text-lg);
+  letter-spacing: normal;
+  color: var(--ink-soft);
+}
+.wr-hero .album-card__secondary {
+  margin: 0;
+  overflow: visible;
+}
 .wr-hero-cover {
   width: 180px;
   height: 180px;

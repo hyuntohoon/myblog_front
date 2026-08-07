@@ -9,8 +9,8 @@ import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_
 import { Cover as HomeCover } from '../home/ui'
 import { LkCover } from '../member/LikedBoard'
 import { AlbumArt } from '../member/ui'
-import SubjectHero from '../writer/SubjectHero'
-import { AlbumCard } from './AlbumCard'
+import { LegacySubjectHero } from '../writer/SubjectHero'
+import { AlbumCard, unresolvedAlbumCardData } from './AlbumCard'
 
 const DATA: AlbumCardData = {
 	catalogAlbumId: 'album-1',
@@ -149,6 +149,23 @@ describe('albumCard — declared capabilities', () => {
 		expect(invalid.drag).toBe(DRAG)
 	})
 
+	it('requires the smart constructor for a Spotify-only album fallback', () => {
+		const unresolved = unresolvedAlbumCardData('spotify-album-1', {
+			title: 'Fallback Album',
+			artist: 'Fallback Artist',
+			artistId: null,
+			cover: null,
+			year: 2026,
+		})
+
+		// @ts-expect-error OQ2: callers cannot hand-pair a foreign id with null.
+		const invalid: AlbumCardData = { ...DATA, catalogAlbumId: null, spotifyAlbumId: 'spotify-album-1' }
+
+		expect(unresolved.catalogAlbumId).toBeNull()
+		expect(unresolved.spotifyAlbumId).toBe('spotify-album-1')
+		expect(invalid.spotifyAlbumId).toBe('spotify-album-1')
+	})
+
 	it('dispatches both drag bridges and clears both on drag end', () => {
 		const start = vi.fn()
 		const boardStart = vi.fn()
@@ -217,7 +234,7 @@ describe('albumCard — legacy cover parity matrix', () => {
 			return <AlbumArt label="Kind of Blue" url={cover} />
 		if (name === 'LikedBoard LkCover')
 			return <LkCover label="Kind of Blue" cover={cover} square />
-		return <SubjectHero subject={subject(cover)} score={0} onScoreChange={vi.fn()} subjectBestNew={false} onSubjectBestNewChange={vi.fn()} onOpenSearch={vi.fn()} />
+		return <LegacySubjectHero subject={subject(cover)} score={0} onScoreChange={vi.fn()} subjectBestNew={false} onSubjectBestNewChange={vi.fn()} onOpenSearch={vi.fn()} />
 	}
 
 	function coverSignature(container: HTMLElement, subjectHero = false) {
@@ -295,7 +312,7 @@ describe('albumCard — legacy cover parity matrix', () => {
 
 		expect(actual).toEqual(['KI', 'KI', 'KI', 'K'])
 		// The shared primitive takes the already-shared two-letter Cover output;
-		// SubjectHero's single glyph stays live until its Stage 8 migration.
+		// The writer single-glyph path remains only as a Stage 9 parity fixture.
 		expect(canonical.container.querySelector('[data-cover-state="fallback"]')).toHaveTextContent('KI')
 	})
 
