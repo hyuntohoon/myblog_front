@@ -790,7 +790,7 @@ export interface paths {
         };
         /**
          * Get Lyrics
-         * @description Normalized lyric segments for one catalog track (any signed-in member).
+         * @description Normalized lyric segments for one catalog track (authenticated users only).
          *
          *     Unknown spotify_track_id → 404 (no catalog track). A known track without viewable
          *     lyrics is NOT a 404 — it returns availability "no_lyrics" / "unavailable" so the
