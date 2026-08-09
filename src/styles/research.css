@@ -350,13 +350,18 @@
 	position: absolute;
 	left: 6px;
 	bottom: 6px;
-	width: 12px;
-	height: 12px;
+	/* ARCH-bucket-album-modal-unification Step 1 — 12px kept the dot itself
+	   tiny/quiet but left touch precision poor at this corner, doubly so once
+	   sharing the corner with .bb-tile-mark. 16px still reads as a quiet dot. */
+	width: 16px;
+	height: 16px;
 	border-radius: 50%;
 	border: 1.5px solid var(--color-bg);
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 	cursor: pointer;
 	padding: 0;
+	/* Explicit and above .bb-tile-mark (widgets.css, z-index:1) — see that
+	   rule's comment for why this needs to be intentional, not implicit. */
 	z-index: 2;
 }
 .rsh-cover-check {

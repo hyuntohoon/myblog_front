@@ -98,6 +98,13 @@ export interface AlbumStateChangedDetail {
   albumId: string
   /** The stored value after the write, so a listener can update without a fetch. */
   reviewCandidate: boolean
+  /**
+   * ARCH-bucket-album-modal-unification Step 1 — the stored 평가 rating after
+   * the write (null when cleared), so the bucket board's tile score badge can
+   * update live without a refetch. Undefined on a mark-only write (the field
+   * genuinely wasn't touched, unlike null which means "cleared").
+   */
+  rating?: number | null
 }
 
 export const ENT_ALBUM_STATE_CHANGED = 'ent:album-state-changed'

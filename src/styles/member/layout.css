@@ -229,8 +229,23 @@
   line-height: 1.5;
   color: var(--color-faded);
 }
-.memo-album-card__rating { margin-top: 12px; }
 .memo-album-card__tags { margin-top: 14px; }
+
+/* ARCH-bucket-album-modal-unification Step 1 — live 평가 (rating) block,
+   replacing the dead "미평가" placeholder. Own row below the album card, not
+   crammed into the metadata line — the star target and one-liner need real
+   room, especially at the touch sizes this modal is actually used at. */
+.memo-rating { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.memo-rating-comment {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: inherit;
+}
+.memo-rating-comment:disabled { color: var(--color-faded); background: color-mix(in srgb, var(--color-text) 3%, transparent); }
 
 .memo-lg-grid {
   display: grid;
@@ -274,6 +289,24 @@
   transition: color .15s;
 }
 .memo-write-link a:hover { color: var(--color-text); }
+
+/* ARCH-bucket-album-modal-unification Step 1 — 리서치 노트 section: collapsed by
+   default, expanded inline rather than a separate rsh-modal. */
+.memo-research { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--color-border-soft); }
+.memo-research-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+.memo-research-chevron { transition: transform .18s; color: var(--color-faded); }
+.memo-research-chevron.is-open { transform: rotate(180deg); }
+.memo-research .rsh { margin-top: 10px; }
 
 /* narrow — stack album info above the memo; compact the identity column so the
    memo textarea (the point) stays reachable without scrolling past everything */

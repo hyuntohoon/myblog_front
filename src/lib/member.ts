@@ -84,6 +84,12 @@ export interface DetailTarget {
 	itemId?: string
 	note?: string | null
 	prepTonight?: boolean
+	/**
+	 * ARCH-bucket-album-modal-unification Step 1 — opened via the bucket tile's
+	 * research-corner dot: the unified memo window should auto-expand and scroll
+	 * to its 리서치 노트 section instead of opening a separate rsh-modal.
+	 */
+	focusResearch?: boolean
 }
 
 /*
