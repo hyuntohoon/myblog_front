@@ -38,8 +38,6 @@ import { playbackSession } from '@lib/playback/session'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
-import { useScrollLock } from '@lib/useScrollLock'
-import ResearchNote from './ResearchNote'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
@@ -547,6 +545,26 @@ interface AlbumChipProps {
   onTouchActions?: () => void
 }
 
+// ARCH-bucket-album-modal-unification Step 1 — shared with the research-badge
+// reroute below, so both the tile's main open action and its corner research
+// dot build the SAME DetailTarget for the unified modal (only `focusResearch`
+// differs).
+function albumDetailTarget(album: BoardAlbum, bucketId: string, copySource?: boolean, fromLib?: boolean): DetailTarget {
+  return {
+    album: album.title,
+    artist: album.artist,
+    real: true,
+    albumId: album.albumId!,
+    cover: album.cover,
+    year: album.year,
+    writable: !copySource && !fromLib,
+    bucketId,
+    itemId: album.itemId,
+    note: album.note ?? null,
+    prepTonight: album.prepTonight ?? false,
+  }
+}
+
 function albumChipDrag(album: BoardAlbum, bucketId: string, copySource?: boolean, fromLib?: boolean, source?: string): DragPayload {
   if (copySource)
     return { ref: memberRef({ albumId: album.albumId }), origin: { kind: 'external', fromBucketId: bucketId, itemType: 'album', copies: true } }
@@ -568,13 +586,18 @@ function BucketAlbumBadges({ album, rated, score, copySource, libRow, listened, 
         <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>복사</span>
       )}
       {libRow && <SlibBadges row={libRow} />}
-      {!copySource && !libRow && !rated && album.alreadyReviewed && (
+      {/* ARCH-bucket-album-modal-unification Step 1 — the numeric score badge now
+          shows whenever a rating exists, independent of bucket.isDone (previously
+          gated by `rated` alongside 미평가, so a rating made while organizing left
+          zero visible trace). 평론함/미평가 gate on `score == null` instead of
+          `!rated`/`rated` respectively so exactly one top-right badge ever shows. */}
+      {!copySource && !libRow && score == null && album.alreadyReviewed && (
         <span className="mono" style={{ position: 'absolute', top: 0, left: 0, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'var(--color-accent)', padding: '3px 6px' }}>평론함</span>
       )}
-      {rated && score != null && (
+      {score != null && (
         <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 11, fontWeight: 600, color: 'var(--color-bg)', background: 'var(--color-text)', padding: '2px 6px', borderRadius: 3 }}>{score.toFixed(1)}</span>
       )}
-      {rated && score == null && (
+      {score == null && rated && (
         <span className="mono" style={{ position: 'absolute', top: 6, right: 6, fontSize: 9, letterSpacing: '0.05em', color: 'var(--color-subtle)', background: 'var(--color-bg)', border: '1px solid var(--color-border-soft)', padding: '2px 5px', borderRadius: 3 }}>미평가</span>
       )}
       {listened && (
@@ -625,19 +648,7 @@ function BucketAlbumBadges({ album, rated, score, copySource, libRow, listened, 
 export function BucketAlbumCardAdapter({ album, bucketId, rated, score, onOpen, copySource, fromLib, libRow, listened, marked, onToggleMark, draggingId, setDraggingId, setDragKind, research, onTouchActions, isNew }: AlbumChipProps) {
   const albumId = album.albumId
   const open = albumId ?
-    () => onOpen({
-      album: album.title,
-      artist: album.artist,
-      real: true,
-      albumId,
-      cover: album.cover,
-      year: album.year,
-      writable: !copySource && !fromLib,
-      bucketId,
-      itemId: album.itemId,
-      note: album.note ?? null,
-      prepTonight: album.prepTonight ?? false,
-    }) :
+    () => onOpen(albumDetailTarget(album, bucketId, copySource, fromLib)) :
     undefined
   const capabilities: AlbumCardCapabilities = albumId && onTouchActions ?
     {
@@ -873,7 +884,6 @@ interface Ops {
   // FEAT-album-research-notes
   setResearchMode: (bucketId: string, mode: 'off' | 'all' | 'selected') => void
   setItemSelected: (bucketId: string, itemId: string, selected: boolean) => void
-  openResearch: (albumId: string, title: string) => void
   // FEAT-album-review-authoring Step 1: flip the private editorial mark from the
   // board. The same state the album window writes — RFC C6 requires BOTH
   // surfaces to be able to fix it, or the owner goes back to hand-moving albums.
@@ -1032,7 +1042,7 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
 	bucketId={bucket.id}
 	bucketType={bucket.type}
 	rated={bucket.isDone && a.itemType === 'album'}
-	score={bucket.isDone && a.itemType === 'album' ? (ratings.get(a.albumId ?? '') ?? null) : null}
+	score={a.itemType === 'album' ? (ratings.get(a.albumId ?? '') ?? null) : null}
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
 	listened={a.albumId != null && listenedAlbumIds.has(a.albumId) && !a.alreadyReviewed}
 	marked={a.albumId != null && markedAlbumIds.has(a.albumId)}
@@ -1052,10 +1062,14 @@ function BucketCard({ bucket, depth, ops, onOpen, ratings, libState, listenedAlb
 			selected: a.researchSelected,
 			// live batched status ⊕ bucket-payload seed — no per-cover GET.
 			status: researchStatus[a.albumId ?? ''] ?? a.researchStatus ?? null,
+			// ARCH-bucket-album-modal-unification Step 1 — opens the SAME unified
+			// modal as the main tile click (focused to its 리서치 노트 section)
+			// instead of a separate rsh-modal, removing the second competing
+			// destination at this corner.
 			onOpen: () => {
- if (a.albumId)
-ops.openResearch(a.albumId, a.title)
-},
+				if (a.albumId)
+					onOpen({ ...albumDetailTarget(a, bucket.id, false, isLib), focusResearch: true })
+			},
 			onToggleSelected: (next: boolean) => ops.setItemSelected(bucket.id, a.itemId, next),
 		}}
     />
@@ -1934,16 +1948,16 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const confirmModalRef = useRef<HTMLDivElement>(null)
   useDismissable(!!pendingBucketDelete, () => setPendingBucketDelete(null), confirmModalRef, { lockScroll: true })
 
-  // FEAT-album-research-notes — the album whose research note reading modal is open.
-  const [researchTarget, setResearchTarget] = useState<{ albumId: string, title: string } | null>(null)
-  const researchPanelRef = useRef<HTMLElement>(null)
-  useDismissable(!!researchTarget, () => setResearchTarget(null), researchPanelRef)
-  // Lock background page scroll while the reading modal is open (only the modal
-  // body scrolls). useDismissable handles ESC + focus, not scroll.
-  useScrollLock(!!researchTarget)
+  // ARCH-bucket-album-modal-unification Step 1 — album_id → a rating written
+  // from inside the unified modal since mount, overriding the `reviews`-derived
+  // base map below so the tile score badge updates live without a refetch. null
+  // means "cleared" (removes the base map's entry too); see ENT_ALBUM_STATE_CHANGED
+  // listener below.
+  const [ratingOverrides, setRatingOverrides] = useState<Map<string, number | null>>(new Map())
 
   // album_id → the member's own star rating (0–5). Feeds the rated-bucket chips
-  // without any extra fetch (reviews are already server-built into props).
+  // without any extra fetch (reviews are already server-built into props), then
+  // layers any live overrides on top.
   const ratings = useMemo(() => {
     const m = new Map<string, number>()
     for (const r of reviews) {
@@ -1954,8 +1968,13 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
           m.set(id, r.rating)
       }
     }
+    for (const [id, v] of ratingOverrides) {
+      if (v == null)
+        m.delete(id)
+      else m.set(id, v)
+    }
     return m
-  }, [reviews])
+  }, [reviews, ratingOverrides])
 
   // Split the special spotify_library bucket out of the normal crate tree: it
   // renders as its own section below the recent strip, never inside the grid.
@@ -2088,6 +2107,13 @@ ids.push(a.albumId)
         else next.delete(d.albumId)
         return next
       })
+      if (d.rating !== undefined) {
+        setRatingOverrides((prev) => {
+          const next = new Map(prev)
+          next.set(d.albumId, d.rating ?? null)
+          return next
+        })
+      }
     }
     window.addEventListener(ENT_ALBUM_STATE_CHANGED, onChanged)
     return () => {
@@ -2462,9 +2488,6 @@ ids.push(a.albumId)
         a.researchSelected = selected
       setTree(t)
       api.setItemResearchSelected(bucketId, itemId, selected).catch(() => void refresh())
-    },
-    openResearch(albumId, title) {
-      setResearchTarget({ albumId, title })
     },
   }
   // Keep the reverse-DnD (PB_BOARD_DROP) listener reading the LIVE tree + ops without
@@ -2848,23 +2871,6 @@ ids.push(a.albumId)
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {researchTarget && (
-        <div className="rsh-modal-scrim" onClick={() => setResearchTarget(null)} role="presentation">
-          <section ref={researchPanelRef} className="rsh-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="리서치 노트">
-            <header className="rsh-modal-head">
-              <div>
-                <p className="rsh-modal-kicker">리서치 노트</p>
-                <h2 className="rsh-modal-title">{researchTarget.title}</h2>
-              </div>
-              <button type="button" className="rsh-modal-close" onClick={() => setResearchTarget(null)} aria-label="닫기">✕</button>
-            </header>
-            <div className="rsh-modal-body">
-              <ResearchNote albumId={researchTarget.albumId} variant="doc" />
-            </div>
-          </section>
         </div>
       )}
 

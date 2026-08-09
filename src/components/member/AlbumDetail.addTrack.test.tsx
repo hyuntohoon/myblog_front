@@ -89,13 +89,16 @@ describe('albumDetail add-track wiring', () => {
 	})
 
 	it('memo adapter preserves the frozen identity after legacy removal', () => {
+		// ARCH-bucket-album-modal-unification Step 1 dropped the dead "미평가"
+		// placeholder this test used to pin — the live rating control now renders
+		// via MemoWindow's `belowCard` slot (MemoRatingBlock), not inside this
+		// adapter, so an isolated render of the adapter alone no longer has it.
 		const album = { album: 'Kind of Blue', artist: 'Miles Davis', albumId: 'album-1' }
 		const { container } = render(<MemoAlbumCardAdapter album={album} data={FIXTURE} onOpenLyrics={vi.fn()} onAddTrack={vi.fn()} />)
 
 		expect(screen.getByText('Kind of Blue')).toBeInTheDocument()
 		expect(screen.getByText('Miles Davis')).toBeInTheDocument()
 		expect(screen.getByText('ALBUM · 1959-08-17')).toBeInTheDocument()
-		expect(screen.getByText('미평가')).toBeInTheDocument()
 		expect(container.querySelector('[data-album-card-layout="grid"]')).toBeInTheDocument()
 		expect(container.querySelector('[data-cover-state="fallback"]')).toHaveTextContent('KI')
 		expect(screen.getByText('트랙리스트 · 2곡')).toBeInTheDocument()

@@ -1,18 +1,19 @@
 // Member dashboard — album detail / memo modal (centered).
 //
 // Opened from member-dashboard surfaces via SelfDashboard's openDetail handler. The experience is
-// derived from where it was opened (DetailTarget.writable) and whether the album
-// already has a published review (matched against `reviews` by albumId):
-//   · memo  — a writable 평론 버킷 album with no review yet AND a bucket-item handle
-//             (bucketId + itemId): the "쓰레기통" memo window (FEAT-editor-buckit Step
-//             3) — one freeform note (→ review_bucket_items.note) + the "오늘 밤 키우기"
-//             gate (→ prep_tonight), debounced-autosaved (no save button). It replaces
-//             the old inline draft composer; a single "전체 에디터에서 작성" link keeps
-//             the path to /write.
-//   · info  — non-writable surfaces (Spotify 라이브러리, 최근 들은, sample tracks):
-//             cover + metadata + tracklist, read-only.
-//   · edit  — a bucket album that already has a published review: read-only detail
-//             with an "이미 발행됨" banner → 평론 보기 (/review/{slug}) + 수정 (/write?id).
+// derived from where it was opened (DetailTarget.writable + a bucket-item handle):
+//   · memo  — ARCH-bucket-album-modal-unification Step 1: ANY writable bucket album
+//             with a bucket-item handle (bucketId + itemId) opens the unified "쓰레기통"
+//             memo window (FEAT-editor-buckit Step 3), regardless of publish state.
+//             It surfaces all three "my relationship to this album" write surfaces:
+//             평가 (live star + one-liner, PUT /api/reviews/albums/{id}), 메모 (freeform
+//             note → review_bucket_items.note + "오늘 밤 키우기" → prep_tonight,
+//             debounced-autosaved, no save button), and 리서치 노트 (album_research,
+//             collapsible). A published album additionally shows the "이미 발행됨"
+//             banner. A single "전체 에디터에서 작성" link keeps the path to /write.
+//   · info  — non-writable surfaces (Spotify 라이브러리, 최근 들은, sample tracks) or a
+//             writable album opened without a bucket-item handle: cover + metadata +
+//             tracklist, read-only.
 import type { DockState } from './lyrics/DockableLyricsSheet'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
@@ -24,12 +25,15 @@ import { createPortal } from 'react-dom'
 import { updateBucketItemMemo } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { memberRef } from '@lib/entityDrag'
+import { notifyAlbumStateChanged } from '@lib/entityEvents'
 import { reviewHref } from '@lib/entityLinks'
 import { playbackSession } from '@lib/playback/session'
 import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
+import HalfStarInput from '../album/HalfStarInput'
+import { fetchMyAlbumStates, putMyAlbumState, RATING_COMMENT_MAX, RatingRateLimitError } from '../album/reviews.api'
 import { AlbumDetailView, Header } from '../album/AlbumDetailView'
 import { AlbumCard } from '../shared/AlbumCard'
 import { GenreLink } from '../shared/GenreLink'
@@ -38,6 +42,7 @@ import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
 import { LyricsSheet } from './lyrics/LyricsSheet'
 import { AddToBucketMenu } from './pocket/AddToBucketMenu'
 import { fmtTime, Seg, Stars } from './ui'
+import ResearchNote from './ResearchNote'
 
 // The memo window is a dock host: below this width (mobile) header-drag would
 // fight scrolling, so the sheet opens as a plain float instead of docking.
@@ -64,14 +69,17 @@ export function AlbumDetail({ album, reviews, onClose, onMemoSaved, onOpenLyrics
   // slug-less rows; only this matcher is post-gated.)
   const published = album.albumId ? reviews.find(r => r.slug !== '' && r.albumIds.includes(album.albumId!)) : undefined
 
-  // FEAT-editor-buckit Step 3: a writable, not-yet-published 평론 버킷 album that
-  // carries its bucket-item handle opens the memo "쓰레기통" window. Without the
-  // handle (unexpected on a bucket surface) it degrades to the read-only info modal.
-  if (album.writable && !published && album.albumId && album.bucketId && album.itemId)
-    return <MemoWindow album={album} onClose={onClose} onMemoSaved={onMemoSaved} />
+  // ARCH-bucket-album-modal-unification Step 1: a writable 평론 버킷 album that
+  // carries its bucket-item handle always opens the unified memo "쓰레기통" window —
+  // regardless of publish state, so a bucket-tile click is never state-dependent.
+  // Without the handle (unexpected on a bucket surface) it degrades to the
+  // read-only info modal.
+  if (album.writable && album.albumId && album.bucketId && album.itemId)
+    return <MemoWindow album={album} onClose={onClose} onMemoSaved={onMemoSaved} published={published} />
 
-  // edit when published + writable; otherwise read-only info (covers non-writable
-  // surfaces AND the rare writable-but-no-handle fallback).
+  // Non-writable surfaces (Spotify 라이브러리, 최근 들은, sample tracks) and the rare
+  // writable-but-no-handle fallback keep the read-only/edit standard modal untouched
+  // by this RFC (its scope is the bucket-item-handle path above).
   const mode: Mode = (published && album.writable) ? 'edit' : 'info'
   return <StandardModal album={album} mode={mode} published={published} onClose={onClose} onOpenLyrics={onOpenLyrics} />
 }
@@ -448,11 +456,16 @@ function memoTrackActions({ track, album, cover, onOpenLyrics, onAddTrack }: {
  * PairedMemoTrackActions return type makes Rule #14 a compile-time invariant
  * at this adapter boundary instead of another call-site convention.
  */
-export function MemoAlbumCardAdapter({ album, data, onOpenLyrics, onAddTrack }: {
+export function MemoAlbumCardAdapter({ album, data, onOpenLyrics, onAddTrack, belowCard }: {
   album: DetailTarget
   data: AlbumDetailResp | null
   onOpenLyrics: OnOpenLyrics
   onAddTrack: (trackId: string, title: string) => void
+  /**
+   * ARCH-bucket-album-modal-unification Step 1 — rendered between the album
+   * card and the tracklist (published banner + live rating block).
+   */
+  belowCard?: React.ReactNode
 }) {
   const a = data?.album
   const meta: string[] = []
@@ -484,7 +497,6 @@ export function MemoAlbumCardAdapter({ album, data, onOpenLyrics, onAddTrack }: 
 	secondaryLine={(
             <span className="memo-album-card__context">
               {meta.length > 0 && <span className="memo-album-card__meta mono">{meta.join(' · ')}</span>}
-              <span className="memo-album-card__rating"><span className="unrated">미평가</span></span>
               {tags.length > 0 && (
                 <span className="memo-tags memo-album-card__tags">
                   {tags.map(t => <span key={t} className="memo-tag">{t}</span>)}
@@ -494,6 +506,8 @@ export function MemoAlbumCardAdapter({ album, data, onOpenLyrics, onAddTrack }: 
           )}
         />
       </div>
+
+      {belowCard}
 
       {data && data.tracks.length > 0 && (
         <>
@@ -522,7 +536,137 @@ export function MemoAlbumCardAdapter({ album, data, onOpenLyrics, onAddTrack }: 
   )
 }
 
-function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void }) {
+// ══════════════════════════════════════════════════════════════════════════════
+// ARCH-bucket-album-modal-unification Step 1 — live 평가 (rating) block
+//
+// Replaces the dead "미평가" placeholder. Self-contained (own fetch/write), reusing
+// the SAME PUT /api/reviews/albums/{id} path as the public AlbumRatingBlock, not the
+// whole component — this panel has no room for public aggregate stats, a review
+// list, or a login CTA (the memo window is authed-only by construction). Seeds from
+// fetchMyAlbumStates(albumId) rather than the `reviews` prop: MemberReview (built
+// from published-post frontmatter) never carries `comment`.
+//
+// OQ2 (RFC "does a star click save immediately, or need an explicit save?") —
+// resolved immediate-write + undo, matching FEAT-album-review-authoring's "가볍게"
+// premise and the toast/undo pattern already used by StandardModal's play notice.
+function MemoRatingBlock({ albumId }: { albumId: string | undefined }) {
+	const [state, setState] = useState<{ rating: number | null, comment: string } | null>(null)
+	const [saving, setSaving] = useState(false)
+	const [err, setErr] = useState<string | null>(null)
+	const commentRef = useRef('')
+	const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const [undo, setUndo] = useState<{ prev: number | null } | null>(null)
+	const undoTimer = useRef<number | null>(null)
+
+	useEffect(() => {
+		if (!albumId)
+			return
+		let alive = true
+		fetchMyAlbumStates(albumId).then((states) => {
+			if (!alive)
+				return
+			const s = states[0]
+			commentRef.current = s?.comment ?? ''
+			setState({ rating: s?.rating ?? null, comment: s?.comment ?? '' })
+		})
+		return () => {
+			alive = false
+		}
+	}, [albumId])
+
+	useEffect(() => () => {
+		if (debounce.current)
+			clearTimeout(debounce.current)
+		if (undoTimer.current != null)
+			window.clearTimeout(undoTimer.current)
+	}, [])
+
+	// A null rating cannot carry a comment (DB CHECK) — clearing the rating always
+	// clears the comment too, regardless of what the caller passed.
+	async function commit(changes: Partial<{ rating: number | null, comment: string | null }>) {
+		if (!albumId)
+			return
+		const payload = changes.rating === null ? { ...changes, comment: null } : changes
+		setSaving(true)
+		setErr(null)
+		try {
+			const res = await putMyAlbumState(albumId, payload)
+			commentRef.current = res?.comment ?? ''
+			setState({ rating: res?.rating ?? null, comment: res?.comment ?? '' })
+			notifyAlbumStateChanged({ albumId, reviewCandidate: res?.review_candidate ?? false, rating: res?.rating ?? null })
+		}
+		catch (e) {
+			setErr(e instanceof RatingRateLimitError ? '오늘 남길 수 있는 평가 수를 초과했습니다.' : '저장하지 못했습니다.')
+		}
+		finally {
+			setSaving(false)
+		}
+	}
+
+	function onStar(v: number) {
+		const prev = state?.rating ?? null
+		setState(s => ({ rating: v, comment: s?.comment ?? '' }))
+		void commit({ rating: v })
+		setUndo({ prev })
+		if (undoTimer.current != null)
+			window.clearTimeout(undoTimer.current)
+		undoTimer.current = window.setTimeout(() => setUndo(null), 4200)
+	}
+
+	function onUndo() {
+		if (!undo)
+			return
+		const prev = undo.prev
+		setUndo(null)
+		if (undoTimer.current != null)
+			window.clearTimeout(undoTimer.current)
+		setState(s => ({ rating: prev, comment: s?.comment ?? '' }))
+		void commit({ rating: prev })
+	}
+
+	function onComment(v: string) {
+		commentRef.current = v
+		setState(s => ({ rating: s?.rating ?? null, comment: v }))
+		if (debounce.current)
+			clearTimeout(debounce.current)
+		debounce.current = setTimeout(() => void commit({ comment: commentRef.current.trim() || null }), 650)
+	}
+
+	if (!albumId || !state)
+		return null
+
+	return (
+		<div className="memo-rating">
+			<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+				{/* HalfStarInput's own default (30px → 15×30px half-star hit zones) is under
+				    typical touch-target guidance; sized up for this modal's real touch use. */}
+				<HalfStarInput value={state.rating ?? 0} onChange={onStar} size={38} />
+				<span className="mono" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>
+					{state.rating != null ? state.rating.toFixed(1) : '평가하기'}
+				</span>
+				{saving && <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>저장 중</span>}
+				{undo && !saving && (
+					<button type="button" onClick={onUndo} className="mono" style={{ fontSize: 10.5, background: 'none', border: 'none', padding: 0, color: 'var(--color-subtle)', textDecoration: 'underline', cursor: 'pointer' }}>
+						되돌리기
+					</button>
+				)}
+			</div>
+			<input
+				type="text"
+				value={state.comment}
+				onChange={e => onComment(e.target.value)}
+				maxLength={RATING_COMMENT_MAX}
+				disabled={state.rating == null}
+				placeholder={state.rating == null ? '별점을 먼저 남겨주세요' : '한 줄 감상 (선택)'}
+				aria-label="한 줄 감상"
+				className="sans memo-rating-comment"
+			/>
+			{err && <div className="sans" style={{ fontSize: 11.5, color: 'var(--color-danger, #c0392b)' }}>{err}</div>}
+		</div>
+	)
+}
+
+function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailTarget, onClose: () => void, onMemoSaved?: (itemId: string, memo: { note: string | null, prepTonight: boolean }) => void, published?: MemberReview }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore. autoFocus off so MemoBody's own autoFocus
   // owns initial focus (the textarea, not the ✕) — zero-friction 쓰레기통 intent.
@@ -591,6 +735,19 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
   }, [])
   const dragPassthrough = useDragScrimPassthrough()
 
+  // ARCH-bucket-album-modal-unification Step 1 — 리서치 노트 section. Collapsed by
+  // default (matches ResearchNote's own 'panel'/'rail' default), auto-expanded +
+  // scrolled into view when opened via the tile's corner research dot
+  // (DetailTarget.focusResearch), replacing the old separate rsh-modal.
+  const [researchOpen, setResearchOpen] = useState(album.focusResearch ?? false)
+  const researchRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (album.focusResearch)
+      researchRef.current?.scrollIntoView({ block: 'nearest' })
+    // Intentionally once on mount: focusResearch is a one-shot open intent from
+    // the click that opened this modal, not a value to keep re-syncing against.
+  }, [])
+
   return (
     <div
 	className="scrim"
@@ -622,7 +779,18 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
         <div className="memo-lg-grid">
           {/* left — album identity (the subject of the memo, not an aside) */}
           <div className="memo-info">
-            <MemoAlbumCardAdapter album={album} data={data} onOpenLyrics={openSheet} onAddTrack={onAddTrack} />
+            <MemoAlbumCardAdapter
+	album={album}
+	data={data}
+	onOpenLyrics={openSheet}
+	onAddTrack={onAddTrack}
+	belowCard={(
+                <>
+                  {published && <PublishedBanner published={published} />}
+                  <MemoRatingBlock albumId={album.albumId} />
+                </>
+              )}
+            />
           </div>
 
           {/* right — the memo (쓰레기통) */}
@@ -640,6 +808,15 @@ function MemoWindow({ album, onClose, onMemoSaved }: { album: DetailTarget, onCl
             <div className="memo-write-link">
               <a href={`/write?album=${album.albumId}`}>전체 에디터에서 작성 →</a>
             </div>
+            {album.albumId && (
+              <div className="memo-research" ref={researchRef}>
+                <button type="button" className="memo-research-toggle" aria-expanded={researchOpen} onClick={() => setResearchOpen(o => !o)}>
+                  <span className="kicker">리서치 노트</span>
+                  <span className={`memo-research-chevron${researchOpen ? ' is-open' : ''}`} aria-hidden="true">▾</span>
+                </button>
+                {researchOpen && <ResearchNote albumId={album.albumId} variant="doc" />}
+              </div>
+            )}
           </section>
         </div>
        </div>
