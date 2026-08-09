@@ -12,6 +12,7 @@
 import type { BoardBucket } from '@lib/buckets'
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useScrollLock } from '@lib/useScrollLock'
 
 // Filter that hides a bucket (and its subtree) from the picker — e.g. a bucket
 // can't be moved into itself or its own descendants.
@@ -47,6 +48,7 @@ export function BucketPickerSheet({ title, tree, skip, allowRoot, onPick, onClos
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
+  useScrollLock()
 
   const entries: PickerEntry[] = []
   flatten(tree, 0, skip ?? (() => false), entries)

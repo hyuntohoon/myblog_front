@@ -123,7 +123,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 
   const inDrillIn = viewArtistHero !== null || viewArtistPending || viewArtistFailed
 
-  useDismissable(true, () => (inDrillIn ? closeArtistDrillIn() : onClose()), paletteRef, { autoFocus: false })
+  useDismissable(true, () => (inDrillIn ? closeArtistDrillIn() : onClose()), paletteRef, { autoFocus: false, lockScroll: true })
 
   useEffect(() => {
     inputRef.current?.focus()

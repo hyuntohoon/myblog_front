@@ -52,7 +52,7 @@ function flatten(buckets: BoardBucket[], depth: number, out: FlatBucket[]) {
 interface ToastState { label: string, undo: (() => void) | null }
 
 const SCRIM: CSSProperties = { position: 'fixed', inset: 0, zIndex: 96, background: 'rgba(20,20,20,.32)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }
-const SHEET: CSSProperties = { width: 'min(440px, 94vw)', maxHeight: '62vh', overflowY: 'auto', background: 'var(--color-bg)', borderRadius: '12px 12px 0 0', border: '1px solid var(--color-border)', borderBottom: 'none', boxShadow: '0 -8px 30px rgba(26,26,26,.22)', padding: '14px 14px 22px' }
+const SHEET: CSSProperties = { width: 'min(440px, 94vw)', maxHeight: '62vh', overflowY: 'auto', overscrollBehavior: 'contain', background: 'var(--color-bg)', borderRadius: '12px 12px 0 0', border: '1px solid var(--color-border)', borderBottom: 'none', boxShadow: '0 -8px 30px rgba(26,26,26,.22)', padding: '14px 14px 22px' }
 const ITEM: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '11px 12px', background: 'none', border: 'none', borderRadius: 7, cursor: 'pointer', color: 'var(--color-text)', fontSize: 14 }
 const TOAST: CSSProperties = { position: 'fixed', left: '50%', bottom: 28, transform: 'translateX(-50%)', zIndex: 101, display: 'flex', alignItems: 'center', gap: 14, background: 'var(--color-text)', color: 'var(--color-bg)', borderRadius: 6, padding: '10px 16px', fontSize: 13, boxShadow: '0 6px 22px rgba(26,26,26,.28)' }
 
@@ -145,7 +145,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
   // The picker is often opened above another dismissable (album detail,
   // lyrics, etc.). Register the portal as the top layer so focus and Escape
   // stay in this sheet until it closes instead of acting on the host behind it.
-  useDismissable(sheetOpen && tree !== null, cancel, sheetRef)
+  useDismissable(sheetOpen && tree !== null, cancel, sheetRef, { lockScroll: true })
 
   const pick = useCallback(async (bucketId: string) => {
     if (busy.current)

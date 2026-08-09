@@ -545,6 +545,7 @@
 .rsh-modal-close:hover { color: var(--color-text); border-color: var(--color-border); }
 .rsh-modal-body {
 	overflow-y: auto;
+	overscroll-behavior: contain;
 	padding: 6px 26px 30px;
 	flex: 1;
 	min-height: 0;

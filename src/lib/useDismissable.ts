@@ -13,7 +13,13 @@
 //
 // `open` gates everything — when false the hook is inert. Pass the element that
 // wraps the overlay's focusable content as `ref`.
+//
+// `lockScroll` (ARCH-overlay-modal-isolation Step 1) composes in `useScrollLock`
+// so a scrim-backed dialog gets both ESC/trap and background-scroll lock from one
+// call. Defaults to false: several `useDismissable` callers are anchored, non-scrim
+// popups (e.g. OverviewDash's "add widget" menu) that must not freeze the page.
 import { useEffect, useRef } from 'react'
+import { useScrollLock } from './useScrollLock'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
@@ -34,9 +40,11 @@ export function useDismissable(
 	open: boolean,
 	onClose: () => void,
 	ref: { current: HTMLElement | null },
-	opts: { trapFocus?: boolean, autoFocus?: boolean } = {},
+	opts: { trapFocus?: boolean, autoFocus?: boolean, lockScroll?: boolean } = {},
 ) {
-	const { trapFocus = true, autoFocus = true } = opts
+	const { trapFocus = true, autoFocus = true, lockScroll = false } = opts
+
+	useScrollLock(open && lockScroll)
 
 	// Hold the latest onClose without making it an effect dependency. Callers
 	// routinely pass an inline `onClose={() => setX(null)}`, which is a fresh

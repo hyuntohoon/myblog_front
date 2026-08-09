@@ -114,6 +114,7 @@
   margin-top: var(--space-3);
   padding: 0 var(--space-3) var(--space-4);
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 4px;

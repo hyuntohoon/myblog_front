@@ -90,7 +90,7 @@
 .wr-palette-count { margin-left: auto; font-size: 10px; color: var(--ink-faint); }
 
 .wr-palette-body { flex: 1; min-height: 0; }
-.wr-scroll { overflow-y: auto; }
+.wr-scroll { overflow-y: auto; overscroll-behavior: contain; }
 .wr-palette-status {
   font-family: var(--mono);
   font-size: var(--text-xs);

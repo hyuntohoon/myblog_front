@@ -22,6 +22,7 @@ import {
   SHELL_OPTS,
   WEIGHT_OPTS,
 } from '@lib/pocketBuckit/design'
+import { useScrollLock } from '@lib/useScrollLock'
 import { usePocket } from './PocketBuckitProvider'
 
 function AxisRow({ axisN, title, opts, value, set, accent = false, disabled = false }: {
@@ -63,6 +64,7 @@ function AxisRow({ axisN, title, opts, value, set, accent = false, disabled = fa
 export function PocketDesignSettings({ onClose }: { onClose: () => void }) {
   const { design, setDesign, resetDesign, setOpen } = usePocket()
   const lightShell = design.shell === 'f5' || design.shell === 'f6'
+  useScrollLock()
 
   return (
     <div
@@ -73,7 +75,7 @@ export function PocketDesignSettings({ onClose }: { onClose: () => void }) {
 	onClick={onClose}
     >
       <div
-	style={{ width: 'min(720px, 96vw)', maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', borderRadius: '12px 12px 0 0', border: '1px solid var(--color-border)', padding: '22px 24px 30px' }}
+	style={{ width: 'min(720px, 96vw)', maxHeight: '86vh', overflowY: 'auto', overscrollBehavior: 'contain', background: 'var(--color-bg)', borderRadius: '12px 12px 0 0', border: '1px solid var(--color-border)', padding: '22px 24px 30px' }}
 	onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 16 }}>

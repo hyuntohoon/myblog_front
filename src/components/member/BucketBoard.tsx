@@ -1638,7 +1638,7 @@ interface TrashEntry { tid: string, album: BoardAlbum, fromBucketId: string, fro
 
 export function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { trash: TrashEntry[], onRestore: (tid: string) => void, onPurge: (tid: string) => void, onEmpty: () => void, onClose: () => void }) {
   const drawerRef = useRef<HTMLElement>(null)
-  useDismissable(true, onClose, drawerRef)
+  useDismissable(true, onClose, drawerRef, { lockScroll: true })
   return (
     <div className="scrim" onClick={onClose} role="presentation">
       <aside ref={drawerRef} className="slideover" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="휴지통">
@@ -1932,7 +1932,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const [bucketSheet, setBucketSheet] = useState<BoardBucket | null>(null)
   const [picker, setPicker] = useState<{ title: string, skip?: (b: BoardBucket) => boolean, allowRoot?: boolean, onPick: (bucketId: string | null) => void } | null>(null)
   const confirmModalRef = useRef<HTMLDivElement>(null)
-  useDismissable(!!pendingBucketDelete, () => setPendingBucketDelete(null), confirmModalRef)
+  useDismissable(!!pendingBucketDelete, () => setPendingBucketDelete(null), confirmModalRef, { lockScroll: true })
 
   // FEAT-album-research-notes — the album whose research note reading modal is open.
   const [researchTarget, setResearchTarget] = useState<{ albumId: string, title: string } | null>(null)

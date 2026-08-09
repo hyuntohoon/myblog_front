@@ -43,7 +43,7 @@ export default function SettingsPanel({
   busy = false,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null)
-  useDismissable(open, onClose, panelRef)
+  useDismissable(open, onClose, panelRef, { lockScroll: true })
   return (
     <>
       <div className={`settings-backdrop${open ? ' open' : ''}`} onClick={onClose} />

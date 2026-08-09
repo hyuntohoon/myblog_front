@@ -61,6 +61,13 @@ function NestedHarness({ onHostClose }: { onHostClose: () => void }) {
 }
 
 describe('addToBucketMenu dismissable stack', () => {
+	beforeEach(() => {
+		document.body.style.overflow = ''
+	})
+	afterEach(() => {
+		document.body.style.overflow = ''
+	})
+
 	it('traps focus in the picker and lets Escape close it before its host', async () => {
 		const onHostClose = vi.fn()
 		render(<NestedHarness onHostClose={onHostClose} />)
@@ -81,6 +88,20 @@ describe('addToBucketMenu dismissable stack', () => {
 
 		fireEvent.keyDown(document, { key: 'Escape' })
 		expect(onHostClose).toHaveBeenCalledTimes(1)
+	})
+
+	it('locks background scroll while the nested picker is open and releases it on close', async () => {
+		const onHostClose = vi.fn()
+		render(<NestedHarness onHostClose={onHostClose} />)
+		expect(document.body.style.overflow).toBe('')
+
+		fireEvent.click(screen.getByRole('button', { name: '버킷에 담기' }))
+		await screen.findByRole('dialog', { name: '버킷 선택' })
+		expect(document.body.style.overflow).toBe('hidden')
+
+		fireEvent.keyDown(document, { key: 'Escape' })
+		await waitFor(() => expect(screen.queryByRole('dialog', { name: '버킷 선택' })).not.toBeInTheDocument())
+		expect(document.body.style.overflow).toBe('')
 	})
 })
 
