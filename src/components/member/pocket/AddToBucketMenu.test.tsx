@@ -18,12 +18,14 @@ vi.mock('@lib/buckets', () => ({
 	addBucketSnapshot: vi.fn(),
 	addBucketTrack: vi.fn(),
 	deleteBucketItem: vi.fn(),
+	expandAlbumTracks: vi.fn(),
 	isManualAddTarget: () => true,
 	listBuckets: vi.fn().mockResolvedValue([]),
+	PLAYBACK_TYPE: 'playback',
 }))
 
 vi.mock('@lib/pocketBuckit/bucketStore', () => ({
-	bucketStore: { ensureFresh: vi.fn() },
+	bucketStore: { ensureFresh: vi.fn().mockResolvedValue(undefined) },
 }))
 
 vi.mock('@lib/playback/session', () => ({
@@ -142,5 +144,57 @@ describe('home album-card add fallback', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Pocket Buckit' }))
 
 		await waitFor(() => expect(buckets.addBucketItem).toHaveBeenCalledWith('bucket-1', 'album-1'))
+	})
+})
+
+// FEAT-playback-bucket-player Step 8 — the mobile/non-drag peer of boardDnd.ts's
+// routeAlbumDrop PLAYBACK_TYPE branch: an album dropped on the Playback Bucket
+// expands into its tracks, the same as the drag path, rather than 400ing on a
+// plain album add (the backend's add_item type gate rejects item_type='album'
+// on a type='playback' bucket).
+describe('album add fallback into the Playback Bucket', () => {
+	const playbackBucket = {
+		id: 'pb-1',
+		name: '재생 대기열',
+		color: null,
+		isDone: false,
+		kind: 'playback_queue',
+		type: 'playback',
+		isPublic: false,
+		researchMode: 'off',
+		albums: [],
+		children: [],
+	}
+
+	it('expands the album into its tracks instead of a plain album add', async () => {
+		vi.mocked(buckets.addBucketItem).mockClear()
+		vi.mocked(buckets.listBuckets).mockResolvedValue([playbackBucket])
+		vi.mocked(buckets.expandAlbumTracks).mockResolvedValue([
+			{ id: 't1', title: 'So What', artistNames: ['Miles Davis'] },
+			{ id: 't2', title: 'Freddie Freeloader', artistNames: ['Miles Davis'] },
+		])
+
+		render(<AddToBucketMenu item={{ albumId: 'album-1', title: 'Kind of Blue' }} />)
+
+		fireEvent.click(screen.getByRole('button', { name: '버킷에 담기' }))
+		await screen.findByRole('dialog', { name: '버킷 선택' })
+		fireEvent.click(screen.getByRole('button', { name: '재생 대기열' }))
+
+		await waitFor(() => expect(buckets.expandAlbumTracks).toHaveBeenCalledWith('pb-1', 'album-1'))
+		expect(buckets.addBucketItem).not.toHaveBeenCalled()
+		await screen.findByText('2곡을 재생 대기열에 추가했어요')
+	})
+
+	it('reports a real no-tracks-synced-yet state rather than a generic failure', async () => {
+		vi.mocked(buckets.listBuckets).mockResolvedValue([playbackBucket])
+		vi.mocked(buckets.expandAlbumTracks).mockResolvedValue([])
+
+		render(<AddToBucketMenu item={{ albumId: 'album-2', title: 'No Tracks Yet' }} />)
+
+		fireEvent.click(screen.getByRole('button', { name: '버킷에 담기' }))
+		await screen.findByRole('dialog', { name: '버킷 선택' })
+		fireEvent.click(screen.getByRole('button', { name: '재생 대기열' }))
+
+		await screen.findByText('이 앨범은 아직 트랙 정보가 없어요')
 	})
 })
