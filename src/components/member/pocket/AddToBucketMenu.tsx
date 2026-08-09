@@ -18,7 +18,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { goLogin, isLoggedIn } from '@lib/auth'
-import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, isManualAddTarget, listBuckets } from '@lib/buckets'
+import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, expandAlbumTracks, isManualAddTarget, listBuckets, PLAYBACK_TYPE } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { playbackSession } from '@lib/playback/session'
 import { writePocketIntent } from '@lib/pocketBuckit/intent'
@@ -36,15 +36,18 @@ export type AddTarget =
 	{ itemType: 'review', reviewTargetId: string, title: string } |
 	{ itemType: 'snapshot', snapshot: SnapshotCapture, title: string }
 
-interface FlatBucket { id: string, name: string, depth: number }
+interface FlatBucket { id: string, name: string, depth: number, type: string }
 
 // Flatten the tree to a depth-tagged list. The Spotify-library mirror is not a
-// manual add target (it's sync-owned), so its subtree is skipped.
+// manual add target (it's sync-owned), so its subtree is skipped. `type` rides
+// along so pick() can route an album drop the same way boardDnd.ts's drag path
+// already does — the Playback Bucket holds tracks, not albums (FEAT-playback-bucket-player
+// Step 8: this is the non-drag peer of that routing, not a new rule).
 function flatten(buckets: BoardBucket[], depth: number, out: FlatBucket[]) {
   for (const b of buckets) {
     if (!isManualAddTarget(b))
       continue
-    out.push({ id: b.id, name: b.name, depth })
+    out.push({ id: b.id, name: b.name, depth, type: b.type })
     flatten(b.children, depth + 1, out)
   }
 }
@@ -147,11 +150,29 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
   // stay in this sheet until it closes instead of acting on the host behind it.
   useDismissable(sheetOpen && tree !== null, cancel, sheetRef)
 
-  const pick = useCallback(async (bucketId: string) => {
+  const pick = useCallback(async (bucketId: string, bucketType: string) => {
     if (busy.current)
       return
     busy.current = true
     try {
+      // FEAT-playback-bucket-player Step 8: the non-drag peer of boardDnd.ts's
+      // `routeAlbumDrop` PLAYBACK_TYPE branch. An album can't be a single-row add
+      // there either (the backend 400s — the queue holds tracks); it expands into
+      // the album's tracks instead. Mirrors BucketBoard.tsx's `expandAlbumTracks`
+      // op verbatim: refresh, then let the session notice the new tail, no Undo
+      // (there is no bulk-delete endpoint for an N-row expansion).
+      if (albumId && bucketType === PLAYBACK_TYPE) {
+        const addedTracks = await expandAlbumTracks(bucketId, albumId)
+        setSheetOpen(false)
+        if (addedTracks.length === 0) {
+          showToast({ label: '이 앨범은 아직 트랙 정보가 없어요', undo: null })
+        }
+        else {
+          void bucketStore.ensureFresh(true).then(() => playbackSession.onDropped())
+          showToast({ label: `${addedTracks.length}곡을 재생 대기열에 추가했어요`, undo: null })
+        }
+        return
+      }
       // One branch per kind; review/snapshot seed `note` with the title so the
       // board/tray tile renders a caption (they carry no display brief).
       const { item: added, conflict } = trackId ?
@@ -257,7 +278,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
 	key={e.id}
 	type="button"
 	style={{ ...ITEM, paddingLeft: 12 + e.depth * 18 }}
-	onClick={() => void pick(e.id)}
+	onClick={() => void pick(e.id, e.type)}
                 >
                   {e.depth > 0 && <span style={{ color: 'var(--color-faded)', fontFamily: 'var(--font-mono, monospace)' }}>└</span>}
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</span>
