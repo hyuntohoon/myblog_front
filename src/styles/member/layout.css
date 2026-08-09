@@ -1159,18 +1159,13 @@
 .lk-row:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
 
 /* ── artist-hub link (ARCH-entity-interaction-contract Step 3) ───────────────
-   Member-island artist names that navigate to /artist/[id] — the lf-flavored
-   twin of the public review hero's .rh-artist-link. */
-.lf-artist-link {
-	color: inherit;
-	text-decoration: none;
-	border-bottom: 1px solid transparent;
-	transition: color 0.14s, border-color 0.14s;
-}
-.lf-artist-link:hover {
-	color: var(--color-accent);
-	border-bottom-color: currentColor;
-}
+   MOVED OUT (audit E-6). `.lf-artist-link` is emitted by
+   components/album/AlbumDetailView.tsx, which AlbumOverlay mounts from
+   layout.astro on every page — but this file loads on /collection/ and
+   /settings/ only, so the link had no hover affordance anywhere else. The rule
+   now ships with the component (`ARTIST_LINK_CSS` there). Do not re-add it
+   here: a dashboard-scoped copy is what made this the 4th member.css
+   recurrence. The public twin `.rh-artist-link` lives in review-hero.astro. */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    FEAT-lyrics-sheet — the STATIC lyrics viewer (LyricsSheet.tsx).

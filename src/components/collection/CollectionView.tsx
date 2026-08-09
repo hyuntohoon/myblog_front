@@ -7,6 +7,7 @@
 import type { PublicCollection } from '@lib/buckets'
 import { useEffect, useState } from 'react'
 import { listPublicBuckets } from '@lib/buckets'
+import { publicMemberLabel } from '@lib/member'
 import { AlbumArt, SectionTitle } from '@components/member/ui'
 import { openAlbum } from '@lib/entityLinks'
 
@@ -71,8 +72,11 @@ export default function CollectionView() {
 	// Attribution: any member can publish a bucket (multi-user P2) — every
 	// shelf says whose it is. Plain text (no /members link) until member
 	// pages are runtime-reachable; owner==null only during backend rollout.
+	// The name goes through publicMemberLabel because a member who never set
+	// one gets a handle derived from their Cognito sub, and this page is
+	// unauthenticated — it used to read `@user-0468fd3c` (audit E-2).
 	<span className="mono" style={{ fontSize: 12, color: 'var(--color-faded)' }}>
-		{c.owner ? `@${c.owner.handle} · ${c.albums.length}장` : `${c.albums.length}장`}
+		{c.owner ? `${publicMemberLabel(c.owner.displayName, c.owner.handle)} · ${c.albums.length}장` : `${c.albums.length}장`}
 	</span>
 	)}
           />
