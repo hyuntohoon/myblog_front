@@ -7,6 +7,7 @@
 // `bps-*` sheet classes (member.css).
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useScrollLock } from '@lib/useScrollLock'
 
 export interface SheetAction { label: string, onClick: () => void, danger?: boolean }
 
@@ -19,6 +20,7 @@ export function ActionSheet({ title, subtitle, actions, onClose }: { title: stri
     window.addEventListener('keydown', k)
     return () => window.removeEventListener('keydown', k)
   }, [onClose])
+  useScrollLock()
   return createPortal(
     <div className="bps-scrim" onClick={onClose} role="presentation">
       <div className="bps-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>

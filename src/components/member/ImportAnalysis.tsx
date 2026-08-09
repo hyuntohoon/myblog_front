@@ -428,7 +428,7 @@ export function ItemDetailSlideover({ target, metric, period, onClose }: { targe
 	const [detail, setDetail] = useState<StreamItemDetail | null>(null)
 	const [err, setErr] = useState(false)
 	const slideoverRef = useRef<HTMLElement>(null)
-	useDismissable(true, onClose, slideoverRef)
+	useDismissable(true, onClose, slideoverRef, { lockScroll: true })
 
 	useEffect(() => {
 		let on = true

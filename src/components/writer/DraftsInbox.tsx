@@ -41,7 +41,7 @@ export default function DraftsInbox({ drafts, currentPostId, onDeleted, onClose 
 
   // esc disarms an armed row first, else closes (matches the ⌘K palette).
   // Outside-click is handled by the scrim.
-  useDismissable(true, () => (confirmId ? setConfirmId(null) : onClose()), inboxRef)
+  useDismissable(true, () => (confirmId ? setConfirmId(null) : onClose()), inboxRef, { lockScroll: true })
 
   async function runDelete(id: string) {
     setDeletingId(id)

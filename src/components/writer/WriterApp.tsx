@@ -288,7 +288,7 @@ export default function WriterApp() {
   // drawer instead.
   const [researchDrawer, setResearchDrawer] = useState(false)
   const researchDrawerRef = useRef<HTMLElement>(null)
-  useDismissable(researchDrawer, () => setResearchDrawer(false), researchDrawerRef)
+  useDismissable(researchDrawer, () => setResearchDrawer(false), researchDrawerRef, { lockScroll: true })
 
   // Split-view pane ratio (left pane %, clamped, persisted) + divider drag.
   const isWide = useIsWide()

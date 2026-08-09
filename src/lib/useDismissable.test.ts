@@ -116,4 +116,31 @@ describe('useDismissable', () => {
 
     expect(document.activeElement).toBe(trigger)
   })
+
+  describe('lockScroll', () => {
+    beforeEach(() => {
+      document.body.style.overflow = ''
+    })
+    afterEach(() => {
+      document.body.style.overflow = ''
+    })
+
+    it('does not lock the background scroll by default', () => {
+      const ref = { current: dismissableRoot().root }
+      renderHook(() => useDismissable(true, vi.fn(), ref))
+      expect(document.body.style.overflow).toBe('')
+    })
+
+    it('locks the background scroll while open when opted in, and releases on close', () => {
+      const ref = { current: dismissableRoot().root }
+      const { rerender } = renderHook(
+        ({ open }: { open: boolean }) => useDismissable(open, vi.fn(), ref, { lockScroll: true }),
+        { initialProps: { open: true } },
+      )
+      expect(document.body.style.overflow).toBe('hidden')
+
+      rerender({ open: false })
+      expect(document.body.style.overflow).toBe('')
+    })
+  })
 })

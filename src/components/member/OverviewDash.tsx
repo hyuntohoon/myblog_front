@@ -215,7 +215,7 @@ const RECENT_ALBUMS_LIMIT = 6
 /** Modal listing every 최근 들은 앨범 (grid). Reuses the slide-over shell + scrim. */
 export function RecentAlbumsModal({ items, onOpen, onClose }: { items: SampleAlbum[], onOpen: (t: DetailTarget) => void, onClose: () => void }) {
   const modalRef = useRef<HTMLElement>(null)
-  useDismissable(true, onClose, modalRef)
+  useDismissable(true, onClose, modalRef, { lockScroll: true })
 
   const openAndClose = (t: DetailTarget) => {
     onClose()
@@ -350,7 +350,7 @@ const RECENT_TRACKS_LIMIT = 8
 /** Modal listing every 최근 재생 트랙 (list). Reuses the slide-over shell + scrim. */
 export function RecentTracksModal({ items, view, onOpen, onClose }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void, onClose: () => void }) {
   const modalRef = useRef<HTMLElement>(null)
-  useDismissable(true, onClose, modalRef)
+  useDismissable(true, onClose, modalRef, { lockScroll: true })
 
   const openAndClose = (t: DetailTarget) => {
     onClose()

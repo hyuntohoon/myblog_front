@@ -357,7 +357,7 @@ export function Peek({ doc, nodeId, onNavigate, onBack, onClose, hasBack }: {
 	// effect fires once while `ref.current` is still null (autoFocus/Tab-trap
 	// silently no-op forever; ESC still works only because it reads onClose
 	// through a ref that updates every render, independent of effect timing).
-	useDismissable(!!node, onClose, peekRef)
+	useDismissable(!!node, onClose, peekRef, { lockScroll: true })
 	if (!node)
 		return null
 	const parent = gmPrimaryParent(doc, node)
