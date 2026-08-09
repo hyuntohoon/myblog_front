@@ -34,7 +34,7 @@ import {
   spanLength,
   writeAnnoStyle,
 } from './annotations'
-import { getLyrics, LyricsForbiddenError, requestTranslation } from './lyrics.api'
+import { getLyrics, requestTranslation } from './lyrics.api'
 
 /** Header pointer handlers — the sheet's grab handle (move / tear). */
 export interface HeadHandlers {
@@ -67,8 +67,6 @@ function readMode(): Mode {
 type Phase =
 	| { k: 'loading' } |
 	{ k: 'error' } |
-	/** Owner-only route, non-owner reader. A state, not a failure — no retry. */
-	{ k: 'forbidden' } |
 	{ k: 'ready', data: LyricsResponse }
 
 /** Screen-reader label for a marked line — announces the range, per the design record. */
@@ -247,12 +245,10 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 				// A finished translation shows by default (matches LyricsViewer).
 				setShowKo(data.availability === 'ok' && data.translation?.status === 'done')
 			})
-			.catch((err) => {
+			.catch(() => {
 				if (stale)
 					return
-				// 403 is not a transient failure: retrying cannot help a member, and
-				// offering "다시 시도" would invite them to hammer a wall.
-				setPhase({ k: err instanceof LyricsForbiddenError ? 'forbidden' : 'error' })
+				setPhase({ k: 'error' })
 			})
 		return () => {
 			stale = true
@@ -409,13 +405,6 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 					<div className="lys-status">
 						<p>가사를 불러오지 못했어요</p>
 						<button type="button" className="lys-retry mono" onClick={() => setLoadSeq(s => s + 1)}>다시 시도</button>
-					</div>
-				)}
-
-				{phase.k === 'forbidden' && (
-					<div className="lys-status">
-						<p>가사는 운영자만 볼 수 있어요</p>
-						<p className="lys-status-sub">가사와 해설은 리뷰를 쓰기 위한 자료라 공개하지 않습니다.</p>
 					</div>
 				)}
 
