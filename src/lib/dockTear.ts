@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { readStoredRect, writeStoredRect } from './surfaceGeometry'
 
 export const DOCK_TEAR_PX = 70
 export const DOCK_TEAR_RESIST = 0.35
@@ -30,6 +31,7 @@ interface DockTearOptions<T extends HTMLElement> {
   clampPos: (left: number, top: number, width: number, height: number) => DockPoint
   inSlot: (x: number, y: number) => boolean
   reducedMotion: boolean
+  geometryKey?: string
 }
 
 interface DragState {
@@ -69,6 +71,7 @@ export function useDockTear<T extends HTMLElement>({
   clampPos,
   inSlot,
   reducedMotion,
+  geometryKey,
 }: DockTearOptions<T>): { handlers: DockTearHandlers, togglePlacement: () => void } {
   const { docked, freePos } = dock
   const dragRef = useRef<DragState | null>(null)
@@ -239,13 +242,22 @@ export function useDockTear<T extends HTMLElement>({
         return
       const pos = clampPos(el.offsetLeft, el.offsetTop, el.offsetWidth, el.offsetHeight)
       patch({ dragging: false, expect: false, freePos: pos })
+      if (geometryKey)
+        writeStoredRect(geometryKey, { left: pos.left, top: pos.top })
     }
   }
 
   const togglePlacement = () => {
     if (dragRef.current)
       return
-    patch(docked ? { docked: false, freePos: null } : { docked: true, freePos: null })
+    if (docked) {
+      const stored = geometryKey ? readStoredRect(geometryKey) : null
+      const freePos = stored && Number.isFinite(stored.left) && Number.isFinite(stored.top) ? { left: stored.left!, top: stored.top! } : null
+      patch({ docked: false, freePos })
+    }
+    else {
+      patch({ docked: true, freePos: null })
+    }
   }
 
   return {

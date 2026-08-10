@@ -195,9 +195,6 @@
   max-width: 1140px;
   padding: 26px 34px 28px;
 }
-.memo-modal-lg.size-m { max-width: 900px; --lys-dock-w: 340px; }
-.memo-modal-lg.size-l { max-width: 1140px; --lys-dock-w: 440px; }
-.memo-modal-lg.size-xl { max-width: 1380px; --lys-dock-w: 560px; }
 
 .memo-lg-bar { display: flex; align-items: center; gap: 12px; padding-right: 40px; margin-bottom: 18px; }
 
@@ -205,9 +202,7 @@
    cover/title/artist rendering. */
 .memo-album-card { width: 100%; }
 .memo-album-card .album-card--grid { gap: 12px; }
-.memo-album-card .album-card__cover { max-width: 180px; }
-.size-l .memo-album-card .album-card__cover { max-width: 200px; }
-.size-xl .memo-album-card .album-card__cover { max-width: 240px; }
+.memo-album-card .album-card__cover { max-width: min(100%, 240px); }
 .memo-album-card .album-card__title {
   font-size: 25px;
   line-height: 1.12;
@@ -249,12 +244,10 @@
 
 .memo-lg-grid {
   display: grid;
-  grid-template-columns: 286px minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 26%) minmax(0, 1fr);
   gap: 32px;
   align-items: stretch;
 }
-.size-l .memo-lg-grid { grid-template-columns: 320px minmax(0, 1fr); gap: 36px; }
-.size-xl .memo-lg-grid { grid-template-columns: 360px minmax(0, 1fr); gap: 42px; }
 .memo-info { display: flex; flex-direction: column; min-width: 0; }
 .memo-main { display: flex; flex-direction: column; min-width: 0; }
 .memo-main .memo-area { flex: 1 1 auto; }
@@ -272,8 +265,7 @@
   white-space: nowrap;
 }
 
-.memo-tracks { display: flex; flex-direction: column; max-height: 196px; overflow-y: auto; margin-top: 2px; }
-.size-xl .memo-tracks { max-height: 320px; }
+.memo-tracks { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; margin-top: 2px; }
 /* Rows themselves are shared/TrackRow.tsx (ARCH-entity-interaction-v2 Step 5)
    as of 2026-08-05 — the .memo-trow* rules that used to style hand-rolled
    rows here were removed with that migration. */
@@ -327,15 +319,8 @@
    memo textarea (the point) stays reachable without scrolling past everything */
 @media (max-width: 740px) {
   .memo-modal-lg { padding: 24px 22px 22px; }
-  /* List the .size-* variants too: `.size-l/.size-xl .memo-lg-grid` (0,2,0) would
-     otherwise out-specify a bare `.memo-lg-grid` (0,1,0) here and keep the 320/360px
-     two-column track on a phone, crushing the memo column to 0px (default size = l). */
-  .memo-lg-grid,
-  .size-l .memo-lg-grid,
-  .size-xl .memo-lg-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .memo-album-card .album-card__cover,
-  .size-l .memo-album-card .album-card__cover,
-  .size-xl .memo-album-card .album-card__cover { max-width: 116px; }
+  .memo-lg-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .memo-album-card .album-card__cover { max-width: 116px; }
   .memo-tracks { max-height: 120px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1495,6 +1480,7 @@
 .lys-sheet.is-mounted.is-grabbed {
 	transition: width 0.38s cubic-bezier(0.22, 0.85, 0.25, 1), height 0.38s cubic-bezier(0.22, 0.85, 0.25, 1), box-shadow 0.3s, transform 0.25s ease;
 }
+.lys-sheet.is-mounted.is-resizing { transition: none; }
 .lys-sheet.is-mounted.is-float { box-shadow: 0 34px 80px rgba(0, 0, 0, 0.45); }
 .lys-sheet.is-mounted.is-lifted { box-shadow: 0 40px 90px rgba(0, 0, 0, 0.5); }
 /* docked = the memo paper's right column: no card border/shadow, only the right
@@ -1564,6 +1550,58 @@
    sheet is docked, so it sits left of the reserved slot. */
 .memo-dock-main { display: contents; }
 .has-dock .memo-dock-main { display: block; position: relative; flex: 1 1 auto; min-width: 0; padding: 26px 34px 28px; }
+
+/* Only MemoWindow opts into viewport geometry; other .memo-modal branches keep
+   the scrim's centred flow exactly as before. */
+.memo-modal-lg.is-surface-mounted {
+	position: fixed;
+	max-width: none;
+	animation: none;
+	transition:
+		top 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		left 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		width 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		height 0.42s cubic-bezier(0.22, 0.85, 0.25, 1),
+		background 0.4s ease,
+		box-shadow 0.3s;
+	will-change: top, left, width, height;
+}
+.memo-modal-lg.is-surface-mounted:is(.is-moving, .is-resizing) { transition: none; }
+.memo-modal-lg.is-surface-mounted .memo-lg-bar { cursor: grab; touch-action: none; }
+.memo-modal-lg.is-surface-mounted.is-moving .memo-lg-bar { cursor: grabbing; }
+
+/* Resize affordances are scoped to the two opt-in surfaces. */
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle {
+	position: absolute;
+	z-index: 6;
+	touch-action: none;
+}
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-n,
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-s {
+	left: 10px;
+	right: 10px;
+	height: 8px;
+	cursor: ns-resize;
+}
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-n { top: 0; }
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-s { bottom: 0; }
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-e,
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-w {
+	top: 10px;
+	bottom: 10px;
+	width: 8px;
+	cursor: ew-resize;
+}
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-e { right: 0; }
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-w { left: 0; }
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > :is(.surface-resize-handle.is-ne, .surface-resize-handle.is-nw, .surface-resize-handle.is-se, .surface-resize-handle.is-sw) {
+	width: 14px;
+	height: 14px;
+}
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-ne { top: 0; right: 0; cursor: nesw-resize; }
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-nw { top: 0; left: 0; cursor: nwse-resize; }
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-se { right: 0; bottom: 0; cursor: nwse-resize; }
+:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted) > .surface-resize-handle.is-sw { bottom: 0; left: 0; cursor: nesw-resize; }
 /* ══ Genius annotations — FEAT-lyrics-annotations Thread 1 ═════════════════════
    Rules from docs/design/lyrics-annotations/README.md → "The render spec".
    The direction is the Genius house style, but its #FFF06A is a screaming yellow
@@ -1702,10 +1740,8 @@
 .lys-anno-drawer .mk { font-size: 12px; color: var(--color-accent); }
 .lys-anno-drawer .tx { font-size: 13px; color: var(--color-subtle); line-height: 1.5; }
 
-/* The docked sheet's width tracks the memo's size setting. It was pinned at
-   320px, so 최대 (1380px) still read lyrics through a 320px straw — the memo grew
-   and the sheet did not. ContextPanel reads this same custom property for
-   its geometry, so the two cannot drift. */
+/* ContextPanel parses this property numerically, so MemoWindow resolves its
+   continuous dock ratio to a plain px value before setting it inline. */
 .lys-dock-slot {
 	position: relative;
 	flex: 0 0 auto;

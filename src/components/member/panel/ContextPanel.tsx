@@ -1,8 +1,10 @@
 import type { PointerEvent, ReactNode, RefObject } from 'react'
 import type { DockRect, DockState } from '@lib/dockTear'
+import type { Rect, SizeConstraints } from '@lib/surfaceGeometry'
 import type { HeadHandlers, LyricsSheetMeta } from '../lyrics/LyricsSheet'
 import { useCallback, useRef, useState } from 'react'
 import { useDockTear } from '@lib/dockTear'
+import { readStoredRect, SURFACE_RESIZE_EDGES, useResizableSurface, writeStoredRect } from '@lib/surfaceGeometry'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import ResearchNote from '../ResearchNote'
@@ -29,8 +31,8 @@ export interface ContextPanelProps {
 
 const DOCK_W = 320
 const MARGIN = 8
-const FLOAT_W = 720
 const SIDE_MIN_W = 380
+const CTX_GEOMETRY_KEY = 'lf_ctx_panel_geo'
 // These are the exact .lys-dock-hint inset values in layout.css. The target is
 // deliberately no larger than the preview a person can see.
 const DOCK_HINT_X = 12
@@ -147,10 +149,24 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 		return { left: modal.right - width, top: modal.top, width, height: modal.height }
 	}, [dockW, hostRef])
 
-	const floatSize = useCallback(() => ({
-		width: Math.min(FLOAT_W, window.innerWidth - 80),
-		height: Math.min(window.innerHeight - 64, 900),
+	const floatConstraints = useCallback((): SizeConstraints => ({
+		minWidth: 340,
+		minHeight: 360,
+		maxWidth: Math.min(900, window.innerWidth - 80),
+		maxHeight: window.innerHeight - 64,
 	}), [])
+
+	const floatSize = useCallback(() => {
+		const stored = readStoredRect(CTX_GEOMETRY_KEY)
+		const limits = floatConstraints()
+		const defaultWidth = Math.max(360, Math.min(480, dockW()))
+		const defaultHeight = Math.min(window.innerHeight - 64, 900)
+		const clampSize = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+		return {
+			width: clampSize(typeof stored?.width === 'number' ? stored.width : defaultWidth, limits.minWidth, limits.maxWidth),
+			height: clampSize(typeof stored?.height === 'number' ? stored.height : defaultHeight, limits.minHeight, limits.maxHeight),
+		}
+	}, [dockW, floatConstraints])
 
 	const restRect = useCallback((): DockRect => {
 		const size = floatSize()
@@ -199,6 +215,29 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 		clampPos,
 		inSlot,
 		reducedMotion: reduced,
+		geometryKey: CTX_GEOMETRY_KEY,
+	})
+	const getFloatRect = useCallback((): Rect => {
+		const panel = panelRef.current
+		const bounds = panel?.getBoundingClientRect()
+		const size = floatSize()
+		const styleNumber = (value: string | undefined, fallback: number) => {
+			const parsed = Number.parseFloat(value ?? '')
+			return Number.isFinite(parsed) ? parsed : fallback
+		}
+		return {
+			left: styleNumber(panel?.style.left, bounds?.left ?? MARGIN),
+			top: styleNumber(panel?.style.top, bounds?.top ?? MARGIN),
+			width: styleNumber(panel?.style.width, bounds?.width || size.width),
+			height: styleNumber(panel?.style.height, bounds?.height || size.height),
+		}
+	}, [floatSize])
+	const resizeHandleProps = useResizableSurface({
+		panelRef,
+		enabled: !dock.docked && !dock.dragging,
+		constraints: floatConstraints,
+		getRect: getFloatRect,
+		onCommit: rect => writeStoredRect(CTX_GEOMETRY_KEY, { width: rect.width, height: rect.height }),
 	})
 	const placementControl = (
 		<button type="button" className="lys-place" onClick={togglePlacement} title={dock.docked ? '분리해서 자유 배치' : '메모창에 도킹'}>
@@ -218,6 +257,15 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 			<div className="lys-perf" aria-hidden="true" />
 			<ContextPanelHeader tab={tab} onTabChange={onTabChange} onClose={onClose} handlers={handlers} placementControl={placementControl} />
 			<ContextPanelPanes albumId={albumId} track={track} tab={tab} />
+			{!dock.docked && !dock.dragging && SURFACE_RESIZE_EDGES.map(edge => (
+				<div
+					key={edge}
+					className={`surface-resize-handle is-${edge}`}
+					data-resize-edge={edge}
+					aria-hidden="true"
+					{...resizeHandleProps(edge)}
+				/>
+			))}
 		</div>
 	)
 }
