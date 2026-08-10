@@ -27,6 +27,7 @@
 // whole-row lyrics target E4 asked for), so a track-row change here reaches
 // every consumer, memo window included.
 import type { CSSProperties, ReactNode } from 'react'
+import { useState } from 'react'
 import type { DragPayload } from '@lib/entityDrag'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 
@@ -98,6 +99,7 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 	style?: CSSProperties
 }) {
 	const Tag = as
+	const [isDragging, setIsDragging] = useState(false)
 	const layout: CSSProperties = gridTemplate ?
 		{ display: 'grid', gridTemplateColumns: gridTemplate, gap: 14, alignItems: 'center' } :
 		{ display: 'flex', alignItems: 'center', gap: 12 }
@@ -143,7 +145,16 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 	return (
 		<Tag
 			className={className}
-			style={{ ...layout, ...style, ...(wholeRowLyrics && { cursor: 'pointer' }) }}
+			style={{
+				...layout,
+				...style,
+				...(wholeRowLyrics && { cursor: 'pointer' }),
+				...(actions.drag && { cursor: isDragging ? 'grabbing' : 'grab' }),
+				// Source-card dim while the drag is in flight — opacity only, same
+				// invariant as AlbumCard's `[data-dragging]` (album-card.css) and the
+				// board/tray drop targets (widgets.css, pocket.css): no reflow.
+				...(isDragging && { opacity: 0.45, transition: 'opacity 120ms ease' }),
+			}}
 			{...(wholeRowLyrics ?
 				{
 					role: 'button',
@@ -163,10 +174,12 @@ export function TrackRow({ as = 'div', no, cover, title, titleSuffix, sub, cells
 					draggable: true,
 					onDragStart: (e: React.DragEvent<HTMLElement>) => {
 						e.dataTransfer.effectAllowed = 'copy'
+						setIsDragging(true)
 						window.dispatchEvent(new CustomEvent<DragPayload>(PB_DND_START_EVENT, { detail: actions.drag! }))
 						window.dispatchEvent(new CustomEvent<DragPayload>(PB_BOARD_DND_START_EVENT, { detail: actions.drag! }))
 					},
 					onDragEnd: () => {
+						setIsDragging(false)
 						window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT))
 						window.dispatchEvent(new CustomEvent(PB_BOARD_DND_END_EVENT))
 					},

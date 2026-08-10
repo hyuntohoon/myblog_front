@@ -2,6 +2,7 @@
 // contract + display primitive. Surface adapters provide display data and the
 // capabilities they genuinely support; this component owns presentation only.
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import type { DragPayload } from '@lib/entityDrag'
 import { artistHref } from '@lib/entityLinks'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
@@ -222,6 +223,7 @@ function Meta({ data, artistOpen, eyebrow, secondaryLine, titleAs: Title }: {
 export function AlbumCard({ data, capabilities = {}, layout, titleAs = 'span', badge, eyebrow, secondaryLine }: AlbumCardProps) {
 	const loading = data.loading === true
 	const drag = loading ? undefined : capabilities.drag
+	const [isDragging, setIsDragging] = useState(false)
 	const openAction = !loading && capabilities.open ?
 		openActionProps(capabilities.open, `${data.title}${data.artist ? ` — ${data.artist}` : ''} 앨범 보기`) :
 		null
@@ -231,6 +233,7 @@ export function AlbumCard({ data, capabilities = {}, layout, titleAs = 'span', b
 		<article
 			className={`album-card album-card--${layout}`}
 			data-album-card-layout={layout}
+			data-dragging={isDragging || undefined}
 			aria-busy={loading || undefined}
 			aria-label={loading ? '앨범 불러오는 중' : undefined}
 			{...(drag ?
@@ -238,10 +241,12 @@ export function AlbumCard({ data, capabilities = {}, layout, titleAs = 'span', b
 					draggable: true,
 					onDragStart: (event: React.DragEvent<HTMLElement>) => {
 						event.dataTransfer.effectAllowed = dragEffect(drag)
+						setIsDragging(true)
 						window.dispatchEvent(new CustomEvent<DragPayload>(PB_DND_START_EVENT, { detail: drag }))
 						window.dispatchEvent(new CustomEvent<DragPayload>(PB_BOARD_DND_START_EVENT, { detail: drag }))
 					},
 					onDragEnd: () => {
+						setIsDragging(false)
 						window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT))
 						window.dispatchEvent(new CustomEvent(PB_BOARD_DND_END_EVENT))
 					},

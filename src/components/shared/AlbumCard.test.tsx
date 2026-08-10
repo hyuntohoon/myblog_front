@@ -176,10 +176,13 @@ describe('albumCard — declared capabilities', () => {
 		expect(openHit).toHaveAttribute('draggable', 'true')
 
 		const dataTransfer = { effectAllowed: 'uninitialized' }
+		expect(card).not.toHaveAttribute('data-dragging')
 		// The full-card open control is the real pointer hit target. Its native
 		// drag must bubble into the article bridge instead of collapsing to a click.
 		fireEvent.dragStart(openHit, { dataTransfer })
+		expect(card).toHaveAttribute('data-dragging', 'true')
 		fireEvent.dragEnd(openHit)
+		expect(card).not.toHaveAttribute('data-dragging')
 		expect(dataTransfer.effectAllowed).toBe('copy')
 		expect(start).toHaveBeenCalledTimes(1)
 		expect(boardStart).toHaveBeenCalledTimes(1)

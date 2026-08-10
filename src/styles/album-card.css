@@ -37,6 +37,43 @@
 	border-radius: 6px;
 }
 
+/* ARCH-album-card-contract-and-composition drag-feedback fix — the open-hit
+   button covers the whole card and sits above the article, so it (not the
+   article) is what the pointer actually hovers; its cursor is what a user
+   sees. `grab`/`grabbing` mirror the Pocket tray's cursor convention
+   (pocket.css `[data-reordering='true'] { cursor: grabbing }`). A card
+   without an open action has no hit-button, so the article itself gets the
+   same treatment as a fallback. */
+.album-card__open-hit[draggable='true'],
+.album-card[draggable='true']:not(:has(.album-card__open-hit)) {
+	cursor: grab;
+}
+
+.album-card__open-hit[draggable='true']:active,
+.album-card[draggable='true']:not(:has(.album-card__open-hit)):active {
+	cursor: grabbing;
+}
+
+/* `:active` alone does not reliably survive for the duration of a native
+   HTML5 drag once it is under way (mouse-button semantics diverge from drag
+   semantics across browsers), so pair it with the explicit `data-dragging`
+   state — the same one the opacity rule below reads — for the actual drag. */
+.album-card[data-dragging='true'] .album-card__open-hit,
+.album-card[data-dragging='true'][draggable='true']:not(:has(.album-card__open-hit)) {
+	cursor: grabbing;
+}
+
+/* Source-card state while a native HTML5 drag is in flight. Opacity only —
+   same D-series invariant the board/tray drop targets already use
+   (widgets.css `.crate-trash-card[data-reject]`, pocket.css `.pb-chip-drag`):
+   no size/position change, so neighboring cards never reflow mid-drag. The
+   browser's own drag image is a separate snapshot taken at dragstart before
+   this state commits, so the ghost under the cursor stays fully opaque. */
+.album-card[data-dragging='true'] {
+	opacity: 0.45;
+	transition: opacity 120ms ease;
+}
+
 .album-card__cover {
 	width: 100%;
 	aspect-ratio: 1 / 1;
@@ -217,7 +254,8 @@
 
 @media (prefers-reduced-motion: reduce) {
 	.album-card__cover,
-	.album-card__title {
+	.album-card__title,
+	.album-card[data-dragging='true'] {
 		transition: none;
 	}
 }
