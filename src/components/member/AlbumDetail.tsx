@@ -16,12 +16,14 @@
 //             tracklist, read-only.
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
 import type { ContextPanelTab, ContextPanelTrack } from './panel/ContextPanel'
+import type { CSSProperties } from 'react'
 import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
 import type { DockState } from '@lib/dockTear'
 import type { DetailTarget, MemberReview } from '@lib/member'
+import type { Rect, SizeConstraints } from '@lib/surfaceGeometry'
 import type { OnOpenLyrics } from '../album/AlbumDetailView'
 import type { TrackRowActions } from '../shared/TrackRow'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { updateBucketItemMemo } from '@lib/buckets'
 import { INITIAL_DOCK } from '@lib/dockTear'
@@ -32,6 +34,7 @@ import { reviewHref } from '@lib/entityLinks'
 import { playbackSession } from '@lib/playback/session'
 import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
+import { clampSurfacePosition, readStoredRect, resizeSurfaceRect, SURFACE_RESIZE_EDGES, useMovableSurface, useResizableSurface, writeStoredRect } from '@lib/surfaceGeometry'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import HalfStarInput from '../album/HalfStarInput'
@@ -42,7 +45,7 @@ import { GenreLink } from '../shared/GenreLink'
 import { TrackRow } from '../shared/TrackRow'
 import { ContextPanel } from './panel/ContextPanel'
 import { AddToBucketMenu } from './pocket/AddToBucketMenu'
-import { fmtTime, Seg, Stars } from './ui'
+import { fmtTime, Stars } from './ui'
 
 // The memo window is a dock host: below this width (mobile) header-drag would
 // fight scrolling, so the context panel opens as a plain float instead of docking.
@@ -250,7 +253,36 @@ function PublishedBanner({ published }: { published?: MemberReview }) {
 
 type SavePhase = 'idle' | 'saving' | 'saved' | 'error'
 
-const MEMO_SIZES = [{ v: 'm', label: '보통' }, { v: 'l', label: '크게' }, { v: 'xl', label: '최대' }]
+const MEMO_GEOMETRY_KEY = 'lf_memo_geo'
+
+function memoConstraints(): SizeConstraints {
+	return {
+		minWidth: 640,
+		minHeight: 420,
+		maxWidth: Math.min(1600, window.innerWidth - 64),
+		maxHeight: window.innerHeight - 48,
+	}
+}
+
+function defaultMemoRect(): Rect {
+	const width = 1140
+	const height = Math.min(window.innerHeight - 96, 860)
+	return {
+		left: (window.innerWidth - width) / 2,
+		top: Math.max(24, (window.innerHeight - height) / 2),
+		width,
+		height,
+	}
+}
+
+function initialMemoRect(): Rect {
+	const initial = { ...defaultMemoRect(), ...readStoredRect(MEMO_GEOMETRY_KEY) }
+	return resizeSurfaceRect(initial, 'se', { dx: 0, dy: 0 }, memoConstraints(), { width: window.innerWidth, height: window.innerHeight })
+}
+
+function memoDockWidth(contentWidth: number): number {
+	return Math.max(320, Math.min(560, contentWidth * 0.39))
+}
 
 // PATCH-backed memo state: text → note, grow → prep_tonight. Each edit resets a
 // 650ms debounce; on fire — OR on unmount — it sends the LATEST refs (coalesced)
@@ -702,6 +734,64 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   const closePanel = () => setPanelOpen(false)
   const dockCapable = panelOpen && !mobile
   const slotReserved = dockCapable && (dock.docked || dock.dragging)
+  const [contentRect, setContentRect] = useState<Rect>(initialMemoRect)
+  const [surfaceMounted, setSurfaceMounted] = useState(false)
+  const dockWidth = memoDockWidth(contentRect.width)
+  const outerWidth = contentRect.width + (slotReserved ? dockWidth : 0)
+
+  useLayoutEffect(() => {
+	setSurfaceMounted(!mobile)
+  }, [mobile])
+
+  useEffect(() => {
+	if (mobile)
+		return
+	const onResize = () => {
+		setContentRect((current) => {
+			const fitted = resizeSurfaceRect(current, 'se', { dx: 0, dy: 0 }, memoConstraints(), { width: window.innerWidth, height: window.innerHeight })
+			const position = clampSurfacePosition(fitted, { width: fitted.width + (slotReserved ? memoDockWidth(fitted.width) : 0), height: fitted.height }, { width: window.innerWidth, height: window.innerHeight })
+			const next = { ...fitted, ...position }
+			writeStoredRect(MEMO_GEOMETRY_KEY, next)
+			return next
+		})
+	}
+	window.addEventListener('resize', onResize)
+	return () => window.removeEventListener('resize', onResize)
+  }, [mobile, slotReserved])
+
+  const getContentRect = useCallback(() => contentRect, [contentRect])
+  const commitContentRect = useCallback((rect: Rect) => {
+	setContentRect(rect)
+	writeStoredRect(MEMO_GEOMETRY_KEY, rect)
+  }, [])
+  const resizeHandleProps = useResizableSurface({
+	panelRef: cardRef,
+	enabled: !mobile && surfaceMounted,
+	constraints: memoConstraints,
+	getRect: getContentRect,
+	// Freezes the dock-column width at its pre-drag value for the whole gesture
+	// instead of recomputing memoDockWidth(rect.width) live: since dockWidth is a
+	// ~0.39 function of content width, recomputing it every pointermove made the
+	// docked right edge race ahead of the cursor (content grows by dx, dock grows
+	// by another ~0.39·dx on top) — freezing it makes the edge track 1:1 during
+	// the drag; the dock column itself only re-derives on commit (next render).
+	onLiveResize: (rect) => {
+		if (cardRef.current)
+			cardRef.current.style.width = `${rect.width + (slotReserved ? dockWidth : 0)}px`
+	},
+	onCommit: commitContentRect,
+  })
+  const getOuterRect = useCallback((): Rect => ({ ...contentRect, width: outerWidth }), [contentRect, outerWidth])
+  const moveHandlers = useMovableSurface({
+	panelRef: cardRef,
+	enabled: !mobile && surfaceMounted,
+	getRect: getOuterRect,
+	onCommit: (rect) => {
+		const next = { ...contentRect, left: rect.left, top: rect.top }
+		setContentRect(next)
+		writeStoredRect(MEMO_GEOMETRY_KEY, { left: next.left, top: next.top })
+	},
+  })
 
   // album identity for the left column — same fetch/cache as the standard modal
   const seed = album.albumId ? getCachedAlbumDetail(album.albumId) : null
@@ -719,24 +809,6 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
       alive = false
     }
   }, [album.albumId])
-
-  const [size, setSize] = useState<string>(() => {
-    try {
-      return localStorage.getItem('lf_memo_size') || 'l'
-    }
-    catch {
-      return 'l'
-    }
-  })
-  const changeSize = (s: string) => {
-    setSize(s)
-    try {
-      localStorage.setItem('lf_memo_size', s)
-    }
-    catch {
-      /* private mode — size just won't persist */
-    }
-  }
 
   const { text, grow, save, onText, onToggle } = useBucketMemo(album, onMemoSaved)
   const empty = text.trim().length === 0
@@ -765,23 +837,32 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
     >
       <div
 	ref={cardRef}
-	className={`memo-modal memo-modal-lg size-${size}${grow ? ' is-night' : ''}${dockCapable ? ' has-dock' : ''}`}
+	className={`memo-modal memo-modal-lg${grow ? ' is-night' : ''}${dockCapable ? ' has-dock' : ''}${surfaceMounted && !mobile ? ' is-surface-mounted' : ''}`}
 	onClick={e => e.stopPropagation()}
 	role="dialog"
 	aria-modal="true"
 	aria-label={album.album}
-	style={{ maxHeight: '92vh', overflowY: 'auto', animation: 'lf-rise .26s both', pointerEvents: 'auto' }}
+	style={mobile || !surfaceMounted ?
+		{ maxHeight: '92vh', overflowY: 'auto', animation: 'lf-rise .26s both', pointerEvents: 'auto' } :
+		{
+			left: contentRect.left,
+			top: contentRect.top,
+			width: outerWidth,
+			height: contentRect.height,
+			maxHeight: 'none',
+			overflowY: 'auto',
+			animation: 'none',
+			pointerEvents: 'auto',
+			'--lys-dock-w': `${dockWidth}px`,
+		} as CSSProperties}
       >
        <div className="memo-dock-main">
         <button type="button" className="memo-x memo-x-abs" onClick={onClose} aria-label="닫기">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
 
-        <div className="memo-lg-bar">
+        <div className="memo-lg-bar" {...moveHandlers}>
           <span className="kicker">버킷 · 앨범 메모</span>
-          <div style={{ marginLeft: 'auto' }}>
-            <Seg value={size} options={MEMO_SIZES} onChange={changeSize} />
-          </div>
         </div>
 
         <div className="memo-lg-grid">
@@ -832,6 +913,15 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
             <div className={`lys-dock-hint${dock.dragging && !dock.docked ? ' is-shown' : ''}${dock.expect ? ' is-expect' : ''}`}>여기에 도킹</div>
           </div>
         )}
+		{!mobile && surfaceMounted && SURFACE_RESIZE_EDGES.map(edge => (
+			<div
+				key={edge}
+				className={`surface-resize-handle is-${edge}`}
+				data-resize-edge={edge}
+				aria-hidden="true"
+				{...resizeHandleProps(edge)}
+			/>
+		))}
       </div>
 
       {panelOpen && album.albumId && (

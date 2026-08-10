@@ -2,7 +2,7 @@ import type { RefObject } from 'react'
 import type { ContextPanelTrack } from './ContextPanel'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useCallback, useRef, useState } from 'react'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {  INITIAL_DOCK } from '@lib/dockTear'
 import type { DockState } from '@lib/dockTear'
 import { ContextPanel } from './ContextPanel'
@@ -42,17 +42,35 @@ beforeAll(() => {
 	}))
 })
 
-function Harness({ initialTrack = { trackId: 'track-1', meta: { track: 'Track one', artist: 'Artist' } } }: {
+function Harness({ initialTrack = { trackId: 'track-1', meta: { track: 'Track one', artist: 'Artist' } }, initialDock = INITIAL_DOCK }: {
 	initialTrack?: ContextPanelTrack | null
+	initialDock?: DockState
 }) {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const [track, setTrack] = useState<ContextPanelTrack | null>(initialTrack)
 	const [tab, setTab] = useState<'lyrics' | 'research'>('lyrics')
-	const [dock, setDock] = useState<DockState>(INITIAL_DOCK)
+	const [dock, setDock] = useState<DockState>(initialDock)
 	const patch = useCallback((value: Partial<DockState>) => setDock(current => ({ ...current, ...value })), [])
+	const setHost = useCallback((node: HTMLDivElement | null) => {
+		hostRef.current = node
+		if (!node)
+			return
+		node.style.setProperty('--lys-dock-w', '420px')
+		node.getBoundingClientRect = () => ({
+			left: 100,
+			top: 80,
+			right: 900,
+			bottom: 700,
+			width: 800,
+			height: 620,
+			x: 100,
+			y: 80,
+			toJSON: () => ({}),
+		})
+	}, [])
 	return (
 		<>
-			<div ref={hostRef} />
+			<div ref={setHost} />
 			<button type="button" onClick={() => setTrack({ trackId: 'track-1', meta: { track: 'Track one' } })}>테스트 트랙 열기</button>
 			<ContextPanel
 				albumId="album-1"
@@ -70,6 +88,8 @@ function Harness({ initialTrack = { trackId: 'track-1', meta: { track: 'Track on
 }
 
 describe('contextPanel', () => {
+	beforeEach(() => sessionStorage.clear())
+
 	it('keeps both panes and their local values mounted across tab switches', async () => {
 		const { container } = render(<Harness />)
 		expect(await screen.findByText('A real lyric line')).toBeInTheDocument()
@@ -104,5 +124,32 @@ describe('contextPanel', () => {
 		expect(panel).toHaveClass('is-float')
 		fireEvent.click(screen.getByRole('button', { name: '⇲ 도킹' }))
 		expect(panel).toHaveClass('is-docked')
+	})
+
+	it('derives the first floating width from the current dock width', () => {
+		const { container } = render(<Harness initialTrack={null} />)
+		fireEvent.click(screen.getByRole('button', { name: '⇱ 분리' }))
+		const panel = container.querySelector('.ctx-panel') as HTMLElement
+		expect(panel).toHaveClass('is-float')
+		expect(panel.style.width).toBe('420px')
+	})
+
+	it('resizes only while floating', () => {
+		const floating = { ...INITIAL_DOCK, docked: false }
+		const { container, unmount } = render(<Harness initialTrack={null} initialDock={floating} />)
+		const panel = container.querySelector('.ctx-panel') as HTMLElement
+		const handle = container.querySelector('[data-resize-edge="se"]') as HTMLElement
+		expect(handle).toBeInTheDocument()
+		const startWidth = Number.parseFloat(panel.style.width)
+		const startHeight = Number.parseFloat(panel.style.height)
+		fireEvent.pointerDown(handle, { button: 0, pointerId: 9, clientX: 0, clientY: 0 })
+		fireEvent.pointerMove(handle, { pointerId: 9, clientX: 100, clientY: -100 })
+		expect(Number.parseFloat(panel.style.width)).toBe(startWidth + 100)
+		expect(Number.parseFloat(panel.style.height)).toBe(startHeight - 100)
+		fireEvent.pointerUp(handle, { pointerId: 9, clientX: 100, clientY: -100 })
+
+		unmount()
+		const docked = render(<Harness initialTrack={null} />)
+		expect(docked.container.querySelector('[data-resize-edge]')).not.toBeInTheDocument()
 	})
 })
