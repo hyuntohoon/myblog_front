@@ -92,6 +92,18 @@ function bucketRegion(name: string): HTMLElement {
 	return region
 }
 
+// ARCH-buckit-navigation-shell Step 1: only the selected bucket renders full
+// detail content; a nav row exists for every bucket regardless of selection.
+// Select via the nav row's stable `data-bucket-nav-row` id (not accessible
+// name — CrStatus renders extra status text inside the row, so name-based
+// queries are ambiguous/fragile here).
+function selectBucketNav(container: HTMLElement, bucketId: string): void {
+	const row = container.querySelector(`[data-bucket-nav-row="${bucketId}"]`)
+	if (!(row instanceof HTMLElement))
+		throw new Error(`Missing nav row for ${bucketId}`)
+	fireEvent.click(row)
+}
+
 function allItems(tree: BoardBucket[]): BoardAlbum[] {
 	return tree.flatMap(b => [...b.albums, ...allItems(b.children)])
 }
@@ -131,8 +143,10 @@ describe('bucketBoard optimistic album copy', () => {
 			bucket('bucket-b', 'B'),
 		])
 
-		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
 
+		// Step 1: bucket A (first manual top-level bucket) auto-selects on load,
+		// so its detail pane is already open — no explicit selection needed yet.
 		const recentTile = await screen.findByTitle(TILE_TITLE)
 		fireEvent.click(within(recentTile).getByRole('button', { name: '앨범 동작' }))
 		fireEvent.click(within(screen.getByRole('dialog', { name: ALBUM_TITLE })).getByRole('button', { name: '버킷에 추가' }))
@@ -151,7 +165,14 @@ describe('bucketBoard optimistic album copy', () => {
 
 		await waitFor(() => expect(storedBucket('bucket-b').albums.map(a => a.itemId)).toEqual([tempId]))
 		expect(storedBucket('bucket-a').albums).toHaveLength(0)
+		// The move only changed the store; A's detail pane is still open. Switch to
+		// B to confirm the moved tile is actually rendered there (not just present
+		// in the store), then switch back to confirm A's detail no longer leaks a
+		// tile it no longer owns — Step 1's own required "switching does not leak
+		// a previous bucket's DOM state" verification.
+		selectBucketNav(container, 'bucket-b')
 		expect(within(bucketRegion('B')).getByTitle(TILE_TITLE)).toBeInTheDocument()
+		selectBucketNav(container, 'bucket-a')
 		expect(within(bucketRegion('A')).queryByTitle(TILE_TITLE)).not.toBeInTheDocument()
 
 		await act(async () => {
@@ -164,7 +185,9 @@ describe('bucketBoard optimistic album copy', () => {
 		await waitFor(() => expect(storedBucket('bucket-b').albums.map(a => a.itemId)).toEqual(['real-item-1']))
 		expect(storedBucket('bucket-a').albums).toHaveLength(0)
 		expect(allItems(bucketStore.getTree()).some(a => a.itemId.startsWith('temp:'))).toBe(false)
+		selectBucketNav(container, 'bucket-b')
 		expect(within(bucketRegion('B')).getByTitle(TILE_TITLE)).toBeInTheDocument()
+		selectBucketNav(container, 'bucket-a')
 		expect(within(bucketRegion('A')).queryByTitle(TILE_TITLE)).not.toBeInTheDocument()
 	})
 })
