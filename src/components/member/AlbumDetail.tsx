@@ -36,6 +36,7 @@ import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { clampSurfacePosition, readStoredRect, resizeSurfaceRect, SURFACE_RESIZE_EDGES, useMovableSurface, useResizableSurface, writeStoredRect } from '@lib/surfaceGeometry'
 import { useDismissable } from '@lib/useDismissable'
+import { useIsMobileHost } from '@lib/useIsMobileHost'
 import { useScrollLock } from '@lib/useScrollLock'
 import HalfStarInput from '../album/HalfStarInput'
 import { fetchMyAlbumStates, putMyAlbumState, RATING_COMMENT_MAX, RatingRateLimitError } from '../album/reviews.api'
@@ -46,20 +47,6 @@ import { TrackRow } from '../shared/TrackRow'
 import { ContextPanel } from './panel/ContextPanel'
 import { AddToBucketMenu } from './pocket/AddToBucketMenu'
 import { fmtTime, Stars } from './ui'
-
-// The memo window is a dock host: below this width (mobile) header-drag would
-// fight scrolling, so the context panel opens as a plain float instead of docking.
-function useIsMobileHost(): boolean {
-	const [mobile, setMobile] = useState(false)
-	useEffect(() => {
-		const mq = window.matchMedia('(max-width: 767px)')
-		const on = () => setMobile(mq.matches)
-		on()
-		mq.addEventListener('change', on)
-		return () => mq.removeEventListener('change', on)
-	}, [])
-	return mobile
-}
 
 type Mode = 'info' | 'edit'
 

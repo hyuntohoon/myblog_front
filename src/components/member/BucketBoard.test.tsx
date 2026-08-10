@@ -39,6 +39,20 @@ vi.mock('@lib/research', async importOriginal => ({
 	useResearchStatusMap: () => ({}),
 }))
 
+// ARCH-buckit-navigation-shell Step 3 — useIsMobileHost calls window.matchMedia
+// unconditionally; jsdom does not implement it (same gap noted in
+// AlbumDetail.dragTrack.test.tsx, the first test to hit it).
+window.matchMedia = window.matchMedia || ((query: string) => ({
+	matches: false,
+	media: query,
+	onchange: null,
+	addListener: () => {},
+	removeListener: () => {},
+	addEventListener: () => {},
+	removeEventListener: () => {},
+	dispatchEvent: () => false,
+}) as MediaQueryList)
+
 const ALBUM_ID = 'album-race-1'
 const ALBUM_TITLE = 'Deferred Copy'
 const ALBUM_ARTIST = 'Race Condition'
