@@ -31,6 +31,21 @@
 	transform: translateY(-3px);
 	box-shadow: 0 6px 18px rgba(26, 26, 26, 0.16);
 }
+/* ARCH-album-card-contract-and-composition drag-feedback fix — source-tile
+   state while it is the in-flight drag source. `.lf-is-dragging` is toggled
+   by BucketBoard's own draggingId state on dragstart/dragend; it existed
+   already (BucketBoard.tsx) but had no rule, so a dragged tile previously
+   gave no feedback at all. Opacity only, same D-series invariant as the
+   bucket container's own `opacity: draggingBucket === bucket.id ? 0.45 : 1`
+   (BucketBoard.tsx inline) and `.pb-chip-drag` (pocket.css) — no
+   size/position change, so the grid never reflows mid-drag. */
+.bb-tile.lf-is-dragging {
+	opacity: 0.45;
+	transition: opacity 0.12s;
+}
+@media (prefers-reduced-motion: reduce) {
+	.bb-tile.lf-is-dragging { transition: none; }
+}
 
 /* ARCH-album-card-contract-and-composition Stage 6 — the canonical card now
    owns album presentation while this adapter keeps the established Bucket

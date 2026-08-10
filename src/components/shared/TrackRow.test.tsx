@@ -106,6 +106,18 @@ describe('trackRow — drag', () => {
 		window.removeEventListener(PB_BOARD_DND_START_EVENT, boardStartSpy)
 	})
 
+	it('shows a grab cursor at rest and dims + grabbing while the drag is in flight', () => {
+		render(<TrackRow title="Track A" actions={{ drag: payload }} />)
+		const row = screen.getByText('Track A').closest('[draggable]')! as HTMLElement
+		expect(row).toHaveStyle({ cursor: 'grab' })
+		expect(row.style.opacity).toBe('')
+		fireEvent.dragStart(row, { dataTransfer: {} })
+		expect(row).toHaveStyle({ cursor: 'grabbing', opacity: '0.45' })
+		fireEvent.dragEnd(row)
+		expect(row).toHaveStyle({ cursor: 'grab' })
+		expect(row.style.opacity).toBe('')
+	})
+
 	it('clears both bridges on dragend', () => {
 		const endSpy = vi.fn()
 		const boardEndSpy = vi.fn()

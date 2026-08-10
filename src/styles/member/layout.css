@@ -415,6 +415,16 @@
 @media (pointer: coarse) {
 	.lf-drag-handle { cursor: default; }
 }
+/* ARCH-album-card-contract-and-composition drag-feedback fix — a fine-pointer
+   hover hints the drag affordance; `.lf-is-dragging` (state-driven, set by
+   the BucketBoard tile's onDragStart/onDragEnd) swaps to `grabbing` for the
+   duration of the actual drag, same convention as the bucket header's own
+   `cursor: editing ? 'default' : 'grab'` (BucketBoard.tsx) and the Pocket
+   tray's `[data-reordering='true'] { cursor: grabbing }` (pocket.css). */
+@media (pointer: fine) {
+	.lf-drag-handle { cursor: grab; }
+	.lf-drag-handle.lf-is-dragging { cursor: grabbing; }
+}
 
 /* tab-nav-tap-target — profile tab buttons are ~36px tall (11px padding + small
    font). Bump the hit area to 44px on phones; padding stays so the underline
