@@ -38,6 +38,7 @@ import { playbackSession } from '@lib/playback/session'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
+import { useIsMobileHost } from '@lib/useIsMobileHost'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
@@ -48,7 +49,7 @@ import { ENT_ALBUM_STATE_CHANGED, notifyAlbumStateChanged } from '@lib/entityEve
 import type { AlbumStateChangedDetail } from '@lib/entityEvents'
 import { fetchMyAlbumStates, putMyAlbumState } from '../album/reviews.api'
 import { listRecentlyListened } from './spotify.api'
-import type { SpotifyLibraryAlbumState } from './spotify.api'
+import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
 import { useSpotifyLibrary } from './useSpotifyLibrary'
 import { AlbumArt, SectionTitle } from './ui'
 import { AlbumCard } from '@components/shared/AlbumCard'
@@ -1786,6 +1787,77 @@ export function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { t
   )
 }
 
+// ── bucket nav panel — the tree content shared by the desktop aside and the
+// mobile drawer (Step 3). Spotify-library section + the board's bucket tree,
+// unchanged from the original always-visible aside; only its container differs.
+function BucketNavPanel({ libBucket, libState, syncing, runLibrarySync, visibleTree, normalTree, boardType, selectedBucketId, onSelect, shared }: {
+  libBucket: BoardBucket | null
+  libState: SpotifyLibraryState | null
+  syncing: boolean
+  runLibrarySync: () => Promise<void>
+  visibleTree: BoardBucket[]
+  normalTree: BoardBucket[]
+  boardType: 'all' | 'general' | 'artist'
+  selectedBucketId: string | null
+  onSelect: (bucketId: string) => void
+  shared: SharedProps
+}) {
+  return (
+    <>
+      <div style={{ padding: '2px 6px 8px', borderBottom: '1px solid var(--color-border-soft)', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span className="meta" style={{ color: 'var(--color-spotify)' }}>Spotify 라이브러리</span>
+          <button type="button" className="chip" disabled={syncing} onClick={() => void runLibrarySync()} style={{ marginLeft: 'auto' }}>
+            {syncing ? '동기화 중…' : '동기화'}
+          </button>
+        </div>
+        {libState?.needs_reauth && (
+          <div className="mono" style={{ marginTop: 7, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: '#fff', background: 'var(--color-accent)' }}>Spotify 재인증 필요</div>
+        )}
+        {libState != null && libState.writes_enabled === false && (
+          <div className="mono" style={{ marginTop: 7, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: 'oklch(0.42 0.10 70)', background: 'oklch(0.95 0.04 80)' }}>검토 모드: Spotify에 실제 반영 안 됨</div>
+        )}
+        {libBucket ?
+          <BucketNavList items={[libBucket]} parentId={null} depth={0} selectedBucketId={selectedBucketId} onSelect={onSelect} shared={shared} /> :
+          <div className="mono" style={{ padding: '10px 8px 4px', fontSize: 10.5, lineHeight: 1.5, color: 'var(--color-faded)' }}>동기화를 누르면 라이브러리를 불러옵니다</div>}
+      </div>
+
+      <div className="meta" style={{ padding: '2px 8px 4px' }}>버킷</div>
+      {visibleTree.length > 0 && (
+        <BucketNavList items={visibleTree} parentId={null} depth={0} selectedBucketId={selectedBucketId} onSelect={onSelect} shared={shared} />
+      )}
+      {normalTree.length === 0 && (
+        <div className="mono" style={{ padding: '16px 8px', textAlign: 'center', fontSize: 11, color: 'var(--color-faded)' }}>버킷 없음</div>
+      )}
+      {normalTree.length > 0 && visibleTree.length === 0 && (
+        <div className="mono" style={{ padding: '16px 8px', textAlign: 'center', fontSize: 11, color: 'var(--color-faded)' }}>{boardType === 'artist' ? 'Artist 버킷이 없어요' : '해당 종류의 버킷이 없어요'}</div>
+      )}
+    </>
+  )
+}
+
+// ── mobile bucket nav drawer — ARCH-buckit-navigation-shell Step 3. Portals the
+// same BucketNavPanel content over the current screen; picking a bucket closes
+// the drawer via onSelect (wrapped by the caller) and the already-mounted detail
+// pane underneath updates in place — no full-screen swap (drawer-over-content,
+// per owner decision on Unresolved owner decision 2).
+function BucketNavDrawer({ onClose, panelProps }: { onClose: () => void, panelProps: Parameters<typeof BucketNavPanel>[0] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useDismissable(true, onClose, ref, { lockScroll: true })
+  return createPortal(
+    <div className="bnd-scrim" onClick={onClose} role="presentation">
+      <div ref={ref} className="bnd-drawer" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="버킷 탐색">
+        <div className="bnd-head">
+          <span className="serif" style={{ fontSize: 15, fontWeight: 500 }}>My Buckit</span>
+          <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기">✕</button>
+        </div>
+        <BucketNavPanel {...panelProps} />
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ── action sheet (touch fallback) ────────────────────────────────────────────
 // A small bottom sheet of labeled actions, portaled to <body> like TrashDock.
 // Replaces drag-and-drop on touch devices (where onDragStart never fires). Each
@@ -1856,6 +1928,10 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind>(null)
   const [selectedBucketId, setSelectedBucketId] = useState<string | null>(null)
+  // ARCH-buckit-navigation-shell Step 3 — no persistent nav column fits beside
+  // the detail pane at mobile widths; the nav becomes a drawer opened on demand.
+  const mobile = useIsMobileHost()
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false)
 
   // Auto-scroll the page while a drag is in flight and the pointer nears the top or
   // bottom edge of the viewport — otherwise you can't reach buckets off-screen mid-
@@ -2836,37 +2912,70 @@ ids.push(a.albumId)
         </div>
       )}
 
-      {tree != null && (
+      {tree != null && mobile && (
+        <>
+          {/* ARCH-buckit-navigation-shell Step 3 — no room for a persistent nav
+              column beside the detail pane at mobile widths; a trigger bar opens
+              the nav as a drawer instead. The detail pane below is the SAME
+              element the desktop grid renders, unchanged. */}
+          <button
+	type="button"
+	className="btn"
+	aria-haspopup="dialog"
+	aria-expanded={navDrawerOpen}
+	onClick={() => setNavDrawerOpen(true)}
+	style={{ width: '100%', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+          >
+            <span className="serif" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              ☰
+              {' '}
+              {selectedBucket ? selectedBucket.name : '버킷 선택'}
+            </span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          <main aria-label="버킷 상세" style={{ minWidth: 0 }}>
+            {selectedBucket ?
+              <BucketDetailShell key={selectedBucket.id} bucket={selectedBucket} depth={0} variant={isSystemBucket(selectedBucket) ? 'system' : 'manual'} {...shared} /> :
+              <div className="panel mono" style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--color-faded)' }}>버킷을 선택하세요</div>}
+          </main>
+          {navDrawerOpen && (
+            <BucketNavDrawer
+	onClose={() => setNavDrawerOpen(false)}
+	panelProps={{
+                libBucket,
+                libState,
+                syncing,
+                runLibrarySync,
+                visibleTree,
+                normalTree,
+                boardType,
+                selectedBucketId,
+                onSelect: (id) => {
+                  setSelectedBucketId(id)
+                  setNavDrawerOpen(false)
+                },
+                shared,
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {tree != null && !mobile && (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)', alignItems: 'start', gap: 18 }}>
           <aside className="panel" aria-label="버킷 탐색" style={{ minWidth: 0, padding: 10 }}>
-            <div style={{ padding: '2px 6px 8px', borderBottom: '1px solid var(--color-border-soft)', marginBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span className="meta" style={{ color: 'var(--color-spotify)' }}>Spotify 라이브러리</span>
-                <button type="button" className="chip" disabled={syncing} onClick={() => void runLibrarySync()} style={{ marginLeft: 'auto' }}>
-                  {syncing ? '동기화 중…' : '동기화'}
-                </button>
-              </div>
-              {libState?.needs_reauth && (
-                <div className="mono" style={{ marginTop: 7, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: '#fff', background: 'var(--color-accent)' }}>Spotify 재인증 필요</div>
-              )}
-              {libState != null && libState.writes_enabled === false && (
-                <div className="mono" style={{ marginTop: 7, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: 'oklch(0.42 0.10 70)', background: 'oklch(0.95 0.04 80)' }}>검토 모드: Spotify에 실제 반영 안 됨</div>
-              )}
-              {libBucket ?
-                <BucketNavList items={[libBucket]} parentId={null} depth={0} selectedBucketId={selectedBucketId} onSelect={setSelectedBucketId} shared={shared} /> :
-                <div className="mono" style={{ padding: '10px 8px 4px', fontSize: 10.5, lineHeight: 1.5, color: 'var(--color-faded)' }}>동기화를 누르면 라이브러리를 불러옵니다</div>}
-            </div>
-
-            <div className="meta" style={{ padding: '2px 8px 4px' }}>버킷</div>
-            {visibleTree.length > 0 && (
-              <BucketNavList items={visibleTree} parentId={null} depth={0} selectedBucketId={selectedBucketId} onSelect={setSelectedBucketId} shared={shared} />
-            )}
-            {normalTree.length === 0 && (
-              <div className="mono" style={{ padding: '16px 8px', textAlign: 'center', fontSize: 11, color: 'var(--color-faded)' }}>버킷 없음</div>
-            )}
-            {normalTree.length > 0 && visibleTree.length === 0 && (
-              <div className="mono" style={{ padding: '16px 8px', textAlign: 'center', fontSize: 11, color: 'var(--color-faded)' }}>{boardType === 'artist' ? 'Artist 버킷이 없어요' : '해당 종류의 버킷이 없어요'}</div>
-            )}
+            <BucketNavPanel
+	libBucket={libBucket}
+	libState={libState}
+	syncing={syncing}
+	runLibrarySync={runLibrarySync}
+	visibleTree={visibleTree}
+	normalTree={normalTree}
+	boardType={boardType}
+	selectedBucketId={selectedBucketId}
+	onSelect={setSelectedBucketId}
+	shared={shared}
+            />
           </aside>
 
           <main aria-label="버킷 상세" style={{ minWidth: 0 }}>
