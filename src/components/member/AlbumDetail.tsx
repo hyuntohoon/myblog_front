@@ -14,15 +14,17 @@
 //   · info  — non-writable surfaces (Spotify 라이브러리, 최근 들은, sample tracks) or a
 //             writable album opened without a bucket-item handle: cover + metadata +
 //             tracklist, read-only.
-import type { DockState } from './lyrics/DockableLyricsSheet'
 import type { LyricsSheetMeta } from './lyrics/LyricsSheet'
+import type { ContextPanelTab, ContextPanelTrack } from './panel/ContextPanel'
 import type { AlbumDetail as AlbumDetailResp, MusicArtist, MusicTrack } from '@lib/albumDetail'
+import type { DockState } from '@lib/dockTear'
 import type { DetailTarget, MemberReview } from '@lib/member'
 import type { OnOpenLyrics } from '../album/AlbumDetailView'
 import type { TrackRowActions } from '../shared/TrackRow'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { updateBucketItemMemo } from '@lib/buckets'
+import { INITIAL_DOCK } from '@lib/dockTear'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { memberRef } from '@lib/entityDrag'
 import { notifyAlbumStateChanged } from '@lib/entityEvents'
@@ -38,14 +40,12 @@ import { AlbumDetailView, Header } from '../album/AlbumDetailView'
 import { AlbumCard } from '../shared/AlbumCard'
 import { GenreLink } from '../shared/GenreLink'
 import { TrackRow } from '../shared/TrackRow'
-import { DockableLyricsSheet, INITIAL_DOCK } from './lyrics/DockableLyricsSheet'
-import { LyricsSheet } from './lyrics/LyricsSheet'
+import { ContextPanel } from './panel/ContextPanel'
 import { AddToBucketMenu } from './pocket/AddToBucketMenu'
 import { fmtTime, Seg, Stars } from './ui'
-import ResearchNote from './ResearchNote'
 
 // The memo window is a dock host: below this width (mobile) header-drag would
-// fight scrolling, so the sheet opens as a plain float instead of docking.
+// fight scrolling, so the context panel opens as a plain float instead of docking.
 function useIsMobileHost(): boolean {
 	const [mobile, setMobile] = useState(false)
 	useEffect(() => {
@@ -674,20 +674,33 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   // Freeze the page behind the scrim (else the profile scrolls under the modal).
   useScrollLock()
 
-  // FEAT-lyrics-sheet PR 2 — the memo window is the sheet's dock host. A track
-  // opens the sheet docked into the reserved right column (desktop) or as a
-  // plain float (mobile). The sheet lives here so tearing /
-  // docking never crosses a remount boundary and reloads its lyrics.
+  // The memo window owns one shared lyrics/research context panel. It opens in
+  // the dock on desktop and floats on mobile; tab changes never remount panes.
   const mobile = useIsMobileHost()
-  const [sheet, setSheet] = useState<{ trackId: string, meta?: LyricsSheetMeta } | null>(null)
+  const [panelOpen, setPanelOpen] = useState(album.focusResearch ?? false)
+  const [tab, setTab] = useState<ContextPanelTab>(album.focusResearch ? 'research' : 'lyrics')
+  const [track, setTrack] = useState<ContextPanelTrack | null>(null)
   const [dock, setDock] = useState<DockState>(INITIAL_DOCK)
   const patchDock = useCallback((p: Partial<DockState>) => setDock(d => ({ ...d, ...p })), [])
-  const openSheet = (trackId: string, meta?: LyricsSheetMeta) => {
-    setDock(INITIAL_DOCK)
-    setSheet({ trackId, meta })
-  }
-  const closeSheet = () => setSheet(null)
-  const dockCapable = sheet != null && !mobile
+  const openLyrics = useCallback((trackId: string, meta?: LyricsSheetMeta) => {
+    setTrack({ trackId, meta })
+    setTab('lyrics')
+    setPanelOpen((open) => {
+      if (!open)
+        setDock(INITIAL_DOCK)
+      return true
+    })
+  }, [])
+  const openResearch = useCallback(() => {
+    setTab('research')
+    setPanelOpen((open) => {
+      if (!open)
+        setDock(INITIAL_DOCK)
+      return true
+    })
+  }, [])
+  const closePanel = () => setPanelOpen(false)
+  const dockCapable = panelOpen && !mobile
   const slotReserved = dockCapable && (dock.docked || dock.dragging)
 
   // album identity for the left column — same fetch/cache as the standard modal
@@ -735,18 +748,13 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   }, [])
   const dragPassthrough = useDragScrimPassthrough()
 
-  // ARCH-bucket-album-modal-unification Step 1 — 리서치 노트 section. Collapsed by
-  // default (matches ResearchNote's own 'panel'/'rail' default), auto-expanded +
-  // scrolled into view when opened via the tile's corner research dot
-  // (DetailTarget.focusResearch), replacing the old separate rsh-modal.
-  const [researchOpen, setResearchOpen] = useState(album.focusResearch ?? false)
-  const researchRef = useRef<HTMLDivElement>(null)
+  const focusResearchOnMount = useRef(album.focusResearch).current
   useEffect(() => {
-    if (album.focusResearch)
-      researchRef.current?.scrollIntoView({ block: 'nearest' })
+    if (focusResearchOnMount)
+      openResearch()
     // Intentionally once on mount: focusResearch is a one-shot open intent from
     // the click that opened this modal, not a value to keep re-syncing against.
-  }, [])
+  }, [focusResearchOnMount, openResearch])
 
   return (
     <div
@@ -782,7 +790,7 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
             <MemoAlbumCardAdapter
 	album={album}
 	data={data}
-	onOpenLyrics={openSheet}
+	onOpenLyrics={openLyrics}
 	onAddTrack={onAddTrack}
 	belowCard={(
                 <>
@@ -809,22 +817,16 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
               <a href={`/write?album=${album.albumId}`}>전체 에디터에서 작성 →</a>
             </div>
             {album.albumId && (
-              <div className="memo-research" ref={researchRef}>
-                <button type="button" className="memo-research-toggle" aria-expanded={researchOpen} onClick={() => setResearchOpen(o => !o)}>
-                  <span className="kicker">리서치 노트</span>
-                  <span className={`memo-research-chevron${researchOpen ? ' is-open' : ''}`} aria-hidden="true">▾</span>
-                </button>
-                {researchOpen && <ResearchNote albumId={album.albumId} variant="doc" />}
-              </div>
+              <button type="button" className="memo-context-open mono" onClick={openResearch}>리서치 노트 열기</button>
             )}
           </section>
         </div>
        </div>
 
-        {/* FEAT-lyrics-sheet PR 2 — reserved dock column (the sheet is placed over
-            it by DockableLyricsSheet). Collapses to 0 when the sheet floats, so
+        {/* Reserved dock column (the context panel is placed over it). Collapses
+            to 0 when the panel floats, so
             the memo reclaims the space; re-opens as a dashed drop target while a
-            floating sheet is being dragged. */}
+            floating panel is being dragged. */}
         {dockCapable && (
           <div className={`lys-dock-slot${slotReserved ? '' : ' is-collapsed'}`} aria-hidden="true">
             <div className={`lys-dock-hint${dock.dragging && !dock.docked ? ' is-shown' : ''}${dock.expect ? ' is-expect' : ''}`}>여기에 도킹</div>
@@ -832,18 +834,22 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
         )}
       </div>
 
-      {sheet && (mobile ?
-        <LyricsSheet key={sheet.trackId} spotifyTrackId={sheet.trackId} meta={sheet.meta} onClose={closeSheet} /> :
-        (
-            <>
-              {/* The dim only shows WHILE the tear drag is in flight. It used to
-                  stay up for as long as the sheet floated, which made a torn-off
-                  sheet a modal over the memo — the opposite of why you tear it
-                  off. Two windows side by side is the point; both stay readable. */}
-              <div className={`lys-float-dim${dock.dragging && !dock.docked ? ' is-shown' : ''}`} aria-hidden="true" />
-              <DockableLyricsSheet key={sheet.trackId} spotifyTrackId={sheet.trackId} meta={sheet.meta} onClose={closeSheet} hostRef={cardRef} dock={dock} patch={patchDock} />
-            </>
-          ))}
+      {panelOpen && album.albumId && (
+        <>
+          {!mobile && <div className={`lys-float-dim${dock.dragging && !dock.docked ? ' is-shown' : ''}`} aria-hidden="true" />}
+          <ContextPanel
+	albumId={album.albumId}
+	track={track}
+	tab={tab}
+	onTabChange={setTab}
+	onClose={closePanel}
+	hostRef={cardRef}
+	dock={dock}
+	patch={patchDock}
+	mobile={mobile}
+          />
+        </>
+      )}
       {pendingAdd && (
         <AddToBucketMenu
 	key={pendingAdd.seq}

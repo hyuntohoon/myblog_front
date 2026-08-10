@@ -38,6 +38,7 @@ interface DragState {
   sx: number
   sy: number
   torn: boolean
+  wasOutsideSlot: boolean
   lastX: number
   lastT: number
   tilt: number
@@ -159,6 +160,7 @@ export function useDockTear<T extends HTMLElement>({
       sx: el.offsetLeft,
       sy: el.offsetTop,
       torn: !docked,
+      wasOutsideSlot: false,
       lastX: e.clientX,
       lastT: performance.now(),
       tilt: 0,
@@ -180,6 +182,7 @@ export function useDockTear<T extends HTMLElement>({
         return
       }
       d.torn = true
+      d.wasOutsideSlot = false
       setClass([], ['is-straining'])
       patch({ docked: false })
       const s = floatSize()
@@ -205,7 +208,10 @@ export function useDockTear<T extends HTMLElement>({
     if (!el)
       return
     apply(clampPos(d.sx + dx, d.sy + dy, el.offsetWidth, el.offsetHeight))
-    patch({ expect: inSlot(e.clientX, e.clientY) })
+    const overSlot = inSlot(e.clientX, e.clientY)
+    if (!overSlot)
+      d.wasOutsideSlot = true
+    patch({ expect: d.wasOutsideSlot && overSlot })
   }
 
   const endDrag = (e: ReactPointerEvent<HTMLElement>) => {
@@ -213,7 +219,7 @@ export function useDockTear<T extends HTMLElement>({
     if (!d)
       return
     const wasTorn = d.torn
-    const overSlot = wasTorn && inSlot(e.clientX, e.clientY)
+    const overSlot = wasTorn && d.wasOutsideSlot && inSlot(e.clientX, e.clientY)
     dragRef.current = null
     setClass([], ['is-grabbed', 'is-lifted', 'is-straining'])
     if (panelRef.current)
