@@ -198,29 +198,12 @@ function stanzaKo(st: LyricsSegment[]): string {
 }
 
 /**
- * The placement-agnostic sheet interior (FEAT-lyrics-sheet PR 2 architecture:
- * "LyricsSheet가 배치를 모른다"). It owns the lyric data, 조판 mode, translation
- * and copy — everything that reads the same wherever the paper sits. WHERE the
- * paper goes (free float in a scrim, or docked as the memo window's right
- * column) is the wrapper's job, supplied via `panelRef` / `panelClassName` /
- * `panelStyle` / `headHandlers`. The float wrapper is `LyricsSheet` below; the
- * dock/tear wrapper is `DockableLyricsSheet` (used by the memo window host).
+ * Lyrics data + reading state shared by the standalone sheet and the memo
+ * context panel. Keeping this state above the presentational pieces means a tab
+ * switch can hide lyrics without discarding scroll-adjacent UI state such as an
+ * opened annotation or translation preference.
  */
-export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, panelClassName, panelStyle, headHandlers, placementControl }: {
-	spotifyTrackId: string
-	meta?: LyricsSheetMeta
-	onClose: () => void
-	/** Panel element ref — the wrapper owns useDismissable + measurement. */
-	panelRef: RefObject<HTMLDivElement | null>
-	/** Placement/state modifiers (is-docked / is-float / is-grabbed …). */
-	panelClassName?: string
-	/** Positioning the wrapper computes (transform for float, fixed rect for dock). */
-	panelStyle?: CSSProperties
-	/** Header pointer handlers — the grab-to-move / grab-to-tear handle. */
-	headHandlers?: HeadHandlers
-	/** Optional header control (the 분리/도킹 keyboard-equivalent button). */
-	placementControl?: ReactNode
-}) {
+export function useLyricsSheetState(spotifyTrackId: string) {
 	const [phase, setPhase] = useState<Phase>({ k: 'loading' })
 	const [mode, setMode] = useState<Mode>(readMode)
 	const [annoStyle, setAnnoStyle] = useState<AnnoStyle>(readAnnoStyle)
@@ -332,79 +315,128 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 		'아직 연결된 가사가 없어요'
 	const sourceKind = phase.k === 'ready' && phase.data.availability === 'ok' ? phase.data.source_kind : null
 
+	return {
+		phase,
+		mode,
+		annoStyle,
+		openIds,
+		showKo,
+		requesting,
+		copied,
+		notice,
+		segs,
+		n,
+		translation,
+		koreanDominant,
+		stanzas,
+		annotations,
+		lineMarks,
+		drawer,
+		emptyText,
+		sourceKind,
+		pickMode,
+		pickAnnoStyle,
+		toggleAnno,
+		requestTr,
+		copyAll,
+		setShowKo,
+		setOpenIds,
+		retry: () => setLoadSeq(s => s + 1),
+	}
+}
+
+export type LyricsSheetState = ReturnType<typeof useLyricsSheetState>
+
+/** Toolbar controls only; host chrome owns placement and close controls. */
+export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
+	const {
+		mode,
+		annotations,
+		annoStyle,
+		phase,
+		n,
+		translation,
+		showKo,
+		koreanDominant,
+		requesting,
+		copied,
+		pickMode,
+		pickAnnoStyle,
+		setShowKo,
+		requestTr,
+		copyAll,
+	} = state
+
 	return (
-		<div
-			ref={panelRef}
-			className={panelClassName ? `lys-sheet ${panelClassName}` : 'lys-sheet'}
-			role="dialog"
-			aria-modal="true"
-			aria-label="가사"
-			onClick={e => e.stopPropagation()}
-			style={panelStyle}
-		>
-			{/* perforation seam — the boundary with the memo paper when docked;
-			    CSS fades it out on float (see .lys-sheet.is-float .lys-perf). */}
-			<div className="lys-perf" aria-hidden="true" />
-			<header className="lys-head" onPointerDown={headHandlers?.onPointerDown} onPointerMove={headHandlers?.onPointerMove} onPointerUp={headHandlers?.onPointerUp} onPointerCancel={headHandlers?.onPointerCancel}>
-				<div className="lys-id">
-					<span className="lys-eyebrow mono">
-						가사
-						{sourceKind ? ` · ${sourceKind}` : ''}
-					</span>
-					<span className="lys-title serif">{meta?.track || '가사'}</span>
-					{(meta?.artist || meta?.album) && (
-						<span className="lys-sub">{[meta?.artist, meta?.album].filter(Boolean).join(' — ')}</span>
-					)}
-				</div>
-				<div className="lys-actions">
-					<span className="lys-seg" role="group" aria-label="조판 모드">
-						<button type="button" className={mode === 'doc' ? 'on' : ''} aria-pressed={mode === 'doc'} onClick={() => pickMode('doc')}>문서</button>
-						<button type="button" className={mode === 'liner' ? 'on' : ''} aria-pressed={mode === 'liner'} onClick={() => pickMode('liner')}>라이너</button>
-					</span>
-					{/* Highlight treatment is the ONE annotation axis exposed. Marker density
-					    runs 9.5%–64.7% per track, so no fixed treatment is right across it;
-					    long spans and overlap have single answers and stay fixed rules.
-					    Shown only when this track actually has annotations. */}
-					{mode === 'doc' && annotations.length > 0 && (
-						<span className="lys-seg" role="group" aria-label="주석 강조">
-							<button type="button" className={annoStyle === 'm0' ? 'on' : ''} aria-pressed={annoStyle === 'm0'} onClick={() => pickAnnoStyle('m0')} title="칠하기">칠</button>
-							<button type="button" className={annoStyle === 'm1' ? 'on' : ''} aria-pressed={annoStyle === 'm1'} onClick={() => pickAnnoStyle('m1')} title="밑줄 — 밀집한 곡에 적합">밑줄</button>
-							<button type="button" className={annoStyle === 'm2' ? 'on' : ''} aria-pressed={annoStyle === 'm2'} onClick={() => pickAnnoStyle('m2')} title="여백만 — 가사를 가장 방해하지 않음">여백</button>
-							<button type="button" className={annoStyle === 'm3' ? 'on' : ''} aria-pressed={annoStyle === 'm3'} onClick={() => pickAnnoStyle('m3')} title="열었을 때만 — 강조를 희소하게">열림</button>
-						</span>
-					)}
-					{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
-						translation?.status === 'done' ?
+		<>
+			<span className="lys-seg" role="group" aria-label="조판 모드">
+				<button type="button" className={mode === 'doc' ? 'on' : ''} aria-pressed={mode === 'doc'} onClick={() => pickMode('doc')}>문서</button>
+				<button type="button" className={mode === 'liner' ? 'on' : ''} aria-pressed={mode === 'liner'} onClick={() => pickMode('liner')}>라이너</button>
+			</span>
+			{/* Highlight treatment is the ONE annotation axis exposed. Marker density
+			    runs 9.5%–64.7% per track, so no fixed treatment is right across it;
+			    long spans and overlap have single answers and stay fixed rules.
+			    Shown only when this track actually has annotations. */}
+			{mode === 'doc' && annotations.length > 0 && (
+				<span className="lys-seg" role="group" aria-label="주석 강조">
+					<button type="button" className={annoStyle === 'm0' ? 'on' : ''} aria-pressed={annoStyle === 'm0'} onClick={() => pickAnnoStyle('m0')} title="칠하기">칠</button>
+					<button type="button" className={annoStyle === 'm1' ? 'on' : ''} aria-pressed={annoStyle === 'm1'} onClick={() => pickAnnoStyle('m1')} title="밑줄 — 밀집한 곡에 적합">밑줄</button>
+					<button type="button" className={annoStyle === 'm2' ? 'on' : ''} aria-pressed={annoStyle === 'm2'} onClick={() => pickAnnoStyle('m2')} title="여백만 — 가사를 가장 방해하지 않음">여백</button>
+					<button type="button" className={annoStyle === 'm3' ? 'on' : ''} aria-pressed={annoStyle === 'm3'} onClick={() => pickAnnoStyle('m3')} title="열었을 때만 — 강조를 희소하게">열림</button>
+				</span>
+			)}
+			{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
+				translation?.status === 'done' ?
+					(
+						<button type="button" className={showKo ? 'lys-btn is-on mono' : 'lys-btn mono'} aria-pressed={showKo} onClick={() => setShowKo(v => !v)}>번역</button>
+					) :
+					koreanDominant ?
+						null :
+						translation?.status === 'requested' ?
+							<span className="lys-tr-state mono" role="status">요청됨</span> :
 							(
-								<button type="button" className={showKo ? 'lys-btn is-on mono' : 'lys-btn mono'} aria-pressed={showKo} onClick={() => setShowKo(v => !v)}>번역</button>
-							) :
-							koreanDominant ?
-								null :
-								translation?.status === 'requested' ?
-									<span className="lys-tr-state mono" role="status">요청됨</span> :
-									(
-										<button type="button" className="lys-btn mono" disabled={requesting} onClick={() => void requestTr()}>
-											{translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
-										</button>
-									)
-					)}
-					{n > 0 && (
-						<button type="button" className="lys-btn mono" onClick={() => void copyAll()}>{copied ? '복사됨' : '전문 복사'}</button>
-					)}
-					{placementControl}
-					<button type="button" className="lys-x" onClick={onClose} aria-label="닫기">✕</button>
-				</div>
-			</header>
+								<button type="button" className="lys-btn mono" disabled={requesting} onClick={() => void requestTr()}>
+									{translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
+								</button>
+							)
+			)}
+			{n > 0 && (
+				<button type="button" className="lys-btn mono" onClick={() => void copyAll()}>{copied ? '복사됨' : '전문 복사'}</button>
+			)}
+		</>
+	)
+}
 
+/** The notice + scroll body, kept byte-for-byte compatible in the old sheet. */
+export function LyricsSheetBody({ state, meta }: { state: LyricsSheetState, meta?: LyricsSheetMeta }) {
+	const {
+		phase,
+		mode,
+		annoStyle,
+		openIds,
+		showKo,
+		notice,
+		segs,
+		n,
+		translation,
+		stanzas,
+		lineMarks,
+		drawer,
+		emptyText,
+		toggleAnno,
+		setOpenIds,
+		retry,
+	} = state
+	return (
+		<>
 			{notice && <div className="lys-note mono" role="status">{notice}</div>}
-
 			<div className="lys-body">
 				{phase.k === 'loading' && <div className="lys-status mono">불러오는 중…</div>}
 
 				{phase.k === 'error' && (
 					<div className="lys-status">
 						<p>가사를 불러오지 못했어요</p>
-						<button type="button" className="lys-retry mono" onClick={() => setLoadSeq(s => s + 1)}>다시 시도</button>
+						<button type="button" className="lys-retry mono" onClick={retry}>다시 시도</button>
 					</div>
 				)}
 
@@ -500,6 +532,51 @@ export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, pa
 					</div>
 				)}
 			</div>
+		</>
+	)
+}
+
+/** Placement-agnostic standalone sheet interior retained for existing callers. */
+export function LyricsSheetContent({ spotifyTrackId, meta, onClose, panelRef, panelClassName, panelStyle, headHandlers, placementControl }: {
+	spotifyTrackId: string
+	meta?: LyricsSheetMeta
+	onClose: () => void
+	panelRef: RefObject<HTMLDivElement | null>
+	panelClassName?: string
+	panelStyle?: CSSProperties
+	headHandlers?: HeadHandlers
+	placementControl?: ReactNode
+}) {
+	const state = useLyricsSheetState(spotifyTrackId)
+	return (
+		<div
+			ref={panelRef}
+			className={panelClassName ? `lys-sheet ${panelClassName}` : 'lys-sheet'}
+			role="dialog"
+			aria-modal="true"
+			aria-label="가사"
+			onClick={e => e.stopPropagation()}
+			style={panelStyle}
+		>
+			<div className="lys-perf" aria-hidden="true" />
+			<header className="lys-head" onPointerDown={headHandlers?.onPointerDown} onPointerMove={headHandlers?.onPointerMove} onPointerUp={headHandlers?.onPointerUp} onPointerCancel={headHandlers?.onPointerCancel}>
+				<div className="lys-id">
+					<span className="lys-eyebrow mono">
+						가사
+						{state.sourceKind ? ` · ${state.sourceKind}` : ''}
+					</span>
+					<span className="lys-title serif">{meta?.track || '가사'}</span>
+					{(meta?.artist || meta?.album) && (
+						<span className="lys-sub">{[meta?.artist, meta?.album].filter(Boolean).join(' — ')}</span>
+					)}
+				</div>
+				<div className="lys-actions">
+					<LyricsSheetToolbar state={state} />
+					{placementControl}
+					<button type="button" className="lys-x" onClick={onClose} aria-label="닫기">✕</button>
+				</div>
+			</header>
+			<LyricsSheetBody state={state} meta={meta} />
 		</div>
 	)
 }

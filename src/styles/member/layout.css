@@ -290,6 +290,21 @@
 }
 .memo-write-link a:hover { color: var(--color-text); }
 
+.memo-context-open {
+  display: block;
+  margin: 18px 0 0 auto;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--color-subtle);
+  font-size: var(--text-xs);
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.memo-context-open:hover { color: var(--color-accent); border-color: var(--color-accent); }
+
 /* ARCH-bucket-album-modal-unification Step 1 — 리서치 노트 section: collapsed by
    default, expanded inline rather than a separate rsh-modal. */
 .memo-research { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--color-border-soft); }
@@ -1313,6 +1328,46 @@
 }
 .lys-x:hover { color: var(--color-text); }
 
+/* Shared album context chrome. Both tab panels remain mounted; only the active
+   pane participates in layout so lyrics/research local state survives switches. */
+.ctx-panel { max-width: 720px; }
+.ctx-head { align-items: center; padding-block: 14px; }
+.ctx-tabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 3px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-pill);
+	background: var(--color-paper);
+}
+.ctx-tab {
+	border: 0;
+	border-radius: var(--radius-pill);
+	background: none;
+	color: var(--color-faded);
+	font-family: var(--font-mono);
+	font-size: var(--text-2xs);
+	letter-spacing: .04em;
+	padding: 6px 12px;
+	cursor: pointer;
+}
+.ctx-tab.is-active { background: var(--color-text); color: var(--color-bg); }
+.ctx-tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.ctx-head-actions { margin-left: auto; }
+.ctx-body { flex: 1; min-height: 0; display: flex; }
+.ctx-pane { display: none; width: 100%; min-height: 0; }
+.ctx-pane.is-active { display: flex; }
+.ctx-pane-research { overflow-y: auto; padding: 20px 24px 28px; }
+.ctx-pane-research > .rsh { width: 100%; }
+.ctx-lyrics { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
+.ctx-track-id { display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 14px 24px 8px; }
+.ctx-lyrics-actions {
+	justify-content: flex-start;
+	padding: 0 24px 14px;
+	border-bottom: 1px solid var(--color-border-soft);
+}
+
 .lys-note {
 	flex: 0 0 auto;
 	padding: 8px 24px;
@@ -1410,11 +1465,11 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   FEAT-lyrics-sheet PR 2 — drag tear / dock (DockableLyricsSheet + memo host).
+   Drag tear / dock mechanics shared by ContextPanel and the memo host.
    Docking isn't a panel, it's a 봉합: while docked the sheet is the SAME paper
    as the memo window (no border/shadow, only the perforation seam), and the
    header can be grabbed to tear it off into a free-floating sheet. Constants
-   (TEAR_PX 70 · RESIST .35 · tilt ±2°) live in DockableLyricsSheet.tsx.
+   (TEAR_PX 70 · RESIST .35 · tilt ±2°) live in dockTear.ts.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* the sheet once it is JS-positioned (fixed) by the dock mount — resets the
@@ -1649,7 +1704,7 @@
 
 /* The docked sheet's width tracks the memo's size setting. It was pinned at
    320px, so 최대 (1380px) still read lyrics through a 320px straw — the memo grew
-   and the sheet did not. DockableLyricsSheet reads this same custom property for
+   and the sheet did not. ContextPanel reads this same custom property for
    its geometry, so the two cannot drift. */
 .lys-dock-slot {
 	position: relative;
@@ -1704,6 +1759,12 @@
 @media (max-width: 767px) {
 	.lys-head { flex-direction: column; align-items: stretch; gap: 10px; }
 	.lys-actions { justify-content: flex-start; }
+	.ctx-panel-mobile { width: min(100%, 720px); max-height: calc(100vh - 48px); }
+	.ctx-head-actions { margin-left: 0; }
+	.ctx-tabs { align-self: flex-start; }
+	.ctx-pane-research { padding-inline: 18px; }
+	.ctx-track-id { padding-inline: 18px; }
+	.ctx-lyrics-actions { padding-inline: 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
