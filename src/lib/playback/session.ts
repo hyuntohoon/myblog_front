@@ -19,11 +19,12 @@
 // does not "simplify" it back.
 import type { BoardAlbum } from '@lib/buckets'
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { PlaybackDevice, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung } from '@lib/spotifyPlayback'
+import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, SetTrackLikedOutcome, TransferOutcome } from '@lib/spotifyPlayback'
 import type { OwnershipMessage } from './ownership'
 import { addBucketPlayback, deleteBucketItem, expandAlbumTracks } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
-import { IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED, play, sendPlayerCommand } from '@lib/spotifyPlayback'
+import { getStreamingToken, getTrackLiked, IN_PAGE_MESSAGE, listDevices, MYBLOG_PLAYBACK_CHANGED, play, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
+import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { readLivePlayback } from '@components/member/lyrics/playback.api'
 import { playbackOwnership } from './ownership'
 import { playbackQueue, withoutQueueItems } from './queue'
@@ -66,6 +67,14 @@ export interface ExternalNowPlaying {
   deviceName: string | null
 }
 
+export type CapabilityTier = 'full' | 'fallback'
+export type LikedState = 'unknown' | 'loading' | 'liked' | 'unliked' | 'scope-missing'
+export type ReconnectState = boolean
+export type PlaybackModeCommand =
+	{ kind: 'shuffle', on: boolean } |
+	{ kind: 'repeat', mode: RepeatMode } |
+	{ kind: 'volume', percent: number }
+
 export interface PlaybackSessionState {
   /** The row we believe is sounding, by `review_bucket_items.id`. Null = nothing started. */
   currentItemId: string | null
@@ -83,6 +92,14 @@ export interface PlaybackSessionState {
   rung: PlayRung | null
   degraded: boolean
   device: PlaybackDevice | null
+  capabilityTier: CapabilityTier
+  devices: PlaybackDevice[] | null
+  activeDeviceId: string | null
+  shuffle: boolean | null
+  repeat: RepeatMode | null
+  volumePercent: number | null
+  liked: LikedState
+  reconnect: ReconnectState
   /** One sentence about the last attempt. Cleared on the next successful action. */
   notice: SessionNotice | null
   /** A play/transport call is in flight — the forms disable transport rather than double-fire. */
@@ -116,6 +133,9 @@ interface BroadcastSessionState {
   rung: PlayRung | null
   degraded: boolean
   device: PlaybackDevice | null
+  shuffle: boolean | null
+  repeat: RepeatMode | null
+  volumePercent: number | null
   notice: SessionNotice | null
 }
 
@@ -128,6 +148,14 @@ const EMPTY: PlaybackSessionState = {
   rung: null,
   degraded: false,
   device: null,
+  capabilityTier: 'fallback',
+  devices: null,
+  activeDeviceId: null,
+  shuffle: null,
+  repeat: null,
+  volumePercent: null,
+  liked: 'unknown',
+  reconnect: false,
   notice: null,
   busy: false,
   isOwner: false,
@@ -202,6 +230,30 @@ let anchorAmbiguous = false
  * chaining so one press's rejection never wedges every later press behind it.
  */
 let replaceChain: Promise<unknown> = Promise.resolve()
+let capabilityInflight: Promise<void> | null = null
+let likedTrackId: string | null = null
+let libraryBusy = false
+let modeBusy = false
+
+const RECONNECT_FLAG = 'np-spotify-reconnect'
+
+function readReconnectFlag(): boolean {
+  try {
+    return sessionStorage.getItem(RECONNECT_FLAG) === '1'
+  }
+  catch {
+    return false
+  }
+}
+
+function writeReconnectFlag(on: boolean): void {
+  try {
+    if (on)
+      sessionStorage.setItem(RECONNECT_FLAG, '1')
+    else sessionStorage.removeItem(RECONNECT_FLAG)
+  }
+  catch { /* private mode — the hint just doesn't persist */ }
+}
 
 function authoritativePatch(p: Partial<PlaybackSessionState>): void {
   localWriteSeq += 1
@@ -226,6 +278,9 @@ function broadcastState(): void {
     rung: current.rung,
     degraded: current.degraded,
     device: current.device,
+    shuffle: current.shuffle,
+    repeat: current.repeat,
+    volumePercent: current.volumePercent,
     notice: current.notice,
   }
   playbackOwnership.post({ type: 'state', state })
@@ -250,6 +305,9 @@ function applyBroadcastState(payload: unknown): void {
     rung: state.rung,
     degraded: state.degraded,
     device: state.device,
+    shuffle: state.shuffle,
+    repeat: state.repeat,
+    volumePercent: state.volumePercent,
     notice: state.notice,
     ownerRung: state.rung,
   })
@@ -421,7 +479,7 @@ const BOUNDARY_BUFFER_MS = 1_500
  * believes is sounding, never the rows. A track playing from somewhere else does
  * not get appended, removed, or reordered into our list.
  */
-async function adoptLive(): Promise<void> {
+async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
   // Adoption is a WRITE to the session, sourced from a Spotify read. Only the owner
   // performs it: if every tab adopted independently they would be two writers racing
   // over one state, each overwriting the other's broadcast with its own slightly
@@ -439,7 +497,8 @@ async function adoptLive(): Promise<void> {
   const previousRowIndex = rowIndex(current.currentItemId)
   const previousRow = previousRowIndex < 0 ? null : queueRows()[previousRowIndex]
   const seqAtStart = localWriteSeq
-  const live = await readLivePlayback()
+  const livePromise = readLivePlayback()
+  const [live] = await Promise.all([livePromise, beforeApply])
 
   // A newer AUTHORITATIVE local write landed while this read was in flight — e.g.
   // this very read was triggered by `MYBLOG_PLAYBACK_CHANGED` off our own command,
@@ -496,7 +555,17 @@ async function adoptLive(): Promise<void> {
   }
 
   if (live.state === 'idle') {
-    patch({ playing: false, external: null, currentItemId: null })
+    likedTrackId = null
+    patch({
+      playing: false,
+      external: null,
+      currentItemId: null,
+      activeDeviceId: null,
+      shuffle: null,
+      repeat: null,
+      volumePercent: null,
+      liked: 'unknown',
+    })
     anchorAmbiguous = false
     return
   }
@@ -522,8 +591,19 @@ async function adoptLive(): Promise<void> {
   // re-guessing via first-match every read (BUG-26a).
   const { row, ambiguous } = rowForSpotifyTrack(live.trackId, current.currentItemId)
   if (row) {
-    patch({ currentItemId: row.itemId, external: null, playing, anchor, durationMs: live.durationMs })
+    patch({
+      currentItemId: row.itemId,
+      external: null,
+      playing,
+      anchor,
+      durationMs: live.durationMs,
+      activeDeviceId: live.deviceId ?? null,
+      shuffle: live.shuffle,
+      repeat: live.repeat,
+      volumePercent: live.volumePercent,
+    })
     anchorAmbiguous = ambiguous
+    loadLiked(live.trackId)
     scheduleBoundaryCheck()
     return
   }
@@ -540,7 +620,12 @@ async function adoptLive(): Promise<void> {
     playing,
     anchor,
     durationMs: live.durationMs,
+    activeDeviceId: live.deviceId ?? null,
+    shuffle: live.shuffle,
+    repeat: live.repeat,
+    volumePercent: live.volumePercent,
   })
+  loadLiked(live.trackId)
   scheduleBoundaryCheck()
 }
 
@@ -699,6 +784,173 @@ async function undoReplace(bucketId: string, trackIds: string[]): Promise<UndoOu
   }
 }
 
+async function resolveCapability(): Promise<void> {
+  if (capabilityInflight)
+    return capabilityInflight
+  capabilityInflight = (async () => {
+    const r = await getStreamingToken()
+    if (r.ok) {
+      patch({ capabilityTier: 'full', reconnect: false })
+      writeReconnectFlag(false)
+    }
+    else {
+      const reconnect = r.httpStatus === 502 || (r.status === 'disconnected' && readReconnectFlag())
+      patch({ capabilityTier: 'fallback', reconnect })
+      if (r.httpStatus === 502)
+        writeReconnectFlag(true)
+    }
+  })().finally(() => {
+    capabilityInflight = null
+  })
+  return capabilityInflight
+}
+
+function recordControlFailure(r: Exclude<PlayerCommandOutcome, { ok: true }>): void {
+  if (r.reason === 'no-capability') {
+    rememberSpotifyTransportProbe('no-capability')
+    patch({ capabilityTier: 'fallback' })
+  }
+  else if (r.reason === 'token') {
+    const reconnect = r.httpStatus === 502 ? true : current.reconnect
+    patch({ capabilityTier: 'fallback', reconnect })
+    if (r.httpStatus === 502)
+      writeReconnectFlag(true)
+  }
+}
+
+function loadLiked(trackId: string): void {
+  if (likedTrackId === trackId)
+    return
+  likedTrackId = trackId
+  patch({ liked: 'loading' })
+  void getTrackLiked(trackId).then((r) => {
+    if (likedTrackId !== trackId)
+      return
+    if (r.ok) {
+      patch({ liked: r.liked ? 'liked' : 'unliked' })
+      rememberSpotifyLibraryProbe('available')
+    }
+    else if (r.reason === 'library-scope-missing') {
+      patch({ liked: 'scope-missing' })
+      rememberSpotifyLibraryProbe('scope-missing')
+    }
+    else {
+      patch({ liked: 'unknown' })
+    }
+  })
+}
+
+function currentSpotifyTrackId(): string | null {
+  if (current.external)
+    return current.external.spotifyTrackId
+  const i = rowIndex(current.currentItemId)
+  const row = i < 0 ? null : queueRows()[i]
+  if (!row?.trackId)
+    return null
+  const uri = cachedUri(row.trackId)
+  return uri?.startsWith('spotify:track:') ? uri.slice('spotify:track:'.length) : null
+}
+
+async function toggleLiked(): Promise<SetTrackLikedOutcome | null> {
+  const trackId = currentSpotifyTrackId()
+  if (!trackId || likedTrackId !== trackId || libraryBusy || (current.liked !== 'liked' && current.liked !== 'unliked'))
+    return null
+  const before = current.liked
+  const nextLiked = before !== 'liked'
+  libraryBusy = true
+  patch({ liked: nextLiked ? 'liked' : 'unliked' })
+  try {
+    const r = await setTrackLiked(trackId, nextLiked)
+    if (likedTrackId !== trackId)
+      return r
+    if (r.ok) {
+      rememberSpotifyLibraryProbe('available')
+    }
+    else if (r.reason === 'library-scope-missing') {
+      patch({ liked: 'scope-missing' })
+      rememberSpotifyLibraryProbe('scope-missing')
+    }
+    else {
+      // Optimistic rollback for token/network/provider failures.
+      patch({ liked: before })
+    }
+    return r
+  }
+  finally {
+    libraryBusy = false
+  }
+}
+
+async function setMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome | null> {
+  if (modeBusy)
+    return null
+  modeBusy = true
+  const before = {
+    shuffle: current.shuffle,
+    repeat: current.repeat,
+    volumePercent: current.volumePercent,
+  }
+  let optimisticPatch: Partial<PlaybackSessionState>
+  if (cmd.kind === 'shuffle')
+    optimisticPatch = { shuffle: cmd.on }
+  else if (cmd.kind === 'repeat')
+    optimisticPatch = { repeat: cmd.mode }
+  else
+    optimisticPatch = { volumePercent: cmd.percent }
+  authoritativePatch(optimisticPatch)
+  try {
+    const r = await sendPlaybackMode(cmd)
+    if (r.ok)
+      return r
+    if (r.reason === 'unsupported-on-device') {
+      // Roll back to the exact pre-write value; null is only one possible device value.
+      authoritativePatch({ volumePercent: before.volumePercent })
+    }
+    else if (r.reason === 'no-capability') {
+      rememberSpotifyTransportProbe('no-capability')
+      patch({ capabilityTier: 'fallback' })
+    }
+    else {
+      // The old card reconciled transient/token failures with its ordinary one-shot.
+      void syncFromLive()
+    }
+    return r
+  }
+  finally {
+    modeBusy = false
+  }
+}
+
+async function refreshDevices() {
+  patch({ devices: null })
+  const r = await listDevices()
+  if (r.ok) {
+    patch({
+      devices: r.devices,
+      activeDeviceId: r.devices.find(device => device.isActive)?.id ?? null,
+    })
+  }
+  return r
+}
+
+async function transferTo(deviceId: string, opts?: { raiseInPageFirst?: boolean }): Promise<TransferOutcome> {
+  const r = await transferPlayback(deviceId, opts)
+  if (!r.ok)
+    return r
+  if (!opts?.raiseInPageFirst) {
+    patch({
+      activeDeviceId: deviceId,
+      devices: current.devices?.map(device => ({ ...device, isActive: device.id === deviceId })) ?? null,
+    })
+  }
+  else {
+    // The SDK chooses the cold-start in-page id internally, so re-list once to
+    // learn its real id instead of storing a synthetic value as activeDeviceId.
+    await refreshDevices()
+  }
+  return r
+}
+
 /**
  * Adopt whatever is actually sounding.
  *
@@ -707,8 +959,8 @@ async function undoReplace(bucketId: string, trackIds: string[]): Promise<UndoOu
  * misreported as external on the very first read.
  */
 async function syncFromLive(): Promise<void> {
-  await prefetchUris(trackIdsFrom(queueRows()))
-  await adoptLive()
+  const prefetched = prefetchUris(trackIdsFrom(queueRows()))
+  await adoptLive(prefetched)
 }
 
 export const playbackSession = {
@@ -740,13 +992,7 @@ export const playbackSession = {
    * session's anchor is actually for the track it has open before trusting it).
    */
   currentSpotifyTrackId(): string | null {
-    if (current.external)
-      return current.external.spotifyTrackId
-    const row = playbackSession.currentRow()
-    if (!row?.trackId)
-      return null
-    const uri = cachedUri(row.trackId)
-    return uri?.startsWith('spotify:track:') ? uri.slice('spotify:track:'.length) : null
+    return currentSpotifyTrackId()
   },
 
   /**
@@ -962,6 +1208,20 @@ export const playbackSession = {
   /** Adopt whatever is actually playing — call when a player surface becomes visible. */
   syncFromLive,
 
+  resolveCapability,
+
+  recordControlFailure,
+
+  loadLiked,
+
+  toggleLiked,
+
+  setMode,
+
+  refreshDevices,
+
+  transferTo,
+
   setDevice(device: PlaybackDevice | null): void {
     patch({ device })
   },
@@ -982,6 +1242,10 @@ export const playbackSession = {
   __reset(): void {
     clearBoundaryCheck()
     anchorAmbiguous = false
+    capabilityInflight = null
+    likedTrackId = null
+    libraryBusy = false
+    modeBusy = false
     const ownership = playbackOwnership.getSnapshot()
     current = {
       ...EMPTY,

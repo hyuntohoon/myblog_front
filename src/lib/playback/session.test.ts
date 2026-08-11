@@ -12,6 +12,14 @@ const mocks = vi.hoisted(() => ({
   listBuckets: vi.fn(),
   play: vi.fn(),
   sendPlayerCommand: vi.fn(),
+  sendPlaybackMode: vi.fn(),
+  getStreamingToken: vi.fn(),
+  getTrackLiked: vi.fn(),
+  setTrackLiked: vi.fn(),
+  listDevices: vi.fn(),
+  transferPlayback: vi.fn(),
+  rememberSpotifyLibraryProbe: vi.fn(),
+  rememberSpotifyTransportProbe: vi.fn(),
   resolveTail: vi.fn(),
   prefetchUris: vi.fn(),
   cachedUri: vi.fn(),
@@ -48,6 +56,17 @@ vi.mock('@lib/spotifyPlayback', () => ({
   MYBLOG_PLAYBACK_CHANGED: 'myblog:playback-changed',
   play: mocks.play,
   sendPlayerCommand: mocks.sendPlayerCommand,
+  sendPlaybackMode: mocks.sendPlaybackMode,
+  getStreamingToken: mocks.getStreamingToken,
+  getTrackLiked: mocks.getTrackLiked,
+  setTrackLiked: mocks.setTrackLiked,
+  listDevices: mocks.listDevices,
+  transferPlayback: mocks.transferPlayback,
+}))
+
+vi.mock('@lib/spotifyCapability', () => ({
+  rememberSpotifyLibraryProbe: mocks.rememberSpotifyLibraryProbe,
+  rememberSpotifyTransportProbe: mocks.rememberSpotifyTransportProbe,
 }))
 
 vi.mock('@lib/playback/uris', () => ({
@@ -248,6 +267,12 @@ beforeEach(() => {
   // stub keeps that stale-read window alive; fake timers keep the suite fast.
   mocks.play.mockImplementation(() => new Promise(resolve => window.setTimeout(() => resolve(nextPlayOutcome), PLAYBACK_LAG_MS)))
   mocks.sendPlayerCommand.mockImplementation(() => new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), PLAYBACK_LAG_MS)))
+  mocks.sendPlaybackMode.mockResolvedValue({ ok: true })
+  mocks.getStreamingToken.mockResolvedValue({ ok: true, token: 'tok', expiresAt: Date.now() + 60_000 })
+  mocks.getTrackLiked.mockResolvedValue({ ok: true, liked: false })
+  mocks.setTrackLiked.mockResolvedValue({ ok: true })
+  mocks.listDevices.mockResolvedValue({ ok: true, devices: [] })
+  mocks.transferPlayback.mockResolvedValue({ ok: true })
   playbackSession.__reset()
   setQueue([])
 })
@@ -1131,5 +1156,68 @@ describe('single-tab ownership', () => {
       mirrorAnchor.ms + (performance.now() - mirrorAnchor.wallMs) :
       0
     expect(Math.abs(mirrorElapsed - ownerElapsed)).toBeLessThan(5)
+  })
+})
+
+describe('session-owned playback experience axes', () => {
+  it('re-resolves capability after a settled transient failure while sharing only overlapping calls', async () => {
+    let resolveFirst!: (value: { ok: false, status: 'error' }) => void
+    mocks.getStreamingToken.mockReturnValueOnce(new Promise((resolve) => {
+      resolveFirst = resolve
+    }))
+
+    const first = playbackSession.resolveCapability()
+    const overlapping = playbackSession.resolveCapability()
+    expect(mocks.getStreamingToken).toHaveBeenCalledOnce()
+    resolveFirst({ ok: false, status: 'error' })
+    await Promise.all([first, overlapping])
+    expect(playbackSession.getSnapshot().capabilityTier).toBe('fallback')
+
+    mocks.getStreamingToken.mockResolvedValueOnce({ ok: true, token: 'tok', expiresAt: Date.now() + 60_000 })
+    await playbackSession.resolveCapability()
+    expect(mocks.getStreamingToken).toHaveBeenCalledTimes(2)
+    expect(playbackSession.getSnapshot().capabilityTier).toBe('full')
+  })
+
+  it('publishes an optimistic shuffle change directly from setMode', async () => {
+    let resolveMode!: (value: { ok: true }) => void
+    mocks.sendPlaybackMode.mockReturnValueOnce(new Promise((resolve) => {
+      resolveMode = resolve
+    }))
+
+    const pending = playbackSession.setMode({ kind: 'shuffle', on: true })
+    expect(playbackSession.getSnapshot().shuffle).toBe(true)
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+
+    resolveMode({ ok: true })
+    await pending
+    expect(playbackSession.getSnapshot().shuffle).toBe(true)
+  })
+
+  it('rolls unsupported volume back to its exact pre-write value', async () => {
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-X'), volumePercent: 37 })
+    await playbackSession.syncFromLive()
+    mocks.sendPlaybackMode.mockResolvedValueOnce({ ok: false, reason: 'unsupported-on-device' })
+
+    await playbackSession.setMode({ kind: 'volume', percent: 80 })
+
+    expect(playbackSession.getSnapshot().volumePercent).toBe(37)
+    expect(mocks.rememberSpotifyTransportProbe).not.toHaveBeenCalled()
+  })
+
+  it('publishes the active device immediately after a successful transfer', async () => {
+    mocks.listDevices.mockResolvedValueOnce({
+      ok: true,
+      devices: [
+        { id: 'phone', name: 'Phone', type: 'Smartphone', isActive: true, isInPage: false },
+        { id: 'speaker', name: 'Speaker', type: 'Speaker', isActive: false, isInPage: false },
+      ],
+    })
+    await playbackSession.refreshDevices()
+
+    await playbackSession.transferTo('speaker')
+
+    expect(playbackSession.getSnapshot().activeDeviceId).toBe('speaker')
+    expect(playbackSession.getSnapshot().devices?.find(device => device.id === 'speaker')?.isActive).toBe(true)
   })
 })

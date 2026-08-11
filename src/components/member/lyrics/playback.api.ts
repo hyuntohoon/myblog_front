@@ -53,6 +53,8 @@ export interface LivePlaybackTrack {
 		 * refreshes exactly when the one-shot fires (D28: never polled).
 		 */
 	deviceName: string | null
+  /** Active Connect device id, used by the session-owned device axis. */
+  deviceId: string | null
   /**
    * Playback modes (member-player Step 6e). Like `deviceName`, these ride the
    * SAME `GET /me/player` body the one-shot already fetches — reading them costs
@@ -105,7 +107,21 @@ export type LivePlayback =
  *   itself failed; distinct from idle so callers never *hide* the entry over a
  *   transient failure.
  */
-export async function readLivePlayback(): Promise<LivePlayback> {
+let inflightPlaybackRead: Promise<LivePlayback> | null = null
+
+export function readLivePlayback(): Promise<LivePlayback> {
+  if (inflightPlaybackRead)
+    return inflightPlaybackRead
+
+  const request = readLivePlaybackOnce().finally(() => {
+    if (inflightPlaybackRead === request)
+      inflightPlaybackRead = null
+  })
+  inflightPlaybackRead = request
+  return request
+}
+
+async function readLivePlaybackOnce(): Promise<LivePlayback> {
   const tok = await getStreamingToken()
   if (!tok.ok)
     return { state: 'unavailable' }
@@ -126,7 +142,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
   let body: {
     is_playing?: boolean
     progress_ms?: number | null
-    device?: { name?: string | null, volume_percent?: number | null } | null
+    device?: { id?: string | null, name?: string | null, volume_percent?: number | null } | null
     shuffle_state?: boolean | null
     repeat_state?: string | null
     context?: { uri?: string | null, type?: string | null } | null
@@ -181,6 +197,7 @@ export async function readLivePlayback(): Promise<LivePlayback> {
     albumSpotifyId: item.album?.id ?? null,
     albumCoverUrl: cover?.url ?? null,
     deviceName: body.device?.name?.trim() || null,
+    deviceId: body.device?.id ?? null,
     shuffle: typeof body.shuffle_state === 'boolean' ? body.shuffle_state : null,
     repeat: body.repeat_state === 'off' || body.repeat_state === 'context' || body.repeat_state === 'track' ? body.repeat_state : null,
     volumePercent: typeof body.device?.volume_percent === 'number' ? body.device.volume_percent : null,

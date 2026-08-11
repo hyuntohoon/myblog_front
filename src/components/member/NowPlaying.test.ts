@@ -73,6 +73,14 @@ const EMPTY_SESSION_STATE: PlaybackSessionState = {
   rung: null,
   degraded: false,
   device: null,
+  capabilityTier: 'fallback',
+  devices: null,
+  activeDeviceId: null,
+  shuffle: null,
+  repeat: null,
+  volumePercent: null,
+  liked: 'unknown',
+  reconnect: false,
   notice: null,
   busy: false,
   isOwner: false,
@@ -89,6 +97,14 @@ vi.mock('@lib/playback/session', () => {
     rung: null,
     degraded: false,
     device: null,
+    capabilityTier: 'fallback',
+    devices: null,
+    activeDeviceId: null,
+    shuffle: null,
+    repeat: null,
+    volumePercent: null,
+    liked: 'unknown',
+    reconnect: false,
     notice: null,
     busy: false,
     isOwner: false,
@@ -108,6 +124,13 @@ vi.mock('@lib/playback/session', () => {
       // a converged identity set it explicitly, same as `currentRow`.
       currentSpotifyTrackId: vi.fn(() => null),
       syncFromLive: vi.fn(() => Promise.resolve()),
+      resolveCapability: vi.fn(() => Promise.resolve()),
+      recordControlFailure: vi.fn(),
+      loadLiked: vi.fn(),
+      toggleLiked: vi.fn(() => Promise.resolve(null)),
+      setMode: vi.fn(() => Promise.resolve({ ok: true })),
+      refreshDevices: vi.fn(() => Promise.resolve({ ok: true, devices: [] })),
+      transferTo: vi.fn(() => Promise.resolve({ ok: true })),
     },
   }
 })
@@ -309,8 +332,8 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     // the resolved Spotify id, never `bucketRow.trackId` (the raw DB catalog
     // UUID) — that mismatch previously hit Spotify's `/me/tracks/contains`
     // with a Postgres UUID and briefly flashed the heart to "unknown".
-    await waitFor(() => expect(player.getTrackLiked).toHaveBeenCalledWith('spotify-bucket-track'))
-    expect(player.getTrackLiked).not.toHaveBeenCalledWith('bucket-track')
+    await waitFor(() => expect(session.loadLiked).toHaveBeenCalledWith('spotify-bucket-track'))
+    expect(session.loadLiked).not.toHaveBeenCalledWith('bucket-track')
   })
 
   it('defers a session update landing while this card has its own control call in flight', async () => {
@@ -364,7 +387,35 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     expect(result.current.moment?.trackId).toBe('own-track')
   })
 
-  it('replays a session update deferred during a setMode call (BUG-22), which has no confirmation read of its own', async () => {
+  it('renders a session-owned shuffle change without performing an independent live read', async () => {
+    let notify: (() => void) | null = null
+    session.subscribe.mockImplementation((cb) => {
+      notify = cb
+      return () => {}
+    })
+    const result = await mountReady()
+    const bucketState: PlaybackSessionState = {
+      ...EMPTY_SESSION_STATE,
+      currentItemId: 'item-1',
+      playing: true,
+      anchor: { ms: 0, wallMs: performance.now() },
+      durationMs: 100_000,
+      shuffle: true,
+    }
+    session.currentRow.mockReturnValue({ itemId: 'item-1', trackId: 'db-track', title: 'Track' } as BoardAlbum)
+    session.currentSpotifyTrackId.mockReturnValue('spotify-track')
+    session.getSnapshot.mockReturnValue(bucketState)
+    const readsBefore = playback.readLivePlayback.mock.calls.length
+
+    act(() => {
+      notify?.()
+    })
+
+    await waitFor(() => expect(result.current.moment?.shuffle).toBe(true))
+    expect(playback.readLivePlayback).toHaveBeenCalledTimes(readsBefore)
+  })
+
+  it('does not lose a session update landing during a session-owned setMode call (BUG-22)', async () => {
     let notify: (() => void) | null = null
     session.subscribe.mockImplementation((cb) => {
       notify = cb
@@ -385,7 +436,7 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     const modePromise = new Promise<{ ok: true }>((res) => {
       resolveMode = res
     })
-    player.sendPlaybackMode.mockReturnValueOnce(modePromise as never)
+    session.setMode.mockReturnValueOnce(modePromise as never)
     act(() => {
       void result.current.setMode({ kind: 'shuffle', on: true })
     })
@@ -404,11 +455,11 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
       notify?.()
     })
 
-    // deferred — this card's own setMode call is still in flight
-    expect(result.current.moment?.trackId).toBe('own-track')
+    // setMode is session-owned now, so it does not block the card's local
+    // track/anchor convergence window (the BUG-22 update cannot be deferred).
+    await waitFor(() => expect(result.current.moment?.trackId).toBe('spotify-other-track'))
 
-    // once setMode resolves, the deferred session update must be replayed —
-    // there is no other channel that will ever apply it
+    // Settling the mode request does not need a replay notification.
     act(() => {
       resolveMode({ ok: true })
     })
