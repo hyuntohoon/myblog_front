@@ -37,16 +37,17 @@
 // become links only when resolvable (never a dead click).
 import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlaybackDevice, PlayerCommandOutcome, RepeatMode } from '@lib/spotifyPlayback'
+import type { LikedState, PlaybackModeCommand, CapabilityTier as Tier } from '@lib/playback/session'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { playbackSession } from '@lib/playback/session'
 import { getResolvedDbArtistId, resolveDbAlbumId, resolveDbArtistId } from '@lib/spotifyCatalog'
-import { readSpotifyCapabilityStanding, rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe  } from '@lib/spotifyCapability'
+import { readSpotifyCapabilityStanding, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { bindMediaSessionHandlers, publishNowPlaying, publishPlaybackState, publishPosition } from '@lib/mediaSession'
 import { isLoggedIn } from '@lib/auth'
-import { getActiveRung, getStreamingToken, getTrackLiked, listDevices, MYBLOG_PLAYBACK_CHANGED, play, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
+import { getActiveRung, MYBLOG_PLAYBACK_CHANGED, play, sendPlayerCommand } from '@lib/spotifyPlayback'
 import { whyNoControls } from '@lib/playerCapabilityMatrix'
 import { useDismissable } from '@lib/useDismissable'
 import type { SpotifyScopeGeneration } from './integrations.api'
@@ -67,11 +68,8 @@ export type NpStyle = 'banner' | 'full' | 'list'
  * first control call answering 403/404 (Premium missing / scope not granted /
  * no active device) drops the session to `fallback` (403-probe model, D5).
  */
-type Tier = 'full' | 'fallback'
-type LikedState = 'unknown' | 'loading' | 'liked' | 'unliked' | 'scope-missing'
-
 /** The live playback moment the transport renders from (one-shot sourced). */
-interface LiveMoment {
+interface LiveMomentCore {
   trackId: string
   /** null when the read carried no progress_ms — bar hidden, card still live. */
   anchor: ClockAnchor | null
@@ -80,41 +78,12 @@ interface LiveMoment {
   albumSpotifyId: string | null
   /** Active Connect device name (Step 4 'playing elsewhere' hint), if known. */
   deviceName: string | null
-  /**
-   * Playback modes (Step 6e), riding the same one-shot body as `deviceName` —
-   * no extra request, so D28 holds by construction. `volumePercent` null means
-   * the device exposes no volume API, which is not the same as muted.
-   */
+}
+
+interface LiveMoment extends LiveMomentCore {
   shuffle: boolean | null
   repeat: RepeatMode | null
   volumePercent: number | null
-}
-
-/**
- * sessionStorage flag bridging the 502→404 mint sequence: a revoked grant 502s
- * exactly once (the backend flags the row 'error'), then every later mint is a
- * plain 404 indistinguishable from "never connected". The flag keeps the
- * reconnect line up for the rest of the tab session; a successful mint clears
- * it. Fresh sessions rely on the integrations-tab banner (Step 1) instead.
- */
-const RECONNECT_FLAG = 'np-spotify-reconnect'
-
-function readReconnectFlag(): boolean {
-  try {
-    return sessionStorage.getItem(RECONNECT_FLAG) === '1'
-  }
-  catch {
-    return false
-  }
-}
-
-function writeReconnectFlag(on: boolean): void {
-  try {
-    if (on)
-      sessionStorage.setItem(RECONNECT_FLAG, '1')
-    else sessionStorage.removeItem(RECONNECT_FLAG)
-  }
-  catch { /* private mode — the hint just doesn't persist */ }
 }
 
 /** ms → `m:ss` for the transport time labels. */
@@ -241,19 +210,17 @@ export function useNowPlaying() {
   const [np, setNp] = useState<NowPlayingData | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [syncing, setSyncing] = useState(false)
-  const [moment, setMoment] = useState<LiveMoment | null>(null)
+  const [moment, setMoment] = useState<LiveMomentCore | null>(null)
   // Client-side pause: freezes the clock anchor without a follow-up read. The
   // old reason — "a paused read collapses the card" — stopped being true in two
   // steps (FEAT-lyrics-sync-precision Step 2 split `paused` out of `idle`; OQ4
   // taught `applyLive` to render it), but the behaviour stands on its own: the
   // frozen anchor IS the held position, so a read would confirm what we know.
   const [paused, setPaused] = useState(false)
-  const [tier, setTier] = useState<Tier>('fallback')
-  const [likedState, setLikedState] = useState<LikedState>('unknown')
-  const [reconnect, setReconnect] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const busyRef = useRef(false)
   const controlBusyRef = useRef(false)
+  const modeBusyRef = useRef(false)
   /**
    * Bumped once per LOCAL authoritative write (a control call whose command
    * came back ok) — same shape as `session.ts`'s `localWriteSeq`. `onPlaybackChanged`
@@ -263,15 +230,6 @@ export function useNowPlaying() {
    * genuinely external change landing in the same window along with our own echo.
    */
   const localWriteSeqRef = useRef(0)
-  /**
-   * BUG-22 — bumped only in `setMode`'s `finally`, to replay the playbackSession
-   * convergence effect (below) once `setMode`'s busy window closes. See that
-   * effect's own comment for why `setMode` specifically needs this and
-   * `playPause`/`seek`/`skip` do not.
-   */
-  const [controlGen, setControlGen] = useState(0)
-  const libraryBusyRef = useRef(false)
-  const likedTrackRef = useRef<string | null>(null)
   const liveWonRef = useRef(false)
   const onRef = useRef(true)
   const noteTimer = useRef<number | null>(null)
@@ -285,6 +243,17 @@ export function useNowPlaying() {
    */
   const sessionState = useSyncExternalStore(playbackSession.subscribe, playbackSession.getSnapshot, playbackSession.getServerSnapshot)
   const [sessionReady, setSessionReady] = useState(false)
+  const tier = sessionState.capabilityTier
+  const likedState = sessionState.liked
+  const reconnect = sessionState.reconnect
+  const renderedMoment: LiveMoment | null = moment ?
+    {
+      ...moment,
+      shuffle: sessionState.shuffle,
+      repeat: sessionState.repeat,
+      volumePercent: sessionState.volumePercent,
+    } :
+    null
 
   const flashNote = (msg: string) => {
     setNote(msg)
@@ -296,46 +265,17 @@ export function useNowPlaying() {
     }, 4000)
   }
 
-  const loadLikedState = (trackId: string) => {
-    // Identity-keyed guard: every new track gets exactly one contains read;
-    // seek/sync confirmations for the same track never re-read library state.
-    if (likedTrackRef.current === trackId)
-      return
-    likedTrackRef.current = trackId
-    setLikedState('loading')
-    void getTrackLiked(trackId).then((r) => {
-      if (!onRef.current || likedTrackRef.current !== trackId)
-        return
-      if (r.ok) {
-        setLikedState(r.liked ? 'liked' : 'unliked')
-        rememberSpotifyLibraryProbe('available')
-      }
-      else if (r.reason === 'library-scope-missing') {
-        // Separate from transport degradation: Free accounts can like tracks.
-        setLikedState('scope-missing')
-        rememberSpotifyLibraryProbe('scope-missing')
-      }
-      else {
-        setLikedState('unknown')
-      }
-    })
-  }
-
   const applyLive = (r: LivePlayback) => {
     if (r.state === 'unavailable')
       return
     liveWonRef.current = true
     if (r.state === 'playing' || r.state === 'paused') {
-      // BUG-28: this card's own read (`sync()` on mount, `onPlaybackChanged`)
-      // and `playbackSession`'s own adoption both fire off the same
-      // `MYBLOG_PLAYBACK_CHANGED`/mount trigger, each with its own independent
-      // `readLivePlayback()` round trip — HTTP response order is not
-      // guaranteed to match send order. If the session has ALREADY converged
-      // on a track (its own `adoptLive()` has its own freshness guard,
-      // `localWriteSeq`) and this read disagrees, this read is the stale one:
-      // applying it would flash the card back to a track that already
-      // stopped. Mirrors the idle branch below, which already re-checks
-      // `playbackSession` fresh before clearing for the identical reason.
+      // BUG-28: this card's projection and playbackSession now share one
+      // in-flight read, eliminating the old two-response ordering race. Keep
+      // this identity guard because the shared provider answer can still be
+      // older than a session-local authoritative write (`localWriteSeq`): in
+      // that case session adoption discards it, and this projection must do the
+      // same rather than flash back to the provider's pre-write track.
       const sessionTrackId = playbackSession.currentSpotifyTrackId()
       if (sessionTrackId && sessionTrackId !== r.trackId)
         return
@@ -370,11 +310,8 @@ export function useNowPlaying() {
         artists: r.artists,
         albumSpotifyId: r.albumSpotifyId,
         deviceName: r.deviceName,
-        shuffle: r.shuffle,
-        repeat: r.repeat,
-        volumePercent: r.volumePercent,
       })
-      loadLikedState(r.trackId)
+      playbackSession.loadLiked(r.trackId)
       setPaused(r.state === 'paused')
       if (r.albumSpotifyId) {
         void resolveDbAlbumId(r.albumSpotifyId).then((id) => {
@@ -403,8 +340,6 @@ export function useNowPlaying() {
       // "something is playing" wins; only clear when session agrees too.
       setNp(prev => ({ ...(prev ?? {}), is_playing: false, updated_at: new Date().toISOString() }))
       setMoment(null)
-      likedTrackRef.current = null
-      setLikedState('unknown')
       setPaused(false)
     }
     setState('ready')
@@ -416,7 +351,9 @@ export function useNowPlaying() {
     busyRef.current = true
     setSyncing(true)
     try {
+      const sessionSync = playbackSession.syncFromLive()
       const r = await readLivePlayback()
+      await sessionSync
       if (onRef.current)
         applyLive(r)
     }
@@ -430,24 +367,19 @@ export function useNowPlaying() {
   const handleControlFailure = (r: Exclude<PlayerCommandOutcome, { ok: true }>) => {
     if (r.reason === 'no-capability') {
       // The 403-probe verdict (D5): this session can't control playback.
-      setTier('fallback')
-      rememberSpotifyTransportProbe('no-capability')
+      playbackSession.recordControlFailure(r)
       flashNote('이 계정/기기에선 재생 제어를 사용할 수 없어요')
       return
     }
     if (r.reason === 'token') {
-      setTier('fallback')
-      if (r.httpStatus === 502) {
-        setReconnect(true)
-        writeReconnectFlag(true)
-      }
+      playbackSession.recordControlFailure(r)
       return
     }
     flashNote('제어에 실패했어요. 잠시 후 다시 시도해 주세요')
   }
 
   const playPause = async () => {
-    if (controlBusyRef.current)
+    if (controlBusyRef.current || modeBusyRef.current)
       return
     controlBusyRef.current = true
     try {
@@ -482,7 +414,7 @@ export function useNowPlaying() {
   }
 
   const seek = async (ms: number) => {
-    if (controlBusyRef.current)
+    if (controlBusyRef.current || modeBusyRef.current)
       return
     controlBusyRef.current = true
     try {
@@ -511,7 +443,7 @@ export function useNowPlaying() {
   }
 
   const skip = async (kind: 'next' | 'previous') => {
-    if (controlBusyRef.current)
+    if (controlBusyRef.current || modeBusyRef.current)
       return
     controlBusyRef.current = true
     try {
@@ -542,77 +474,28 @@ export function useNowPlaying() {
    * through `rememberSpotifyTransportProbe` would hide play/pause because a speaker
    * has no volume API. `sendPlaybackMode` separates the two; this just honors it.
    */
-  const setMode = async (cmd: { kind: 'shuffle', on: boolean } | { kind: 'repeat', mode: RepeatMode } | { kind: 'volume', percent: number }) => {
-    if (controlBusyRef.current)
+  const setMode = async (cmd: PlaybackModeCommand) => {
+    if (controlBusyRef.current || modeBusyRef.current)
       return
-    controlBusyRef.current = true
-    // Optimistic: the modes have no confirmation read of their own — the next
-    // one-shot (↻, a seek confirm, a track change) reconciles them for free.
-    setMoment((m) => {
-      if (!m)
-        return m
-      if (cmd.kind === 'shuffle')
-        return { ...m, shuffle: cmd.on }
-      if (cmd.kind === 'repeat')
-        return { ...m, repeat: cmd.mode }
-      return { ...m, volumePercent: cmd.percent }
-    })
+    modeBusyRef.current = true
     try {
-      const r = await sendPlaybackMode(cmd)
-      if (!onRef.current || r.ok)
+      const r = await playbackSession.setMode(cmd)
+      if (!onRef.current || !r || r.ok)
         return
-      if (r.reason === 'unsupported-on-device') {
+      if (r.reason === 'unsupported-on-device')
         flashNote('이 기기는 볼륨 조절을 지원하지 않아요')
-        // Roll the slider back — leaving it moved would claim a change that never happened.
-        setMoment(m => (m ? { ...m, volumePercent: null } : m))
-        return
-      }
-      if (r.reason === 'no-capability') {
-        rememberSpotifyTransportProbe('no-capability')
-        setTier('fallback')
-        return
-      }
-      flashNote('설정을 바꾸지 못했어요. 잠시 후 다시 시도해 주세요')
-      void sync()
+      else if (r.reason !== 'no-capability')
+        flashNote('설정을 바꾸지 못했어요. 잠시 후 다시 시도해 주세요')
     }
     finally {
-      controlBusyRef.current = false
-      // BUG-22: unlike playPause/seek/skip, setMode dispatches no confirmation
-      // read of its own — nothing else replays a session update the
-      // convergence effect deferred while this call was in flight. Bump so
-      // that effect re-checks the (already-current) session state now.
-      setControlGen(g => g + 1)
+      modeBusyRef.current = false
     }
   }
 
   const toggleLiked = async () => {
-    const trackId = moment?.trackId
-    if (!trackId || libraryBusyRef.current || (likedState !== 'liked' && likedState !== 'unliked'))
-      return
-    const before = likedState
-    const nextLiked = likedState !== 'liked'
-    libraryBusyRef.current = true
-    setLikedState(nextLiked ? 'liked' : 'unliked')
-    try {
-      const r = await setTrackLiked(trackId, nextLiked)
-      if (!onRef.current || likedTrackRef.current !== trackId)
-        return
-      if (r.ok) {
-        rememberSpotifyLibraryProbe('available')
-        return
-      }
-      if (r.reason === 'library-scope-missing') {
-        setLikedState('scope-missing')
-        rememberSpotifyLibraryProbe('scope-missing')
-        return
-      }
-      // Optimistic rollback for token/network/provider failures.
-      setLikedState(before)
+    const r = await playbackSession.toggleLiked()
+    if (onRef.current && r && !r.ok && r.reason !== 'library-scope-missing')
       flashNote('좋아요 변경에 실패했어요. 잠시 후 다시 시도해 주세요')
-    }
-    finally {
-      libraryBusyRef.current = false
-    }
   }
 
   useEffect(() => {
@@ -630,11 +513,9 @@ export function useNowPlaying() {
           setState(s => (s === 'loading' ? 'error' : s))
       })
     // FEAT-nowplaying-live-sync: one-shot live read on entry (never polled).
-    void sync()
-    // Step 3b: mirror `PlaybackPanel`'s own mount trigger so this card also
-    // works on pages where no Playback Bucket panel is mounted to have
-    // already kicked off `playbackSession`'s first live read.
-    void playbackSession.syncFromLive().finally(() => {
+    // Step 3b: sync() starts the session adoption and this card's richer live
+    // projection together; readLivePlayback's single-flight makes them one GET.
+    void sync().finally(() => {
       if (onRef.current)
         setSessionReady(true)
     })
@@ -643,24 +524,7 @@ export function useNowPlaying() {
     // this adds no extra request. 502 ⇒ the stored grant is broken (revoked /
     // invalid_grant) → inline reconnect line; 404 after a same-session 502
     // keeps it up via the sessionStorage flag.
-    void getStreamingToken().then((r) => {
-      if (!onRef.current)
-        return
-      if (r.ok) {
-        setTier('full')
-        setReconnect(false)
-        writeReconnectFlag(false)
-        return
-      }
-      setTier('fallback')
-      if (r.httpStatus === 502) {
-        setReconnect(true)
-        writeReconnectFlag(true)
-      }
-      else if (r.status === 'disconnected' && readReconnectFlag()) {
-        setReconnect(true)
-      }
-    })
+    void playbackSession.resolveCapability()
     const onPlaybackChanged = () => {
       // Since OQ4 (2026-08-03) every successful transport command dispatches this,
       // including the ones this card issues itself — `playPause`/`seek`/`skip`
@@ -697,12 +561,10 @@ export function useNowPlaying() {
   /**
    * Step 3b — converge track identity + anchor from `playbackSession`.
    *
-   * Additive, not a replacement for this card's own reads: `sync`/
-   * `onPlaybackChanged`/`skip` above are unchanged and stay the source for
-   * everything `session.ts` has no equivalent for — tier/mode/like/device/
-   * reconnect, the RFC's own non-goal. This effect only ever writes
-   * `trackId`/`anchor`/`durationMs`/`paused`, seeding a brand-new `moment`
-   * with the rest left for this card's own next read to fill in.
+   * The card's reads still project rich display metadata (`np`, artists,
+   * album and cover). Session-owned capability/mode/like/device/reconnect
+   * axes come straight from `sessionState`; this effect only projects track
+   * identity/anchor/duration/paused into the card's rendering model.
    *
    * `np` (title/artist/cover) is seeded too, minimally, off the queue row or
    * `external` — the render gate below is `np.is_playing && np.track`, not
@@ -727,14 +589,12 @@ export function useNowPlaying() {
    * `skip` specifically: this card's own confirm read is already in flight
    * regardless and supersedes it a moment later.
    *
-   * `setMode` (shuffle/repeat/volume) is the one control call that claim does
-   * NOT cover (BUG-22) — it dispatches no `MYBLOG_PLAYBACK_CHANGED` and has no
-   * confirmation read of its own, so a session update deferred during a
-   * `setMode` call had nothing to ever replay it. `controlGen` closes that:
-   * bumped only in `setMode`'s `finally`, it re-runs this effect once that
-   * call's busy window closes, re-checking the (already-current, since
-   * `sessionState` is a live subscription) session state. `playPause`/`seek`/
-   * `skip` do not bump it — their existing confirm-read path is unchanged.
+   * BUG-22 no longer needs a replay counter: `setMode` now writes through the
+   * session and deliberately does not enter this card's local control-busy
+   * window. Its optimistic mode write therefore emits directly, and any track
+   * update arriving during the request converges here immediately. The gate is
+   * still required for play/pause/seek/skip, whose optimistic identity/anchor
+   * writes remain local to this card.
    */
   useEffect(() => {
     if (!sessionReady || controlBusyRef.current)
@@ -751,8 +611,6 @@ export function useNowPlaying() {
     if (!trackId) {
       setMoment(null)
       setNp(prev => (prev ? { ...prev, is_playing: false, updated_at: new Date().toISOString() } : prev))
-      likedTrackRef.current = null
-      setLikedState('unknown')
       setPaused(false)
       return
     }
@@ -766,9 +624,6 @@ export function useNowPlaying() {
         artists: [],
         albumSpotifyId: null,
         deviceName: null,
-        shuffle: null,
-        repeat: null,
-        volumePercent: null,
       }))
     if (isNewTrack) {
       setNp({
@@ -781,8 +636,8 @@ export function useNowPlaying() {
       })
     }
     setPaused(!sessionState.playing)
-    loadLikedState(trackId)
-  }, [sessionReady, sessionState.currentItemId, sessionState.external, sessionState.anchor, sessionState.playing, sessionState.durationMs, controlGen])
+    playbackSession.loadLiked(trackId)
+  }, [sessionReady, sessionState.currentItemId, sessionState.external, sessionState.anchor, sessionState.playing, sessionState.durationMs])
 
   /**
    * OS media integration (member-player Step 5) — **rung 2 only**.
@@ -829,7 +684,7 @@ export function useNowPlaying() {
       publishPosition(moment.durationMs, estimateMs(moment.anchor))
   }, [np, moment, paused])
 
-  return { np, state, sync, syncing, moment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode }
+  return { np, state, sync, syncing, moment: renderedMoment, paused, tier, likedState, reconnect, note, playPause, seek, skip, toggleLiked, setMode }
 }
 
 /**
@@ -1360,9 +1215,10 @@ function DeviceGlyph() {
  */
 function DeviceHintLine({ name, onSwitched }: { name: string | null, onSwitched: () => void }) {
   const [open, setOpen] = useState(false)
-  const [devices, setDevices] = useState<PlaybackDevice[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const sessionState = useSyncExternalStore(playbackSession.subscribe, playbackSession.getSnapshot, playbackSession.getServerSnapshot)
+  const { devices, activeDeviceId } = sessionState
   const boxRef = useRef<HTMLDivElement>(null)
   useDismissable(open, () => setOpen(false), boxRef)
 
@@ -1373,22 +1229,19 @@ function DeviceHintLine({ name, onSwitched }: { name: string | null, onSwitched:
     }
     setOpen(true)
     setError(null)
-    setDevices(null)
-    const r = await listDevices()
+    const r = await playbackSession.refreshDevices()
     if (!r.ok) {
       setError(r.reason === 'no-capability' ?
         '기기 목록은 Spotify Premium 계정에서 볼 수 있어요.' :
         '기기 목록을 가져오지 못했어요.')
-      return
     }
-    setDevices(r.devices)
   }
 
   const pick = async (d: PlaybackDevice) => {
     if (busy)
       return
     setBusy(d.id)
-    const r = await transferPlayback(d.id)
+    const r = await playbackSession.transferTo(d.id)
     setBusy(null)
     if (!r.ok) {
       setError(r.reason === 'no-capability' ?
@@ -1408,7 +1261,7 @@ function DeviceHintLine({ name, onSwitched }: { name: string | null, onSwitched:
     if (busy)
       return
     setBusy('in-page')
-    const r = await transferPlayback('', { raiseInPageFirst: true })
+    const r = await playbackSession.transferTo('', { raiseInPageFirst: true })
     setBusy(null)
     if (!r.ok) {
       setError(r.reason === 'no-capability' ?
@@ -1459,7 +1312,7 @@ function DeviceHintLine({ name, onSwitched }: { name: string | null, onSwitched:
 	key={d.id}
 	label={d.isInPage ? '이 브라우저 (음질 제한)' : d.name}
 	sub={d.isInPage ? undefined : d.type}
-	active={d.isActive}
+	active={d.id === activeDeviceId}
 	busy={busy === d.id}
 	onClick={() => { void pick(d) }}
             />

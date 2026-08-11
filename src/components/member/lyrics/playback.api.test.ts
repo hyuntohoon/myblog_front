@@ -10,7 +10,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as playbackLib from '@lib/spotifyPlayback'
 import { readLivePlayback } from './playback.api'
 
-vi.mock('@lib/spotifyPlayback', () => ({ getStreamingToken: vi.fn() }))
+vi.mock('@lib/spotifyPlayback', () => ({
+  getStreamingToken: vi.fn(),
+  MYBLOG_PLAYBACK_CHANGED: 'myblog:playback-changed',
+}))
 
 const lib = vi.mocked(playbackLib)
 
@@ -42,11 +45,44 @@ afterEach(() => {
 })
 
 describe('readLivePlayback state discrimination', () => {
+  it('shares one in-flight player request across concurrent playback-change consumers, then reads again after settlement', async () => {
+    lib.getStreamingToken.mockResolvedValue({ ok: true, token: 't' } as never)
+    let resolveFetch!: (value: { status: number, ok: boolean, json: () => Promise<unknown> }) => void
+    const fetchMock = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveFetch = resolve
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const reads: Array<Promise<unknown>> = []
+    const consumers = [
+      () => reads.push(readLivePlayback()),
+      () => reads.push(readLivePlayback()),
+      () => reads.push(readLivePlayback()),
+    ]
+    for (const consume of consumers)
+      window.addEventListener(lib.MYBLOG_PLAYBACK_CHANGED, consume)
+
+    window.dispatchEvent(new CustomEvent(lib.MYBLOG_PLAYBACK_CHANGED))
+    expect(reads).toHaveLength(3)
+    expect(reads[0]).toBe(reads[1])
+    expect(reads[1]).toBe(reads[2])
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+
+    resolveFetch({ status: 204, ok: true, json: async () => ({}) })
+    await Promise.all(reads)
+    fetchMock.mockResolvedValueOnce({ status: 204, ok: true, json: async () => ({}) })
+    await readLivePlayback()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    for (const consume of consumers)
+      window.removeEventListener(lib.MYBLOG_PLAYBACK_CHANGED, consume)
+  })
+
   it('is_playing true with a track → playing', async () => {
-    respond(200, { is_playing: true, progress_ms: 42_000, item: track(), device: { name: 'iPhone' } })
+    respond(200, { is_playing: true, progress_ms: 42_000, item: track(), device: { id: 'phone-id', name: 'iPhone' } })
     const r = await readLivePlayback()
     expect(r.state).toBe('playing')
-    expect(r).toMatchObject({ trackId: 'trk1', progressMs: 42_000, durationMs: 210_000, deviceName: 'iPhone' })
+    expect(r).toMatchObject({ trackId: 'trk1', progressMs: 42_000, durationMs: 210_000, deviceName: 'iPhone', deviceId: 'phone-id' })
   })
 
   it('is_playing false with a track → paused, CARRYING the held position', async () => {
