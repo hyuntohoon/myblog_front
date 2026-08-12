@@ -202,8 +202,31 @@ localStorage.setItem(LS_REFRESH, json.refresh_token)
  * Call this when an authed request returns 401: it exchanges the stored
  * refresh_token for a new access_token. Returns the new token on success,
  * null on failure (caller should goLogin() in that case).
+ *
+ * A page can mount many widgets that each call `apiFetch` independently
+ * (buckets, reviews, member profile, lyrics, …). When the access token
+ * expires, they all 401 at once — without sharing one in-flight attempt,
+ * each fires its own POST to Cognito's token endpoint, and the first one
+ * to fail for any reason (throttling, a transient network blip) forces a
+ * full re-login even though a sibling call's refresh may have succeeded a
+ * moment later. Mirrors the `inflightMint` pattern in spotifyPlayback.ts.
  */
+let inflightRefresh: Promise<string | null> | null = null
+
 export async function refreshAccessToken(): Promise<string | null> {
+	if (inflightRefresh)
+		return inflightRefresh
+
+	inflightRefresh = refreshAccessTokenOnce()
+	try {
+		return await inflightRefresh
+	}
+	finally {
+		inflightRefresh = null
+	}
+}
+
+async function refreshAccessTokenOnce(): Promise<string | null> {
 	const refresh = localStorage.getItem(LS_REFRESH)
 	if (!refresh)
 		return null
