@@ -39,9 +39,8 @@ vi.mock('@lib/research', async importOriginal => ({
 	useResearchStatusMap: () => ({}),
 }))
 
-// ARCH-buckit-navigation-shell Step 3 — useIsMobileHost calls window.matchMedia
-// unconditionally; jsdom does not implement it (same gap noted in
-// AlbumDetail.dragTrack.test.tsx, the first test to hit it).
+// BucketBoard's received-state timer reads window.matchMedia; jsdom does not
+// implement it (same gap noted in AlbumDetail.dragTrack.test.tsx).
 window.matchMedia = window.matchMedia || ((query: string) => ({
 	matches: false,
 	media: query,
@@ -99,23 +98,16 @@ function storedBucket(id: string): BoardBucket {
 }
 
 function bucketRegion(name: string): HTMLElement {
-	const titleButton = screen.getByRole('button', { name })
-	const region = titleButton.parentElement?.parentElement
+	const region = screen.getByRole('region', { name: `${name} 버킷 내용` })
 	if (!(region instanceof HTMLElement))
 		throw new Error(`Missing rendered bucket region ${name}`)
 	return region
 }
 
-// ARCH-buckit-navigation-shell Step 1: only the selected bucket renders full
-// detail content; a nav row exists for every bucket regardless of selection.
-// Select via the nav row's stable `data-bucket-nav-row` id (not accessible
-// name — CrStatus renders extra status text inside the row, so name-based
-// queries are ambiguous/fragile here).
-function selectBucketNav(container: HTMLElement, bucketId: string): void {
-	const row = container.querySelector(`[data-bucket-nav-row="${bucketId}"]`)
-	if (!(row instanceof HTMLElement))
-		throw new Error(`Missing nav row for ${bucketId}`)
-	fireEvent.click(row)
+function openBucket(name: string): HTMLButtonElement {
+	const toggle = screen.getByRole('button', { name: `${name} 버킷 열기` })
+	fireEvent.click(toggle)
+	return screen.getByRole('button', { name: `${name} 버킷 닫기` })
 }
 
 function allItems(tree: BoardBucket[]): BoardAlbum[] {
@@ -128,6 +120,7 @@ beforeEach(() => {
 	bucketStore.clear()
 	vi.clearAllMocks()
 	vi.mocked(api.listBuckets).mockResolvedValue([])
+	vi.mocked(api.addBucketItem).mockResolvedValue({ item: null, conflict: true })
 	vi.mocked(api.reorderItems).mockResolvedValue()
 	vi.mocked(spotifyApi.listRecentlyListened).mockResolvedValue({
 		items: [{
@@ -157,10 +150,9 @@ describe('bucketBoard optimistic album copy', () => {
 			bucket('bucket-b', 'B'),
 		])
 
-		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
 
-		// Step 1: bucket A (first manual top-level bucket) auto-selects on load,
-		// so its detail pane is already open — no explicit selection needed yet.
+		openBucket('A')
 		const recentTile = await screen.findByTitle(TILE_TITLE)
 		fireEvent.click(within(recentTile).getByRole('button', { name: '앨범 동작' }))
 		fireEvent.click(within(screen.getByRole('dialog', { name: ALBUM_TITLE })).getByRole('button', { name: '버킷에 추가' }))
@@ -179,15 +171,13 @@ describe('bucketBoard optimistic album copy', () => {
 
 		await waitFor(() => expect(storedBucket('bucket-b').albums.map(a => a.itemId)).toEqual([tempId]))
 		expect(storedBucket('bucket-a').albums).toHaveLength(0)
-		// The move only changed the store; A's detail pane is still open. Switch to
-		// B to confirm the moved tile is actually rendered there (not just present
-		// in the store), then switch back to confirm A's detail no longer leaks a
-		// tile it no longer owns — Step 1's own required "switching does not leak
-		// a previous bucket's DOM state" verification.
-		selectBucketNav(container, 'bucket-b')
+		// Each bucket owns its content inline. Opening B leaves A open, and each
+		// region reflects only its own current membership.
+		openBucket('B')
 		expect(within(bucketRegion('B')).getByTitle(TILE_TITLE)).toBeInTheDocument()
-		selectBucketNav(container, 'bucket-a')
 		expect(within(bucketRegion('A')).queryByTitle(TILE_TITLE)).not.toBeInTheDocument()
+		expect(screen.getByRole('button', { name: 'A 버킷 닫기' })).toHaveAttribute('aria-expanded', 'true')
+		expect(screen.getByRole('button', { name: 'B 버킷 닫기' })).toHaveAttribute('aria-expanded', 'true')
 
 		await act(async () => {
 			resolveAdd({ item: album('real-item-1'), conflict: false })
@@ -199,10 +189,150 @@ describe('bucketBoard optimistic album copy', () => {
 		await waitFor(() => expect(storedBucket('bucket-b').albums.map(a => a.itemId)).toEqual(['real-item-1']))
 		expect(storedBucket('bucket-a').albums).toHaveLength(0)
 		expect(allItems(bucketStore.getTree()).some(a => a.itemId.startsWith('temp:'))).toBe(false)
-		selectBucketNav(container, 'bucket-b')
 		expect(within(bucketRegion('B')).getByTitle(TILE_TITLE)).toBeInTheDocument()
-		selectBucketNav(container, 'bucket-a')
 		expect(within(bucketRegion('A')).queryByTitle(TILE_TITLE)).not.toBeInTheDocument()
+	})
+})
+
+describe('bucketBoard inline disclosure ownership', () => {
+	it('starts closed, keeps siblings independently open, and never writes bucket URL/history state', async () => {
+		bucketStore.setTree([bucket('bucket-a', 'A'), bucket('bucket-b', 'B')])
+		const pushState = vi.spyOn(history, 'pushState')
+		const replaceState = vi.spyOn(history, 'replaceState')
+		const before = {
+			pathname: location.pathname,
+			search: location.search,
+			hash: location.hash,
+			length: history.length,
+		}
+
+		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		expect(screen.getByRole('button', { name: 'A 버킷 열기' })).toHaveAttribute('aria-expanded', 'false')
+		expect(screen.getByRole('button', { name: 'B 버킷 열기' })).toHaveAttribute('aria-expanded', 'false')
+		expect(container.querySelector('[aria-selected]')).toBeNull()
+		expect(container.querySelector('aside[aria-label="버킷 탐색"]')).toBeNull()
+
+		openBucket('A')
+		openBucket('B')
+		fireEvent.click(screen.getByRole('button', { name: 'A 버킷 닫기' }))
+
+		expect(screen.getByRole('button', { name: 'A 버킷 열기' })).toHaveAttribute('aria-expanded', 'false')
+		expect(screen.getByRole('button', { name: 'B 버킷 닫기' })).toHaveAttribute('aria-expanded', 'true')
+		expect(pushState).not.toHaveBeenCalled()
+		expect(replaceState).not.toHaveBeenCalled()
+		expect({ pathname: location.pathname, search: location.search, hash: location.hash, length: history.length }).toEqual(before)
+	})
+
+	it('hides descendants with a closed parent without clearing their open bits', async () => {
+		const parent = bucket('parent', 'Parent')
+		parent.children = [bucket('child', 'Child')]
+		bucketStore.setTree([parent])
+
+		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		openBucket('Parent')
+		openBucket('Child')
+		fireEvent.click(screen.getByRole('button', { name: 'Parent 버킷 닫기' }))
+
+		const childNode = container.querySelector('[data-bucket-inline-node="child"]')
+		expect(childNode?.querySelector('.bb-bucket-object')).toHaveAttribute('aria-expanded', 'true')
+		expect(screen.queryByRole('button', { name: 'Child 버킷 닫기' })).toBeNull()
+
+		openBucket('Parent')
+		expect(screen.getByRole('button', { name: 'Child 버킷 닫기' })).toHaveAttribute('aria-expanded', 'true')
+		expect(screen.getByRole('region', { name: 'Child 버킷 내용' })).toBeVisible()
+	})
+
+	it('keeps the complete long mixed-language name in disclosure semantics and DOM text', async () => {
+		const name = '2026 다시 듣기 Revisit Notes 모음 Albums that reward another patient listen'
+		bucketStore.setTree([bucket('long-name', name)])
+
+		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		const toggle = screen.getByRole('button', { name: `${name} 버킷 열기` })
+		expect(toggle).toHaveAttribute('aria-controls', 'bucket-inline-region-long-name')
+		expect(container.querySelector('.bb-bucket-label-text')).toHaveTextContent(name)
+		expect(container.querySelectorAll('img[alt=""]')).toHaveLength(2)
+	})
+
+	it('toggles the owning disclosure with Enter and Space', async () => {
+		bucketStore.setTree([bucket('keyboard', 'Keyboard')])
+
+		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		const closed = screen.getByRole('button', { name: 'Keyboard 버킷 열기' })
+		fireEvent.keyDown(closed, { key: 'Enter' })
+		const opened = screen.getByRole('button', { name: 'Keyboard 버킷 닫기' })
+		expect(opened).toHaveAttribute('aria-expanded', 'true')
+
+		fireEvent.keyDown(opened, { key: ' ' })
+		expect(screen.getByRole('button', { name: 'Keyboard 버킷 열기' })).toHaveAttribute('aria-expanded', 'false')
+	})
+
+	it('keeps valid, rejected, and received DnD feedback distinct without opening the target', async () => {
+		const general = bucket('general', 'General target')
+		const artist = bucket('artist', 'Artist target')
+		artist.type = 'artist'
+		bucketStore.setTree([general, artist])
+		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		vi.useFakeTimers()
+		const generalToggle = screen.getByRole('button', { name: 'General target 버킷 열기' })
+		const generalGroup = generalToggle.closest('.bb-bucket-object-group')
+
+		act(() => {
+			window.dispatchEvent(new CustomEvent(PB_DND_START_EVENT, {
+				detail: { ref: { entity: 'album', albumId: ALBUM_ID }, origin: { kind: 'external', copies: true } },
+			}))
+		})
+		fireEvent.dragOver(generalToggle)
+		expect(generalGroup).toHaveAttribute('data-state', 'valid')
+		await act(async () => {
+			fireEvent.drop(generalToggle)
+			await Promise.resolve()
+		})
+		expect(generalGroup).toHaveAttribute('data-state', 'received')
+		expect(generalToggle).toHaveAttribute('aria-expanded', 'false')
+		expect(screen.getByText('General target에 담았어요')).toBeInTheDocument()
+
+		act(() => {
+			window.dispatchEvent(new CustomEvent(PB_DND_START_EVENT, {
+				detail: { ref: null, origin: { kind: 'external', itemType: 'snapshot' } },
+			}))
+		})
+		const artistToggle = screen.getByRole('button', { name: 'Artist target 버킷 열기' })
+		fireEvent.dragOver(artistToggle)
+		const artistGroup = container.querySelector('[data-bucket-inline-node="artist"] .bb-bucket-object-group')
+		expect(artistGroup).toHaveAttribute('data-state', 'rejected')
+		expect(artistGroup).toHaveAttribute('data-dropreject', 'true')
+		expect(screen.getByText('아티스트 · 앨범 · 트랙만 받아요')).toBeInTheDocument()
+		act(() => vi.runOnlyPendingTimers())
+		vi.useRealTimers()
+	})
+
+	it('keeps a rejected nested drop on the child instead of lighting its accepting parent', async () => {
+		const parent = bucket('general-parent', 'General parent')
+		const child = bucket('artist-child', 'Artist child')
+		child.type = 'artist'
+		parent.children = [child]
+		bucketStore.setTree([parent])
+		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		openBucket('General parent')
+		openBucket('Artist child')
+
+		act(() => {
+			window.dispatchEvent(new CustomEvent(PB_DND_START_EVENT, {
+				detail: { ref: null, origin: { kind: 'external', itemType: 'snapshot' } },
+			}))
+		})
+		fireEvent.dragOver(screen.getByRole('button', { name: 'Artist child 버킷 닫기' }))
+
+		const parentGroup = container.querySelector('[data-bucket-inline-node="general-parent"] > .bb-bucket-object-group')
+		const childGroup = container.querySelector('[data-bucket-inline-node="artist-child"] > .bb-bucket-object-group')
+		expect(childGroup).toHaveAttribute('data-state', 'rejected')
+		expect(parentGroup).toHaveAttribute('data-state', 'open')
 	})
 })
 
