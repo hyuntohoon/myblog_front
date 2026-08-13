@@ -38,6 +38,7 @@ import { playbackSession } from '@lib/playback/session'
 import type { ResearchStatus } from '@lib/research'
 import { RESEARCH_STATUS_LABEL, researchStatusColor, useResearchStatusMap } from '@lib/research'
 import { useDismissable } from '@lib/useDismissable'
+import { useIsMobileHost } from '@lib/useIsMobileHost'
 import { BucketPickerSheet } from './BucketPickerSheet'
 import { BUCKETS_KEY } from '@lib/member'
 import AddAlbumModal from './AddAlbumModal'
@@ -48,7 +49,7 @@ import { ENT_ALBUM_STATE_CHANGED, notifyAlbumStateChanged } from '@lib/entityEve
 import type { AlbumStateChangedDetail } from '@lib/entityEvents'
 import { fetchMyAlbumStates, putMyAlbumState } from '../album/reviews.api'
 import { listRecentlyListened } from './spotify.api'
-import type { SpotifyLibraryAlbumState } from './spotify.api'
+import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
 import { useSpotifyLibrary } from './useSpotifyLibrary'
 import { AlbumArt, SectionTitle } from './ui'
 import { AlbumCard } from '@components/shared/AlbumCard'
@@ -890,8 +891,8 @@ interface Ops {
   toggleMark: (albumId: string) => void
 }
 
-// Props shared by every independently expandable inline bucket node.
-// Bundled so the recursive inline list can forward them as one value.
+// Props shared by the selected detail shell and every lightweight nav-tree row.
+// Bundled so the recursive nav list can forward them as one value.
 interface SharedProps {
   ops: Ops
   onOpen: (t: DetailTarget) => void
@@ -929,8 +930,6 @@ interface SharedProps {
   setDraggingId: (id: string | null) => void
   draggingBucket: string | null
   setDraggingBucket: (id: string | null) => void
-  settlingBucket: string | null
-  settleBucketDrag: (id: string) => void
   setDragKind: (k: DragKind) => void
   dragKind: DragKind
   // Per-bucket sort/group/filter (FEAT-bucket-organize). Keyed by bucket id; a
@@ -955,31 +954,18 @@ interface AlbumSheet { album: BoardAlbum, bucketId: string, copySource: boolean,
 
 type BucketDropShared = Pick<SharedProps, 'dropTarget' | 'setDropTarget' | 'dropReject' | 'setDropReject'>
 
-// One bucket-drop surface contract, shared by the object and its open content.
-// The acceptance/routing decisions remain entirely in boardDnd.
+// One bucket-drop surface contract, shared by the compact nav rows and the open
+// detail shell. The acceptance/routing decisions remain entirely in boardDnd.
 function useBucketDropTarget(bucket: BoardBucket, ops: Ops, shared: BucketDropShared) {
   const { dropTarget, setDropTarget, dropReject, setDropReject } = shared
-  const [received, setReceived] = useState(false)
-  const [receivingLid, setReceivingLid] = useState(false)
-  const receivedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lidTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hot = dropTarget === bucket.id
   const rejectReason = dropReject?.id === bucket.id ? dropReject.reason : null
-  const acceptsDrop = (it: ReturnType<typeof toDndItem>) =>
-    (it.kind === 'member' && canAcceptAlbumDrag(bucket, it)) ||
-    (it.kind === 'bucket' && canAcceptBucketDrag(ops.tree, bucket, it))
-  useEffect(() => () => {
-    if (receivedTimer.current)
-      clearTimeout(receivedTimer.current)
-    if (lidTimer.current)
-      clearTimeout(lidTimer.current)
-  }, [])
   const onDragOver = (e: React.DragEvent) => {
     const it = dnd && toDndItem(dnd)
     if (!it)
       return
     // Acceptance rules live in @lib/boardDnd (pure, unit-tested).
-    if (acceptsDrop(it)) {
+    if ((it.kind === 'member' && canAcceptAlbumDrag(bucket, it)) || (it.kind === 'bucket' && canAcceptBucketDrag(ops.tree, bucket, it))) {
       e.preventDefault()
       e.stopPropagation()
       setDropTarget(bucket.id)
@@ -996,10 +982,6 @@ function useBucketDropTarget(bucket: BoardBucket, ops: Ops, shared: BucketDropSh
       if (label)
         setDropReject({ id: bucket.id, reason: `${label}만 받아요` })
     }
-    // Inline descendants sit inside their parent's content drop surface. A child
-    // rejection belongs to that child; never let it bubble and paint/route an
-    // accepting ancestor for the same pointer position.
-    e.stopPropagation()
   }
   const onDragLeave = (e: React.DragEvent) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -1008,52 +990,38 @@ function useBucketDropTarget(bucket: BoardBucket, ops: Ops, shared: BucketDropSh
     }
   }
   const onDrop = (e: React.DragEvent) => {
-    const it = dnd && toDndItem(dnd)
-    if (!it || !acceptsDrop(it)) {
-      e.stopPropagation()
-      setDropTarget(t => (t === bucket.id ? null : t))
-      setDropReject(r => (r?.id === bucket.id ? null : r))
-      return
-    }
     e.preventDefault()
     e.stopPropagation()
+    const it = dnd && toDndItem(dnd)
     setDropTarget(null)
     setDropReject(null)
+    if (!it)
+      return
     // Route via the shared helper so every board surface and PB_BOARD_DROP apply
     // identical library/Artist/General/bucket-nesting semantics.
-    const routed = routeAlbumDrop(bucket, it, ops)
-    // A same-bucket member drop is the unchanged no-op path; every other accepted
-    // route receives a distinct one-shot acknowledgement without opening the node.
-    if (routed) {
-      setReceived(true)
-      if (receivedTimer.current)
-        clearTimeout(receivedTimer.current)
-      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-      setReceivingLid(!reduced)
-      if (lidTimer.current)
-        clearTimeout(lidTimer.current)
-      if (!reduced) {
-        lidTimer.current = setTimeout(() => {
-          setReceivingLid(false)
-          lidTimer.current = null
-        }, 140)
-      }
-      receivedTimer.current = setTimeout(() => {
-        setReceived(false)
-        setReceivingLid(false)
-        receivedTimer.current = null
-      }, reduced ? 600 : 780)
-    }
+    routeAlbumDrop(bucket, it, ops)
     dnd = null
   }
-  return { onDragOver, onDragLeave, onDrop, hot, rejectReason, received, receivingLid }
+  return { onDragOver, onDragLeave, onDrop, hot, rejectReason }
 }
 
-type BucketInlineVariant = 'manual' | 'system'
-type InlineContentProps = SharedProps & { bucket: BoardBucket, depth: number, variant: BucketInlineVariant }
+type BucketDetailVariant = 'manual' | 'system' | 'smart'
+type DetailProps = SharedProps & { bucket: BoardBucket, depth: number, variant: BucketDetailVariant }
 
-function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnType<typeof useBucketDropTarget> }) {
-  const { bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, setDropTarget, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, settleBucketDrag, setDragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds, dropSurface } = props
+function BucketDetailShell(props: DetailProps) {
+  const dropSurface = useBucketDropTarget(props.bucket, props.ops, props)
+  // Step 1 deliberately dispatches both reachable variants to the same body.
+  // `smart` is typed for the future virtual-collection RFC but is unreachable now.
+  const variants: Record<BucketDetailVariant, () => React.ReactNode> = {
+    manual: () => <BucketDetailBody {...props} dropSurface={dropSurface} />,
+    system: () => <BucketDetailBody {...props} dropSurface={dropSurface} />,
+    smart: () => null,
+  }
+  return variants[props.variant]()
+}
+
+function BucketDetailBody(props: DetailProps & { dropSurface: ReturnType<typeof useBucketDropTarget> }) {
+  const { bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, setDropTarget, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds, dropSurface } = props
   const { onDragOver, onDragLeave, onDrop, hot, rejectReason } = dropSurface
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
@@ -1179,13 +1147,8 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
 	onDrop={onDrop}
 	style={{
         background: depth ? 'color-mix(in srgb, var(--color-paper) 55%, var(--color-bg))' : 'var(--color-paper)',
-        borderWidth: 1,
-        borderStyle: 'solid',
-        borderTopColor: hot ? 'var(--color-accent)' : 'var(--color-border)',
-        borderRightColor: hot ? 'var(--color-accent)' : 'var(--color-border)',
-        borderBottomColor: hot ? 'var(--color-accent)' : 'var(--color-border)',
-        borderLeftWidth: 3,
-        borderLeftColor: accent,
+        border: hot ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+        borderLeft: `3px solid ${accent}`,
         borderRadius: 8,
         padding: 14,
         boxShadow: hot ? '0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent)' : (depth ? 'none' : '0 1px 2px rgba(26,26,26,0.05)'),
@@ -1206,7 +1169,6 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
         }}
 	onDragEnd={() => {
           dnd = null
-          settleBucketDrag(bucket.id)
           setDraggingBucket(null)
           setDropTarget(null)
           setDropReject(null)
@@ -1682,118 +1644,96 @@ function BucketDropGap({ parentId, beforeId, ops, active }: { parentId: string |
   )
 }
 
-// ── recursive inline buckets ────────────────────────────────────────────────
-// Every stable bucket id owns one disclosure object and its own content subtree.
-// Expanded ids live in BucketBoard, so reorder/filter hide-show never resets them;
-// hiding a parent keeps descendant bits intact while making them non-interactive.
-interface BucketInlineNodeProps {
+// ── bucket nav tree — lightweight rows are the only recursive UI ─────────────
+interface BucketNavRowProps {
   bucket: BoardBucket
   depth: number
-  expandedIds: Set<string>
-  toggleExpanded: (bucketId: string) => void
+  selectedBucketId: string | null
+  onSelect: (bucketId: string) => void
   shared: SharedProps
 }
 
-function BucketInlineNode({ bucket, depth, expandedIds, toggleExpanded, shared }: BucketInlineNodeProps) {
-  const expanded = expandedIds.has(bucket.id)
+function BucketNavRow({ bucket, depth, selectedBucketId, onSelect, shared }: BucketNavRowProps) {
+  const [expanded, setExpanded] = useState(true)
+  const selected = selectedBucketId === bucket.id
   const accent = crColor(bucket, depth)
-  const regionId = `bucket-inline-region-${bucket.id}`
-  const feedbackId = `bucket-inline-feedback-${bucket.id}`
-  const dropSurface = useBucketDropTarget(bucket, shared.ops, shared)
-  const dragging = shared.draggingBucket === bucket.id
-  const settling = shared.settlingBucket === bucket.id
-  const suppressToggle = useRef(false)
-  const feedback = dropSurface.rejectReason ? dropSurface.rejectReason : (dropSurface.received ? `${bucket.name}에 담았어요` : '')
-  const state = dragging ? 'dragging' : (settling ? 'drag-settling' : (dropSurface.rejectReason ? 'rejected' : (dropSurface.hot ? 'valid' : (dropSurface.received ? 'received' : (expanded ? 'open' : 'closed')))))
-
+  const { onDragOver, onDragLeave, onDrop, hot, rejectReason } = useBucketDropTarget(bucket, shared.ops, shared)
   return (
-    <article className="bb-inline-node" data-bucket-inline-node={bucket.id} data-depth={depth}>
-      <div className="bb-bucket-object-group" data-state={state} data-receiving-lid={dropSurface.receivingLid ? 'true' : undefined} data-dropreject={dropSurface.rejectReason ? 'true' : undefined}>
-        <button
-	type="button"
-	className="bb-bucket-object"
-	aria-label={`${bucket.name} 버킷 ${expanded ? '닫기' : '열기'}`}
-	aria-expanded={expanded}
-	aria-controls={regionId}
-	aria-describedby={feedback ? feedbackId : undefined}
-	title={dropSurface.rejectReason ?? bucket.name}
+    <div>
+      <div
+	role="treeitem"
+	tabIndex={0}
+	aria-level={depth + 1}
+	aria-selected={selected}
+	aria-expanded={bucket.children.length > 0 ? expanded : undefined}
+	data-bucket-nav-row={bucket.id}
+	data-dropreject={rejectReason ? 'true' : undefined}
+	title={rejectReason ?? bucket.name}
 	draggable
-	onClick={(e) => {
-            if (suppressToggle.current) {
-              e.preventDefault()
-              return
-            }
-            toggleExpanded(bucket.id)
-          }}
+	onClick={() => onSelect(bucket.id)}
 	onKeyDown={(e) => {
-            if (e.key !== 'Enter' && e.key !== ' ')
-              return
+          if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
-            if (!suppressToggle.current)
-              toggleExpanded(bucket.id)
-          }}
+            onSelect(bucket.id)
+          }
+        }}
 	onDragStart={(e) => {
-            suppressToggle.current = true
-            dnd = bucketDrag(bucket.id, bucket.name)
-            e.dataTransfer.effectAllowed = 'move'
-            shared.setDraggingBucket(bucket.id)
-            shared.setDragKind('bucket')
-          }}
+          dnd = bucketDrag(bucket.id, bucket.name)
+          e.dataTransfer.effectAllowed = 'move'
+          shared.setDraggingBucket(bucket.id)
+          shared.setDragKind('bucket')
+        }}
 	onDragEnd={() => {
-            dnd = null
-            shared.settleBucketDrag(bucket.id)
-            shared.setDraggingBucket(null)
-            shared.setDropTarget(null)
-            shared.setDropReject(null)
-            shared.setDragKind(null)
-            setTimeout(() => {
-              suppressToggle.current = false
-            }, 0)
-          }}
-	onDragOver={dropSurface.onDragOver}
-	onDragLeave={dropSurface.onDragLeave}
-	onDrop={dropSurface.onDrop}
-        >
-          <span className="bb-bucket-art" aria-hidden="true">
-            <img className="bb-bucket-art-body" src="/buckit/buckit-bucket-base-canonical.png" alt="" draggable="false" />
-            <img className="bb-bucket-art-lid" src="/buckit/buckit-bucket-base-canonical.png" alt="" draggable="false" />
-          </span>
-          <span className="bb-bucket-accent" style={{ background: accent }} aria-hidden="true" />
-          <span className="bb-bucket-label" aria-hidden="true">
-            <span className="bb-bucket-label-text">{bucket.name}</span>
-          </span>
-        </button>
-        <span id={feedbackId} className="bb-bucket-feedback mono" role="status" aria-live="polite">
-          {feedback}
-        </span>
+          dnd = null
+          shared.setDraggingBucket(null)
+          shared.setDropTarget(null)
+          shared.setDropReject(null)
+          shared.setDragKind(null)
+        }}
+	onDragOver={onDragOver}
+	onDragLeave={onDragLeave}
+	onDrop={onDrop}
+	style={{ display: 'flex', alignItems: 'center', gap: 7, minHeight: 36, padding: '6px 8px', border: hot ? '1px solid var(--color-accent)' : '1px solid transparent', borderRadius: 6, background: selected ? 'color-mix(in srgb, var(--color-accent) 8%, var(--color-paper))' : 'transparent', boxShadow: hot ? '0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'none', opacity: shared.draggingBucket === bucket.id ? 0.45 : (rejectReason ? 0.4 : 1), cursor: 'grab', transition: 'opacity 0.12s, box-shadow 0.12s, border-color 0.12s, background 0.12s' }}
+      >
+        {bucket.children.length > 0 ?
+          (
+              <button
+	type="button"
+	aria-label={`${bucket.name} ${expanded ? '접기' : '펼치기'}`}
+	onClick={(e) => {
+                  e.stopPropagation()
+                  setExpanded(v => !v)
+                }}
+	onDragStart={e => e.preventDefault()}
+	style={{ width: 18, height: 22, flex: '0 0 18px', display: 'grid', placeItems: 'center', padding: 0, border: 0, background: 'none', color: 'var(--color-faded)', cursor: 'pointer', fontSize: 10 }}
+              >
+                {expanded ? '▾' : '▸'}
+              </button>
+            ) :
+          <span aria-hidden="true" style={{ width: 18, flex: '0 0 18px' }} />}
+        <span aria-hidden="true" style={{ width: 9, height: 9, flex: '0 0 9px', borderRadius: 9, background: accent, border: '1px solid var(--color-border)' }} />
+        <span className="serif" style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 14, fontWeight: selected ? 600 : 400 }}>{bucket.name}</span>
+        <CrStatus b={bucket} />
       </div>
-
-      <div id={regionId} className="bb-bucket-inline-region" role="region" aria-label={`${bucket.name} 버킷 내용`} hidden={!expanded}>
-        <BucketInlineContent
-	bucket={bucket}
-	depth={depth}
-	variant={isSystemBucket(bucket) ? 'system' : 'manual'}
-	dropSurface={dropSurface}
-	{...shared}
-        />
-        {bucket.children.length > 0 && (
-          <div className="bb-bucket-children">
-            <BucketInlineList items={bucket.children} parentId={bucket.id} depth={depth + 1} expandedIds={expandedIds} toggleExpanded={toggleExpanded} shared={shared} />
-          </div>
-        )}
-      </div>
-    </article>
+      {bucket.children.length > 0 && (
+        <div role="group" style={{ display: expanded ? 'block' : 'none', paddingLeft: 15 }}>
+          <BucketNavList items={bucket.children} parentId={bucket.id} depth={depth + 1} selectedBucketId={selectedBucketId} onSelect={onSelect} shared={shared} />
+        </div>
+      )}
+    </div>
   )
 }
 
-function BucketInlineList({ items, parentId, depth, expandedIds, toggleExpanded, shared }: { items: BoardBucket[], parentId: string | null, depth: number, expandedIds: Set<string>, toggleExpanded: (bucketId: string) => void, shared: SharedProps }) {
+// Drop gaps remain mounted alongside every nav row, including inside collapsed
+// (display:none) groups, so expanding never rebuilds the native DnD surfaces.
+function BucketNavList({ items, parentId, depth, selectedBucketId, onSelect, shared }: { items: BoardBucket[], parentId: string | null, depth: number, selectedBucketId: string | null, onSelect: (bucketId: string) => void, shared: SharedProps }) {
   const active = shared.dragKind === 'bucket'
   return (
-    <div className="bb-inline-list" aria-label={depth === 0 ? '버킷 목록' : undefined}>
+    <div role={depth === 0 ? 'tree' : undefined} aria-label={depth === 0 ? '버킷 탐색' : undefined}>
       {items.map(b => (
         <div key={b.id}>
           <BucketDropGap parentId={parentId} beforeId={b.id} ops={shared.ops} active={active} />
-          <BucketInlineNode bucket={b} depth={depth} expandedIds={expandedIds} toggleExpanded={toggleExpanded} shared={shared} />
+          <BucketNavRow bucket={b} depth={depth} selectedBucketId={selectedBucketId} onSelect={onSelect} shared={shared} />
         </div>
       ))}
       <BucketDropGap parentId={parentId} beforeId={null} ops={shared.ops} active={active} />
@@ -1844,6 +1784,77 @@ export function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { t
         )}
       </aside>
     </div>
+  )
+}
+
+// ── bucket nav panel — the tree content shared by the desktop aside and the
+// mobile drawer (Step 3). Spotify-library section + the board's bucket tree,
+// unchanged from the original always-visible aside; only its container differs.
+function BucketNavPanel({ libBucket, libState, syncing, runLibrarySync, visibleTree, normalTree, boardType, selectedBucketId, onSelect, shared }: {
+  libBucket: BoardBucket | null
+  libState: SpotifyLibraryState | null
+  syncing: boolean
+  runLibrarySync: () => Promise<void>
+  visibleTree: BoardBucket[]
+  normalTree: BoardBucket[]
+  boardType: 'all' | 'general' | 'artist'
+  selectedBucketId: string | null
+  onSelect: (bucketId: string) => void
+  shared: SharedProps
+}) {
+  return (
+    <>
+      <div style={{ padding: '2px 6px 8px', borderBottom: '1px solid var(--color-border-soft)', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span className="meta" style={{ color: 'var(--color-spotify)' }}>Spotify 라이브러리</span>
+          <button type="button" className="chip" disabled={syncing} onClick={() => void runLibrarySync()} style={{ marginLeft: 'auto' }}>
+            {syncing ? '동기화 중…' : '동기화'}
+          </button>
+        </div>
+        {libState?.needs_reauth && (
+          <div className="mono" style={{ marginTop: 7, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: '#fff', background: 'var(--color-accent)' }}>Spotify 재인증 필요</div>
+        )}
+        {libState != null && libState.writes_enabled === false && (
+          <div className="mono" style={{ marginTop: 7, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: 'oklch(0.42 0.10 70)', background: 'oklch(0.95 0.04 80)' }}>검토 모드: Spotify에 실제 반영 안 됨</div>
+        )}
+        {libBucket ?
+          <BucketNavList items={[libBucket]} parentId={null} depth={0} selectedBucketId={selectedBucketId} onSelect={onSelect} shared={shared} /> :
+          <div className="mono" style={{ padding: '10px 8px 4px', fontSize: 10.5, lineHeight: 1.5, color: 'var(--color-faded)' }}>동기화를 누르면 라이브러리를 불러옵니다</div>}
+      </div>
+
+      <div className="meta" style={{ padding: '2px 8px 4px' }}>버킷</div>
+      {visibleTree.length > 0 && (
+        <BucketNavList items={visibleTree} parentId={null} depth={0} selectedBucketId={selectedBucketId} onSelect={onSelect} shared={shared} />
+      )}
+      {normalTree.length === 0 && (
+        <div className="mono" style={{ padding: '16px 8px', textAlign: 'center', fontSize: 11, color: 'var(--color-faded)' }}>버킷 없음</div>
+      )}
+      {normalTree.length > 0 && visibleTree.length === 0 && (
+        <div className="mono" style={{ padding: '16px 8px', textAlign: 'center', fontSize: 11, color: 'var(--color-faded)' }}>{boardType === 'artist' ? 'Artist 버킷이 없어요' : '해당 종류의 버킷이 없어요'}</div>
+      )}
+    </>
+  )
+}
+
+// ── mobile bucket nav drawer — ARCH-buckit-navigation-shell Step 3. Portals the
+// same BucketNavPanel content over the current screen; picking a bucket closes
+// the drawer via onSelect (wrapped by the caller) and the already-mounted detail
+// pane underneath updates in place — no full-screen swap (drawer-over-content,
+// per owner decision on Unresolved owner decision 2).
+function BucketNavDrawer({ onClose, panelProps }: { onClose: () => void, panelProps: Parameters<typeof BucketNavPanel>[0] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useDismissable(true, onClose, ref, { lockScroll: true })
+  return createPortal(
+    <div className="bnd-scrim" onClick={onClose} role="presentation">
+      <div ref={ref} className="bnd-drawer" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="버킷 탐색">
+        <div className="bnd-head">
+          <span className="serif" style={{ fontSize: 15, fontWeight: 500 }}>My Buckit</span>
+          <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기">✕</button>
+        </div>
+        <BucketNavPanel {...panelProps} />
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -1915,39 +1926,12 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   const [dropReject, setDropReject] = useState<{ id: string, reason: string } | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [draggingBucket, setDraggingBucket] = useState<string | null>(null)
-  const [settlingBucket, setSettlingBucket] = useState<string | null>(null)
-  const settlingBucketTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const draggingBucketRef = useRef<string | null>(null)
-  useEffect(() => {
-    draggingBucketRef.current = draggingBucket
-  }, [draggingBucket])
-  const settleBucketDrag = useCallback((id: string) => {
-    if (settlingBucketTimer.current)
-      clearTimeout(settlingBucketTimer.current)
-    setSettlingBucket(id)
-    settlingBucketTimer.current = setTimeout(() => {
-      setSettlingBucket(null)
-      settlingBucketTimer.current = null
-    }, 180)
-  }, [])
-  useEffect(() => () => {
-    if (settlingBucketTimer.current)
-      clearTimeout(settlingBucketTimer.current)
-  }, [])
   const [dragKind, setDragKind] = useState<DragKind>(null)
-  // FEAT-inline-bucket-object-expand Step 1 — disclosure state is in-memory only.
-  // A stable id Set lets several buckets stay open and survives reorder/filtering;
-  // it intentionally has no storage, URL, history, or API synchronization.
-  const [expandedBucketIds, setExpandedBucketIds] = useState<Set<string>>(() => new Set())
-  const toggleExpanded = useCallback((bucketId: string) => {
-    setExpandedBucketIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(bucketId))
-        next.delete(bucketId)
-      else next.add(bucketId)
-      return next
-    })
-  }, [])
+  const [selectedBucketId, setSelectedBucketId] = useState<string | null>(null)
+  // ARCH-buckit-navigation-shell Step 3 — no persistent nav column fits beside
+  // the detail pane at mobile widths; the nav becomes a drawer opened on demand.
+  const mobile = useIsMobileHost()
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false)
 
   // Auto-scroll the page while a drag is in flight and the pointer nears the top or
   // bottom edge of the viewport — otherwise you can't reach buckets off-screen mid-
@@ -1990,8 +1974,6 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   // both, a moved item would stay stuck at the 0.45 drag opacity.
   useEffect(() => {
     const reset = () => {
-      if (draggingBucketRef.current)
-        settleBucketDrag(draggingBucketRef.current)
       setDraggingId(null)
       setDraggingBucket(null)
       setDragKind(null)
@@ -2005,7 +1987,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
       document.removeEventListener('drop', reset)
       document.removeEventListener('dragend', reset)
     }
-  }, [settleBucketDrag])
+  }, [])
   const [trash, setTrash] = useState<TrashEntry[]>(() => {
     try {
       const s = localStorage.getItem(TRASH_KEY)
@@ -2175,6 +2157,14 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     () => (tree ?? []).filter(isManualAddTarget),
     [tree],
   )
+  // URL selection arrives in Step 2. Until then, retain a live selection and
+  // choose the first manual root (then the pinned library) on first load/deletion.
+  useEffect(() => {
+    if (tree && selectedBucketId && findBucket(tree, selectedBucketId))
+      return
+    setSelectedBucketId(normalTree[0]?.id ?? libBucket?.id ?? null)
+  }, [tree, normalTree, libBucket, selectedBucketId])
+
   // Every album id that shows a research dot (normal buckets — the library bucket
   // has no research). One batched GET /api/research/status poll keeps all the
   // cover dots live; covers fall back to the bucket-payload seed meanwhile. This
@@ -2344,8 +2334,6 @@ ids.push(a.albumId)
   // (so the document `drop` never fires) and a moved item's original node unmounts
   // before its own `dragend` — either of which would leave it stuck at 0.45.
   function endDrag() {
-    if (draggingBucketRef.current)
-      settleBucketDrag(draggingBucketRef.current)
     setDraggingId(null)
     setDraggingBucket(null)
     setDragKind(null)
@@ -2769,13 +2757,6 @@ ids.push(a.albumId)
     const t = clone(tree)
     removeBucketNode(t, id)
     setTree(t)
-    setExpandedBucketIds((prev) => {
-      if (!prev.has(id))
-        return prev
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
     setPendingBucketDelete(null)
     api.deleteBucket(id).catch(() => void refresh())
   }
@@ -2839,10 +2820,11 @@ ids.push(a.albumId)
     )
   }
 
-  // Props shared by every inline bucket node and its content.
-  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, dropReject, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, settlingBucket, settleBucketDrag, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
+  // Props shared by the selected detail and every nav row.
+  const shared: SharedProps = { ops, onOpen, ratings, libState: libAlbumMap, listenedAlbumIds, markedAlbumIds, dropTarget, setDropTarget, dropReject, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, setDragKind, dragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet: setAlbumSheet, openBucketSheet: setBucketSheet, newItemIds }
   // FEAT-my-buckit-artist Step 4: the tree narrowed by the board-level type filter.
   const visibleTree = pruneByType(normalTree, boardType)
+  const selectedBucket = tree && selectedBucketId ? findBucket(tree, selectedBucketId) : null
 
   return (
     <div>
@@ -2930,39 +2912,78 @@ ids.push(a.albumId)
         </div>
       )}
 
-      {tree != null && (
-        <main className="bb-inline-board" aria-label="인라인 버킷">
-          <section className="bb-spotify-library-section" aria-label="Spotify 라이브러리">
-            <div className="bb-inline-section-head">
-              <span className="meta" style={{ color: 'var(--color-spotify)' }}>Spotify 라이브러리</span>
-              <button type="button" className="chip" disabled={syncing} onClick={() => void runLibrarySync()}>
-                {syncing ? '동기화 중…' : '동기화'}
-              </button>
-            </div>
-            {libState?.needs_reauth && (
-              <div className="mono" style={{ marginBottom: 9, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: '#fff', background: 'var(--color-accent)' }}>Spotify 재인증 필요</div>
-            )}
-            {libState != null && libState.writes_enabled === false && (
-              <div className="mono" style={{ marginBottom: 9, padding: '6px 8px', borderRadius: 4, fontSize: 10.5, color: 'oklch(0.42 0.10 70)', background: 'oklch(0.95 0.04 80)' }}>검토 모드: Spotify에 실제 반영 안 됨</div>
-            )}
-            {libBucket ?
-              <BucketInlineList items={[libBucket]} parentId={null} depth={0} expandedIds={expandedBucketIds} toggleExpanded={toggleExpanded} shared={shared} /> :
-              <div className="mono" style={{ padding: '10px 8px 4px', fontSize: 10.5, lineHeight: 1.5, color: 'var(--color-faded)' }}>동기화를 누르면 라이브러리를 불러옵니다</div>}
-          </section>
+      {tree != null && mobile && (
+        <>
+          {/* ARCH-buckit-navigation-shell Step 3 — no room for a persistent nav
+              column beside the detail pane at mobile widths; a trigger bar opens
+              the nav as a drawer instead. The detail pane below is the SAME
+              element the desktop grid renders, unchanged. */}
+          <button
+	type="button"
+	className="btn"
+	aria-haspopup="dialog"
+	aria-expanded={navDrawerOpen}
+	onClick={() => setNavDrawerOpen(true)}
+	style={{ width: '100%', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+          >
+            <span className="serif" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              ☰
+              {' '}
+              {selectedBucket ? selectedBucket.name : '버킷 선택'}
+            </span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          <main aria-label="버킷 상세" style={{ minWidth: 0 }}>
+            {selectedBucket ?
+              <BucketDetailShell key={selectedBucket.id} bucket={selectedBucket} depth={0} variant={isSystemBucket(selectedBucket) ? 'system' : 'manual'} {...shared} /> :
+              <div className="panel mono" style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--color-faded)' }}>버킷을 선택하세요</div>}
+          </main>
+          {navDrawerOpen && (
+            <BucketNavDrawer
+	onClose={() => setNavDrawerOpen(false)}
+	panelProps={{
+                libBucket,
+                libState,
+                syncing,
+                runLibrarySync,
+                visibleTree,
+                normalTree,
+                boardType,
+                selectedBucketId,
+                onSelect: (id) => {
+                  setSelectedBucketId(id)
+                  setNavDrawerOpen(false)
+                },
+                shared,
+              }}
+            />
+          )}
+        </>
+      )}
 
-          <section aria-label="내 버킷">
-            <div className="meta bb-inline-section-label">버킷</div>
-            {visibleTree.length > 0 && (
-              <BucketInlineList items={visibleTree} parentId={null} depth={0} expandedIds={expandedBucketIds} toggleExpanded={toggleExpanded} shared={shared} />
-            )}
-            {normalTree.length === 0 && (
-              <div className="mono bb-inline-empty">버킷 없음</div>
-            )}
-            {normalTree.length > 0 && visibleTree.length === 0 && (
-              <div className="mono bb-inline-empty">{boardType === 'artist' ? 'Artist 버킷이 없어요' : '해당 종류의 버킷이 없어요'}</div>
-            )}
-          </section>
-        </main>
+      {tree != null && !mobile && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 280px) minmax(0, 1fr)', alignItems: 'start', gap: 18 }}>
+          <aside className="panel" aria-label="버킷 탐색" style={{ minWidth: 0, padding: 10 }}>
+            <BucketNavPanel
+	libBucket={libBucket}
+	libState={libState}
+	syncing={syncing}
+	runLibrarySync={runLibrarySync}
+	visibleTree={visibleTree}
+	normalTree={normalTree}
+	boardType={boardType}
+	selectedBucketId={selectedBucketId}
+	onSelect={setSelectedBucketId}
+	shared={shared}
+            />
+          </aside>
+
+          <main aria-label="버킷 상세" style={{ minWidth: 0 }}>
+            {selectedBucket ?
+              <BucketDetailShell key={selectedBucket.id} bucket={selectedBucket} depth={0} variant={isSystemBucket(selectedBucket) ? 'system' : 'manual'} {...shared} /> :
+              <div className="panel mono" style={{ padding: 40, textAlign: 'center', fontSize: 12, color: 'var(--color-faded)' }}>버킷을 선택하세요</div>}
+          </main>
+        </div>
       )}
 
       {/* trash dock — a single center-bottom card, mounted only while dragging an
