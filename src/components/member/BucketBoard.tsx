@@ -46,6 +46,8 @@ import { ActionSheet } from './ActionSheet'
 import type { SheetAction } from './ActionSheet'
 import { ENT_ALBUM_STATE_CHANGED, notifyAlbumStateChanged } from '@lib/entityEvents'
 import type { AlbumStateChangedDetail } from '@lib/entityEvents'
+import type { PlannedRating } from '../album/plannedRatings.api'
+import { fetchMyPlannedRatings, markPlannedRating } from '../album/plannedRatings.api'
 import { fetchMyAlbumStates, putMyAlbumState } from '../album/reviews.api'
 import { listRecentlyListened } from './spotify.api'
 import type { SpotifyLibraryAlbumState } from './spotify.api'
@@ -67,6 +69,11 @@ type DragKind = 'member' | 'bucket' | null
 
 // Synthetic id of the read-only 최근 들은 앨범 strip (never persisted server-side).
 const RECENT_ID = '__recent__'
+// FEAT-rating-smart-collections Step 4 — synthetic ids for the two static
+// rating tiles. Never sent to the backend, never a review_buckets row; used
+// only as this component's own DetailTarget.bucketId / AlbumChip.bucketId.
+const RATING_DONE_ID = '__rating_done__'
+const RATING_PLANNED_ID = '__rating_planned__'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
 // Last-seen 최근 들은 앨범 strip, cached so it paints instantly on the next mount
@@ -660,7 +667,7 @@ export function BucketAlbumCardAdapter({ album, bucketId, rated, score, onOpen, 
 
   return (
     <div
-	className={`lf-drag-handle bb-tile${draggingId === album.itemId ? ' lf-is-dragging' : ''}`}
+	className={`lf-drag-handle bb-tile${draggingId === album.itemId ? ' lf-is-dragging' : ''}${score != null ? ' bb-tile--rated' : ''}`}
 	title={`${album.title} — ${album.artist}`}
 	onPointerEnter={() => albumId && prefetchAlbumDetail(albumId)}
 	onPointerDown={() => albumId && prefetchAlbumDetail(albumId)}
@@ -701,6 +708,87 @@ export function BucketAlbumCardAdapter({ album, bucketId, rated, score, onOpen, 
           />
         )}
       />
+    </div>
+  )
+}
+
+// FEAT-rating-smart-collections Step 4 — 평가완료 / 평가전, two static system
+// tiles rendered alongside the real bucket tree but never PART of it: neither
+// is a `review_buckets` row, so they don't go through `useBucketDropTarget` /
+// `routeAlbumDrop` (both of those are typed over a real BoardBucket and would
+// try to call a bucket-item API this feature must never touch). This drop
+// surface is intentionally self-contained — it reads the same module-level
+// `dnd`/`toDndItem` every other drag source already writes to, and nothing
+// else in the shared drag/drop dispatch code changes.
+function RatingSmartTile({ id, title, hint, albums, ratings, onOpen, onDropAlbum, draggingId, setDraggingId, setDragKind }: {
+  id: string
+  title: string
+  hint: string
+  albums: BoardAlbum[]
+  /** Score lookup for the chip badge — 평가완료 passes the real map, 평가전 null (unrated by definition). */
+  ratings: Map<string, number> | null
+  onOpen: (t: DetailTarget) => void
+  onDropAlbum: (albumId: string) => void
+  draggingId: string | null
+  setDraggingId: (id: string | null) => void
+  setDragKind: (k: DragKind) => void
+}) {
+  const [hot, setHot] = useState(false)
+
+  const acceptsDrop = () => {
+    const it = dnd && toDndItem(dnd)
+    return !!(it && it.kind === 'member' && it.albumId)
+  }
+
+  return (
+    <div
+	className="panel crate-spotify"
+	style={{ padding: 0, marginBottom: 22, outline: hot ? '2px solid var(--color-accent)' : 'none', outlineOffset: 2 }}
+	onDragOver={(e) => {
+        if (!acceptsDrop())
+          return
+        e.preventDefault()
+        e.stopPropagation()
+        setHot(true)
+      }}
+	onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node))
+          setHot(false)
+      }}
+	onDrop={(e) => {
+        const it = dnd && toDndItem(dnd)
+        setHot(false)
+        if (!it || it.kind !== 'member' || !it.albumId)
+          return
+        e.preventDefault()
+        e.stopPropagation()
+        onDropAlbum(it.albumId)
+        dnd = null
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderBottom: '1px solid var(--color-border-soft)' }}>
+        <span className="serif" style={{ fontSize: 16, fontWeight: 500, whiteSpace: 'nowrap' }}>{title}</span>
+        <span className="meta">{albums.length ? `${albums.length}장` : hint}</span>
+      </div>
+      {albums.length > 0 && (
+        <div style={{ display: 'flex', gap: 14, padding: 14, overflowX: 'auto', alignItems: 'flex-start' }}>
+          {albums.map(a => (
+            <div key={a.itemId} style={{ flex: '0 0 116px', width: 116 }}>
+              <AlbumChip
+	album={a}
+	bucketId={id}
+	rated={ratings != null}
+	score={ratings ? ratings.get(a.albumId!) ?? null : null}
+	onOpen={onOpen}
+	copySource
+	draggingId={draggingId}
+	setDraggingId={setDraggingId}
+	setDragKind={setDragKind}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1860,6 +1948,10 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
       bucketStore.setTree(next)
   }, [])
   const [recent, setRecent] = useState<BoardAlbum[] | null>(() => readSeed<BoardAlbum[]>(RECENT_KEY))
+  // FEAT-rating-smart-collections Step 4 — 평가전 tile contents. Not part of
+  // `tree`/bucketStore on purpose: planned_ratings is its own table (Option B),
+  // never a review_buckets row.
+  const [plannedRatings, setPlannedRatings] = useState<PlannedRating[]>([])
   const [error, setError] = useState(false)
   const [addingTo, setAddingTo] = useState<{ id: string, name: string, type: string } | null>(null)
   // FEAT-my-buckit-artist: a transient board-level toast for the source-expansion
@@ -2149,6 +2241,96 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     return m
   }, [reviews, ratingOverrides])
 
+  // FEAT-rating-smart-collections Step 4 — display-data fallback for a rated
+  // album that isn't in any bucket in `tree` (findAlbumByAlbumId misses it).
+  // `reviews` carries title/cover for every rating on a non-owner profile (it
+  // IS the public rating feed, mapped 1:1) and for the owner's posted ratings;
+  // an owner rating with no post and no bucket is the one case this can't
+  // resolve — the 평가완료 tile falls back to a bare placeholder title for it.
+  const reviewsAlbumLookup = useMemo(() => {
+    const m = new Map<string, { title: string, artist: string, cover: string | null }>()
+    for (const r of reviews) {
+      for (const id of r.albumIds) {
+        if (!m.has(id))
+          m.set(id, { title: r.album, artist: r.artist, cover: r.cover ?? null })
+      }
+    }
+    return m
+  }, [reviews])
+
+  // 평가완료 tile — every rated album (`ratings`, already the correct live set:
+  // reviews-derived base + fetchMyAlbumStates overrides, see above), display
+  // data resolved from wherever it already lives on the board. Pure read, no
+  // new storage — the RFC's "평가완료 is a filter, not a bucket" promise.
+  const ratedTileAlbums = useMemo(() => {
+    const out: BoardAlbum[] = []
+    for (const albumId of ratings.keys()) {
+      const fromTree = tree ? findAlbumByAlbumId(tree, albumId) : null
+      const fromReviews = reviewsAlbumLookup.get(albumId)
+      out.push({
+        itemId: `rated:${albumId}`,
+        itemType: 'album',
+        albumId,
+        trackId: null,
+        reviewTargetId: null,
+        artistId: fromTree?.artistId ?? null,
+        title: fromTree?.title ?? fromReviews?.title ?? '앨범',
+        artist: fromTree?.artist ?? fromReviews?.artist ?? '—',
+        cover: fromTree?.cover ?? fromReviews?.cover ?? null,
+        year: fromTree?.year ?? null,
+        alreadyReviewed: fromTree?.alreadyReviewed ?? false,
+        postId: null,
+        researchSelected: false,
+      })
+    }
+    return out
+  }, [ratings, tree, reviewsAlbumLookup])
+
+  // 평가전 tile — `planned_ratings` (Option B), its own table. The API already
+  // joins album display data (mirrors /review-candidates' own shape), so no
+  // board-lookup fallback is needed here.
+  const plannedTileAlbums = useMemo<BoardAlbum[]>(() => plannedRatings.map(p => ({
+    itemId: `planned:${p.album_id}`,
+    itemType: 'album',
+    albumId: p.album_id,
+    trackId: null,
+    reviewTargetId: null,
+    artistId: p.artist_id ?? null,
+    title: p.album_title,
+    artist: p.artist_name ?? '—',
+    cover: p.album_cover_url ?? null,
+    year: null,
+    alreadyReviewed: false,
+    postId: null,
+    researchSelected: false,
+  })), [plannedRatings])
+
+  const openRatedDrop = (albumId: string) => {
+    const fromTree = tree ? findAlbumByAlbumId(tree, albumId) : null
+    const fromReviews = reviewsAlbumLookup.get(albumId)
+    onOpen({
+      album: fromTree?.title ?? fromReviews?.title ?? '앨범',
+      artist: fromTree?.artist ?? fromReviews?.artist,
+      real: true,
+      albumId,
+      cover: fromTree?.cover ?? fromReviews?.cover ?? null,
+      year: fromTree?.year ?? null,
+      writable: true,
+      bucketId: RATING_DONE_ID,
+      itemId: `rated:${albumId}`,
+      note: null,
+      prepTonight: false,
+    })
+  }
+
+  const markRatedPlanned = async (albumId: string) => {
+    if (plannedRatings.some(p => p.album_id === albumId))
+      return
+    const ok = await markPlannedRating(albumId)
+    if (ok)
+      setPlannedRatings(await fetchMyPlannedRatings())
+  }
+
   // Split the special spotify_library bucket out of the normal crate tree: it
   // renders as its own section below the recent strip, never inside the grid.
   // (Top-level only — the backend guarantees one such bucket at the root.)
@@ -2221,6 +2403,14 @@ ids.push(a.albumId)
       // Keep the cached seed on a transient failure instead of blanking the
       // strip; only fall back to empty when there was nothing cached.
       .catch(() => alive && setRecent(prev => prev ?? []))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    fetchMyPlannedRatings().then(rows => alive && setPlannedRatings(rows))
     return () => {
       alive = false
     }
@@ -2899,6 +3089,30 @@ ids.push(a.albumId)
           </div>
         </div>
       )}
+      <RatingSmartTile
+	id={RATING_DONE_ID}
+	title="평가완료"
+	hint="앨범을 여기로 드롭하면 바로 평가할 수 있어요"
+	albums={ratedTileAlbums}
+	ratings={ratings}
+	onOpen={onOpen}
+	onDropAlbum={openRatedDrop}
+	draggingId={draggingId}
+	setDraggingId={setDraggingId}
+	setDragKind={setDragKind}
+      />
+      <RatingSmartTile
+	id={RATING_PLANNED_ID}
+	title="평가전"
+	hint="평가하고 싶은 앨범을 여기로 드롭해두세요"
+	albums={plannedTileAlbums}
+	ratings={null}
+	onOpen={onOpen}
+	onDropAlbum={markRatedPlanned}
+	draggingId={draggingId}
+	setDraggingId={setDraggingId}
+	setDragKind={setDragKind}
+      />
 
       {tree == null && (
         <div className="lf-skel-stack" aria-busy="true" aria-label="불러오는 중" style={{ gap: 18 }}>
