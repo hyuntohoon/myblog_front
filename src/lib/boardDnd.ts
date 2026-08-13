@@ -112,12 +112,12 @@ export function canAcceptBucketDrag(tree: BoardBucket[], bucket: BoardBucket, it
 // dropping it on the board card — General add/move, Artist source-expansion
 // (album/track → credited artists), the Spotify-library copy/guard, and
 // bucket-into-bucket — all reused verbatim, no fork.
-export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): void {
+export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): boolean {
   const isLib = target.kind === SLIB_KIND
   // The sync-owned library bucket holds only albums — a track/null-album row has nothing
   // to reconcile against Spotify, so reject it.
   if (isLib && it.kind === 'member' && !it.albumId)
-    return
+    return false
   // FEAT-playback-bucket-player: the Playback Bucket takes tracks. A track/playback
   // member queues as ONE appended row — a COPY, not a move: the source row stays in
   // the collection it came from, because queueing a track is not removing it. An
@@ -131,43 +131,56 @@ export function routeAlbumDrop(target: BoardBucket, it: DndItem, ops: DropOps): 
   // for a second copy of itself.
   if (target.type === PLAYBACK_TYPE && it.kind === 'member') {
     if (it.fromBucketId === target.id)
-      return
-    if (it.trackId)
+      return false
+    if (it.trackId) {
       ops.queueTrack(target.id, it.trackId)
-    else if (it.albumId)
+      return true
+    }
+    if (it.albumId) {
       ops.expandAlbumTracks(target.id, it.albumId)
-    return
+      return true
+    }
+    return false
   }
   // Artist bucket: an artist member moves/adds in; an album/track SOURCE expands into its
   // credited artists (the source row itself is never stored). A non-artist-bearing source
   // no-ops (it is rejected at drag-over upstream, so it never reaches here in practice).
   if (target.type === 'artist' && it.kind === 'member') {
     if (it.srcItemType === 'artist') {
-      if (it.itemId && it.fromBucketId && it.fromBucketId !== target.id)
-        ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
+      if (!it.itemId || !it.fromBucketId || it.fromBucketId === target.id)
+        return false
+      ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
+      return true
     }
     else if (it.albumId) {
       ops.expandSource(target.id, { albumId: it.albumId })
+      return true
     }
     else if (it.trackId) {
       ops.expandSource(target.id, { trackId: it.trackId })
+      return true
     }
-    return
+    return false
   }
   // COPY when dropping into the library bucket, or the source is a copy/library item;
   // otherwise a normal move/add. Bucket-into-bucket guarded against self / cycle.
   const copyIn = isLib || it.copy || it.fromLib
   if (it.kind === 'member' && copyIn && it.albumId) {
     ops.copyAlbum(it.albumId, target.id)
+    return true
   }
   else if (it.kind === 'member' && it.itemId && it.fromBucketId && it.fromBucketId !== target.id) {
     // Same-bucket guard (mirrors the artist branch): dropping a member on its own
     // bucket would otherwise persist a spurious reorder (PUT /api/buckets/reorder).
     ops.insertAlbum(it.itemId, it.fromBucketId, target.id, null)
+    return true
   }
   else if (it.kind === 'bucket' && it.bucketId && it.bucketId !== target.id) {
     const src = findBucket(ops.tree, it.bucketId)
-    if (!(src && subtreeHas(src, target.id)))
+    if (!(src && subtreeHas(src, target.id))) {
       ops.moveBucketInto(it.bucketId, target.id)
+      return true
+    }
   }
+  return false
 }
