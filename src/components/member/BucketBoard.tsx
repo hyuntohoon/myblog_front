@@ -2266,6 +2266,7 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     const out: BoardAlbum[] = []
     for (const albumId of ratings.keys()) {
       const fromTree = tree ? findAlbumByAlbumId(tree, albumId) : null
+      const fromRecent = recent?.find(a => a.albumId === albumId) ?? null
       const fromReviews = reviewsAlbumLookup.get(albumId)
       out.push({
         itemId: `rated:${albumId}`,
@@ -2273,18 +2274,18 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
         albumId,
         trackId: null,
         reviewTargetId: null,
-        artistId: fromTree?.artistId ?? null,
-        title: fromTree?.title ?? fromReviews?.title ?? '앨범',
-        artist: fromTree?.artist ?? fromReviews?.artist ?? '—',
-        cover: fromTree?.cover ?? fromReviews?.cover ?? null,
-        year: fromTree?.year ?? null,
+        artistId: fromTree?.artistId ?? fromRecent?.artistId ?? null,
+        title: fromTree?.title ?? fromRecent?.title ?? fromReviews?.title ?? '앨범',
+        artist: fromTree?.artist ?? fromRecent?.artist ?? fromReviews?.artist ?? '—',
+        cover: fromTree?.cover ?? fromRecent?.cover ?? fromReviews?.cover ?? null,
+        year: fromTree?.year ?? fromRecent?.year ?? null,
         alreadyReviewed: fromTree?.alreadyReviewed ?? false,
         postId: null,
         researchSelected: false,
       })
     }
     return out
-  }, [ratings, tree, reviewsAlbumLookup])
+  }, [ratings, tree, recent, reviewsAlbumLookup])
 
   // 평가전 tile — `planned_ratings` (Option B), its own table. The API already
   // joins album display data (mirrors /review-candidates' own shape), so no
@@ -2307,14 +2308,15 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
 
   const openRatedDrop = (albumId: string) => {
     const fromTree = tree ? findAlbumByAlbumId(tree, albumId) : null
+    const fromRecent = recent?.find(a => a.albumId === albumId) ?? null
     const fromReviews = reviewsAlbumLookup.get(albumId)
     onOpen({
-      album: fromTree?.title ?? fromReviews?.title ?? '앨범',
-      artist: fromTree?.artist ?? fromReviews?.artist,
+      album: fromTree?.title ?? fromRecent?.title ?? fromReviews?.title ?? '앨범',
+      artist: fromTree?.artist ?? fromRecent?.artist ?? fromReviews?.artist,
       real: true,
       albumId,
-      cover: fromTree?.cover ?? fromReviews?.cover ?? null,
-      year: fromTree?.year ?? null,
+      cover: fromTree?.cover ?? fromRecent?.cover ?? fromReviews?.cover ?? null,
+      year: fromTree?.year ?? fromRecent?.year ?? null,
       writable: true,
       bucketId: RATING_DONE_ID,
       itemId: `rated:${albumId}`,
