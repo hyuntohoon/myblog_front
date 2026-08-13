@@ -790,7 +790,7 @@ export interface paths {
         };
         /**
          * Get Lyrics
-         * @description Normalized lyric segments for one catalog track (authenticated users only).
+         * @description Normalized lyric segments for one catalog track (any signed-in member).
          *
          *     Unknown spotify_track_id → 404 (no catalog track). A known track without viewable
          *     lyrics is NOT a 404 — it returns availability "no_lyrics" / "unavailable" so the
@@ -873,6 +873,58 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/planned-ratings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Planned Ratings
+         * @description The caller's 평가 예정 ("plan to rate") queue (FEAT-rating-smart-collections
+         *     Step 2, Option B). Strictly separate from /review-candidates — a planned
+         *     rating carries no rating/comment, only the fact that it was planned.
+         *
+         *     Private, JWT-only, scoped to the caller with no handle parameter — same
+         *     posture as /review-candidates. Rides the edge_guard GET catch-all like
+         *     every other authed GET in this file — no API Gateway route needed.
+         */
+        get: operations["get_my_planned_ratings_api_me_planned_ratings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/planned-ratings/{album_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Mark Planned Rating
+         * @description Mark an album as 평가 예정 — the drop target for the 평가전 tile in
+         *     BucketBoard. Idempotent: marking twice is a no-op, not an error.
+         */
+        put: operations["mark_planned_rating_api_me_planned_ratings__album_id__put"];
+        post?: never;
+        /**
+         * Unmark Planned Rating
+         * @description Unmark. Idempotent: unmarking an album that was never planned (or
+         *     already unmarked) is also a no-op — 204 either way, no 404.
+         */
+        delete: operations["unmark_planned_rating_api_me_planned_ratings__album_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2612,6 +2664,37 @@ export interface components {
             track_name?: string | null;
             /** Year */
             year: number;
+        };
+        /** PlannedRatingListResponse */
+        Backend_PlannedRatingListResponse: {
+            /** Planned */
+            planned?: components["schemas"]["Backend_PlannedRatingResponse"][];
+        };
+        /**
+         * PlannedRatingResponse
+         * @description One row of the caller's 평가 예정 ("plan to rate") list.
+         *
+         *     Strictly separate from ReviewCandidateResponse (평론 쓸 것): a planned
+         *     rating carries no rating/comment fields at all — its existence is the
+         *     entire fact. Album context is carried the same way (a planned album may
+         *     have no bucket entry and no rating row), so the join shape matches.
+         */
+        Backend_PlannedRatingResponse: {
+            /** Album Cover Url */
+            album_cover_url?: string | null;
+            /** Album Id */
+            album_id: string;
+            /** Album Title */
+            album_title: string;
+            /** Artist Id */
+            artist_id?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** PlaybackResolveResponse */
         Backend_PlaybackResolveResponse: {
@@ -5610,6 +5693,84 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_MyAlbumStateListResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_planned_ratings_api_me_planned_ratings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_PlannedRatingListResponse"];
+                };
+            };
+        };
+    };
+    mark_planned_rating_api_me_planned_ratings__album_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmark_planned_rating_api_me_planned_ratings__album_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

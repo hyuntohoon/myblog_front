@@ -15,11 +15,11 @@ import type { RatingSortKey } from '@lib/ratingStats'
 import type { MemberNowPlaying, MemberProfile as Profile } from '../album/reviews.api'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
-import { openAlbum } from '@lib/entityEvents'
+import { notifyAlbumStateChanged, openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isPlaceholderIdentity } from '@lib/member'
 import { RATING_SORTS, sortRatings } from '@lib/ratingStats'
-import { fetchMemberNowPlaying, fetchMemberProfile } from '../album/reviews.api'
+import { fetchMemberNowPlaying, fetchMemberProfile, putMyAlbumState, RATING_COMMENT_MAX, RatingRateLimitError } from '../album/reviews.api'
 import { boardTabHref } from './dashboardLinks'
 import { getMe } from './me.api'
 import { RatingStats } from './RatingStats'
@@ -77,6 +77,96 @@ function fmtDate(iso: string): string {
  * the useful reassurance is that a star alone is a complete 평가. On someone
  * else's profile there is nothing to prompt: it is a plain fact about them.
  */
+/**
+ * The 한줄평 cell for one row of "평가한 앨범". Every row here already carries a
+ * rating (the public feed is `rating IS NOT NULL`-filtered), so a comment can
+ * always be added without a star-rating gate, unlike MemoRatingBlock's dashboard
+ * input. Author-only: `isSelf` is required to even attempt a click, since
+ * writing here means PUT /api/reviews/albums/{album_id} as the acting member —
+ * this component must never render its edit affordance on someone else's row.
+ *
+ * A filled-in comment stays static text (out of scope for this fix — only the
+ * empty placeholder becomes clickable, per the request).
+ */
+function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
+	albumId: string
+	comment: string | null | undefined
+	isSelf: boolean
+	onSaved: (comment: string | null) => void
+}) {
+	const [editing, setEditing] = useState(false)
+	const [value, setValue] = useState('')
+	const [saving, setSaving] = useState(false)
+	const [err, setErr] = useState<string | null>(null)
+
+	if (comment) {
+		return <p className="sans" style={{ margin: '4px 0 0', fontSize: 'var(--text-base)', color: 'var(--color-subtle)', lineHeight: 'var(--leading-normal)' }}>{comment}</p>
+	}
+	if (!isSelf)
+		return null
+
+	async function commit() {
+		const trimmed = value.trim()
+		setSaving(true)
+		setErr(null)
+		try {
+			const res = await putMyAlbumState(albumId, { comment: trimmed || null })
+			onSaved(res?.comment ?? null)
+			notifyAlbumStateChanged({ albumId, reviewCandidate: res?.review_candidate ?? false, rating: res?.rating ?? null })
+			setEditing(false)
+		}
+		catch (e) {
+			setErr(e instanceof RatingRateLimitError ? '오늘 남길 수 있는 평가 수를 초과했습니다.' : '저장하지 못했습니다.')
+		}
+		finally {
+			setSaving(false)
+		}
+	}
+
+	if (!editing) {
+		return (
+			<button
+				type="button"
+				onClick={() => {
+					setValue('')
+					setEditing(true)
+				}}
+				className="sans"
+				style={{ display: 'block', marginTop: 4, padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--text-base)', color: 'var(--color-faded)', textAlign: 'left' }}
+			>
+				한 줄 감상 남기기
+			</button>
+		)
+	}
+
+	return (
+		<div style={{ marginTop: 4 }}>
+			<input
+				type="text"
+				autoFocus
+				value={value}
+				onChange={e => setValue(e.target.value)}
+				onBlur={() => void commit()}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault()
+						void commit()
+					}
+					else if (e.key === 'Escape') {
+						setEditing(false)
+					}
+				}}
+				maxLength={RATING_COMMENT_MAX}
+				disabled={saving}
+				placeholder="한 줄 감상 (선택)"
+				className="sans"
+				style={{ width: '100%', maxWidth: 360, fontSize: 'var(--text-base)', padding: '4px 0', border: 'none', borderBottom: '1px solid var(--color-border)', background: 'none', color: 'inherit' }}
+			/>
+			{err && <div className="mono" style={{ marginTop: 4, fontSize: 10.5, color: 'var(--color-danger, #c0392b)' }}>{err}</div>}
+		</div>
+	)
+}
+
 function NoRatingsYet({ isSelf }: { isSelf: boolean }) {
 	if (!isSelf) {
 		return (
@@ -327,7 +417,12 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 													r.artist_name}
 											</div>
 										)}
-										{r.comment && <p className="sans" style={{ margin: '4px 0 0', fontSize: 'var(--text-base)', color: 'var(--color-subtle)', lineHeight: 'var(--leading-normal)' }}>{r.comment}</p>}
+										<RatingCommentCell
+											albumId={r.album_id}
+											comment={r.comment}
+											isSelf={isSelf}
+											onSaved={comment => setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, comment } : row) } : p))}
+										/>
 									</div>
 								</li>
 							))}

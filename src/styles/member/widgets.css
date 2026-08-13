@@ -59,6 +59,14 @@
 	border-color: var(--color-border);
 	border-radius: 3px;
 }
+/* Rated-vs-unrated at a glance, independent of the score-badge corner (small,
+   easy to miss on a dense grid). score != null is the same "has a rating"
+   test the score badge itself uses (ARCH-bucket-album-modal-unification
+   Step 1) — global, not scoped to any one bucket. */
+.bb-tile--rated .album-card__cover {
+	border-color: var(--color-accent);
+	border-width: 2px;
+}
 .bb-tile:hover .album-card__cover {
 	transform: translateY(-3px);
 	box-shadow: 0 6px 18px rgba(26, 26, 26, 0.16);
