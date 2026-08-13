@@ -252,8 +252,7 @@ describe('bucketBoard inline disclosure ownership', () => {
 		await screen.findByTitle(TILE_TITLE)
 		const toggle = screen.getByRole('button', { name: `${name} 버킷 열기` })
 		expect(toggle).toHaveAttribute('aria-controls', 'bucket-inline-region-long-name')
-		expect(container.querySelector('.bb-bucket-label-text')).toHaveTextContent(name)
-		expect(container.querySelectorAll('img[alt=""]')).toHaveLength(2)
+		expect(container.querySelector('.bb-bucket-title')).toHaveTextContent(name)
 	})
 
 	it('toggles the owning disclosure with Enter and Space', async () => {

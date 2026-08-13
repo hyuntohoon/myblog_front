@@ -171,9 +171,9 @@
 	.bb-tile-kebab { opacity: 1; width: 36px; height: 36px; font-size: var(--text-lg); }
 }
 
-/* FEAT-inline-bucket-object-expand Step 1 — one physical disclosure object per
-   real bucket. The canonical raster stays flattened: lid/body use only the
-   prototype-proven clips, and the handle never moves independently. */
+/* Inline bucket disclosure — every bucket is a title row that is always visible;
+   opening one expands its card in place underneath. Closed rows stay mounted and
+   keep their drop handlers, so a drag can land on a bucket without opening it. */
 .bb-inline-board,
 .bb-inline-list,
 .bb-inline-node,
@@ -201,161 +201,93 @@
 	font-size: 11px;
 	color: var(--color-faded);
 }
-.bb-bucket-object-group {
-	width: 240px;
-	max-width: 100%;
-	margin-inline: auto;
-}
+.bb-bucket-object-group { max-width: 100%; }
 .bb-bucket-object {
-	position: relative;
-	display: block;
-	width: 240px;
-	height: 160px;
-	max-width: 100%;
-	padding: 0;
-	font: inherit;
-	color: inherit;
-	background: transparent;
-	border: 1px solid transparent;
-	border-radius: 10px;
-	box-sizing: border-box;
-	cursor: grab;
-	overflow: visible;
-	-webkit-tap-highlight-color: transparent;
-	transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
-}
-.bb-bucket-object:focus-visible {
-	outline: 2px solid #171714;
-	outline-offset: 8px;
-}
-.bb-bucket-art {
-	position: absolute;
-	inset: 0;
-	display: block;
-	pointer-events: none;
-	transform: translateY(0);
-	filter: drop-shadow(0 15px 10px rgba(20, 18, 15, 0.2));
-	transition:
-		transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
-		opacity 0.12s,
-		filter 0.4s ease;
-}
-.bb-bucket-art-body,
-.bb-bucket-art-lid {
-	position: absolute;
-	inset: 0;
-	display: block;
-	width: 100%;
-	height: 100%;
-	object-fit: contain;
-	pointer-events: none;
-	user-select: none;
-}
-.bb-bucket-art-body { clip-path: inset(14% 0 0 0); }
-.bb-bucket-art-lid {
-	clip-path: inset(0 0 79% 0);
-	transform-origin: 82% 17%;
-	transform: none;
-	transition: transform 0.62s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.bb-bucket-object[aria-expanded='true'] .bb-bucket-art { transform: translateY(-4px); }
-.bb-bucket-object[aria-expanded='true'] .bb-bucket-art-lid,
-.bb-bucket-object-group[data-state='valid'] .bb-bucket-art-lid,
-.bb-bucket-object-group[data-receiving-lid='true'] .bb-bucket-art-lid {
-	transform: translate(-10%, -15%) rotate(-18deg);
-}
-.bb-bucket-accent {
-	position: absolute;
-	left: 14px;
-	bottom: 9px;
-	width: 14px;
-	height: 14px;
-	border: 1px solid rgba(23, 23, 20, 0.48);
-	border-radius: 50%;
-	box-shadow: 0 0 0 2px rgba(243, 240, 232, 0.8);
-	pointer-events: none;
-}
-.bb-bucket-label {
-	position: absolute;
-	top: calc(100% + 8px);
-	left: 50%;
 	display: flex;
 	align-items: center;
-	justify-content: center;
-	width: 184px;
-	height: 54px;
-	max-width: calc(100vw - 44px);
-	padding: 5px 15px 4px;
-	box-sizing: border-box;
-	background: url('/buckit/buckit-label-01-clean-straight.svg') center / 100% 100% no-repeat;
-	transform: translateX(-50%) rotate(-1deg);
-	pointer-events: none;
-}
-.bb-bucket-label-text {
-	display: block;
+	gap: 8px;
 	width: 100%;
+	min-height: 38px;
+	padding: 7px 10px;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	background: var(--color-paper);
+	border: 1px solid var(--color-border);
+	border-radius: 7px;
+	box-sizing: border-box;
+	cursor: grab;
+	-webkit-tap-highlight-color: transparent;
+	transition: border-color 0.12s, box-shadow 0.12s, background 0.12s, opacity 0.12s;
+}
+.bb-bucket-object:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+.bb-bucket-caret {
+	flex: 0 0 12px;
+	font-size: 10px;
+	line-height: 1;
+	color: var(--color-faded);
+}
+.bb-bucket-accent {
+	flex: 0 0 9px;
+	width: 9px;
+	height: 9px;
+	border: 1px solid var(--color-border);
+	border-radius: 50%;
+}
+.bb-bucket-title {
+	flex: 1 1 auto;
+	min-width: 0;
 	overflow: hidden;
-	font-size: 14px;
-	font-weight: 800;
-	line-height: 1.1;
-	letter-spacing: 0.035em;
-	text-align: center;
+	font-size: 15px;
+	font-weight: 500;
+	letter-spacing: -0.01em;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	color: #171714;
+}
+.bb-bucket-count {
+	flex: 0 0 auto;
+	font-size: 11.5px;
+	color: var(--color-faded);
+	white-space: nowrap;
 }
 .bb-bucket-feedback {
 	display: block;
-	min-height: 18px;
-	margin-top: 69px;
+	min-height: 15px;
+	padding-left: 10px;
 	font-size: 10px;
 	line-height: 1.4;
-	text-align: center;
 	color: var(--color-faded);
 }
 .bb-bucket-object-group[data-state='rejected'] .bb-bucket-feedback { color: #b42318; }
 .bb-bucket-object-group[data-state='received'] .bb-bucket-feedback { color: #257158; }
-.bb-bucket-inline-region { margin-top: 16px; }
+.bb-bucket-inline-region { margin: 8px 0 14px; }
 .bb-bucket-children {
-	margin-top: 16px;
-	padding-left: 24px;
+	margin-top: 12px;
+	padding-left: 20px;
 	border-left: 1px solid var(--color-border-soft);
 }
 
 @media (hover: hover) and (pointer: fine) {
-	.bb-bucket-object-group:is([data-state='closed'], [data-state='open']) .bb-bucket-object:hover .bb-bucket-art {
-		transform: translateY(-8px) rotate(-1deg);
+	.bb-bucket-object-group:is([data-state='closed'], [data-state='open']) .bb-bucket-object:hover {
+		background: color-mix(in srgb, var(--color-accent) 5%, var(--color-paper));
+		border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border));
 	}
 }
-.bb-bucket-object-group:is([data-state='closed'], [data-state='open']) .bb-bucket-object:active .bb-bucket-art {
-	transform: translateY(-3px) scale(0.98);
-}
-.bb-bucket-object-group[data-state='dragging'] .bb-bucket-object { cursor: grabbing; }
-.bb-bucket-object-group[data-state='dragging'] .bb-bucket-art {
-	transform: translateY(-12px) rotate(2deg) scale(1.02);
-	opacity: 0.72;
-	filter: drop-shadow(0 24px 18px rgba(20, 18, 15, 0.3));
-	transition:
-		transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-		opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-		filter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.bb-bucket-object-group[data-state='drag-settling'] .bb-bucket-art {
-	transition:
-		transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-		opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-		filter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+.bb-bucket-object-group[data-state='dragging'] .bb-bucket-object {
+	cursor: grabbing;
+	opacity: 0.45;
 }
 .bb-bucket-object-group[data-state='valid'] .bb-bucket-object {
 	border-color: var(--color-accent);
 	box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent);
 }
 .bb-bucket-object-group[data-state='rejected'] .bb-bucket-object {
+	opacity: 0.4;
 	border-color: #b42318;
 	box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.14);
-}
-.bb-bucket-object-group[data-state='rejected'] .bb-bucket-art {
-	opacity: 0.4;
 	animation: bb-bucket-reject 320ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
 @keyframes bb-bucket-reject {
@@ -371,51 +303,24 @@
 	box-shadow: 0 0 0 4px rgba(37, 113, 88, 0.14);
 	animation: bb-bucket-received-halo 780ms ease-out both;
 }
-.bb-bucket-object-group[data-state='received'] .bb-bucket-art {
-	animation: bb-bucket-received-body 420ms;
-}
-@keyframes bb-bucket-received-body {
-	0% { transform: translateY(0) scale(1); animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-	42.857% { transform: translateY(-4px) scale(1.03); animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
-	57.143% { transform: translateY(1px) scale(0.99); animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
-	100% { transform: translateY(0) scale(1); }
-}
 @keyframes bb-bucket-received-halo {
 	0%, 79.487% { border-color: #257158; box-shadow: 0 0 0 4px rgba(37, 113, 88, 0.14); }
-	100% { border-color: transparent; box-shadow: 0 0 0 4px rgba(37, 113, 88, 0); }
+	100% { border-color: var(--color-border); box-shadow: 0 0 0 4px rgba(37, 113, 88, 0); }
 }
 .bb-bucket-object:disabled {
 	cursor: not-allowed;
+	opacity: 0.58;
 	border-color: rgba(23, 23, 20, 0.22);
 	background: rgba(243, 240, 232, 0.46);
 }
-.bb-bucket-object:disabled .bb-bucket-art {
-	opacity: 0.58;
-	filter: grayscale(0.35) saturate(0.55) drop-shadow(0 15px 10px rgba(20, 18, 15, 0.12));
-	transition: none;
-}
-.bb-bucket-object:disabled .bb-bucket-label { opacity: 0.68; }
-.bb-bucket-object:disabled::before {
-	content: '\1F512';
-	position: absolute;
-	top: 8px;
-	left: 50%;
-	z-index: 2;
-	padding: 3px 7px;
-	color: #171714;
-	background: rgba(243, 240, 232, 0.92);
-	border: 1px solid rgba(23, 23, 20, 0.38);
-	border-radius: 999px;
-	transform: translateX(-50%);
+.bb-bucket-object:disabled .bb-bucket-title::after {
+	content: ' \1F512';
+	font-size: 11px;
 }
 
 @media (max-width: 767px) {
-	.bb-bucket-object-group { width: 204px; }
-	.bb-bucket-object { width: 204px; height: 136px; }
-	.bb-bucket-label { width: 168px; height: 49px; max-width: calc(100vw - 44px); }
-	.bb-bucket-label-text { font-size: 13px; }
-	.bb-bucket-feedback { margin-top: 64px; }
-	.bb-bucket-children { padding-left: 14px; }
+	.bb-bucket-title { font-size: 14px; }
+	.bb-bucket-children { padding-left: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -426,22 +331,10 @@
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
 	}
-	.bb-bucket-object-group[data-state='dragging'] .bb-bucket-art {
-		transform: none;
-		opacity: 0.72;
-		filter: drop-shadow(0 24px 18px rgba(20, 18, 15, 0.3));
-	}
-	.bb-bucket-object[aria-expanded='true'] .bb-bucket-art,
-	.bb-bucket-object-group:is([data-state='closed'], [data-state='open']) .bb-bucket-object:hover .bb-bucket-art,
-	.bb-bucket-object-group:is([data-state='closed'], [data-state='open']) .bb-bucket-object:active .bb-bucket-art {
-		transform: none;
-	}
-	.bb-bucket-object-group[data-state='rejected'] .bb-bucket-art {
+	.bb-bucket-object-group[data-state='rejected'] .bb-bucket-object {
 		transform: none;
 		animation: none;
-		opacity: 0.4;
 	}
-	.bb-bucket-object-group[data-state='received'] .bb-bucket-art { animation: none; }
 	.bb-bucket-object-group[data-state='received'] .bb-bucket-object {
 		animation: none;
 		border-color: #257158;

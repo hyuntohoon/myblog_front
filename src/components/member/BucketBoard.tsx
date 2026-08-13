@@ -960,9 +960,7 @@ type BucketDropShared = Pick<SharedProps, 'dropTarget' | 'setDropTarget' | 'drop
 function useBucketDropTarget(bucket: BoardBucket, ops: Ops, shared: BucketDropShared) {
   const { dropTarget, setDropTarget, dropReject, setDropReject } = shared
   const [received, setReceived] = useState(false)
-  const [receivingLid, setReceivingLid] = useState(false)
   const receivedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lidTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hot = dropTarget === bucket.id
   const rejectReason = dropReject?.id === bucket.id ? dropReject.reason : null
   const acceptsDrop = (it: ReturnType<typeof toDndItem>) =>
@@ -971,8 +969,6 @@ function useBucketDropTarget(bucket: BoardBucket, ops: Ops, shared: BucketDropSh
   useEffect(() => () => {
     if (receivedTimer.current)
       clearTimeout(receivedTimer.current)
-    if (lidTimer.current)
-      clearTimeout(lidTimer.current)
   }, [])
   const onDragOver = (e: React.DragEvent) => {
     const it = dnd && toDndItem(dnd)
@@ -1029,24 +1025,14 @@ function useBucketDropTarget(bucket: BoardBucket, ops: Ops, shared: BucketDropSh
       if (receivedTimer.current)
         clearTimeout(receivedTimer.current)
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-      setReceivingLid(!reduced)
-      if (lidTimer.current)
-        clearTimeout(lidTimer.current)
-      if (!reduced) {
-        lidTimer.current = setTimeout(() => {
-          setReceivingLid(false)
-          lidTimer.current = null
-        }, 140)
-      }
       receivedTimer.current = setTimeout(() => {
         setReceived(false)
-        setReceivingLid(false)
         receivedTimer.current = null
       }, reduced ? 600 : 780)
     }
     dnd = null
   }
-  return { onDragOver, onDragLeave, onDrop, hot, rejectReason, received, receivingLid }
+  return { onDragOver, onDragLeave, onDrop, hot, rejectReason, received }
 }
 
 type BucketInlineVariant = 'manual' | 'system'
@@ -1708,7 +1694,7 @@ function BucketInlineNode({ bucket, depth, expandedIds, toggleExpanded, shared }
 
   return (
     <article className="bb-inline-node" data-bucket-inline-node={bucket.id} data-depth={depth}>
-      <div className="bb-bucket-object-group" data-state={state} data-receiving-lid={dropSurface.receivingLid ? 'true' : undefined} data-dropreject={dropSurface.rejectReason ? 'true' : undefined}>
+      <div className="bb-bucket-object-group" data-state={state} data-dropreject={dropSurface.rejectReason ? 'true' : undefined}>
         <button
 	type="button"
 	className="bb-bucket-object"
@@ -1754,13 +1740,12 @@ function BucketInlineNode({ bucket, depth, expandedIds, toggleExpanded, shared }
 	onDragLeave={dropSurface.onDragLeave}
 	onDrop={dropSurface.onDrop}
         >
-          <span className="bb-bucket-art" aria-hidden="true">
-            <img className="bb-bucket-art-body" src="/buckit/buckit-bucket-base-canonical.png" alt="" draggable="false" />
-            <img className="bb-bucket-art-lid" src="/buckit/buckit-bucket-base-canonical.png" alt="" draggable="false" />
-          </span>
+          <span className="bb-bucket-caret" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
           <span className="bb-bucket-accent" style={{ background: accent }} aria-hidden="true" />
-          <span className="bb-bucket-label" aria-hidden="true">
-            <span className="bb-bucket-label-text">{bucket.name}</span>
+          <span className="bb-bucket-title serif">{bucket.name}</span>
+          <span className="bb-bucket-count mono" aria-hidden="true">
+            {countAlbums(bucket)}
+            장
           </span>
         </button>
         <span id={feedbackId} className="bb-bucket-feedback mono" role="status" aria-live="polite">
