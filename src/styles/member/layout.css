@@ -402,6 +402,51 @@
 	.bps-scrim, .bps-sheet { animation: none; }
 }
 
+/* ── mobile bucket nav drawer — ARCH-buckit-navigation-shell Step 3 ───────────
+   Drawer-over-content: slides down from the top over the current detail pane
+   (which stays mounted underneath, unchanged); picking a bucket closes the
+   drawer and the same detail pane updates in place. Distinct from .bps-* (a
+   bottom action sheet) — this is a top-anchored nav list, not an action list. */
+.bnd-scrim {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-panel);
+	background: rgba(10, 9, 8, 0.5);
+	backdrop-filter: blur(2px);
+	animation: lf-fade 0.16s ease;
+}
+.bnd-drawer {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	max-height: 82vh;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	background: var(--color-bg);
+	border-bottom: 1px solid var(--color-border);
+	border-radius: 0 0 14px 14px;
+	box-shadow: 0 12px 40px rgba(10, 9, 8, 0.22);
+	padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+	animation: bnd-drop 0.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes bnd-drop {
+	from { transform: translateY(-14px); opacity: 0; }
+	to { transform: none; opacity: 1; }
+}
+.bnd-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding-bottom: 10px;
+	margin-bottom: 8px;
+	border-bottom: 1px solid var(--color-border-soft);
+}
+@media (prefers-reduced-motion: reduce) {
+	.bnd-scrim, .bnd-drawer { animation: none; }
+}
+
 /* dash-drag-handle-tap-target + touch-grab-handles — 44×44 hit area via
    inline-flex + negative margin so the ⠿ glyph stays compact. */
 .lf-drag-handle.lf-mono {
