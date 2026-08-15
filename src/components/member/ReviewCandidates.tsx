@@ -16,7 +16,7 @@ import type { ReviewCandidate } from '../album/reviews.api'
 import { useEffect, useState } from 'react'
 import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
-import { HomeAlbumCardAdapter } from '@components/home/HomeAlbumCardAdapter'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
 import { fetchMyReviewCandidates } from '../album/reviews.api'
 import { boardTabHref } from './dashboardLinks'
 import { SectionTitle, Stars } from './ui'
@@ -37,7 +37,7 @@ export function ReviewCandidateAlbumCardAdapter({ c }: { c: ReviewCandidate }) {
 	const open = () => openAlbum({ albumId: c.album_id, title: c.album_title, cover: c.album_cover_url })
 	return (
 		<div className="panel review-candidate-card" style={{ padding: 12, background: 'var(--color-bg)' }}>
-			<HomeAlbumCardAdapter
+			<CatalogAlbumCardAdapter
 				data={{
 					catalogAlbumId: c.album_id,
 					spotifyAlbumId: null,
