@@ -5,7 +5,7 @@
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import { describe, expect, it } from 'vitest'
 import { PLAYBACK_KIND, PLAYBACK_TYPE } from '@lib/buckets'
-import { findPlaybackBucket, queueItems } from './queue'
+import { findPlaybackBucket, queueItems, withReorderedQueueItems } from './queue'
 
 function bucket(over: Partial<BoardBucket> = {}): BoardBucket {
   return {
@@ -87,5 +87,27 @@ describe('queueItems', () => {
   it('is empty when there is no playback bucket yet', () => {
     expect(queueItems([bucket({ id: 'a' })])).toEqual([])
     expect(queueItems(null)).toEqual([])
+  })
+})
+
+describe('withReorderedQueueItems', () => {
+  it('reflows the bucket\'s direct members to the given order', () => {
+    const next = withReorderedQueueItems([queue], 'pq', ['i3', 'i1', 'i2'])
+    expect(queueItems(next).map(a => a.itemId)).toEqual(['i3', 'i1', 'i2'])
+  })
+  it('leaves other buckets and a nested child bucket untouched', () => {
+    const nested = { ...queue, children: [bucket({ id: 'child', albums: [item('i9', 't9')] })] }
+    const next = withReorderedQueueItems([bucket({ id: 'a' }), nested], 'pq', ['i2', 'i1', 'i3'])
+    expect(queueItems(next).map(a => a.itemId)).toEqual(['i2', 'i1', 'i3'])
+    expect(next[0].id).toBe('a')
+    expect(findPlaybackBucket(next)?.children[0]?.albums.map(a => a.itemId)).toEqual(['i9'])
+  })
+  it('drops an id that no longer matches a live row (a concurrent-remove race) instead of inserting a hole', () => {
+    const next = withReorderedQueueItems([queue], 'pq', ['i3', 'ghost', 'i1', 'i2'])
+    expect(queueItems(next).map(a => a.itemId)).toEqual(['i3', 'i1', 'i2'])
+  })
+  it('is a no-op when the bucket id is not found', () => {
+    const next = withReorderedQueueItems([queue], 'missing', ['i3', 'i1', 'i2'])
+    expect(queueItems(next).map(a => a.itemId)).toEqual(['i1', 'i2', 'i3'])
   })
 })

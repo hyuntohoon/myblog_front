@@ -192,10 +192,11 @@ function mapItem(it: ApiItem): BoardAlbum {
     // An artist tile has no secondary line (the name is the title); a track shows
     // its artists; an album shows its artists.
     artist: isArtist ? '' : isTrack ? ((tr?.artist_names ?? []).join(', ') || '—') : ((a?.artist_names ?? []).join(', ') || '—'),
-    // TrackBrief has no cover_url (the cover lives on its album, not resolved
-    // here) → a track tile shows the initials placeholder. An artist tile uses
-    // its photo_url.
-    cover: isArtist ? (ar?.photo_url ?? null) : (a?.cover_url ?? null),
+    // ARCH-global-playback-experience Step 3: TrackBrief now resolves its own
+    // cover_url server-side (off the track's album), so a track/playback row no
+    // longer needs — and cannot use, since `a`/it.album is null for these rows —
+    // the album relation's cover. An artist tile uses its photo_url.
+    cover: isArtist ? (ar?.photo_url ?? null) : isTrack ? (tr?.cover_url ?? null) : (a?.cover_url ?? null),
     year: rel ? Number(String(rel).slice(0, 4)) || null : null,
     alreadyReviewed: it.already_reviewed ?? false,
     postId: it.post_id ?? null,
