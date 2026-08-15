@@ -384,12 +384,53 @@
   box-shadow: 0 0 0 5px color-mix(in srgb, var(--chip-accent, var(--color-accent)) 18%, transparent);
 }
 
-/* ── FEAT-playback-bucket-player Step 6 ─────────────────────────────────────
-   The site shell, not a dashboard-only stylesheet, consumes the dock contract.
-   Closed/floating keeps the initial 0px value, so existing pages do not move. */
+/* ── FEAT-playback-bucket-player Step 6 / ARCH-global-playback-experience
+   Step 5 ─────────────────────────────────────────────────────────────────
+   The site shell, not a dashboard-only stylesheet, consumes both reservation
+   contracts: --pbp-dock-w (the expanded panel's docked width) and --pb-bar-h
+   (the persistent bar's height, this step). Both default to their closed/
+   no-playback 0px, so a route with neither active never moves. */
 .site-shell {
   margin-right: var(--pbp-dock-w, 0px);
-  transition: margin-right .32s cubic-bezier(.22,.85,.25,1);
+  padding-top: var(--pb-bar-h, 0px);
+  transition: margin-right .32s cubic-bezier(.22,.85,.25,1), padding-top .2s ease;
+}
+
+.pb-scope .pb-persistent-bar {
+  position: fixed;
+  top: 52px; /* directly under header.astro's fixed .hdr-bar (52px, every breakpoint) */
+  left: 0;
+  right: 0;
+  z-index: var(--z-pocket, 70);
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--color-border);
+}
+.pb-scope .pb-persistent-bar-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.pb-scope .pb-persistent-bar-identity .pbp-identity {
+  pointer-events: none; /* the whole identity block is the click target */
+}
+.pb-scope .pb-persistent-bar .pbp-transport {
+  flex: 0 0 auto;
 }
 
 .pb-scope .pbp-dock-slot {
