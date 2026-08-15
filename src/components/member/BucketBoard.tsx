@@ -25,7 +25,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as api from '@lib/buckets'
-import { findBucket, isManualAddTarget, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
+import { findBucket, isManualAddTarget, PLAYBACK_KIND, SLIB_KIND, subtreeHas, visit } from '@lib/buckets'
 import { canAcceptAlbumDrag, canAcceptBucketDrag, memberAcceptsLabel, routeAlbumDrop } from '@lib/boardDnd'
 import type { DragPayload } from '@lib/entityDrag'
 import { bucketDrag, memberRef, toDndItem } from '@lib/entityDrag'
@@ -53,6 +53,7 @@ import { listRecentlyListened } from './spotify.api'
 import type { SpotifyLibraryAlbumState } from './spotify.api'
 import { useSpotifyLibrary } from './useSpotifyLibrary'
 import { AlbumArt, SectionTitle } from './ui'
+import { PlaybackQueue, usePlaybackViewModel } from './playback/PlaybackPanel'
 import { AlbumCard } from '@components/shared/AlbumCard'
 import type { AlbumCardCapabilities } from '@components/shared/AlbumCard'
 
@@ -1127,8 +1128,14 @@ type BucketInlineVariant = 'manual' | 'system'
 type InlineContentProps = SharedProps & { bucket: BoardBucket, depth: number, variant: BucketInlineVariant }
 
 function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnType<typeof useBucketDropTarget> }) {
-  const { bucket, depth, ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, setDropTarget, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, settleBucketDrag, setDragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds, dropSurface } = props
+  const { bucket, depth, variant, ops, onOpen, ratings, libState, listenedAlbumIds, markedAlbumIds, setDropTarget, setDropReject, draggingId, setDraggingId, draggingBucket, setDraggingBucket, settleBucketDrag, setDragKind, bucketViews, setBucketViews, researchStatus, openAlbumSheet, openBucketSheet, newItemIds, dropSurface } = props
   const { onDragOver, onDragLeave, onDrop, hot, rejectReason } = dropSurface
+  // ARCH-buckit-inline-navigation Step 1 — the richer queue view (artwork,
+  // summary, play-all, reorder) already built for the Pocket tray; called
+  // unconditionally (rules of hooks) even though only the playback_queue
+  // branch below uses the result.
+  const playbackModel = usePlaybackViewModel()
+  const isPlaybackQueueContent = variant === 'system' && bucket.kind === PLAYBACK_KIND
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(bucket.name)
   const [coloring, setColoring] = useState(false)
@@ -1533,7 +1540,20 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
         </div>
       )}
 
-      {/* cover grid */}
+      {/* cover grid — or, for the Playback Bucket, the same enhanced queue view
+          (artwork/summary/play-all/reorder) the Pocket tray already uses */}
+      {isPlaybackQueueContent ?
+        (
+          // PlaybackQueue's own CSS (pocket.css) is entirely scoped under
+          // .pb-scope so the Pocket-tray atlas class names never leak
+          // globally — outside the tray, `.pb-scope` is the only thing that
+          // makes `.pbp-queue-*` match at all (confirmed via CDP: without
+          // it, the row grid/cover sizing/handle icons render unstyled).
+          <div className="pb-scope">
+            <PlaybackQueue model={playbackModel} removable />
+          </div>
+        ) :
+        (
       <div style={{ display: 'grid', gap: '14px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
         {isLib ?
 (
@@ -1568,6 +1588,7 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
           </>
         )}
       </div>
+        )}
 
     </div>
   )
