@@ -28,7 +28,7 @@ import { artistHref, openAlbum } from '@lib/entityLinks'
 import type { AlbumCardData } from '@components/shared/AlbumCard'
 import { unresolvedAlbumCardData } from '@components/shared/AlbumCard'
 import HomeStrip from './HomeStrip'
-import { HomeAlbumCardAdapter } from './HomeAlbumCardAdapter'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
 import { SectionTitle } from './ui'
 
 type ReleaseFeedItem = components['schemas']['Backend_ReleaseFeedItem']
@@ -107,7 +107,7 @@ export function ForYouReleaseAlbumCardAdapter({ it }: { it: ReleaseFeedItem }) {
 					prefetchAlbumDetail(it.album_id)
 			}}
 		>
-			<HomeAlbumCardAdapter
+			<CatalogAlbumCardAdapter
 				data={data}
 				layout="grid"
 				capabilities={{

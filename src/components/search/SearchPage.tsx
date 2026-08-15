@@ -2,10 +2,13 @@
 // runtime (static site + CloudFront-Free strips the query from the cache key, so
 // one shell + client-side parse), drives the shared useMusicSearch core (DB-only
 // for the public surface), and overlays a first-class 평론(reviews) facet from the
-// build-time /search-index.json. Artists link to their hub; albums/tracks are
-// shown but not navigable (no album page); reviews link to /review/{slug}.
+// build-time /search-index.json. Artists link to their hub; albums open the
+// app-wide overlay and can be copied into Pocket; reviews link to /review/{slug}.
 import { useEffect, useRef, useState } from 'react'
 import type { AlbumHit, ArtistHit, TrackHit } from '@lib/useMusicSearch'
+import type { AlbumCardData } from '@components/shared/AlbumCard'
+import { unresolvedAlbumCardData } from '@components/shared/AlbumCard'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
 import { openAlbum, openTrackAlbum } from '@lib/entityEvents'
 import { artistHref, reviewHref } from '@lib/entityLinks'
 import { useMusicSearch } from '@lib/useMusicSearch'
@@ -26,8 +29,10 @@ function ReviewCard({ r }: { r: ReviewHit }) {
 	const cover = <div className="gs-albcard-cov"><GCover name={r.album} src={r.cover} size={0} /></div>
 	return (
 		<div className="gs-albcard">
-			{/* ARCH-entity-interaction-v2 E7 — cover peeks the album overlay
-			    (mirrors AlbumCard below); the rest of the card stays the review link. */}
+			{/* ARCH-entity-interaction-v2 E7 — cover peeks the album overlay (the same
+			    openAlbum entry SearchAlbumCard uses); the rest of the card stays the
+			    review link. A published review is a document, not an album card, so it
+			    keeps its own renderer rather than composing the canonical primitive. */}
 			{r.albumId ?
 				(
 					<button
@@ -71,38 +76,56 @@ function ArtistCard({ a }: { a: ArtistHit }) {
 	)
 }
 
-function AlbumCard({ a }: { a: AlbumHit }) {
-	const albumSurface = (
-		<>
-			<div className="gs-albcard-cov"><GCover name={a.title} src={a.cover} size={0} /></div>
-			<div className="gs-albcard-body">
-				<h3 className="serif gs-albcard-title">{a.title}</h3>
-			</div>
-		</>
-	)
-	// ARCH-entity-interaction-unify Step 2: a DB-catalog album now opens the
-	// app-wide read-only album overlay (openAlbum). Spotify-only hits with no DB
-	// id stay a static figure (no album to fetch).
+/**
+ * A search hit carries `year` as a free-form string; the canonical card slot is
+ * numeric. Anything non-numeric collapses to null rather than rendering NaN.
+ */
+function hitYear(year: string | null): number | null {
+	if (!year)
+		return null
+	const parsed = Number.parseInt(year, 10)
+	return Number.isNaN(parsed) ? null : parsed
+}
+
+/** AlbumHit → canonical identity. A Spotify-only hit must go through the smart constructor. */
+function searchAlbumCardData(a: AlbumHit): AlbumCardData {
+	const display = {
+		title: a.title,
+		artist: a.artist,
+		artistId: a.artistId,
+		cover: a.cover,
+		year: hitYear(a.year),
+	}
+	if (a.id)
+		return { ...display, catalogAlbumId: a.id, spotifyAlbumId: null }
+	if (a.spotifyId)
+		return unresolvedAlbumCardData(a.spotifyId, display)
+	return { ...display, catalogAlbumId: null, spotifyAlbumId: null }
+}
+
+// ARCH-album-card-contract-and-composition — the /search album grid composes the
+// canonical card through the shared catalog adapter, so a catalog-backed hit gets
+// the same open + copy-drag + AddToBucketMenu contract Home already ships. A
+// Spotify-only hit stays display-only and says why; its foreign id is never
+// projected into a catalog write. (Before this, /search had its own local
+// `AlbumCard` — same name as the shared primitive, different component, and the
+// only album-discovery surface with no way to add what you found.)
+function SearchAlbumCard({ a }: { a: AlbumHit }) {
+	const data = searchAlbumCardData(a)
+	const albumId = a.id
+	const artistId = a.artistId
 	return (
-		<div className={a.id ? 'gs-albcard' : 'gs-albcard is-static'}>
-			{a.id ?
-				(
-					<button
-						type="button"
-						className="gs-albcard-open"
-						onClick={() => openAlbum({ albumId: a.id!, title: a.title, artist: a.artist ?? undefined, cover: a.cover, year: a.year ? Number.parseInt(a.year, 10) : null })}
-						aria-label={`${a.title} 앨범 상세 보기`}
-					>
-						{albumSurface}
-					</button>
-				) :
-				albumSurface}
-			<p className="mono gs-albcard-meta">
-				{a.artistId && a.artist ? <a href={artistHref(a.artistId)} className="gs-albcard-artist">{a.artist}</a> : a.artist}
-				{a.artist && a.year ? ' · ' : null}
-				{a.year}
-			</p>
-		</div>
+		<CatalogAlbumCardAdapter
+			data={data}
+			layout="grid"
+			titleAs="h3"
+			capabilities={{
+				...(albumId ?
+					{ open: () => openAlbum({ albumId, title: a.title, artist: a.artist ?? undefined, cover: a.cover, year: data.year }) } :
+					{}),
+				...(artistId ? { artistOpen: () => window.location.assign(artistHref(artistId)) } : {}),
+			}}
+		/>
 	)
 }
 
@@ -319,7 +342,7 @@ export default function SearchPage() {
 					)}
 					{show('album') && s.albums.length > 0 && (
 						<Section label="앨범" count={s.albums.length}>
-							<div className="gs-albgrid">{s.albums.map(a => <AlbumCard key={a.id ?? a.title} a={a} />)}</div>
+							<div className="gs-albgrid">{s.albums.map(a => <SearchAlbumCard key={a.id ?? a.title} a={a} />)}</div>
 						</Section>
 					)}
 					{show('track') && s.tracks.length > 0 && (

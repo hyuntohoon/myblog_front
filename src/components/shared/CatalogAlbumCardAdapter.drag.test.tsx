@@ -5,7 +5,7 @@ import * as buckets from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { PocketBuckitProvider } from '@components/member/pocket/PocketBuckitProvider'
 import { PocketTray } from '@components/member/pocket/PocketTray'
-import { HomeAlbumCardAdapter } from './HomeAlbumCardAdapter'
+import { CatalogAlbumCardAdapter } from './CatalogAlbumCardAdapter'
 
 vi.mock('@lib/auth', () => ({
 	isLoggedIn: () => true,
@@ -45,11 +45,11 @@ beforeEach(() => {
 	vi.mocked(buckets.expandSourceArtists).mockReset()
 })
 
-describe('home album card desktop drag to Pocket', () => {
+describe('catalog album card desktop drag to Pocket', () => {
 	it('copies the catalog album through the live cross-island drag bridge', async () => {
 		const { container } = render(
 			<PocketBuckitProvider>
-				<HomeAlbumCardAdapter
+				<CatalogAlbumCardAdapter
 					data={{
 						catalogAlbumId: 'album-1',
 						spotifyAlbumId: null,

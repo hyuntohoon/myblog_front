@@ -32,7 +32,7 @@ import { useEffect, useState } from 'react'
 import { prefetchAlbumDetail } from '@lib/albumDetail'
 import { artistHref, openAlbum } from '@lib/entityLinks'
 import HomeStrip from './HomeStrip'
-import { HomeAlbumCardAdapter } from './HomeAlbumCardAdapter'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
 import { SectionTitle } from './ui'
 
 type NewReleaseItem = components['schemas']['Music_NewReleaseItem']
@@ -99,7 +99,7 @@ export function NewReleaseAlbumCardAdapter({ it }: { it: NewReleaseItem }) {
 					prefetchAlbumDetail(it.album_id)
 			}}
 		>
-			<HomeAlbumCardAdapter
+			<CatalogAlbumCardAdapter
 				data={{
 					catalogAlbumId: it.album_id,
 					spotifyAlbumId: null,

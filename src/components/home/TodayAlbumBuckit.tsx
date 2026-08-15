@@ -17,7 +17,7 @@
 import { useEffect, useState } from 'react'
 import { artistHref, openAlbum } from '@lib/entityLinks'
 import HomeStrip from './HomeStrip'
-import { HomeAlbumCardAdapter } from './HomeAlbumCardAdapter'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
 import { SectionTitle } from './ui'
 
 interface OtdArtist { id: string, name: string, spotify_id: string | null }
@@ -55,7 +55,7 @@ export function TodayAlbumCardAdapter({ it }: { it: OtdItem }) {
   const year = Number(it.release_date.slice(0, 4)) || null
   return (
     <div className="otd-card" title={`${it.title} · 앨범 보기`}>
-      <HomeAlbumCardAdapter
+      <CatalogAlbumCardAdapter
 	data={{
           catalogAlbumId: it.album_id,
           spotifyAlbumId: null,

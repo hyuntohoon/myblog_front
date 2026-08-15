@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRef } from 'react'
 import * as buckets from '@lib/buckets'
 import { useDismissable } from '@lib/useDismissable'
-import { HomeAlbumCardAdapter } from '@components/home/HomeAlbumCardAdapter'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
 import { AddToBucketMenu } from './AddToBucketMenu'
 
 vi.mock('@lib/auth', () => ({
@@ -124,7 +124,7 @@ describe('home album-card add fallback', () => {
 		vi.mocked(buckets.addBucketItem).mockResolvedValue({ item: null, conflict: true })
 
 		render(
-			<HomeAlbumCardAdapter
+			<CatalogAlbumCardAdapter
 				data={{
 					catalogAlbumId: 'album-1',
 					spotifyAlbumId: null,
