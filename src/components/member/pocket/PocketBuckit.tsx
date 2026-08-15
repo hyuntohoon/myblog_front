@@ -2,18 +2,36 @@
 // (client:only). Signed-in members only (the bucket read needs a Cognito JWT and
 // is per-user since multi-user P2 — each member sees their OWN buckets here);
 // anonymous visitors get nothing. Streaming ▶ inside the tray stays owner-only.
+import type { OpenLiveLyricsDetail } from '@lib/entityEvents'
 import type { PbOpenStateDetail } from '@lib/pocketBuckit/events'
 import { useEffect, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
+import { ENT_OPEN_LIVE_LYRICS } from '@lib/entityEvents'
 import { PB_CLOSED_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
+import { LyricsViewer } from '../lyrics/LyricsViewer'
 import { PocketBuckitProvider, usePocket } from './PocketBuckitProvider'
 import { PocketDesignSettings } from './PocketDesignSettings'
 import { PocketTray } from './PocketTray'
 import './pocket.css'
+// LyricsViewer's own .lyv-* CSS — self-supplied here (not via member.css,
+// which is dashboard-only) since this is now the app-wide mount. See
+// lyricsViewer.css's own header comment for why.
+import '@styles/lyricsViewer.css'
 
 function PocketBuckitInner() {
   const { open, setOpen } = usePocket()
   const [settings, setSettings] = useState(false)
+  // ARCH-global-playback-experience Step 2 — the live lyrics host, relocated
+  // here from SelfDashboard (dashboard-scoped) so 가사 opens from any route.
+  // PocketTray dispatches ENT_OPEN_LIVE_LYRICS (openPlaybackLyrics); this is
+  // now its only listener. LyricsViewer's own component/data hooks/sync logic
+  // are untouched — only the mount trigger moved.
+  const [liveLyrics, setLiveLyrics] = useState<OpenLiveLyricsDetail | null>(null)
+  useEffect(() => {
+    const onOpen = (e: Event) => setLiveLyrics((e as CustomEvent<OpenLiveLyricsDetail>).detail)
+    window.addEventListener(ENT_OPEN_LIVE_LYRICS, onOpen)
+    return () => window.removeEventListener(ENT_OPEN_LIVE_LYRICS, onOpen)
+  }, [])
   // Cross-island toggle bridge: the member My Buckit board (a separate React
   // root) dispatches `pb:toggle` from its toolbar button; flip the in-memory tray
   // `open` here, where usePocket() is inside the provider. setOpen is pure state —
@@ -74,6 +92,21 @@ function PocketBuckitInner() {
         </svg>
       </button>
       {settings && <PocketDesignSettings onClose={() => setSettings(false)} />}
+      {liveLyrics && (
+        <LyricsViewer
+	key={liveLyrics.trackId}
+	spotifyTrackId={liveLyrics.trackId}
+	initialProgressMs={liveLyrics.progressMs}
+	initialProgressAtMs={liveLyrics.progressAtMs}
+	initialDurationMs={liveLyrics.durationMs}
+	initialAlbumCoverUrl={liveLyrics.albumCoverUrl}
+	initialTrack={liveLyrics.track}
+	initialArtist={liveLyrics.artist}
+	initialArtists={liveLyrics.artists}
+	canRefresh
+	onClose={() => setLiveLyrics(null)}
+        />
+      )}
     </div>
   )
 }

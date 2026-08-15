@@ -7,14 +7,17 @@
      ../modal.css            — qb-* search-modal shell (SHARED, not member-only)
      ./member/widgets.css    — 크레이트 갤러리 bucket tiles + trash dock
      ./member/animations.css — entrance / equalizer keyframes
-     ./member/layout.css     — profile shell, picker sheet, lyrics
+     ./member/layout.css     — profile shell, picker sheet, static Lyrics Sheet
 
    Imported by SelfDashboard + pages/collection.astro.
 
    NOTE: modal.css is NOT member-only — the home islands (TodaySongPicker /
    TodayPickHistory) use the same qb-* markup and import it directly, since
    member.css never loads outside the dashboard. It is re-exported here only so
-   the dashboard's own modal consumers keep working unchanged.
+   the dashboard's own modal consumers keep working unchanged. Same posture:
+   ../lyricsViewer.css (the LIVE Lyrics Viewer's .lyv-* rules, ARCH-global-
+   playback-experience Step 2) is NOT re-exported here — LyricsViewer.tsx
+   self-supplies it directly, it is not member.css's to carry.
    ============================================================ */
 
 @import './modal.css';

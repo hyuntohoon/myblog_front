@@ -44,10 +44,10 @@ const sc = (n: number) => `calc(${n}px * ${SCALE})`
 const NOOP_PLAYBACK_ENTRY: PlaybackEntryHandler = () => {}
 
 /**
- * 가사 DID gain an app-wide event (`ent:open-live-lyrics`, mirroring `ent:open-album`)
- * — see `entityEvents.ts`. `SelfDashboard` is the only listener today, so this is
- * still an honest no-op on any page without the member dashboard mounted, same as
- * before; it simply stops being ALWAYS a no-op.
+ * 가사 opens via an app-wide event (`ent:open-live-lyrics`, mirroring `ent:open-album`)
+ * — see `entityEvents.ts`. `PocketBuckit.tsx` (this component's own layout-mounted
+ * root, ARCH-global-playback-experience Step 2) is the listener, so this reaches
+ * `LyricsViewer` on every route, not just the member dashboard.
  */
 const openPlaybackLyrics: PlaybackEntryHandler = (row, state) => {
   const spotifyTrackId = row?.trackId ?
