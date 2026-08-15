@@ -79,3 +79,26 @@ export function withoutQueueItems(tree: BoardBucket[], bucketId: string, itemIds
   }))
   return walk(tree)
 }
+
+/**
+ * `tree` with `bucketId`'s direct members reordered to `orderedItemIds`.
+ *
+ * Used for the queue's own pointer-drag/keyboard reorder (ARCH-global-playback-
+ * experience Step 4) — an optimistic local reflow ahead of the `PUT /reorder`
+ * round-trip, same shape as `withoutQueueItems` above. `orderedItemIds` is taken
+ * as the full new member set, not a partial reordering: an album whose id is
+ * absent from it is dropped, not left in place. The current (only) caller always
+ * passes every row's id, matching a race with a concurrent remove — an id that no
+ * longer resolves to a live album is dropped the same way. A future caller
+ * passing a genuinely partial list would need to merge in the untouched ids first.
+ */
+export function withReorderedQueueItems(tree: BoardBucket[], bucketId: string, orderedItemIds: readonly string[]): BoardBucket[] {
+  const walk = (nodes: BoardBucket[]): BoardBucket[] => nodes.map((b) => {
+    if (b.id !== bucketId)
+      return b.children.length ? { ...b, children: walk(b.children) } : b
+    const byId = new Map(b.albums.map(a => [a.itemId, a]))
+    const albums = orderedItemIds.map(id => byId.get(id)).filter((a): a is BoardAlbum => a != null)
+    return { ...b, albums, children: b.children.length ? walk(b.children) : b.children }
+  })
+  return walk(tree)
+}

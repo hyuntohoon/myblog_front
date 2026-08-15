@@ -2,12 +2,12 @@ import type { RefObject } from 'react'
 import type { BoardAlbum } from '@lib/buckets'
 import type { ExternalNowPlaying, PlaybackSessionState } from '@lib/playback/session'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { deleteBucketItem } from '@lib/buckets'
+import { deleteBucketItem, reorderItems } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { useClockEstimate } from '@lib/clockEstimate'
 import { INITIAL_DOCK, useDockTear } from '@lib/dockTear'
 import { openAlbum } from '@lib/entityEvents'
-import { playbackQueue, withoutQueueItems } from '@lib/playback/queue'
+import { playbackQueue, withoutQueueItems, withReorderedQueueItems } from '@lib/playback/queue'
 import { playbackSession } from '@lib/playback/session'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { resolveDbAlbumId } from '@lib/spotifyCatalog'
@@ -99,6 +99,15 @@ function formatMs(ms: number | null): string {
 
 function formatDuration(row: BoardAlbum): string {
   return row.durationSec == null ? '—' : formatMs(row.durationSec * 1000)
+}
+
+// Any unknown-duration row makes the sum itself unknowable, not just short by that
+// one row — degrades the whole total to '—' rather than a silently-undercounted
+// number, matching the per-row '—' fallback above.
+function formatTotalDuration(rows: BoardAlbum[]): string {
+  if (rows.length === 0 || rows.some(row => row.durationSec == null))
+    return '—'
+  return formatMs(rows.reduce((sum, row) => sum + (row.durationSec ?? 0) * 1000, 0))
 }
 
 function albumIdFor(row: BoardAlbum | null): string | null {
@@ -247,35 +256,196 @@ async function removeQueueItem(itemId: string): Promise<void> {
   }
 }
 
+/**
+ * Persist a new row order for the queue: optimistic local reflow, then the
+ * `PUT /reorder` round-trip. On failure, force a real refetch rather than leaving
+ * the optimistic order stuck out of sync with the server (unlike `removeQueueItem`,
+ * a rejected reorder has no safe "just leave it" fallback — the visible order would
+ * silently lie about what plays next).
+ */
+async function persistQueueOrder(bucketId: string, itemIds: string[]): Promise<void> {
+  bucketStore.setTree(withReorderedQueueItems(bucketStore.getTree(), bucketId, itemIds))
+  try {
+    await reorderItems([{ id: bucketId, item_ids: itemIds }])
+  }
+  catch {
+    void bucketStore.ensureFresh(true)
+  }
+}
+
+type QueueDropPlace = 'before' | 'after'
+
 export function PlaybackQueue({ model, limit, removable = false }: { model: PlaybackViewModel, limit?: number, removable?: boolean }) {
   const rows = limit == null ? model.queue : model.queue.slice(0, limit)
+  // Reorder/summary/play-all only apply to the full, untruncated queue — the
+  // 3-row `PlaybackMini` preview stays a plain preview, matching its existing
+  // "다음 N곡 더" truncation hint rather than growing a second summary concept.
+  const full = limit == null
+  const reorderable = full && rows.length > 1
+  const listRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ itemId: string, startY: number, moved: boolean } | null>(null)
+  const dropRef = useRef<{ overId: string | null, place: QueueDropPlace } | null>(null)
+  const pendingFocusId = useRef<string | null>(null)
+  const [drag, setDrag] = useState<{ itemId: string, overId: string | null, place: QueueDropPlace } | null>(null)
+  const [liveMsg, setLiveMsg] = useState('')
+
+  useEffect(() => {
+    const id = pendingFocusId.current
+    if (!id)
+      return
+    pendingFocusId.current = null
+    listRef.current?.querySelector<HTMLButtonElement>(`[data-item-id="${id}"] .pbp-queue-handle`)?.focus()
+  }, [rows])
+
+  const commitReorder = (itemId: string, overId: string | null, place: QueueDropPlace) => {
+    const bucketId = playbackQueue().bucket?.id
+    if (!bucketId)
+      return
+    const ids = rows.map(row => row.itemId)
+    const from = ids.indexOf(itemId)
+    if (from < 0)
+      return
+    ids.splice(from, 1)
+    const overIdx = overId ? ids.indexOf(overId) : -1
+    if (overIdx < 0)
+      ids.push(itemId)
+    else
+      ids.splice(place === 'after' ? overIdx + 1 : overIdx, 0, itemId)
+    void persistQueueOrder(bucketId, ids)
+  }
+
+  const onHandleDown = (e: React.PointerEvent, itemId: string) => {
+    dragRef.current = { itemId, startY: e.clientY, moved: false }
+    dropRef.current = null
+    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  }
+  const onHandleMove = (e: React.PointerEvent) => {
+    const s = dragRef.current
+    if (!s)
+      return
+    if (!s.moved && Math.abs(e.clientY - s.startY) < 6)
+      return
+    s.moved = true
+    const list = listRef.current
+    if (!list)
+      return
+    const wraps = Array.from(list.querySelectorAll<HTMLElement>('[data-item-id]'))
+    let overId: string | null = null
+    let place: QueueDropPlace = 'before'
+    for (const w of wraps) {
+      const r = w.getBoundingClientRect()
+      if (e.clientY >= r.top && e.clientY <= r.bottom) {
+        overId = w.dataset.itemId ?? null
+        place = e.clientY < r.top + r.height / 2 ? 'before' : 'after'
+        break
+      }
+    }
+    if (!overId && wraps.length) {
+      const first = wraps[0].getBoundingClientRect()
+      if (e.clientY < first.top) {
+        overId = wraps[0].dataset.itemId ?? null
+        place = 'before'
+      }
+      else {
+        overId = wraps[wraps.length - 1].dataset.itemId ?? null
+        place = 'after'
+      }
+    }
+    const drop = { overId: overId === s.itemId ? null : overId, place }
+    dropRef.current = drop
+    setDrag({ itemId: s.itemId, overId: drop.overId, place: drop.place })
+  }
+  const onHandleUp = () => {
+    const s = dragRef.current
+    dragRef.current = null
+    const drop = dropRef.current
+    dropRef.current = null
+    setDrag(null)
+    if (s?.moved && drop?.overId)
+      commitReorder(s.itemId, drop.overId, drop.place)
+  }
+  // A `pointercancel` (a system gesture or notification steals the pointer mid-drag)
+  // is not a drop — clear the drag state without committing, or the drop-target
+  // highlight is left stuck on whatever row was last hovered.
+  const onHandleCancel = () => {
+    dragRef.current = null
+    dropRef.current = null
+    setDrag(null)
+  }
+  const onHandleKey = (e: React.KeyboardEvent, itemId: string) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')
+      return
+    e.preventDefault()
+    const idx = rows.findIndex(row => row.itemId === itemId)
+    const target = e.key === 'ArrowUp' ? idx - 1 : idx + 1
+    if (idx < 0 || target < 0 || target >= rows.length)
+      return
+    pendingFocusId.current = itemId
+    setLiveMsg(`${rows[idx].title}을(를) ${e.key === 'ArrowUp' ? '위' : '아래'}로 옮겼어요`)
+    commitReorder(itemId, rows[target].itemId, e.key === 'ArrowUp' ? 'before' : 'after')
+  }
+
   return (
     <div className="pbp-queue" aria-label="재생 대기열">
-      {rows.map((row, index) => {
-        const current = row.itemId === model.state.currentItemId
-        return (
-          <div className="pbp-queue-row" data-current={current || undefined} key={row.itemId}>
-            <button type="button" className="pbp-queue-play" onClick={() => void playbackSession.playAt(row.itemId)} disabled={model.state.busy}>
-              <span className="pbp-queue-position" aria-label={current ? '현재 곡' : `${index + 1}번`}>
-                {current ?
-                  (
-                    <span className="pbp-eq" data-playing={model.state.playing || undefined} aria-hidden="true">
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                  ) :
-                  String(index + 1).padStart(2, '0')}
-              </span>
-              <span className="pbp-queue-title">{row.title}</span>
-              <span className="pbp-queue-duration">{formatDuration(row)}</span>
-            </button>
-            {removable && (
-              <button type="button" className="pbp-queue-remove" onClick={() => void removeQueueItem(row.itemId)} aria-label={`${row.title} 대기열에서 제거`}>×</button>
-            )}
-          </div>
-        )
-      })}
+      {full && rows.length > 0 && (
+        <div className="pbp-queue-summary">
+          <span>{`${rows.length}곡 · ${formatTotalDuration(rows)} 총 재생 시간`}</span>
+          <button type="button" className="pbp-queue-playall" onClick={() => void playbackSession.playAt(rows[0].itemId)} disabled={model.state.busy}>전체재생</button>
+        </div>
+      )}
+      {reorderable && <span className="pbp-sr-only" role="status" aria-live="polite">{liveMsg}</span>}
+      <div ref={listRef} className="pbp-queue-rows">
+        {rows.map((row, index) => {
+          const current = row.itemId === model.state.currentItemId
+          return (
+            <div
+	className="pbp-queue-row"
+	data-current={current || undefined}
+	data-item-id={row.itemId}
+	data-drag-over={drag?.overId === row.itemId ? drag.place : undefined}
+	key={row.itemId}
+            >
+              {reorderable && (
+                <button
+	type="button"
+	className="pbp-queue-handle"
+	aria-label={`${row.title} 순서 변경, 위/아래 화살표로 이동`}
+	onPointerDown={e => onHandleDown(e, row.itemId)}
+	onPointerMove={onHandleMove}
+	onPointerUp={onHandleUp}
+	onPointerCancel={onHandleCancel}
+	onKeyDown={e => onHandleKey(e, row.itemId)}
+                >
+                  ⠿
+                </button>
+              )}
+              <button type="button" className="pbp-queue-play" onClick={() => void playbackSession.playAt(row.itemId)} disabled={model.state.busy}>
+                <span className="pbp-queue-cover" aria-hidden="true">
+                  {row.cover ?
+                    <img src={row.cover} alt="" /> :
+                    <span>{row.title.slice(0, 2)}</span>}
+                </span>
+                <span className="pbp-queue-position" aria-label={current ? '현재 곡' : `${index + 1}번`}>
+                  {current ?
+                    (
+                      <span className="pbp-eq" data-playing={model.state.playing || undefined} aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    ) :
+                    String(index + 1).padStart(2, '0')}
+                </span>
+                <span className="pbp-queue-title">{row.title}</span>
+                <span className="pbp-queue-duration">{formatDuration(row)}</span>
+              </button>
+              {removable && (
+                <button type="button" className="pbp-queue-remove" onClick={() => void removeQueueItem(row.itemId)} aria-label={`${row.title} 대기열에서 제거`}>×</button>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
