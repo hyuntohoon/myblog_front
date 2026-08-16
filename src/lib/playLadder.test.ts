@@ -11,9 +11,13 @@
 //   - a play that cannot possibly sound never downloads the ~1 MB SDK
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as authLib from '@lib/auth'
-import { __resetPlaybackState, isSdkLoaded, play } from '@lib/spotifyPlayback'
+import { __resetPlaybackState, getStreamingToken, isSdkLoaded, play } from '@lib/spotifyPlayback'
 
-vi.mock('@lib/auth', () => ({ isLoggedIn: vi.fn(() => true), getAuthHeader: vi.fn(() => ({})) }))
+vi.mock('@lib/auth', () => ({
+  isLoggedIn: vi.fn(() => true),
+  getAuthHeader: vi.fn(() => ({})),
+  refreshAccessToken: vi.fn(),
+}))
 
 const TOKEN_URL = 'https://backend.test/api/playback/spotify-token'
 const RESOLVE_URL = 'https://backend.test/api/playback/resolve'
@@ -95,6 +99,8 @@ beforeEach(() => {
   calls = []
   __resetPlaybackState()
   vi.mocked(authLib).isLoggedIn.mockReturnValue(true)
+  vi.mocked(authLib).getAuthHeader.mockReturnValue({})
+  vi.mocked(authLib).refreshAccessToken.mockReset()
 })
 
 afterEach(() => {
@@ -245,6 +251,75 @@ describe('pre-resolved intents (the lyrics queue jump)', () => {
 })
 
 describe('token expiry mid-session', () => {
+  it('refreshes an expired Cognito token once, then retries the streaming-token mint', async () => {
+    vi.mocked(authLib).getAuthHeader.mockReturnValueOnce({ Authorization: 'Bearer stale' }).mockReturnValueOnce({ Authorization: 'Bearer stale' }).mockReturnValue({ Authorization: 'Bearer fresh' })
+    vi.mocked(authLib).refreshAccessToken.mockResolvedValue('fresh')
+    install({
+      token: vi.fn().mockReturnValueOnce(json({}, 401)).mockReturnValueOnce(json({ access_token: 'streaming-fresh', expires_in: 3600 })),
+    })
+
+    await expect(getStreamingToken()).resolves.toMatchObject({ ok: true, token: 'streaming-fresh' })
+    expect(vi.mocked(authLib).refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(calls.filter(c => c.url.startsWith(TOKEN_URL))).toHaveLength(2)
+    expect((calls[0].init?.headers as Record<string, string>).Authorization).toBe('Bearer stale')
+    expect((calls[1].init?.headers as Record<string, string>).Authorization).toBe('Bearer fresh')
+  })
+
+  it('does not retry or redirect when Cognito refresh fails', async () => {
+    vi.mocked(authLib).getAuthHeader.mockReturnValue({ Authorization: 'Bearer stale' })
+    vi.mocked(authLib).refreshAccessToken.mockResolvedValue(null)
+    install({ token: () => json({}, 401) })
+
+    await expect(getStreamingToken()).resolves.toEqual({ ok: false, status: 'unauthorized', httpStatus: 401 })
+    expect(vi.mocked(authLib).refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(calls.filter(c => c.url.startsWith(TOKEN_URL))).toHaveLength(1)
+  })
+
+  it('stops after the one post-refresh retry when that mint is still unauthorized', async () => {
+    vi.mocked(authLib).getAuthHeader.mockReturnValueOnce({ Authorization: 'Bearer stale' }).mockReturnValueOnce({ Authorization: 'Bearer stale' }).mockReturnValue({ Authorization: 'Bearer fresh' })
+    vi.mocked(authLib).refreshAccessToken.mockResolvedValue('fresh')
+    install({ token: () => json({}, 401) })
+
+    await expect(getStreamingToken()).resolves.toEqual({ ok: false, status: 'unauthorized', httpStatus: 401 })
+    expect(vi.mocked(authLib).refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(calls.filter(c => c.url.startsWith(TOKEN_URL))).toHaveLength(2)
+  })
+
+  it('retries with an access token refreshed by another request without refreshing again', async () => {
+    vi.mocked(authLib).getAuthHeader.mockReturnValueOnce({ Authorization: 'Bearer stale' }).mockReturnValueOnce({ Authorization: 'Bearer already-fresh' })
+    install({
+      token: vi.fn().mockReturnValueOnce(json({}, 401)).mockReturnValueOnce(json({ access_token: 'streaming-fresh', expires_in: 3600 })),
+    })
+
+    await expect(getStreamingToken()).resolves.toMatchObject({ ok: true, token: 'streaming-fresh' })
+    expect(vi.mocked(authLib).refreshAccessToken).not.toHaveBeenCalled()
+    expect(calls.filter(c => c.url.startsWith(TOKEN_URL))).toHaveLength(2)
+    expect((calls[1].init?.headers as Record<string, string>).Authorization).toBe('Bearer already-fresh')
+  })
+
+  it('shares a stale-token recovery mint across concurrent callers', async () => {
+    let releaseFirst: (() => void) | undefined
+    const firstResponse = new Promise<Response>((resolve) => {
+      releaseFirst = () => resolve(json({}, 401))
+    })
+    vi.mocked(authLib).getAuthHeader.mockReturnValueOnce({ Authorization: 'Bearer stale' }).mockReturnValueOnce({ Authorization: 'Bearer stale' }).mockReturnValue({ Authorization: 'Bearer fresh' })
+    vi.mocked(authLib).refreshAccessToken.mockResolvedValue('fresh')
+    install({
+      token: vi.fn().mockReturnValueOnce(firstResponse).mockReturnValueOnce(json({ access_token: 'streaming-fresh', expires_in: 3600 })),
+    })
+
+    const first = getStreamingToken()
+    const second = getStreamingToken()
+    releaseFirst?.()
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ ok: true, token: 'streaming-fresh' }),
+      expect.objectContaining({ ok: true, token: 'streaming-fresh' }),
+    ])
+    expect(vi.mocked(authLib).refreshAccessToken).toHaveBeenCalledTimes(1)
+    expect(calls.filter(c => c.url.startsWith(TOKEN_URL))).toHaveLength(2)
+  })
+
   it('re-mints once on a 401 and retries the same rung', async () => {
     let first = true
     install({
