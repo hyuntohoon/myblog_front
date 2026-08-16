@@ -14,10 +14,9 @@ import type { PbBoardDropDetail } from '@lib/pocketBuckit/events'
 import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import type { PlaybackTarget } from '@lib/spotifyPlayback'
-import type { PlaybackEntryHandler } from '../playback/PlaybackPanel'
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { PLAYBACK_KIND } from '@lib/buckets'
-import { openAlbum, openLiveLyrics } from '@lib/entityEvents'
+import { openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isLoggedIn } from '@lib/auth'
 import { isOwnerUser } from '@lib/owner'
@@ -26,47 +25,15 @@ import { memberRef } from '@lib/entityDrag'
 import { boardDragAccepts, externalAlbumCopy, getBoardDnd, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
-import { cachedUri } from '@lib/playback/uris'
 import { play } from '@lib/spotifyPlayback'
+import { NOOP_PLAYBACK_ENTRY, openPlaybackLyrics } from '../playback/playbackEntryActions'
 import { PlaybackMini } from '../playback/PlaybackMini'
-import { PlaybackPanel } from '../playback/PlaybackPanel'
 import { usePocket } from './PocketBuckitProvider'
 
 // ── scale helper — every inline px scales with the --pb-scale CSS var ──────────
 const SCALE = 'var(--pb-scale, 1)'
 const sc = (n: number) => `calc(${n}px * ${SCALE})`
-
-// Pocket is a site-wide island and cannot reach the member dashboard's local
-// track-detail mount directly. `트랙 정보` has no destination ANYWHERE in the
-// product yet (that surface is `ARCH-entity-interaction-v2`'s canonical-track
-// scope, which `FEAT-playback-bucket-player` Step 8 is itself gated on) — so it
-// stays a deliberate, explicit no-op rather than a fabricated destination.
-const NOOP_PLAYBACK_ENTRY: PlaybackEntryHandler = () => {}
-
-/**
- * 가사 opens via an app-wide event (`ent:open-live-lyrics`, mirroring `ent:open-album`)
- * — see `entityEvents.ts`. `PocketBuckit.tsx` (this component's own layout-mounted
- * root, ARCH-global-playback-experience Step 2) is the listener, so this reaches
- * `LyricsViewer` on every route, not just the member dashboard.
- */
-const openPlaybackLyrics: PlaybackEntryHandler = (row, state) => {
-  const spotifyTrackId = row?.trackId ?
-    cachedUri(row.trackId)?.replace(/^spotify:track:/, '') ?? null :
-    state.external?.spotifyTrackId ?? null
-  if (!spotifyTrackId)
-    return
-  const anchor = state.anchor
-  openLiveLyrics({
-    trackId: spotifyTrackId,
-    progressMs: anchor?.ms ?? null,
-    progressAtMs: anchor?.wallMs ?? null,
-    durationMs: state.durationMs,
-    albumCoverUrl: row?.cover ?? null,
-    track: row?.title ?? state.external?.title ?? null,
-    artist: row?.artist ?? state.external?.artist ?? null,
-    artists: [],
-  })
-}
+const abovePlayer = (offset: string) => `calc(var(--global-player-h, 0px) + ${offset})`
 
 function accentFor(leaf: PocketLeaf): string {
   return leaf.color || 'var(--color-accent)'
@@ -312,12 +279,12 @@ function EntryControl({ design, count, onOpen }: { design: PocketBuckitDesign, c
     const filtered = design.entry === 'dual-filtered'
     return (
       <>
-        <button type="button" className="pkt-ctrl" data-variant="tab" style={{ left: 0, bottom: sc(18), borderRadius: '0 8px 8px 0' }} onClick={onOpen}>
+        <button type="button" className="pkt-ctrl" data-variant="tab" style={{ left: 0, bottom: abovePlayer(sc(18)), borderRadius: '0 8px 8px 0' }} onClick={onOpen}>
           {Icon}
 {filtered ? '듣기' : 'Pocket'}
 <span className="cbadge">{count}</span>
         </button>
-        <button type="button" className="pkt-ctrl" data-variant="tab" style={{ right: 0, bottom: sc(18), borderRadius: '8px 0 0 8px' }} onClick={onOpen}>
+        <button type="button" className="pkt-ctrl" data-variant="tab" style={{ right: 0, bottom: abovePlayer(sc(18)), borderRadius: '8px 0 0 8px' }} onClick={onOpen}>
           {Icon}
 {filtered ? '평론' : 'Pocket'}
         </button>
@@ -325,7 +292,7 @@ function EntryControl({ design, count, onOpen }: { design: PocketBuckitDesign, c
     )
   }
   return (
-    <button type="button" className="pkt-ctrl" style={{ right: sc(22), bottom: sc(18) }} onClick={onOpen}>
+    <button type="button" className="pkt-ctrl" style={{ right: sc(22), bottom: abovePlayer(sc(18)) }} onClick={onOpen}>
       {Icon}
 Pocket
 <span className="cbadge">{count}</span>
@@ -749,14 +716,13 @@ function TreeNav({ folders, folder, setFolder, bottom }: { folders: string[], fo
 }
 
 // ── the dispatcher ───────────────────────────────────────────────────────────
-export function PocketTray() {
+export function PocketTray({ onOpenPlaybackPanel = () => {} }: { onOpenPlaybackPanel?: () => void }) {
   const { design, leaves, open, setOpen, openDrawer, isDrawerOpen, closeAllDrawers, editMode, setEditMode, deleteBucket, undo, runUndo, reorderBucket, dropExternalAlbum } = usePocket()
   const [folder, setFolder] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   // edit-mode tray bucket-delete: the first × tap arms a per-bucket confirm, the
   // second deletes (no server undo). Separate from drawer-open + reorder state (§9).
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-  const [playbackPanelOpen, setPlaybackPanelOpen] = useState(false)
 
   const light = isLightDesign(design)
   const fam = engineFamily(design)
@@ -918,14 +884,12 @@ export function PocketTray() {
     return (
       <div className="pb-scope">
         <EntryControl design={design} count={leaves.length} onOpen={() => setOpen(true)} />
-        {playbackPanelOpen && (
-          <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={openPlaybackLyrics} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
-        )}
       </div>
     )
   }
 
   const trayBottom = sc(light ? (sticker ? 116 : 88) : (fam === 'f4' ? 132 : 104))
+  const contentBottom = abovePlayer(trayBottom)
 
   const close = (
     <button
@@ -1055,7 +1019,7 @@ export function PocketTray() {
   return (
     <div className="pb-scope" data-edit={editMode ? 'true' : undefined} data-reordering={drag ? 'true' : undefined} data-can-reorder={canReorder ? 'true' : undefined}>
       <span role="status" aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0 }}>{liveMsg}</span>
-      {design.treeDepth >= 1 && <TreeNav folders={folders} folder={folder} setFolder={setFolder} bottom={trayBottom} />}
+      {design.treeDepth >= 1 && <TreeNav folders={folders} folder={folder} setFolder={setFolder} bottom={contentBottom} />}
 
       {light ?
         (
@@ -1099,14 +1063,10 @@ export function PocketTray() {
             </div>
           )}
 
-      <DrawerLayer design={design} editMode={editMode} onExpandPlayback={() => setPlaybackPanelOpen(true)} />
-
-      {playbackPanelOpen && (
-        <PlaybackPanel onClose={() => setPlaybackPanelOpen(false)} onOpenLyrics={openPlaybackLyrics} onOpenTrackInfo={NOOP_PLAYBACK_ENTRY} />
-      )}
+      <DrawerLayer design={design} editMode={editMode} onExpandPlayback={onOpenPlaybackPanel} />
 
       {undo && (
-        <div className="undo-rib" style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: `calc(${trayBottom} + ${sc(14)})`, width: 'auto', borderRadius: sc(4), zIndex: 73 }}>
+        <div className="undo-rib" style={{ position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: `calc(var(--global-player-h, 0px) + ${trayBottom} + ${sc(14)})`, width: 'auto', borderRadius: sc(4), zIndex: 73 }}>
           <span>{undo.label}</span>
           {undo.run && <button type="button" onClick={runUndo}>되돌리기</button>}
         </div>

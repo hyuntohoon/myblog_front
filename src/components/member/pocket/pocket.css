@@ -41,7 +41,7 @@
 .pb-scope .atag-info { color: var(--color-subtle); background: var(--color-bg); border-color: var(--color-border); }
 
 /* ── TRAY base (fixed, bottom-anchored) ───────────────────── */
-.pb-scope .tray { position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-pocket, 70);
+.pb-scope .tray { position: fixed; left: 0; right: 0; bottom: var(--global-player-h, 0px); z-index: var(--z-pocket, 70);
   display: flex; align-items: stretch; animation: pbRise .22s cubic-bezier(.2,.7,.2,1); }
 @keyframes pbRise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
 .pb-scope .tray-path { flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center;
@@ -243,7 +243,7 @@
   background: color-mix(in srgb, var(--color-accent) 10%, var(--color-bg)); }
 
 /* ── LIGHT shells (F1L–F4L, F5, F6) ───────────────────────── */
-.pb-scope .ltray { position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-pocket, 70);
+.pb-scope .ltray { position: fixed; left: 0; right: 0; bottom: var(--global-player-h, 0px); z-index: var(--z-pocket, 70);
   display: flex; align-items: center; gap: calc(16px * var(--pb-scale)); padding: calc(13px * var(--pb-scale)) calc(18px * var(--pb-scale)); font-family: var(--font-round);
   background: color-mix(in srgb, var(--color-paper) 62%, transparent); backdrop-filter: blur(16px) saturate(1.1);
   border-top: 1px solid color-mix(in srgb, var(--color-text) 5%, transparent);
@@ -387,55 +387,238 @@
 /* ── FEAT-playback-bucket-player Step 6 / ARCH-global-playback-experience
    Step 5 ─────────────────────────────────────────────────────────────────
    The site shell, not a dashboard-only stylesheet, consumes both reservation
-   contracts: --pbp-dock-w (the expanded panel's docked width) and --pb-bar-h
-   (the persistent bar's height, this step). Both default to their closed/
+   contracts: --pbp-dock-w (the expanded panel's docked width) and
+   --global-player-h (the bottom deck's responsive height). Both default to their closed/
    no-playback 0px, so a route with neither active never moves. */
 .site-shell {
   margin-right: var(--pbp-dock-w, 0px);
-  padding-top: var(--pb-bar-h, 0px);
-  transition: margin-right .32s cubic-bezier(.22,.85,.25,1), padding-top .2s ease;
+  padding-bottom: var(--global-player-h, 0px);
+  transition: margin-right .32s cubic-bezier(.22,.85,.25,1), padding-bottom .2s ease;
 }
 
-.pb-scope .pb-persistent-bar {
+.pb-scope .global-playback-bar {
+  --deck-night: #12151B;
+  --deck-raised: #1B2028;
+  --deck-ink: #F4F7FB;
+  --deck-muted: #9DA8B6;
+  --deck-signal: #74B9FF;
+  --deck-alert: #FF8A80;
+  /* Shared control primitives consume the established playback tokens. These
+     aliases are local to the deck and never alter the surrounding site theme. */
+  --color-bg: var(--deck-night);
+  --color-paper: var(--deck-raised);
+  --color-text: var(--deck-ink);
+  --color-subtle: var(--deck-muted);
+  --color-faded: var(--deck-muted);
+  --color-accent: var(--deck-signal);
+  --color-border: #323A47;
+  --color-border-soft: #262C36;
+  --on-accent: var(--deck-night);
   position: fixed;
-  top: 52px; /* directly under header.astro's fixed .hdr-bar (52px, every breakpoint) */
   left: 0;
   right: 0;
-  z-index: var(--z-pocket, 70);
-  height: 56px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 16px;
-  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--color-border);
+  bottom: 0;
+  z-index: calc(var(--z-pocket, 70) + 4);
+  height: var(--global-player-h, 0px);
+  padding-bottom: env(safe-area-inset-bottom);
+  box-sizing: border-box;
+  color: var(--deck-ink);
+  background: var(--deck-night);
+  border-top: 1px solid #323A47;
+  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
 }
-.pb-scope .pb-persistent-bar-identity {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  background: none;
-  border: 0;
-  padding: 0;
-  margin: 0;
+.pb-scope .deck-signal-rail {
+  position: absolute;
+  z-index: 2;
+  top: -5px;
+  left: 0;
+  right: 0;
+  height: 10px;
+  padding: 4px 0 3px;
+  background: transparent;
   cursor: pointer;
-  text-align: left;
-  color: inherit;
-  font: inherit;
+  outline: none;
 }
-.pb-scope .pb-persistent-bar-identity .pbp-identity {
-  pointer-events: none; /* the whole identity block is the click target */
+.pb-scope .deck-signal-rail::before,
+.pb-scope .deck-signal-rail i {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: 3px;
+  content: '';
 }
-.pb-scope .pb-persistent-bar .pbp-transport {
-  flex: 0 0 auto;
+.pb-scope .deck-signal-rail::before { right: 0; background: #323A47; }
+.pb-scope .deck-signal-rail i { width: var(--deck-progress); background: var(--deck-signal); }
+.pb-scope .deck-signal-rail:focus-visible { box-shadow: inset 0 0 0 2px var(--deck-signal); }
+.pb-scope .global-playback-main {
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(430px, 2fr) minmax(230px, 1fr);
+  align-items: center;
+  gap: clamp(14px, 2vw, 36px);
+  height: 100%;
+  padding: 0 clamp(14px, 2.4vw, 36px);
+}
+.pb-scope .deck-identity-zone {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+.pb-scope .global-playback-bar .pbp-identity,
+.pb-scope .global-playback-bar .pbp-identity.is-compact {
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+}
+.pb-scope .global-playback-bar .pbp-cover {
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 0;
+  color: var(--deck-muted);
+  background: var(--deck-raised);
+  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  font-size: 14px;
+}
+.pb-scope .global-playback-bar .pbp-current-title,
+.pb-scope .global-playback-bar .pbp-identity.is-compact .pbp-current-title {
+  color: var(--deck-ink);
+  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.pb-scope .global-playback-bar .pbp-current-artist {
+  margin-top: 3px;
+  color: var(--deck-muted);
+  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-transform: none;
+}
+.pb-scope .global-playback-bar .pbp-current-outside { display: none; }
+.pb-scope .deck-hit-target {
+  display: inline-grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+}
+.pb-scope .global-playback-bar .deck-like > button,
+.pb-scope .global-playback-bar .deck-like > a { min-width: 44px; min-height: 44px; color: var(--deck-ink) !important; }
+.pb-scope .global-playback-bar .deck-like > button[aria-pressed='true'] { color: var(--deck-signal) !important; }
+.pb-scope .deck-transport-zone { min-width: 0; }
+.pb-scope .deck-transport-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  gap: 0;
+}
+.pb-scope .global-playback-bar .pbp-transport { gap: 0; }
+.pb-scope .global-playback-bar .pbp-transport button {
+  min-width: 44px;
+  width: 44px;
+  min-height: 44px;
+  height: 44px;
+  color: var(--deck-ink);
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 24px;
+}
+.pb-scope .global-playback-bar .pbp-transport .pbp-play-toggle {
+  width: 44px;
+  height: 44px;
+  color: var(--deck-night);
+  background: var(--deck-ink);
+  box-shadow: inset 0 0 0 2px var(--deck-night);
+  font-size: 13px;
+}
+.pb-scope .global-playback-bar .deck-mode-set button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.pb-scope .deck-wide-volume { display: inline-flex; align-items: center; min-height: 44px; margin-left: 8px; }
+.pb-scope .deck-wide-volume input { accent-color: var(--deck-signal) !important; }
+.pb-scope .deck-time-line {
+  display: grid;
+  grid-template-columns: 42px minmax(80px, 1fr) 42px;
+  align-items: center;
+  gap: 8px;
+  margin-top: -2px;
+  color: var(--deck-muted);
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.pb-scope .deck-time-line > :last-child { text-align: right; }
+.pb-scope .deck-center-progress { position: relative; height: 3px; background: #323A47; }
+.pb-scope .deck-center-progress i { display: block; width: var(--deck-progress); height: 100%; background: var(--deck-signal); }
+.pb-scope .deck-utility-zone {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.pb-scope .deck-icon-button {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: var(--deck-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.pb-scope .deck-icon-button:hover,
+.pb-scope .deck-icon-button[aria-expanded='true'] { color: var(--deck-signal); background: var(--deck-raised); }
+.pb-scope .deck-icon-button:focus-visible,
+.pb-scope .global-playback-bar button:focus-visible,
+.pb-scope .global-playback-bar input:focus-visible { outline: 2px solid var(--deck-signal); outline-offset: -2px; }
+.pb-scope .deck-device-picker { width: min(190px, 15vw); min-width: 44px; }
+.pb-scope .global-playback-bar .deck-device-picker > div > button {
+  min-height: 44px;
+  padding: 7px 8px !important;
+  border: 0 !important;
+  color: var(--deck-muted) !important;
+  font-family: ui-monospace, 'IBM Plex Mono', monospace !important;
+  font-variant-numeric: tabular-nums;
+}
+.pb-scope .global-playback-bar .deck-device-picker [role='listbox'] { background: var(--deck-raised) !important; border-color: #323A47 !important; }
+.pb-scope .deck-volume-menu { position: relative; }
+.pb-scope .deck-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  min-width: 132px;
+  min-height: 44px;
+  place-items: center;
+  padding: 8px 12px;
+  border: 1px solid #323A47;
+  color: var(--deck-ink);
+  background: var(--deck-raised);
+}
+.pb-scope .deck-popover input { width: 92px !important; accent-color: var(--deck-signal) !important; }
+.pb-scope .deck-alert {
+  position: absolute;
+  right: 16px;
+  bottom: calc(100% + 8px);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 7px 10px;
+  border: 1px solid var(--deck-alert);
+  color: var(--deck-alert);
+  background: var(--deck-raised);
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pb-scope .pbp-dock-slot {
   position: fixed;
-  inset: 0 0 0 auto;
+  inset: 0 0 var(--global-player-h, 0px) auto;
   width: 380px;
   pointer-events: none;
   z-index: calc(var(--z-pocket, 70) - 2);
@@ -463,6 +646,11 @@
 }
 
 .pb-scope .pbp-panel {
+  --deck-night: #12151B;
+  --deck-raised: #1B2028;
+  --deck-ink: #F4F7FB;
+  --deck-muted: #9DA8B6;
+  --deck-signal: #74B9FF;
   position: fixed;
   z-index: calc(var(--z-pocket, 70) + 5);
   display: flex;
@@ -470,15 +658,16 @@
   box-sizing: border-box;
   color: var(--color-text);
   background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  box-shadow: 0 20px 52px color-mix(in srgb, var(--color-text) 20%, transparent);
+  border: 1px solid #323A47;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, .3);
   overflow: hidden;
   transition: left .32s cubic-bezier(.22,.85,.25,1), top .32s cubic-bezier(.22,.85,.25,1),
     width .32s cubic-bezier(.22,.85,.25,1), height .32s cubic-bezier(.22,.85,.25,1), box-shadow .18s;
 }
 .pb-scope .pbp-panel.is-docked {
   border-width: 0 0 0 1px;
-  box-shadow: -10px 0 30px color-mix(in srgb, var(--color-text) 8%, transparent);
+  border-color: #323A47;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, .18);
 }
 .pb-scope .pbp-panel.is-float { border-radius: var(--radius-lg); }
 .pb-scope .pbp-panel.is-grabbed { transition: none; }
@@ -492,15 +681,17 @@
   flex: 0 0 auto;
   min-height: 48px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-paper);
+  border-bottom: 1px solid #323A47;
+  color: var(--deck-ink);
+  background: var(--deck-night);
   cursor: grab;
   touch-action: none;
   user-select: none;
 }
 .pb-scope .pbp-panel.is-grabbed .pbp-head { cursor: grabbing; }
 .pb-scope .pbp-head-title {
-  font-family: var(--font-mono);
+  color: var(--deck-ink);
+  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
   font-size: var(--text-2xs);
   letter-spacing: .13em;
 }
@@ -510,12 +701,12 @@
   gap: 6px;
 }
 .pb-scope .pbp-place, .pb-scope .pbp-close, .pb-scope .pbp-mini-actions button {
-  border: 1px solid var(--color-border);
+  border: 1px solid #323A47;
   border-radius: var(--radius-pill);
   padding: 5px 9px;
-  color: var(--color-subtle);
-  background: var(--color-bg);
-  font-family: var(--font-mono);
+  color: var(--deck-muted);
+  background: var(--deck-raised);
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
   font-size: var(--text-2xs);
   cursor: pointer;
 }
@@ -829,8 +1020,49 @@
  * clickable tab, so it never claimed a switch the other three never delivered. */
 .pb-scope .pbp-mobile-tabs .pbp-mobile-tab-current { color: var(--on-accent); background: var(--color-accent); }
 
+@media (max-width: 1179px) {
+  .pb-scope .global-playback-main {
+    grid-template-columns: minmax(150px, 1fr) minmax(308px, 2fr) 132px;
+    gap: 10px;
+    padding-inline: 12px 4px;
+  }
+  .pb-scope .global-playback-bar .pbp-identity,
+  .pb-scope .global-playback-bar .pbp-identity.is-compact { grid-template-columns: 48px minmax(0, 1fr); gap: 9px; }
+  .pb-scope .global-playback-bar .pbp-cover { width: 48px; height: 48px; }
+  .pb-scope .deck-device-picker { width: 44px; }
+  .pb-scope .global-playback-bar .deck-device-picker > div > button {
+    width: 44px !important;
+    justify-content: center;
+    padding: 0 !important;
+  }
+  .pb-scope .global-playback-bar .deck-device-picker > div > button > span { display: none; }
+}
+
 @media (max-width: 767px) {
   .site-shell { margin-right: 0; }
+  .pb-scope .global-playback-main {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) auto;
+    grid-template-rows: 60px 48px;
+    gap: 0;
+    padding: 0 4px;
+  }
+  .pb-scope .deck-identity-zone {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding: 5px 4px 3px;
+  }
+  .pb-scope .global-playback-bar .pbp-identity,
+  .pb-scope .global-playback-bar .pbp-identity.is-compact { grid-template-columns: 44px minmax(0, 1fr); gap: 9px; }
+  .pb-scope .global-playback-bar .pbp-cover { width: 44px; height: 44px; }
+  .pb-scope .global-playback-bar .pbp-current-title,
+  .pb-scope .global-playback-bar .pbp-identity.is-compact .pbp-current-title { font-size: 13px; }
+  .pb-scope .global-playback-bar .pbp-current-artist { font-size: 11px; }
+  .pb-scope .deck-transport-zone { grid-column: 1; grid-row: 2; align-self: stretch; }
+  .pb-scope .deck-transport-line { justify-content: flex-start; min-height: 48px; }
+  .pb-scope .deck-time-line { display: none; }
+  .pb-scope .deck-utility-zone { grid-column: 2; grid-row: 2; align-self: stretch; }
+  .pb-scope .deck-popover { right: 0; }
   .pb-scope .pbp-dock-slot { display: none; }
   .pb-scope .pbp-panel.is-mobile {
     inset: 0 !important;
@@ -845,5 +1077,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .site-shell, .pb-scope .pbp-panel, .pb-scope .pbp-dock-hint { transition: none; }
+  .pb-scope .deck-signal-rail i,
+  .pb-scope .deck-center-progress i,
+  .pb-scope .deck-popover { transition: none; }
   .pb-scope .pbp-eq[data-playing] i { animation: none; }
 }

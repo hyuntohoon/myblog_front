@@ -19,6 +19,9 @@ const FLOAT_WIDTH = 420
 const FLOAT_HEIGHT = 760
 const FLOAT_MARGIN = 8
 
+/** `GlobalPlaybackBar`'s queue button reads this via `aria-controls`. */
+export const GLOBAL_PLAYBACK_PANEL_ID = 'global-playback-panel'
+
 export type PlaybackEntryHandler = (row: BoardAlbum | null, state: PlaybackSessionState) => void
 
 export interface PlaybackEntryProps {
@@ -155,7 +158,7 @@ export function PlaybackIdentity({ row, external, compact = false }: {
 }) {
   const title = row?.title ?? external?.title ?? '—'
   const artist = row?.artist ?? external?.artist ?? '—'
-  const cover = row?.cover ?? null
+  const cover = row?.cover ?? external?.albumCoverUrl ?? null
   return (
     <div className={`pbp-identity${compact ? ' is-compact' : ''}`}>
       <div className="pbp-cover" aria-hidden={!row && !external}>
@@ -497,7 +500,7 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
   useScrollLock()
 
   return (
-    <section ref={panelRef} className="pbp-panel is-mobile" role="dialog" aria-modal="true" aria-label="재생 대기열 플레이어">
+    <section id={GLOBAL_PLAYBACK_PANEL_ID} ref={panelRef} className="pbp-panel is-mobile" role="dialog" aria-modal="true" aria-label="재생 대기열 플레이어">
       <div className="pbp-head">
         <span className="pbp-head-title">재생 대기열</span>
         <button type="button" className="pbp-close" onClick={onClose} aria-label="닫기">✕</button>
@@ -585,7 +588,7 @@ function DesktopPlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { on
       <div ref={slotRef} className="pbp-dock-slot" aria-hidden="true">
         <div className={`pbp-dock-hint${dock.dragging && !dock.docked ? ' is-shown' : ''}${dock.expect ? ' is-expect' : ''}`}>여기에 도킹</div>
       </div>
-      <section ref={panelRef} className={`pbp-panel${dock.docked ? ' is-docked' : ' is-float'}`} role="region" aria-label="재생 대기열 플레이어">
+      <section id={GLOBAL_PLAYBACK_PANEL_ID} ref={panelRef} className={`pbp-panel${dock.docked ? ' is-docked' : ' is-float'}`} role="region" aria-label="재생 대기열 플레이어">
         <div className="pbp-head" {...handlers}>
           <span className="pbp-head-title">재생 대기열</span>
           <span className="pbp-head-actions">
