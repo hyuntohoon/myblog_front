@@ -9,7 +9,9 @@ import { isLoggedIn } from '@lib/auth'
 import { ENT_OPEN_LIVE_LYRICS } from '@lib/entityEvents'
 import { PB_CLOSED_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { LyricsViewer } from '../lyrics/LyricsViewer'
-import { PlaybackPersistentBar } from '../playback/PlaybackPersistentBar'
+import { GlobalPlaybackBar } from '../playback/GlobalPlaybackBar'
+import { PlaybackPanel } from '../playback/PlaybackPanel'
+import { NOOP_PLAYBACK_ENTRY, openPlaybackLyrics } from '../playback/playbackEntryActions'
 import { PocketBuckitProvider, usePocket } from './PocketBuckitProvider'
 import { PocketDesignSettings } from './PocketDesignSettings'
 import { PocketTray } from './PocketTray'
@@ -22,6 +24,7 @@ import '@styles/lyricsViewer.css'
 function PocketBuckitInner() {
   const { open, setOpen } = usePocket()
   const [settings, setSettings] = useState(false)
+  const [playbackPanelOpen, setPlaybackPanelOpen] = useState(false)
   // ARCH-global-playback-experience Step 2 — the live lyrics host, relocated
   // here from SelfDashboard (dashboard-scoped) so 가사 opens from any route.
   // PocketTray dispatches ENT_OPEN_LIVE_LYRICS (openPlaybackLyrics); this is
@@ -63,11 +66,15 @@ function PocketBuckitInner() {
   }, [open])
   return (
     <div className="pb-scope">
-      {/* ARCH-global-playback-experience Step 5 — independent of `open`
-          (the tray's own toggle state); visible whenever `session.ts`
-          reports active/paused playback, on every route. */}
-      <PlaybackPersistentBar />
-      <PocketTray />
+      <GlobalPlaybackBar playbackPanelOpen={playbackPanelOpen} onOpenPlaybackPanel={() => setPlaybackPanelOpen(true)} />
+      <PocketTray onOpenPlaybackPanel={() => setPlaybackPanelOpen(true)} />
+      {playbackPanelOpen && (
+        <PlaybackPanel
+	onClose={() => setPlaybackPanelOpen(false)}
+	onOpenLyrics={openPlaybackLyrics}
+	onOpenTrackInfo={NOOP_PLAYBACK_ENTRY}
+        />
+      )}
       <button
 	type="button"
 	aria-label="Pocket 디자인 설정"
@@ -76,7 +83,7 @@ function PocketBuckitInner() {
 	style={{
           position: 'fixed',
           right: 22,
-          bottom: open ? 152 : 60,
+          bottom: `calc(var(--global-player-h, 0px) + ${open ? 152 : 60}px)`,
           zIndex: 72,
           width: 34,
           height: 34,
