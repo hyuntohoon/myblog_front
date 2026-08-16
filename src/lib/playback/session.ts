@@ -55,6 +55,8 @@ export interface SessionNotice {
 export interface ExternalNowPlaying {
   title: string | null
   artist: string | null
+  /** Artwork from the same live read; client-only and safe to mirror across tabs. */
+  albumCoverUrl: string | null
   /** Spotify track id, so a later queue read can still match it to a row. */
   spotifyTrackId: string | null
   /**
@@ -114,6 +116,7 @@ export interface PlaybackSessionState {
 type SessionCommand =
 	| { kind: 'play-at', itemId: string } |
 	{ kind: 'toggle-play' } |
+	{ kind: 'seek', positionMs: number } |
 	{ kind: 'next' } |
 	{ kind: 'previous' }
 
@@ -234,6 +237,7 @@ let capabilityInflight: Promise<void> | null = null
 let likedTrackId: string | null = null
 let libraryBusy = false
 let modeBusy = false
+let playbackChangeAdoption: Promise<void> | null = null
 
 const RECONNECT_FLAG = 'np-spotify-reconnect'
 
@@ -613,6 +617,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
     external: {
       title: live.track,
       artist: live.artist,
+      albumCoverUrl: live.albumCoverUrl,
       spotifyTrackId: live.trackId,
       spotifyAlbumId: live.albumSpotifyId,
       deviceName: live.deviceName,
@@ -952,6 +957,58 @@ async function transferTo(deviceId: string, opts?: { raiseInPageFirst?: boolean 
 }
 
 /**
+ * Move the shared playhead and make the session anchor authoritative immediately.
+ *
+ * The provider write has no response body, so an actively-playing seek performs
+ * one confirmation read after the optimistic re-anchor. A paused seek is already
+ * exact and does not pay for that read. `authoritativePatch` bumps `localWriteSeq`
+ * before confirmation starts, so an older event-driven read cannot overwrite the
+ * target; a newer local write likewise makes the confirmation discard itself.
+ */
+async function seekTo(ms: number, onReanchored?: () => void): Promise<PlayerCommandOutcome | null> {
+  const target = Math.max(0, Math.round(ms))
+  if (current.busy)
+    return null
+  if (!current.currentItemId && !current.external)
+    return null
+  if (!current.isOwner && !await gate({ kind: 'seek', positionMs: target }))
+    return null
+
+  patch({ busy: true })
+  const result = await sendPlayerCommand({ kind: 'seek', positionMs: target })
+  if (!result.ok) {
+    recordControlFailure(result)
+    authoritativePatch({ busy: false, notice: noticeForCommand(result) })
+    return result
+  }
+
+  rememberSpotifyTransportProbe('available')
+  authoritativePatch({
+    busy: false,
+    anchor: { ms: target, wallMs: performance.now() },
+    notice: current.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
+  })
+  const seekWriteSeq = localWriteSeq
+  onReanchored?.()
+  scheduleBoundaryCheck()
+  if (current.playing) {
+    // `sendPlayerCommand` dispatches MYBLOG_PLAYBACK_CHANGED synchronously before
+    // resolving. That listener's adoption therefore started before the
+    // authoritative anchor above and may still own readLivePlayback's single-flight
+    // promise. Drain it first: treating it as the confirmation would let a
+    // pre-write provider snapshot overwrite the optimistic target.
+    const preWriteAdoption = playbackChangeAdoption
+    if (preWriteAdoption)
+      await preWriteAdoption
+    // A newer local action won while the echo drained. Its state is authoritative;
+    // do not launch a seek confirmation that belongs to the superseded write.
+    if (current.playing && localWriteSeq === seekWriteSeq)
+      await syncFromLive()
+  }
+  return result
+}
+
+/**
  * Adopt whatever is actually sounding.
  *
  * Prefetches first so the URI match can succeed: `rowForSpotifyTrack` is cache-only
@@ -1218,6 +1275,8 @@ export const playbackSession = {
 
   setMode,
 
+  seekTo,
+
   refreshDevices,
 
   transferTo,
@@ -1246,6 +1305,7 @@ export const playbackSession = {
     likedTrackId = null
     libraryBusy = false
     modeBusy = false
+    playbackChangeAdoption = null
     const ownership = playbackOwnership.getSnapshot()
     current = {
       ...EMPTY,
@@ -1373,6 +1433,8 @@ async function executeCommand(command: SessionCommand): Promise<void> {
     await playbackSession.playAt(command.itemId)
   else if (command.kind === 'toggle-play')
     await playbackSession.togglePlay()
+  else if (command.kind === 'seek')
+    await playbackSession.seekTo(command.positionMs)
   else if (command.kind === 'next')
     await playbackSession.next()
   else
@@ -1435,6 +1497,11 @@ if (typeof window !== 'undefined') {
     // the phone, a speaker) left the panel describing whatever it had started last,
     // or nothing at all. One read, fired by an event that is already 1:1 with a real
     // transition, so D28 (no polling) still holds.
-    void adoptLive()
+    const adoption = adoptLive()
+    playbackChangeAdoption = adoption
+    void adoption.finally(() => {
+      if (playbackChangeAdoption === adoption)
+        playbackChangeAdoption = null
+    })
   })
 }

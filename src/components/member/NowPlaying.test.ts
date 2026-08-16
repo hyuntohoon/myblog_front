@@ -11,11 +11,12 @@
 import type { BoardAlbum } from '@lib/buckets'
 import type { PlaybackSessionState } from '@lib/playback/session'
 import type { LivePlayback } from './lyrics/playback.api'
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { createElement } from 'react'
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as sessionModule from '@lib/playback/session'
 import * as playbackApi from './lyrics/playback.api'
-import { useNowPlaying } from './NowPlaying'
+import { NowPlaying, useNowPlaying } from './NowPlaying'
 import * as spotifyApi from './spotify.api'
 import * as spotifyPlayback from '@lib/spotifyPlayback'
 
@@ -129,6 +130,10 @@ vi.mock('@lib/playback/session', () => {
       loadLiked: vi.fn(),
       toggleLiked: vi.fn(() => Promise.resolve(null)),
       setMode: vi.fn(() => Promise.resolve({ ok: true })),
+      seekTo: vi.fn((_ms: number, onReanchored?: () => void) => {
+        onReanchored?.()
+        return Promise.resolve({ ok: true })
+      }),
       refreshDevices: vi.fn(() => Promise.resolve({ ok: true, devices: [] })),
       transferTo: vi.fn(() => Promise.resolve({ ok: true })),
     },
@@ -248,6 +253,29 @@ describe('useNowPlaying — onPlaybackChanged race (Step 3a)', () => {
     expect(result.current.paused).toBe(true)
     expect(result.current.moment?.trackId).not.toBe('should-be-discarded')
   })
+
+  it('discards the seek event read when the session re-anchors, without issuing a card confirmation read', async () => {
+    const result = await mountReady()
+    const readsBefore = playback.readLivePlayback.mock.calls.length
+    let resolveEcho!: (value: LivePlayback) => void
+    playback.readLivePlayback.mockReturnValueOnce(new Promise((resolve) => {
+      resolveEcho = resolve
+    }))
+    session.seekTo.mockImplementationOnce(async (_ms, onReanchored?: () => void) => {
+      // Production seek ordering: event first, authoritative session anchor next.
+      window.dispatchEvent(new CustomEvent(EVT))
+      onReanchored?.()
+      return { ok: true }
+    })
+
+    await act(async () => result.current.seek(40_000))
+    expect(playback.readLivePlayback).toHaveBeenCalledTimes(readsBefore + 1)
+
+    await act(async () => resolveEcho(livePlaying('stale-pre-seek', { progressMs: 5_000 })))
+
+    expect(result.current.moment?.trackId).not.toBe('stale-pre-seek')
+    expect(playback.readLivePlayback).toHaveBeenCalledTimes(readsBefore + 1)
+  })
 })
 
 describe('useNowPlaying — mount-time double-read race (BUG-28)', () => {
@@ -285,6 +313,66 @@ describe('useNowPlaying — mount-time double-read race (BUG-28)', () => {
 })
 
 describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
+  it('delegates seek to the session without issuing an independent live read', async () => {
+    const result = await mountReady()
+    const readsBefore = playback.readLivePlayback.mock.calls.length
+
+    await act(async () => result.current.seek(12_345))
+
+    expect(session.seekTo).toHaveBeenCalledWith(12_345, expect.any(Function))
+    expect(playback.readLivePlayback).toHaveBeenCalledTimes(readsBefore)
+  })
+
+  it('keeps seek mutually exclusive with local transport and mode writes', async () => {
+    const result = await mountReady()
+    let resolveSeek!: (value: { ok: true }) => void
+    session.seekTo.mockReturnValueOnce(new Promise((resolve) => {
+      resolveSeek = resolve
+    }) as never)
+    player.sendPlayerCommand.mockClear()
+    session.setMode.mockClear()
+
+    act(() => {
+      void result.current.seek(20_000)
+    })
+    act(() => {
+      void result.current.playPause()
+      void result.current.skip('next')
+      void result.current.setMode({ kind: 'shuffle', on: true })
+    })
+
+    expect(player.sendPlayerCommand).not.toHaveBeenCalled()
+    expect(session.setMode).not.toHaveBeenCalled()
+    await act(async () => resolveSeek({ ok: true }))
+  })
+
+  it('does not start seek while a direct transport or mode write is in flight', async () => {
+    const result = await mountReady()
+    let resolveTransport!: (value: { ok: true }) => void
+    player.sendPlayerCommand.mockReturnValueOnce(new Promise((resolve) => {
+      resolveTransport = resolve
+    }) as never)
+    session.seekTo.mockClear()
+
+    act(() => {
+      void result.current.playPause()
+    })
+    await act(async () => result.current.seek(20_000))
+    expect(session.seekTo).not.toHaveBeenCalled()
+    await act(async () => resolveTransport({ ok: true }))
+
+    let resolveMode!: (value: { ok: true }) => void
+    session.setMode.mockReturnValueOnce(new Promise((resolve) => {
+      resolveMode = resolve
+    }) as never)
+    act(() => {
+      void result.current.setMode({ kind: 'shuffle', on: true })
+    })
+    await act(async () => result.current.seek(30_000))
+    expect(session.seekTo).not.toHaveBeenCalled()
+    await act(async () => resolveMode({ ok: true }))
+  })
+
   it('converges track identity + anchor from a play started in the Playback Bucket panel, without a page reload', async () => {
     let notify: (() => void) | null = null
     session.subscribe.mockImplementation((cb) => {
@@ -465,5 +553,53 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     })
     await waitFor(() => expect(result.current.moment?.trackId).toBe('spotify-other-track'))
     expect(result.current.moment?.durationMs).toBe(100_000)
+  })
+})
+
+describe('nowPlaying Overview variants', () => {
+  it('keeps the banner/full/list render variants while variant changes add no live read', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia
+    spotify.getNowPlayingData.mockResolvedValue(null as never)
+    spotify.listRecentlyListened.mockResolvedValue({ items: [] } as never)
+    spotify.listRecentTracks.mockResolvedValue({ items: [] } as never)
+    playback.readLivePlayback.mockResolvedValue(livePlaying('overview-track', {
+      albumCoverUrl: 'https://example.com/overview.jpg',
+    }))
+    session.currentSpotifyTrackId.mockReturnValue('overview-track')
+    session.getSnapshot.mockReturnValue({
+      ...EMPTY_SESSION_STATE,
+      external: {
+        title: 'track-overview-track',
+        artist: 'artist',
+        albumCoverUrl: 'https://example.com/overview.jpg',
+        spotifyTrackId: 'overview-track',
+        spotifyAlbumId: null,
+        deviceName: null,
+      },
+      playing: true,
+      anchor: { ms: 0, wallMs: performance.now() },
+      durationMs: 200_000,
+      capabilityTier: 'full',
+    })
+
+    const { container, rerender } = render(createElement(NowPlaying, { variant: 'banner' }))
+    await screen.findByText('track-overview-track')
+    expect(container.querySelectorAll('.lf-eq-bar')).toHaveLength(32)
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://example.com/overview.jpg')
+    expect(playback.readLivePlayback).toHaveBeenCalledOnce()
+
+    rerender(createElement(NowPlaying, { variant: 'full' }))
+    expect(await screen.findByText('track-overview-track')).toBeInTheDocument()
+    expect(container.querySelectorAll('.lf-eq-bar')).toHaveLength(4)
+    expect(playback.readLivePlayback).toHaveBeenCalledOnce()
+
+    rerender(createElement(NowPlaying, { variant: 'list' }))
+    expect(await screen.findByText('최근 들은 앨범')).toBeInTheDocument()
+    expect(screen.getByText('track-overview-track')).toBeInTheDocument()
+    expect(playback.readLivePlayback).toHaveBeenCalledOnce()
   })
 })
