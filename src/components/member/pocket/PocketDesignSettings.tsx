@@ -2,6 +2,13 @@
 // changes apply to the live mounted tray immediately and persist to `pb:design`.
 // Gated values (built:false) are DISABLED (never half-apply); the recommended value
 // on each axis carries a 추천 badge. Mirrors the configurator's picker.
+//
+// A11Y-modal-background-inert Step 2 — this panel is a scrim modal that never
+// adopted `useDismissable`: no ESC at all (only the scrim tap and the 닫기
+// button closed it), no focus trap, no focus restore. It also carried
+// `role="dialog"` without `aria-modal` — the RFC's Current state said all three
+// Step 2 surfaces had both; this one did not. Both gaps close here, and
+// background `inert` arrives from Step 1.
 import type {
   AxisOption,
   PocketEntry,
@@ -22,7 +29,8 @@ import {
   SHELL_OPTS,
   WEIGHT_OPTS,
 } from '@lib/pocketBuckit/design'
-import { useScrollLock } from '@lib/useScrollLock'
+import { useRef } from 'react'
+import { useDismissable } from '@lib/useDismissable'
 import { usePocket } from './PocketBuckitProvider'
 
 function AxisRow({ axisN, title, opts, value, set, accent = false, disabled = false }: {
@@ -64,12 +72,18 @@ function AxisRow({ axisN, title, opts, value, set, accent = false, disabled = fa
 export function PocketDesignSettings({ onClose }: { onClose: () => void }) {
   const { design, setDesign, resetDesign, setOpen } = usePocket()
   const lightShell = design.shell === 'f5' || design.shell === 'f6'
-  useScrollLock()
+  // Unlike the two bottom sheets, the dialog role sits on the full-viewport
+  // element that is ALSO the scrim, so the trap root is that element — its
+  // focusables are exactly the panel's.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDismissable(true, onClose, dialogRef, { lockScroll: true })
 
   return (
     <div
+	ref={dialogRef}
 	className="pb-scope"
 	role="dialog"
+	aria-modal="true"
 	aria-label="Pocket 디자인 설정"
 	style={{ position: 'fixed', inset: 0, zIndex: 95, display: 'flex', justifyContent: 'center', alignItems: 'flex-end', background: 'rgba(10,9,8,.45)' }}
 	onClick={onClose}

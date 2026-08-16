@@ -9,10 +9,16 @@
 // Portaled to <body> like TrashDock (the tab-content wrapper keeps a filled
 // identity transform, which would otherwise be the containing block for a
 // position:fixed sheet). Dismissable on backdrop tap / ESC.
+//
+// A11Y-modal-background-inert Step 2 — like ActionSheet, this declared
+// `aria-modal="true"` but never adopted `useDismissable`, so it had no focus trap
+// and no focus restore, and its hand-rolled `window` ESC listener ignored the
+// nesting stack. `useDismissable` replaces both, and brings background `inert`
+// from Step 1.
 import type { BoardBucket } from '@lib/buckets'
-import { useEffect } from 'react'
+import { useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useScrollLock } from '@lib/useScrollLock'
+import { useDismissable } from '@lib/useDismissable'
 
 // Filter that hides a bucket (and its subtree) from the picker — e.g. a bucket
 // can't be moved into itself or its own descendants.
@@ -40,22 +46,16 @@ export function BucketPickerSheet({ title, tree, skip, allowRoot, onPick, onClos
   onPick: (bucketId: string | null) => void
   onClose: () => void
 }) {
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => {
-      if (e.key === 'Escape')
-        onClose()
-    }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
-  }, [onClose])
-  useScrollLock()
+  // The sheet, not the scrim, is the dialog — see ActionSheet.
+  const sheetRef = useRef<HTMLDivElement>(null)
+  useDismissable(true, onClose, sheetRef, { lockScroll: true })
 
   const entries: PickerEntry[] = []
   flatten(tree, 0, skip ?? (() => false), entries)
 
   return createPortal(
     <div className="bps-scrim" onClick={onClose} role="presentation">
-      <div className="bps-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={sheetRef} className="bps-sheet" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={title}>
         <div className="bps-head">
           <span className="serif" style={{ fontSize: 17, fontWeight: 500 }}>{title}</span>
           <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기">✕</button>
