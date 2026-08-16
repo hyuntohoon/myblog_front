@@ -36,7 +36,7 @@
 // ids via @lib/spotifyCatalog — album links light up post-resolve, artist names
 // become links only when resolvable (never a dead click).
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { PlaybackDevice, PlayerCommandOutcome, RepeatMode } from '@lib/spotifyPlayback'
+import type { PlayerCommandOutcome, RepeatMode } from '@lib/spotifyPlayback'
 import type { LikedState, PlaybackModeCommand, CapabilityTier as Tier } from '@lib/playback/session'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs, useClockEstimate } from '@lib/clockEstimate'
@@ -57,6 +57,7 @@ import type { LivePlayback } from './lyrics/playback.api'
 import { getNowPlayingData, listRecentlyListened, listRecentTracks } from './spotify.api'
 import type { NowPlaying as NowPlayingData, RecentlyListenedItem, RecentTrackItem } from './spotify.api'
 import { Cover, Equalizer } from './ui'
+import { PlaybackDevicePicker, PlaybackLikeControl, PlaybackModeControls, seekPlayback, setPlaybackMode, togglePlaybackLiked, useSeekControl } from './playback/PlaybackControls'
 
 export interface LyricsOpenTarget { trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null, artists: Array<{ id: string, name: string }> }
 export type OnOpenLyrics = (t: LyricsOpenTarget) => void
@@ -221,6 +222,7 @@ export function useNowPlaying() {
   const busyRef = useRef(false)
   const controlBusyRef = useRef(false)
   const modeBusyRef = useRef(false)
+  const seekBusyRef = useRef(false)
   /**
    * Bumped once per LOCAL authoritative write (a control call whose command
    * came back ok) — same shape as `session.ts`'s `localWriteSeq`. `onPlaybackChanged`
@@ -379,7 +381,7 @@ export function useNowPlaying() {
   }
 
   const playPause = async () => {
-    if (controlBusyRef.current || modeBusyRef.current)
+    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
       return
     controlBusyRef.current = true
     try {
@@ -414,36 +416,23 @@ export function useNowPlaying() {
   }
 
   const seek = async (ms: number) => {
-    if (controlBusyRef.current || modeBusyRef.current)
+    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
       return
-    controlBusyRef.current = true
+    seekBusyRef.current = true
     try {
-      const target = Math.max(0, Math.round(ms))
-      const r = await sendPlayerCommand({ kind: 'seek', positionMs: target })
-      if (!onRef.current)
-        return
-      if (!r.ok) {
-        handleControlFailure(r)
-        return
-      }
-      rememberSpotifyTransportProbe('available')
-      localWriteSeqRef.current += 1
-      // Optimistic re-anchor at the seek target…
-      setMoment(m => (m ? { ...m, anchor: { ms: target, wallMs: performance.now() } } : m))
-      // …then the OQ2 confirmation one-shot (accepted 2026-07-19): the PUT
-      // returns no body, so one explicit read realigns to the server truth.
-      // Skipped while paused — the optimistic anchor is exact there, so the read
-      // would only confirm the seek target we just wrote.
-      if (!paused)
-        await sync()
+      await seekPlayback(
+        ms,
+        message => onRef.current && flashNote(message),
+        () => { localWriteSeqRef.current += 1 },
+      )
     }
     finally {
-      controlBusyRef.current = false
+      seekBusyRef.current = false
     }
   }
 
   const skip = async (kind: 'next' | 'previous') => {
-    if (controlBusyRef.current || modeBusyRef.current)
+    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
       return
     controlBusyRef.current = true
     try {
@@ -475,17 +464,11 @@ export function useNowPlaying() {
    * has no volume API. `sendPlaybackMode` separates the two; this just honors it.
    */
   const setMode = async (cmd: PlaybackModeCommand) => {
-    if (controlBusyRef.current || modeBusyRef.current)
+    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
       return
     modeBusyRef.current = true
     try {
-      const r = await playbackSession.setMode(cmd)
-      if (!onRef.current || !r || r.ok)
-        return
-      if (r.reason === 'unsupported-on-device')
-        flashNote('이 기기는 볼륨 조절을 지원하지 않아요')
-      else if (r.reason !== 'no-capability')
-        flashNote('설정을 바꾸지 못했어요. 잠시 후 다시 시도해 주세요')
+      await setPlaybackMode(cmd, message => onRef.current && flashNote(message))
     }
     finally {
       modeBusyRef.current = false
@@ -493,9 +476,7 @@ export function useNowPlaying() {
   }
 
   const toggleLiked = async () => {
-    const r = await playbackSession.toggleLiked()
-    if (onRef.current && r && !r.ok && r.reason !== 'library-scope-missing')
-      flashNote('좋아요 변경에 실패했어요. 잠시 후 다시 시도해 주세요')
+    await togglePlaybackLiked(message => onRef.current && flashNote(message))
   }
 
   useEffect(() => {
@@ -528,8 +509,8 @@ export function useNowPlaying() {
     const onPlaybackChanged = () => {
       // Since OQ4 (2026-08-03) every successful transport command dispatches this,
       // including the ones this card issues itself — `playPause`/`seek`/`skip`
-      // already dispatch it synchronously, BEFORE their own `await sendPlayerCommand`
-      // resolves back to them (same ordering `session.ts` relies on for
+      // already dispatch it synchronously, BEFORE their transport path resolves
+      // back to them (same ordering `session.ts` relies on for
       // `localWriteSeq`). So this handler's read always starts before that control
       // call bumps `localWriteSeqRef` a moment later, and self-discards once it
       // does — the same echo `controlBusyRef`'s old blanket guard used to swallow,
@@ -581,19 +562,19 @@ export function useNowPlaying() {
    * the fuller picture (album, cover, artists) once it lands.
    *
    * Gated on `controlBusyRef` for the same reason Step 3a exists: a session
-   * read landing while THIS card has its own optimistic write in flight
-   * (`playPause`/`seek`/`skip`) is that exact race, just crossing components
-   * — `playbackSession`'s `localWriteSeq` has no visibility into a write
-   * this card made directly via `sendPlayerCommand`, so it cannot guard
-   * against it on its own. Deferring here is safe for `playPause`/`seek`/
-   * `skip` specifically: this card's own confirm read is already in flight
-   * regardless and supersedes it a moment later.
+   * read landing while THIS card has its own direct optimistic write in flight
+   * (`playPause`/`skip`) is that exact race, just crossing components —
+   * `playbackSession`'s `localWriteSeq` has no visibility into a write this card
+   * made directly via `sendPlayerCommand`, so it cannot guard against it alone.
+   * Seek is session-owned now and deliberately does not enter this gate; its
+   * optimistic anchor emits here immediately, while the re-anchor callback bumps
+   * this card's `localWriteSeqRef` so the card's pre-write event read self-discards.
    *
    * BUG-22 no longer needs a replay counter: `setMode` now writes through the
    * session and deliberately does not enter this card's local control-busy
    * window. Its optimistic mode write therefore emits directly, and any track
    * update arriving during the request converges here immediately. The gate is
-   * still required for play/pause/seek/skip, whose optimistic identity/anchor
+   * still required for play/pause/skip, whose optimistic identity/anchor
    * writes remain local to this card.
    */
   useEffect(() => {
@@ -631,7 +612,7 @@ export function useNowPlaying() {
         track: sessionState.external?.title ?? row?.title ?? null,
         artist: sessionState.external?.artist ?? row?.artist ?? null,
         album: null,
-        album_cover_url: row?.cover ?? null,
+        album_cover_url: row?.cover ?? sessionState.external?.albumCoverUrl ?? null,
         updated_at: new Date().toISOString(),
       })
     }
@@ -788,141 +769,16 @@ function SkipBtn({ kind, onClick, size }: { kind: 'next' | 'previous', onClick: 
   )
 }
 
-/**
- * Shuffle / repeat / volume (Step 6e).
- *
- * Grouped and rendered LAST in the control row on purpose: the miniaturization
- * drop order in the design references puts these first to go, so they sit where
- * they can be dropped without disturbing anything to their left. Full tier only,
- * and each control hides itself when the live read says the device does not expose
- * it — a rendered control that cannot work is worse than an absent one.
- */
-function ShuffleGlyph() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-      <path d="M1 3.5h2.6l6.8 7h2.6M1 10.5h2.6l6.8-7h2.6" />
-      <path d="M11.2 1.6 13 3.5l-1.8 1.9M11.2 8.6 13 10.5l-1.8 1.9" />
-    </svg>
-  )
-}
-
-/**
- * `one` = repeat-one; the centre dot is the standard mark for it.
- *
- * Drawn as a closed rounded loop rather than two arrowed lines: the first attempt
- * used the same two-parallel-arrows shape as shuffle, and at 13px in the bar the
- * pair was genuinely confusable. A loop and a crossing read as different things
- * even at a glance.
- */
-function RepeatGlyph({ one }: { one: boolean }) {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-      <path d="M4.6 3h4.8a2.4 2.4 0 0 1 2.4 2.4v3.2a2.4 2.4 0 0 1-2.4 2.4H4.6a2.4 2.4 0 0 1-2.4-2.4V5.4A2.4 2.4 0 0 1 4.6 3Z" />
-      <path d="M6.2 1.4 4.4 3l1.8 1.6" strokeLinecap="round" strokeLinejoin="round" />
-      {one && <circle cx="7" cy="7" r="1.2" fill="currentColor" stroke="none" />}
-    </svg>
-  )
-}
-
-function ModeControls({ shuffle, repeat, volumePercent, onSet, micro }: {
+/** Profile keeps its existing narrow-screen reduction; other surfaces decide independently. */
+function ProfileModeControls({ shuffle, repeat, volumePercent, onSet, micro }: {
   shuffle: boolean | null
   repeat: RepeatMode | null
   volumePercent: number | null
-  onSet: (cmd: { kind: 'shuffle', on: boolean } | { kind: 'repeat', mode: RepeatMode } | { kind: 'volume', percent: number }) => Promise<void>
+  onSet: (cmd: PlaybackModeCommand) => Promise<void>
   micro: boolean
 }) {
   const narrow = useNarrow()
-  // The design references put shuffle/repeat/volume FIRST in the miniaturization
-  // drop order, and the 390 pass proved why: squeezing them in clipped the total-
-  // duration label off the right edge. So on a narrow viewport they drop entirely
-  // rather than compete with the transport for width.
-  if (narrow)
-    return null
-  const size = micro ? 22 : 26
-  // off → context → track → off. One button cycling three states beats three
-  // buttons for a control this peripheral.
-  const nextRepeat: RepeatMode = repeat === 'off' ? 'context' : repeat === 'context' ? 'track' : 'off'
-  const repeatLabel = repeat === 'track' ? '한 곡 반복' : repeat === 'context' ? '전체 반복' : '반복 없음'
-  const btn = (on: boolean): React.CSSProperties => ({
-    width: size,
-    height: size,
-    display: 'grid',
-    placeItems: 'center',
-    borderRadius: size,
-    border: '1px solid transparent',
-    background: 'transparent',
-    color: on ? 'var(--color-accent)' : 'var(--color-faded)',
-    fontSize: micro ? 10 : 11,
-    lineHeight: 1,
-    cursor: 'pointer',
-    padding: 0,
-  })
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, flex: '0 0 auto' }}>
-      {shuffle != null && (
-        <button
-	type="button"
-	onClick={() => { void onSet({ kind: 'shuffle', on: !shuffle }) }}
-	aria-pressed={shuffle}
-	aria-label={shuffle ? '셔플 끄기' : '셔플 켜기'}
-	title={shuffle ? '셔플 켜짐' : '셔플 꺼짐'}
-	style={btn(shuffle)}
-        >
-          <ShuffleGlyph />
-        </button>
-      )}
-      {repeat != null && (
-        <button
-	type="button"
-	onClick={() => { void onSet({ kind: 'repeat', mode: nextRepeat }) }}
-	aria-label={`반복 — 지금 ${repeatLabel}`}
-	title={repeatLabel}
-	style={btn(repeat !== 'off')}
-        >
-          <RepeatGlyph one={repeat === 'track'} />
-        </button>
-      )}
-      {volumePercent != null && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 2 }}>
-          <input
-	type="range"
-	min={0}
-	max={100}
-	value={volumePercent}
-	aria-label="볼륨"
-	onChange={(e) => { void onSet({ kind: 'volume', percent: Number(e.target.value) }) }}
-	style={{ width: micro ? 46 : 62, accentColor: 'var(--color-accent)', cursor: 'pointer' }}
-          />
-        </span>
-      )}
-    </span>
-  )
-}
-
-function LikeBtn({ state, onClick, size }: { state: LikedState, onClick: () => void, size: number }) {
-  const available = state === 'liked' || state === 'unliked'
-  const liked = state === 'liked'
-  const style: React.CSSProperties = { width: size, height: size, border: 'none', background: 'none', display: 'grid', placeItems: 'center', flex: '0 0 auto', padding: 0, color: liked ? 'var(--color-accent)' : 'var(--color-text)', fontSize: Math.round(size * 0.62), lineHeight: 1, textDecoration: 'none', opacity: state === 'loading' || state === 'unknown' ? 0.38 : 1 }
-  if (state === 'scope-missing') {
-    return (
-      <a href="/members/?me&tab=integration" aria-label="좋아요 권한 재동의하기" title="좋아요 기능을 쓰려면 재동의가 필요해요" style={{ ...style, cursor: 'pointer', color: 'var(--color-faded)' }}>
-        ♡
-      </a>
-    )
-  }
-  return (
-    <button
-	type="button"
-	onClick={onClick}
-	disabled={!available}
-	aria-label={liked ? '좋아요 취소' : '좋아요'}
-	aria-pressed={available ? liked : undefined}
-	title={liked ? '좋아요 취소' : '좋아요'}
-	style={{ ...style, cursor: available ? 'pointer' : 'default' }}
-    >
-      {liked ? '♥' : '♡'}
-    </button>
-  )
+  return <PlaybackModeControls shuffle={shuffle} repeat={repeat} volumePercent={volumePercent} onSet={onSet} micro={micro} hidden={narrow} />
 }
 
 /**
@@ -947,7 +803,6 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
   setMode?: (cmd: { kind: 'shuffle', on: boolean } | { kind: 'repeat', mode: RepeatMode } | { kind: 'volume', percent: number }) => Promise<void>
 }) {
   const est = useClockEstimate(moment.anchor, !paused, moment.durationMs)
-  const barRef = useRef<HTMLDivElement>(null)
   const dur = moment.durationMs
   const noteLine = note ?
     <div className="mono" style={{ marginTop: 6, fontSize: 10.5, color: 'var(--color-faded)', letterSpacing: '.03em' }}>{note}</div> :
@@ -956,14 +811,12 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
   const frac = hasProgress ? Math.min(1, Math.max(0, est / dur)) : 0
   const full = tier === 'full'
   const timeStyle = { fontSize: micro ? 9.5 : 10.5, color: 'var(--color-faded)', letterSpacing: '.03em', whiteSpace: 'nowrap' as const }
-  const seekAt = (clientX: number) => {
-    const el = barRef.current
-    if (!el)
-      return
-    const r = el.getBoundingClientRect()
-    if (r.width > 0)
-      void seek(((clientX - r.left) / r.width) * (dur ?? 0))
-  }
+  const seekControl = useSeekControl({
+    enabled: full,
+    durationMs: dur ?? 0,
+    elapsedMs: est ?? 0,
+    onSeek: (ms) => { void seek(ms) },
+  })
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: micro ? 8 : 10 }}>
@@ -973,9 +826,9 @@ function Transport({ moment, paused, tier, playPause, seek, note, micro = false,
               {full && showExtendedControls && skip && <SkipBtn kind="previous" onClick={() => { void skip('previous') }} size={micro ? 22 : 26} />}
               {full && showButton && <PlayPauseBtn paused={paused} onClick={() => { void playPause() }} size={micro ? 24 : 30} />}
               {full && showExtendedControls && skip && <SkipBtn kind="next" onClick={() => { void skip('next') }} size={micro ? 22 : 26} />}
-              {showExtendedControls && toggleLiked && <LikeBtn state={likedState} onClick={() => { void toggleLiked() }} size={micro ? 23 : 27} />}
+              {showExtendedControls && toggleLiked && <PlaybackLikeControl state={likedState} onToggle={() => { void toggleLiked() }} size={micro ? 23 : 27} />}
               {full && showExtendedControls && setMode && (
-                <ModeControls shuffle={moment.shuffle} repeat={moment.repeat} volumePercent={moment.volumePercent} onSet={setMode} micro={micro} />
+                <ProfileModeControls shuffle={moment.shuffle} repeat={moment.repeat} volumePercent={moment.volumePercent} onSet={setMode} micro={micro} />
               )}
             </span>
           ) :
@@ -983,7 +836,7 @@ null}
         {hasProgress && <span className="mono" style={timeStyle}>{fmtMs(est)}</span>}
         {hasProgress && (
 <div
-	ref={barRef}
+	ref={seekControl.ref}
 	role={full ? 'slider' : 'progressbar'}
 	aria-label="재생 위치"
 	aria-valuemin={0}
@@ -991,19 +844,8 @@ null}
 	aria-valuenow={Math.round(est ?? 0)}
 	aria-valuetext={`${fmtMs(est ?? 0)} / ${fmtMs(dur ?? 0)}`}
 	tabIndex={full ? 0 : undefined}
-	onClick={full ? e => seekAt(e.clientX) : undefined}
-	onKeyDown={full ?
-            (e) => {
-              if (e.key === 'ArrowLeft') {
-                e.preventDefault()
-                void seek(Math.max(0, (est ?? 0) - 5000))
-              }
-              else if (e.key === 'ArrowRight') {
-                e.preventDefault()
-                void seek(Math.min(dur ?? 0, (est ?? 0) + 5000))
-              }
-            } :
-            undefined}
+	onClick={seekControl.onClick}
+	onKeyDown={seekControl.onKeyDown}
 	style={{ position: 'relative', flex: 1, height: 14, display: 'flex', alignItems: 'center', cursor: full ? 'pointer' : 'default', minWidth: 0 }}
 >
           <span style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'var(--color-border-soft)' }} />
@@ -1183,178 +1025,19 @@ function ReconnectLine() {
  * playback-state scope never reach this: their live read fails before a
  * moment exists, so the line is omitted by construction.
  */
-function DeviceGlyph() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: '0 0 auto' }}>
-      <rect x="3" y="0.5" width="6" height="11" rx="1.2" fill="none" stroke="currentColor" />
-      <circle cx="6" cy="8.5" r="1.1" fill="currentColor" />
-    </svg>
-  )
-}
-
-/**
- * The device hint, made switchable (member-player Step 5 — owner: "스포티파이처럼
- * 클릭을 통해서 변경").
- *
- * Deliberately NOT new chrome: Step 4 already put "Listening on <device>" in this
- * panel-bottom-edge slot, and the thing a listener wants to do with that line is
- * change it. So the line becomes the trigger and the list opens in place.
- *
- * The list is fetched when the picker OPENS and never polled — D28 holds. A closed
- * picker costs nothing, which is why this can live on a bar that is always mounted.
- */
-/**
- * The device picker. `name` is the active device when there is one; passing null
- * renders the idle-state trigger instead.
- *
- * That null case is not cosmetic — it breaks a circularity Step 5 shipped with.
- * The picker used to render only from the `Listening on <device>` line, which needs
- * `moment.deviceName`, which needs something to ALREADY be playing. So the in-page
- * device ("이 브라우저") — the entire rung 2 — was unreachable unless you were
- * already playing somewhere else. There was no way to say "use this browser".
- */
 function DeviceHintLine({ name, onSwitched }: { name: string | null, onSwitched: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const sessionState = useSyncExternalStore(playbackSession.subscribe, playbackSession.getSnapshot, playbackSession.getServerSnapshot)
-  const { devices, activeDeviceId } = sessionState
-  const boxRef = useRef<HTMLDivElement>(null)
-  useDismissable(open, () => setOpen(false), boxRef)
-
-  const openList = async () => {
-    if (open) {
-      setOpen(false)
-      return
-    }
-    setOpen(true)
-    setError(null)
-    const r = await playbackSession.refreshDevices()
-    if (!r.ok) {
-      setError(r.reason === 'no-capability' ?
-        '기기 목록은 Spotify Premium 계정에서 볼 수 있어요.' :
-        '기기 목록을 가져오지 못했어요.')
-    }
-  }
-
-  const pick = async (d: PlaybackDevice) => {
-    if (busy)
-      return
-    setBusy(d.id)
-    const r = await playbackSession.transferTo(d.id)
-    setBusy(null)
-    if (!r.ok) {
-      setError(r.reason === 'no-capability' ?
-        '이 전환은 Spotify Premium 계정에서 사용할 수 있어요.' :
-        '기기를 바꾸지 못했어요.')
-      return
-    }
-    setOpen(false)
-    onSwitched()
-  }
-
-  // "이 브라우저" is offered even when Spotify has never seen it: the in-page device
-  // does not exist until the SDK connects, so picking it must CREATE it first.
-  // Without this the only way to reach rung 2 would be a cold-start play, and a
-  // listener already playing elsewhere could never move the sound here on purpose.
-  const pickThisBrowser = async () => {
-    if (busy)
-      return
-    setBusy('in-page')
-    const r = await playbackSession.transferTo('', { raiseInPageFirst: true })
-    setBusy(null)
-    if (!r.ok) {
-      setError(r.reason === 'no-capability' ?
-        '이 브라우저 재생은 Spotify Premium 계정에서 사용할 수 있어요.' :
-        '이 브라우저로 옮기지 못했어요.')
-      return
-    }
-    setOpen(false)
-    onSwitched()
-  }
-
-  const alreadyListed = devices?.some(d => d.isInPage) ?? false
-
   return (
-    <div ref={boxRef} style={{ position: 'relative' }}>
-      <button
-	type="button"
-	onClick={() => { void openList() }}
-	aria-expanded={open}
-	aria-label={name === null ? '재생 기기 선택' : '재생 기기 바꾸기'}
-	className="mono"
-	style={{ width: '100%', textAlign: 'left', borderTop: '1px solid var(--color-border-soft)', borderLeft: 0, borderRight: 0, borderBottom: 0, background: 'transparent', padding: '7px 16px 8px', fontSize: 10.5, letterSpacing: '.03em', color: 'var(--color-faded)', display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, cursor: 'pointer' }}
-      >
-        <DeviceGlyph />
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-          {name === null ?
-            '재생 기기 선택' :
-            (
-              <>
-                Listening on
-                {' '}
-                <span style={{ color: 'var(--color-subtle)' }}>{name}</span>
-              </>
-            )}
-        </span>
-        <span aria-hidden="true" style={{ marginLeft: 'auto', flex: '0 0 auto', opacity: 0.7 }}>{open ? '▾' : '▸'}</span>
-      </button>
-      {open && (
-        <div
-	role="listbox"
-	aria-label="재생 기기"
-	style={{ position: 'absolute', left: 8, right: 8, bottom: '100%', marginBottom: 4, zIndex: 40, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 7, boxShadow: '0 18px 44px rgba(0,0,0,.32)', padding: 5, maxHeight: 240, overflowY: 'auto' }}
-        >
-          {devices == null && !error && <div className="mono" style={{ padding: '8px 9px', fontSize: 10.5, color: 'var(--color-faded)' }}>기기를 찾는 중…</div>}
-          {error && <div className="mono" style={{ padding: '8px 9px', fontSize: 10.5, color: 'var(--color-accent)' }}>{error}</div>}
-          {devices?.map(d => (
-            <DeviceRow
-	key={d.id}
-	label={d.isInPage ? '이 브라우저 (음질 제한)' : d.name}
-	sub={d.isInPage ? undefined : d.type}
-	active={d.id === activeDeviceId}
-	busy={busy === d.id}
-	onClick={() => { void pick(d) }}
-            />
-          ))}
-          {devices != null && !alreadyListed && (
-            <DeviceRow
-	label="이 브라우저 (음질 제한)"
-	active={false}
-	busy={busy === 'in-page'}
-	onClick={() => { void pickThisBrowser() }}
-            />
-          )}
-          {devices?.length === 0 && (
-            <div className="mono" style={{ padding: '6px 9px 8px', fontSize: 10, color: 'var(--color-faded)', lineHeight: 1.5 }}>
-              다른 기기가 없어요. Spotify 앱을 켜면 여기에 나타납니다.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    <PlaybackDevicePicker
+	name={name}
+	devices={sessionState.devices}
+	activeDeviceId={sessionState.activeDeviceId}
+	onRefresh={playbackSession.refreshDevices}
+	onTransfer={playbackSession.transferTo}
+	onSwitched={onSwitched}
+    />
   )
 }
-
-function DeviceRow({ label, sub, active, busy, onClick }: { label: string, sub?: string, active: boolean, busy: boolean, onClick: () => void }) {
-  return (
-    <button
-	type="button"
-	role="option"
-	aria-selected={active}
-	onClick={onClick}
-	disabled={busy}
-	className="mono"
-	style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', textAlign: 'left', padding: '7px 9px', border: 0, borderRadius: 5, background: active ? 'var(--color-border-soft)' : 'transparent', color: 'var(--color-text)', fontSize: 11, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.55 : 1 }}
-    >
-      <span aria-hidden="true" style={{ flex: '0 0 auto', width: 9, color: 'var(--color-accent)' }}>{active ? '●' : ''}</span>
-      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{label}</span>
-      {sub && <span style={{ marginLeft: 'auto', flex: '0 0 auto', color: 'var(--color-faded)', fontSize: 9.5 }}>{sub}</span>}
-      {busy && <span style={{ marginLeft: 'auto', flex: '0 0 auto', color: 'var(--color-faded)', fontSize: 9.5 }}>옮기는 중…</span>}
-    </button>
-  )
-}
-
 /**
  * The dynamic lyrics entry ("가사"). Rendered ONLY beside a live snapshot; the
  * tap performs the one-shot live read and opens on `playing`. Discovering the

@@ -2,6 +2,7 @@ import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import type { OwnershipMessage, PlaybackOwnershipState } from '@lib/playback/ownership'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
+import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { playbackQueue } from './queue'
 import { playbackSession } from './session'
 
@@ -442,6 +443,7 @@ describe('external playback adoption', () => {
     expect(state.external).toEqual({
       title: 'Paranoid Android',
       artist: 'Radiohead',
+      albumCoverUrl: null,
       spotifyTrackId: 'SPOT-UNKNOWN',
       spotifyAlbumId: null,
       deviceName: '거실 스피커',
@@ -1013,6 +1015,29 @@ describe('single-tab ownership', () => {
     })
   })
 
+  it('forwards seek from a mirror and executes it only in the owner', async () => {
+    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('SPOT-X', 'paused'))
+    await playbackSession.syncFromLive()
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    mocks.sendPlayerCommand.mockClear()
+    mocks.ownershipPost.mockClear()
+
+    await playbackSession.seekTo(32_100)
+
+    expect(mocks.sendPlayerCommand).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith({
+      type: 'command',
+      cmd: { kind: 'seek', positionMs: 32_100 },
+    })
+
+    setOwnership({ isOwner: true, ownerTabId: 'test-tab', ownerPresent: true })
+    receiveOwnership({ type: 'command', from: 'mirror-tab', cmd: { kind: 'seek', positionMs: 47_000 } })
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+
+    expect(mocks.sendPlayerCommand).toHaveBeenCalledWith({ kind: 'seek', positionMs: 47_000 })
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(47_000)
+  })
+
   it('blocks an in-page mirror until takeover, then resumes from the current row', async () => {
     nextPlayOutcome = IN_PAGE_OK
     setQueue([row('a'), row('b')])
@@ -1103,7 +1128,7 @@ describe('single-tab ownership', () => {
       artists: [],
       album: 'OK Computer',
       albumSpotifyId: null,
-      albumCoverUrl: null,
+      albumCoverUrl: 'https://example.com/ok-computer.jpg',
       deviceName: '거실 스피커',
       shuffle: null,
       repeat: null,
@@ -1117,7 +1142,11 @@ describe('single-tab ownership', () => {
       .map(([m]) => m as { type: string, state?: { external?: unknown } })
       .filter(m => m.type === 'state')
       .at(-1)
-    expect(posted?.state?.external).toMatchObject({ title: 'Paranoid Android', deviceName: '거실 스피커' })
+    expect(posted?.state?.external).toMatchObject({
+      title: 'Paranoid Android',
+      albumCoverUrl: 'https://example.com/ok-computer.jpg',
+      deviceName: '거실 스피커',
+    })
   })
 
   it('takes the lease before ▶ replaces the queue, because ▶ can raise this tab as the device', async () => {
@@ -1156,6 +1185,103 @@ describe('single-tab ownership', () => {
       mirrorAnchor.ms + (performance.now() - mirrorAnchor.wallMs) :
       0
     expect(Math.abs(mirrorElapsed - ownerElapsed)).toBeLessThan(5)
+  })
+})
+
+describe('session-owned seek', () => {
+  it('drains the real pre-authoritative event read before starting a fresh playing confirmation', async () => {
+    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('SPOT-X'))
+    await playbackSession.syncFromLive()
+    mocks.readLivePlayback.mockClear()
+
+    let resolvePreAckRead!: (value: ReturnType<typeof liveTrack>) => void
+    const preAckRead = new Promise<ReturnType<typeof liveTrack>>((resolve) => {
+      resolvePreAckRead = resolve
+    })
+    let resolveConfirmation!: (value: ReturnType<typeof liveTrack>) => void
+    const confirmation = new Promise<ReturnType<typeof liveTrack>>((resolve) => {
+      resolveConfirmation = resolve
+    })
+    mocks.readLivePlayback
+      .mockReturnValueOnce(preAckRead)
+      .mockReturnValueOnce(confirmation)
+    // Production ordering: the successful command dispatches the event before
+    // its promise resolves back to playbackSession.seekTo().
+    mocks.sendPlayerCommand.mockImplementationOnce(async () => {
+      window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+      return { ok: true }
+    })
+
+    const pending = playbackSession.seekTo(90_000)
+    await flushPlaybackStart()
+
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(90_000)
+    expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+
+    // The pre-ack read says the old position. It must be discarded and merely
+    // unlock the genuinely fresh confirmation read.
+    resolvePreAckRead({ ...liveTrack('SPOT-X'), progressMs: 12_000 })
+    await vi.waitFor(() => expect(mocks.readLivePlayback).toHaveBeenCalledTimes(2))
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(90_000)
+
+    resolveConfirmation({ ...liveTrack('SPOT-X'), progressMs: 91_250 })
+    await pending
+    expect(playbackSession.getSnapshot().anchor).toEqual({ ms: 91_250, wallMs: 1_000 })
+  })
+
+  it('re-anchors optimistically before a playing confirmation resolves', async () => {
+    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('SPOT-X'))
+    await playbackSession.syncFromLive()
+    mocks.readLivePlayback.mockClear()
+
+    let resolveConfirmation!: (value: ReturnType<typeof liveTrack>) => void
+    mocks.readLivePlayback.mockReturnValueOnce(new Promise((resolve) => {
+      resolveConfirmation = resolve
+    }))
+
+    const pending = playbackSession.seekTo(90_000)
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(90_000)
+    expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+
+    resolveConfirmation({ ...liveTrack('SPOT-X'), progressMs: 91_250 })
+    await pending
+    expect(playbackSession.getSnapshot().anchor).toEqual({ ms: 91_250, wallMs: 1_000 })
+  })
+
+  it('keeps the optimistic paused anchor exact without a confirmation read', async () => {
+    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('SPOT-X', 'paused'))
+    await playbackSession.syncFromLive()
+    mocks.readLivePlayback.mockClear()
+
+    const pending = playbackSession.seekTo(75_432.4)
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+    await pending
+
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(75_432)
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+  })
+
+  it('discards a stale confirmation read after a newer authoritative write', async () => {
+    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('SPOT-X'))
+    await playbackSession.syncFromLive()
+
+    let resolveConfirmation!: (value: ReturnType<typeof liveTrack>) => void
+    mocks.readLivePlayback.mockReturnValueOnce(new Promise((resolve) => {
+      resolveConfirmation = resolve
+    }))
+    const pending = playbackSession.seekTo(80_000)
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(80_000)
+
+    await playbackSession.setMode({ kind: 'shuffle', on: true })
+    resolveConfirmation({ ...liveTrack('SPOT-X'), progressMs: 12_000 })
+    await pending
+
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(80_000)
+    expect(playbackSession.getSnapshot().shuffle).toBe(true)
   })
 })
 

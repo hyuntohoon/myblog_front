@@ -39,7 +39,7 @@ describe('isPersistentBarVisible', () => {
   it('is visible for playback outside the queue (external)', () => {
     expect(isPersistentBarVisible({
       ...EMPTY_SESSION_STATE,
-      external: { title: 'Song', artist: 'Artist', spotifyTrackId: 'sp-1', spotifyAlbumId: null, deviceName: null },
+      external: { title: 'Song', artist: 'Artist', albumCoverUrl: null, spotifyTrackId: 'sp-1', spotifyAlbumId: null, deviceName: null },
     })).toBe(true)
   })
 })
