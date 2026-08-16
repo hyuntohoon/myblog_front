@@ -50,7 +50,7 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
   // (Step 6b) and that is destructive. Shipped idiom, not a new one: label + a
   // 되돌리기 button, no confirm dialog (this RFC's OQ3).
   const [notice, setNotice] = useState<{ label: string, undo: (() => void) | null } | null>(null)
-  useDismissable(true, onClose, cardRef)
+  useDismissable(true, onClose, cardRef, { inertBackground: true })
   useScrollLock()
 
   const showNotice = (label: string, undo: (() => void) | null = null) => {

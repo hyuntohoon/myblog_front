@@ -53,7 +53,7 @@ export default function TodayPickHistory({ onClose }: Props) {
 	const [error, setError] = useState(false)
 	const modalRef = useRef<HTMLDivElement>(null)
 
-	useDismissable(true, onClose, modalRef)
+	useDismissable(true, onClose, modalRef, { inertBackground: true })
 	useScrollLock()
 
 	useEffect(() => {

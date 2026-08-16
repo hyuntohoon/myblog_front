@@ -273,7 +273,7 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 function MobileContextPanel(props: Omit<ContextPanelProps, 'mobile' | 'hostRef' | 'dock' | 'patch'>) {
 	const { albumId, track, tab, onTabChange, onClose } = props
 	const panelRef = useRef<HTMLDivElement>(null)
-	useDismissable(true, onClose, panelRef)
+	useDismissable(true, onClose, panelRef, { inertBackground: true })
 	useScrollLock()
 	const [offset, setOffset] = useState({ x: 0, y: 0 })
 	const drag = useRef<{ px: number, py: number, ox: number, oy: number } | null>(null)

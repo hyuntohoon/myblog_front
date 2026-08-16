@@ -35,7 +35,7 @@ export default function AddArtistModal({ bucketName, onAdd, onClose, existingArt
   const inputRef = useRef<HTMLInputElement>(null)
   const modalRef = useRef<HTMLDivElement>(null)
 
-  useDismissable(true, onClose, modalRef, { autoFocus: false })
+  useDismissable(true, onClose, modalRef, { autoFocus: false, inertBackground: true })
 
   useEffect(() => {
     inputRef.current?.focus()
