@@ -105,7 +105,7 @@ function useDragScrimPassthrough(): boolean {
 function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { album: DetailTarget, mode: Mode, published?: MemberReview, onClose: () => void, onOpenLyrics?: OnOpenLyrics }) {
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore (mounted-when-open → open=true).
-  useDismissable(true, onClose, cardRef)
+  useDismissable(true, onClose, cardRef, { inertBackground: true })
   // Freeze the page behind the scrim (else the profile scrolls under the modal).
   useScrollLock()
 
@@ -689,7 +689,7 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   const cardRef = useRef<HTMLDivElement>(null)
   // ESC + focus trap + focus restore. autoFocus off so MemoBody's own autoFocus
   // owns initial focus (the textarea, not the ✕) — zero-friction 쓰레기통 intent.
-  useDismissable(true, onClose, cardRef, { autoFocus: false })
+  useDismissable(true, onClose, cardRef, { autoFocus: false, inertBackground: true })
   // Freeze the page behind the scrim (else the profile scrolls under the modal).
   useScrollLock()
 

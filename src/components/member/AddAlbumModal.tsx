@@ -45,7 +45,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose, existingAlbu
 
   // ESC + focus trap + focus restore. autoFocus off — focus the search input
   // (below) rather than the hook's first focusable (the close button).
-  useDismissable(true, onClose, modalRef, { autoFocus: false })
+  useDismissable(true, onClose, modalRef, { autoFocus: false, inertBackground: true })
 
   useEffect(() => {
     inputRef.current?.focus()

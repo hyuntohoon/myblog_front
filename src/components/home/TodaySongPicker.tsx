@@ -54,7 +54,7 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 	const modalRef = useRef<HTMLDivElement>(null)
 
 	// ESC + focus trap + focus restore; autoFocus off — focus the search input.
-	useDismissable(true, onClose, modalRef, { autoFocus: false })
+	useDismissable(true, onClose, modalRef, { autoFocus: false, inertBackground: true })
 
 	useEffect(() => {
 		inputRef.current?.focus()

@@ -592,7 +592,7 @@ export function LyricsSheet({ spotifyTrackId, meta, onClose }: {
 	onClose: () => void
 }) {
 	const panelRef = useRef<HTMLDivElement>(null)
-	useDismissable(true, onClose, panelRef)
+	useDismissable(true, onClose, panelRef, { inertBackground: true })
 	// Freeze the page behind the scrim (else the profile scrolls under the sheet).
 	useScrollLock()
 

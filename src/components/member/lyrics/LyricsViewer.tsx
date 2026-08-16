@@ -358,7 +358,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // False until the current track's list has been positioned once — the first
   // centering after (re)load is instant, everything after animates.
   const positionedRef = useRef(false)
-  useDismissable(true, onClose, panelRef)
+  useDismissable(true, onClose, panelRef, { inertBackground: true })
   // Freeze the page behind the viewer (it can open over the album-detail modal).
   useScrollLock()
 

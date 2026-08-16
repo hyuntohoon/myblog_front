@@ -493,7 +493,7 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
   const panelRef = useRef<HTMLElement>(null)
   const model = usePlaybackViewModel()
   const canControl = canControlPlayback(model.state)
-  useDismissable(true, onClose, panelRef, { trapFocus: true })
+  useDismissable(true, onClose, panelRef, { trapFocus: true, inertBackground: true })
   useScrollLock()
 
   return (
