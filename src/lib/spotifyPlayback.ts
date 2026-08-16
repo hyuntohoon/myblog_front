@@ -18,7 +18,7 @@
 //     (`PlaybackTarget`), resolved to a provider URI at play time via the
 //     `resolveProviderUri` seam. No `owner_id` / singleton assumption is baked in.
 import type { components } from '@lib/api.gen'
-import { getAuthHeader, isLoggedIn } from '@lib/auth'
+import { getAuthHeader, isLoggedIn, refreshAccessToken } from '@lib/auth'
 
 type SpotifyStreamingTokenResponse = components['schemas']['Backend_SpotifyStreamingTokenResponse']
 type PlaybackResolveResponse = components['schemas']['Backend_PlaybackResolveResponse']
@@ -70,9 +70,9 @@ let inflightMint: Promise<TokenResult> | null = null
  *
  * Per-member since member-player Step 2 (the route mints from the caller's own
  * row-scoped refresh token; the owner path is a special case server-side) — a
- * plain authed GET (NOT `apiFetch`, so a play click never triggers the
- * refresh→`goLogin` redirect; a play button must never navigate the page
- * away). An anonymous caller short-circuits to `unauthorized` WITHOUT a
+ * plain authed GET rather than `apiFetch`: a 401 refreshes Cognito once and
+ * retries the mint, but a failed refresh never triggers `goLogin` (a play
+ * button must never navigate the page away). An anonymous caller short-circuits to `unauthorized` WITHOUT a
  * network call, so a public review page never mints a token for a visitor.
  * Concurrent callers (card mount + live read fire together) share one in-flight
  * mint instead of racing two.
@@ -100,12 +100,34 @@ export async function getStreamingToken(): Promise<TokenResult> {
 }
 
 async function mintOnce(): Promise<TokenResult> {
+  const initialHeaders = getAuthHeader()
   let res: Response
   try {
-    res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...getAuthHeader() } })
+    res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...initialHeaders } })
   }
   catch {
     return { ok: false, status: 'error' }
+  }
+
+  // This endpoint is protected by the API Gateway Cognito authorizer. Unlike
+  // apiFetch, playback must not redirect away from a play click, but it still
+  // needs the same one-time expired-access-token recovery. If another request
+  // refreshed storage while this mint was in flight, retry with that token
+  // instead of starting a redundant refresh.
+  if (res.status === 401) {
+    let retryHeaders = getAuthHeader()
+    if (retryHeaders.Authorization === initialHeaders.Authorization) {
+      const refreshed = await refreshAccessToken()
+      if (!refreshed)
+        return { ok: false, status: 'unauthorized', httpStatus: 401 }
+      retryHeaders = getAuthHeader()
+    }
+    try {
+      res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...retryHeaders } })
+    }
+    catch {
+      return { ok: false, status: 'error' }
+    }
   }
 
   if (res.status === 503)
@@ -284,8 +306,9 @@ async function ensureConnectedDevice(token: string): Promise<string> {
  * Both ▶ sites pass only a DB id, so this calls the backend resolve endpoint
  * (`GET /api/playback/resolve?type=&id=` → `{ uri }`), which reads the catalog's stored
  * `spotify_id` (a direct DB read, no Spotify search). It is an edge_guard-only endpoint
- * (CloudFront injects x-origin-verify); a plain fetch — NOT `apiFetch` — so a play click
- * never triggers the 401→`goLogin` redirect (matches `getStreamingToken`).
+ * (CloudFront injects x-origin-verify); a plain fetch keeps a play click outside
+ * `apiFetch`'s redirect-on-failed-refresh behavior (matching the token flow's
+ * no-navigation guarantee).
  */
 async function resolveProviderUri(target: PlaybackTarget): Promise<string> {
   if (!BASE)
