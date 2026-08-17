@@ -49,6 +49,22 @@ function QueueGlyph() {
   )
 }
 
+function CollapseGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <path d="M3.5 6.25 8 10.75l4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ExpandGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <path d="M3.5 9.75 8 5.25l4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function VolumeGlyph({ percent }: { percent: number | null }) {
   return (
     <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -105,11 +121,34 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   const [notice, setNotice] = useState<string | null>(null)
   const dragRef = useRef({ active: false, moved: false, suppressClick: false })
 
+  // Collapse is scoped to the current playing stretch, not remembered across
+  // sessions or even across a stop/start — once nothing is sounding, the next
+  // track always opens expanded again.
+  const [collapsed, setCollapsed] = useState(false)
   useEffect(() => {
-    const value = visible ? `calc(${mobile ? 112 : 88}px + env(safe-area-inset-bottom))` : '0px'
-    document.documentElement.style.setProperty('--global-player-h', value)
-    return () => document.documentElement.style.setProperty('--global-player-h', '0px')
-  }, [mobile, visible])
+    if (!visible)
+      setCollapsed(false)
+  }, [visible])
+
+  // Astro's ClientRouter wipes every attribute off <html> (style included) on
+  // EVERY navigation (`swapRootAttributes`, stock and this site's own audio-
+  // preserving override alike), so an imperative custom property set here is
+  // silently gone right after the swap even though this island itself (and
+  // `visible`/`mobile`/`collapsed`) never changed — nothing else ever re-applies
+  // it. Redo the write on `astro:after-swap`, not just on the React deps that
+  // normally drive it.
+  useEffect(() => {
+    const apply = () => {
+      const value = visible && !collapsed ? `calc(${mobile ? 112 : 88}px + env(safe-area-inset-bottom))` : '0px'
+      document.documentElement.style.setProperty('--global-player-h', value)
+    }
+    apply()
+    document.addEventListener('astro:after-swap', apply)
+    return () => {
+      document.removeEventListener('astro:after-swap', apply)
+      document.documentElement.style.setProperty('--global-player-h', '0px')
+    }
+  }, [mobile, visible, collapsed])
 
   useEffect(() => {
     if (!visible)
@@ -163,6 +202,21 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
 
   if (!visible)
     return null
+
+  if (collapsed) {
+    return (
+      <button
+	type="button"
+	className="global-playback-pill"
+	onClick={() => setCollapsed(false)}
+	aria-label="재생 바 펼치기"
+	title="재생 바 펼치기"
+      >
+        <PlaybackIdentity row={model.current} external={model.state.external} compact />
+        <ExpandGlyph />
+      </button>
+    )
+  }
 
   const progressStyle = { '--deck-progress': `${ratio * 100}%` } as CSSProperties
   const deviceName = model.state.device?.name ?? model.state.external?.deviceName ?? null
@@ -252,6 +306,15 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
             />
           </div>
           {compactUtilities && <NarrowVolume percent={model.state.volumePercent} onSet={setMode} />}
+          <button
+	type="button"
+	className="deck-icon-button"
+	aria-label="재생 바 접기"
+	title="재생 바 접기"
+	onClick={() => setCollapsed(true)}
+          >
+            <CollapseGlyph />
+          </button>
         </div>
       </div>
       {notice && <div className="deck-alert" role="status">{notice}</div>}
