@@ -174,7 +174,7 @@
   width: 100%;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 34px 80px rgba(0, 0, 0, .42);
   padding: 28px 28px 22px;
   transition: background .4s ease, box-shadow .3s;
@@ -197,7 +197,14 @@
   padding: 26px 34px 28px;
 }
 
-.memo-lg-bar { display: flex; align-items: center; gap: 12px; padding-right: 40px; margin-bottom: 18px; }
+.memo-lg-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 30px;
+  padding-right: 40px;
+  margin-bottom: 14px;
+}
 
 /* Memo owns dimensions and contextual metadata; the canonical card owns
    cover/title/artist rendering. */
@@ -205,16 +212,19 @@
 .memo-album-card .album-card--grid { gap: 12px; }
 .memo-album-card .album-card__cover { max-width: min(100%, 240px); }
 .memo-album-card .album-card__title {
-  font-size: 25px;
+  font-size: 30px;
   line-height: 1.12;
-  letter-spacing: -.01em;
+  letter-spacing: -.012em;
   white-space: normal;
 }
 .memo-album-card .album-card__byline {
-  margin-top: 5px;
-  font-family: var(--font-sans);
-  font-size: 14px;
+  margin-top: 1px;
+  font-family: var(--font-serif);
+  font-size: 26px;
+  line-height: 1.12;
+  color: var(--color-accent);
   letter-spacing: 0;
+  white-space: normal;
 }
 .memo-album-card .album-card__secondary { overflow: visible; }
 .memo-album-card__context { display: flex; flex-direction: column; align-items: flex-start; }
@@ -231,7 +241,27 @@
    replacing the dead "미평가" placeholder. Own row below the album card, not
    crammed into the metadata line — the star target and one-liner need real
    room, especially at the touch sizes this modal is actually used at. */
-.memo-rating { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.memo-rating {
+  position: relative;
+  margin-top: 18px;
+  padding-top: 34px;
+  border-top: 1px solid var(--color-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.memo-rating::before {
+  content: '내 평가';
+  position: absolute;
+  top: 14px;
+  left: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--color-faded);
+}
 .memo-rating-comment {
   width: 100%;
   padding: 7px 10px;
@@ -246,11 +276,25 @@
 .memo-lg-grid {
   display: grid;
   grid-template-columns: minmax(240px, 26%) minmax(0, 1fr);
-  gap: 32px;
+  gap: 28px;
   align-items: stretch;
 }
-.memo-info { display: flex; flex-direction: column; min-width: 0; }
-.memo-main { display: flex; flex-direction: column; min-width: 0; }
+.memo-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  align-self: start;
+  padding: 20px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-md);
+}
+.memo-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px 2px 0;
+}
 .memo-main .memo-area { flex: 1 1 auto; }
 
 .memo-tags { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -321,7 +365,16 @@
 @media (max-width: 740px) {
   .memo-modal-lg { padding: 24px 22px 22px; }
   .memo-lg-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .memo-info { padding: 18px; }
+  .memo-album-card .album-card--grid {
+    grid-template-columns: 116px minmax(0, 1fr);
+    align-items: start;
+  }
   .memo-album-card .album-card__cover { max-width: 116px; }
+  .memo-album-card .album-card__meta { padding-top: 1px; }
+  .memo-album-card .album-card__title { font-size: 24px; }
+  .memo-album-card .album-card__byline { font-size: 20px; }
+  .memo-album-card .album-card__secondary { grid-column: 1 / -1; }
   .memo-tracks { max-height: 120px; }
 }
 @media (prefers-reduced-motion: reduce) {
