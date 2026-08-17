@@ -12,13 +12,14 @@
 // presence merely gates the attempt (and avoids apiFetch's login redirect for
 // anonymous visitors); any error/401 leaves the page fully public.
 import type { RatingSortKey } from '@lib/ratingStats'
-import type { MemberNowPlaying, MemberProfile as Profile } from '../album/reviews.api'
+import type { MemberNowPlaying, MemberRating, MemberProfile as Profile } from '../album/reviews.api'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { notifyAlbumStateChanged, openAlbum } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isPlaceholderIdentity } from '@lib/member'
 import { RATING_SORTS, sortRatings } from '@lib/ratingStats'
+import HalfStarInput from '../album/HalfStarInput'
 import { fetchMemberNowPlaying, fetchMemberProfile, putMyAlbumState, RATING_COMMENT_MAX, RatingRateLimitError } from '../album/reviews.api'
 import { boardTabHref } from './dashboardLinks'
 import { getMe } from './me.api'
@@ -85,8 +86,10 @@ function fmtDate(iso: string): string {
  * writing here means PUT /api/reviews/albums/{album_id} as the acting member —
  * this component must never render its edit affordance on someone else's row.
  *
- * A filled-in comment stays static text (out of scope for this fix — only the
- * empty placeholder becomes clickable, per the request).
+ * A filled-in comment stays static text here — editing an existing rating or
+ * comment goes through the row's "수정" affordance (RatingEditPanel below),
+ * which edits both facets together, mirroring AlbumRatingBlock's edit panel
+ * on the album overlay.
  */
 function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
 	albumId: string
@@ -163,6 +166,81 @@ function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
 				style={{ width: '100%', maxWidth: 360, fontSize: 'var(--text-base)', padding: '4px 0', border: 'none', borderBottom: '1px solid var(--color-border)', background: 'none', color: 'inherit' }}
 			/>
 			{err && <div className="mono" style={{ marginTop: 4, fontSize: 10.5, color: 'var(--color-danger, #c0392b)' }}>{err}</div>}
+		</div>
+	)
+}
+
+/**
+ * Edit panel for a row of "평가한 앨범" — star + 한줄평 together, same shape as
+ * AlbumRatingBlock's "수정" panel on the album overlay, so the write path
+ * behaves the same wherever it's reached from. Author-only (mounted only when
+ * the row's edit toggle is on, which is itself gated isSelf by the caller).
+ */
+function RatingEditPanel({ r, onCancel, onSaved }: {
+	r: MemberRating
+	onCancel: () => void
+	onSaved: (patch: { rating: number, comment: string | null }) => void
+}) {
+	const [draftRating, setDraftRating] = useState(r.rating)
+	const [draftComment, setDraftComment] = useState(r.comment ?? '')
+	const [saving, setSaving] = useState(false)
+	const [err, setErr] = useState<string | null>(null)
+
+	async function save() {
+		setSaving(true)
+		setErr(null)
+		try {
+			const res = await putMyAlbumState(r.album_id, { rating: draftRating, comment: draftComment.trim() || null })
+			if (!res) {
+				setErr('저장하지 못했습니다.')
+				return
+			}
+			onSaved({ rating: res.rating ?? draftRating, comment: res.comment ?? null })
+			notifyAlbumStateChanged({ albumId: r.album_id, reviewCandidate: res.review_candidate ?? false, rating: res.rating ?? null })
+		}
+		catch (e) {
+			setErr(e instanceof RatingRateLimitError ? '오늘 남길 수 있는 평가 수를 초과했습니다.' : '저장하지 못했습니다.')
+		}
+		finally {
+			setSaving(false)
+		}
+	}
+
+	return (
+		<div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
+			<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+				<HalfStarInput value={draftRating} onChange={setDraftRating} size={20} />
+				<span className="mono" style={{ fontSize: 11, color: 'var(--color-subtle)' }}>{draftRating.toFixed(1)}</span>
+			</div>
+			<input
+				type="text"
+				autoFocus
+				value={draftComment}
+				onChange={e => setDraftComment(e.target.value)}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter') {
+						e.preventDefault()
+						void save()
+					}
+					else if (e.key === 'Escape') {
+						onCancel()
+					}
+				}}
+				maxLength={RATING_COMMENT_MAX}
+				disabled={saving}
+				placeholder="한 줄 감상 (선택)"
+				className="sans"
+				style={{ width: '100%', fontSize: 'var(--text-base)', padding: '4px 0', border: 'none', borderBottom: '1px solid var(--color-border)', background: 'none', color: 'inherit' }}
+			/>
+			{err && <div className="mono" style={{ fontSize: 10.5, color: 'var(--color-danger, #c0392b)' }}>{err}</div>}
+			<div style={{ display: 'flex', gap: 8 }}>
+				<button type="button" onClick={() => void save()} disabled={saving} className="sans" style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--color-accent, #d8a13a)', background: 'var(--color-accent, #d8a13a)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
+					{saving ? '저장 중…' : '저장'}
+				</button>
+				<button type="button" onClick={onCancel} disabled={saving} className="sans" style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-subtle)', fontSize: 12, cursor: 'pointer' }}>
+					취소
+				</button>
+			</div>
 		</div>
 	)
 }
@@ -321,6 +399,9 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	// history in one response, so sorting it needs no round trip and no index.
 	const [sort, setSort] = useState<RatingSortKey>('recent')
 	const sortedReviews = useMemo(() => sortRatings(reviews, sort), [reviews, sort])
+	// Which row's "수정" panel is open — at most one at a time, mirroring the
+	// single-editor pattern on AlbumRatingBlock.
+	const [editingId, setEditingId] = useState<string | null>(null)
 
 	return (
 		<div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 20px 80px' }}>
@@ -407,8 +488,18 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 											>
 												{r.album_title}
 											</button>
-											<Stars score={Number(r.rating)} size={14} />
+											{editingId !== r.id && <Stars score={Number(r.rating)} size={14} />}
 											<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+											{isSelf && editingId !== r.id && (
+												<button
+													type="button"
+													onClick={() => setEditingId(r.id)}
+													className="sans"
+													style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}
+												>
+													수정
+												</button>
+											)}
 										</div>
 										{r.artist_name && (
 											<div className="sans" style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--color-subtle)' }}>
@@ -417,12 +508,25 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 													r.artist_name}
 											</div>
 										)}
-										<RatingCommentCell
-											albumId={r.album_id}
-											comment={r.comment}
-											isSelf={isSelf}
-											onSaved={comment => setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, comment } : row) } : p))}
-										/>
+										{editingId === r.id ?
+											(
+												<RatingEditPanel
+													r={r}
+													onCancel={() => setEditingId(null)}
+													onSaved={(patch) => {
+														setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, ...patch } : row) } : p))
+														setEditingId(null)
+													}}
+												/>
+											) :
+											(
+												<RatingCommentCell
+													albumId={r.album_id}
+													comment={r.comment}
+													isSelf={isSelf}
+													onSaved={comment => setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, comment } : row) } : p))}
+												/>
+											)}
 									</div>
 								</li>
 							))}
