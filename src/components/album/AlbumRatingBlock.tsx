@@ -26,18 +26,6 @@ function fmtDate(iso: string): string {
 	return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
 }
 
-const SECTION: React.CSSProperties = {
-	marginTop: 22,
-	paddingTop: 20,
-	borderTop: '1px solid var(--color-border-soft)',
-}
-
-// Self-contained button styles — the app-wide album overlay can render on any
-// page, so we must not depend on page-scoped button classes (research/settings).
-const BTN_BASE: React.CSSProperties = { padding: '6px 13px', borderRadius: 4, cursor: 'pointer', lineHeight: 1.2 }
-const BTN_PRIMARY: React.CSSProperties = { ...BTN_BASE, border: '1px solid var(--color-accent, #d8a13a)', background: 'var(--color-accent, #d8a13a)', color: '#fff' }
-const BTN_QUIET: React.CSSProperties = { ...BTN_BASE, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-subtle)' }
-
 export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	const [agg, setAgg] = useState<AlbumRatingAggregate | null>(null)
 	// Handle-keyed "my rating" match (audit 2026-07-14) — the public contract's
@@ -156,49 +144,54 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	const average = agg?.average ?? null
 
 	return (
-		<div style={SECTION}>
-			<div className="meta" style={{ marginBottom: 10 }}>커뮤니티 평점</div>
-
-			<div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+		<section className="album-rating">
+			<div className="album-rating__summary">
+				<div className="album-rating__community">
+					<span className="meta album-rating__label">커뮤니티</span>
 				{average != null ?
 					(
-						<>
-							<span className="serif" style={{ fontSize: 30, fontWeight: 500, lineHeight: 1 }}>{average.toFixed(1)}</span>
+						<div className="album-rating__community-value">
+							<span className="serif album-rating__average">{average.toFixed(1)}</span>
 							<Stars score={average} size={17} />
-							<span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>
-{count}
-개 평가
-       </span>
-						</>
+							<span className="mono album-rating__count">
+								{count}
+								명
+							</span>
+						</div>
 					) :
-					<span className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>아직 평가가 없습니다</span>}
+					<span className="sans album-rating__empty">아직 평가가 없습니다</span>}
+				</div>
 			</div>
 
 			{/* write panel — signed-in only */}
 			{authed && (
-				<div style={{ marginTop: 16 }}>
+				<div className="album-rating__mine">
 					{myReview && !editing ?
 						(
-							<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-								<span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)' }}>내 평점</span>
+							<div className="album-rating__mine-row">
+								<span className="meta album-rating__label">내 평가</span>
+								<span className="serif album-rating__my-score">{Number(myReview.rating).toFixed(1)}</span>
 								<Stars score={Number(myReview.rating)} size={16} />
 								{myReview.comment && (
-<span className="sans" style={{ fontSize: 13, color: 'var(--color-subtle)' }}>
+<span className="serif italic album-rating__my-comment">
 “
 {myReview.comment}
 ”
 </span>
 )}
-								<button type="button" onClick={startEdit} style={{ ...BTN_QUIET, fontSize: 12 }}>수정</button>
-								<button type="button" onClick={remove} disabled={saving} style={{ ...BTN_QUIET, fontSize: 12 }}>삭제</button>
+								<div className="album-rating__row-actions">
+									<button type="button" onClick={startEdit} className="album-modal__button album-modal__button--quiet">수정</button>
+									<button type="button" onClick={remove} disabled={saving} className="album-modal__button album-modal__button--quiet">삭제</button>
+								</div>
 							</div>
 						) :
 						editing ?
 							(
-								<div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 460 }}>
-									<div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+								<div className="album-rating__editor">
+									<div className="album-rating__editor-score">
+										<span className="meta album-rating__label">내 평가</span>
 										<HalfStarInput value={draftRating} onChange={setDraftRating} />
-										<span className="mono" style={{ fontSize: 12, color: 'var(--color-subtle)' }}>{draftRating.toFixed(1)}</span>
+										<span className="serif album-rating__draft-score">{draftRating.toFixed(1)}</span>
 									</div>
 									<textarea
 										value={draftComment}
@@ -214,49 +207,42 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 										// the cap is the FORMAT (one line, 이동진 준거), and 60 still
 										// renders as one line where a saved 평가 is read.
 										rows={3}
-										className="sans"
-										style={{ width: '100%', resize: 'none', padding: '8px 10px', fontSize: 13, borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-bg)', color: 'inherit' }}
+										className="sans album-rating__textarea"
 									/>
 									{/* The counter is the format, made visible: a 평가 is one line,
 									    so the remaining count should read as room, not as a limit
 									    being approached. */}
-									<div className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', marginTop: -4, textAlign: 'right' }}>
+									<div className="mono album-rating__counter">
 										{draftComment.length}
 										/
 										{RATING_COMMENT_MAX}
 									</div>
-									{err && <div className="sans" style={{ fontSize: 12, color: 'var(--color-danger, #c0392b)' }}>{err}</div>}
-									<div style={{ display: 'flex', gap: 8 }}>
-										<button type="button" onClick={save} disabled={saving} style={{ ...BTN_PRIMARY, fontSize: 12.5 }}>{saving ? '저장 중…' : '저장'}</button>
-										<button type="button" onClick={() => setEditing(false)} disabled={saving} style={{ ...BTN_QUIET, fontSize: 12.5 }}>취소</button>
+									{err && <div className="sans album-rating__error">{err}</div>}
+									<div className="album-rating__editor-actions">
+										<button type="button" onClick={save} disabled={saving} className="album-modal__button album-modal__button--primary">{saving ? '저장 중…' : '저장'}</button>
+										<button type="button" onClick={() => setEditing(false)} disabled={saving} className="album-modal__button album-modal__button--quiet">취소</button>
 									</div>
 								</div>
 							) :
 							(
-								<button type="button" onClick={startEdit} style={{ ...BTN_PRIMARY, fontSize: 12.5 }}>평가 남기기</button>
+								<button type="button" onClick={startEdit} className="album-modal__button album-modal__button--primary">평가 남기기</button>
 							)}
 
 					{/* The private editorial mark. Outside the rating editor on purpose:
 					    it must be reachable without opening one and without a star,
 					    because it can be set before listening (RFC C6). Never shown to
 					    anyone but its author — this whole panel is authed-only. */}
-					<div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+					<div className="album-rating__mark">
 						<button
 							type="button"
 							onClick={toggleMark}
 							disabled={marking}
 							aria-pressed={marked}
-							style={{
-								...BTN_BASE,
-								fontSize: 12,
-								border: `1px solid ${marked ? 'var(--color-accent, #d8a13a)' : 'var(--color-border)'}`,
-								background: 'transparent',
-								color: marked ? 'var(--color-accent, #d8a13a)' : 'var(--color-subtle)',
-							}}
+							className={`album-modal__button album-modal__button--quiet${marked ? ' is-marked' : ''}`}
 						>
 							{marked ? '✓ 평론 쓸 것' : '평론 쓸 것으로 표시'}
 						</button>
-						<span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>나만 봅니다</span>
+						<span className="mono album-rating__private-note">나만 봅니다</span>
 					</div>
 				</div>
 			)}
@@ -264,31 +250,31 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 			{/* login CTA — anonymous visitors used to get NO write affordance at all
 			    (audit 2026-07-14); goLogin captures this page as the returnTo. */}
 			{!authed && (
-				<div style={{ marginTop: 16 }}>
-					<button type="button" onClick={() => void goLogin(true)} style={{ ...BTN_QUIET, fontSize: 12.5 }}>로그인하고 평가 남기기</button>
+				<div className="album-rating__login">
+					<button type="button" onClick={() => void goLogin(true)} className="album-modal__button album-modal__button--quiet">로그인하고 평가 남기기</button>
 				</div>
 			)}
 
 			{/* review list */}
 			{reviews.length > 0 && (
-				<ul style={{ listStyle: 'none', margin: '18px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+				<ul className="album-rating__reviews">
 					{reviews.map((r) => {
 						const placeholder = isPlaceholderIdentity(r.author.display_name, r.author.handle)
 						return (
-							<li key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+							<li key={r.id} className="album-rating__review">
+								<div className="album-rating__review-head">
 									{/* runtime member URL (OQ6): works for every member immediately —
 									    the static /members/[handle] page exists only post-redeploy. */}
-									<a href={`/members/?u=${encodeURIComponent(r.author.handle)}`} className={placeholder ? 'mono' : 'sans'} style={{ fontSize: 13, fontWeight: 500 }}>{placeholder ? `@${r.author.handle}` : r.author.display_name}</a>
+									<a href={`/members/?u=${encodeURIComponent(r.author.handle)}`} className={`${placeholder ? 'mono' : 'sans'} album-rating__review-author`}>{placeholder ? `@${r.author.handle}` : r.author.display_name}</a>
 									<Stars score={Number(r.rating)} size={13} />
-									<span className="mono" style={{ fontSize: 10, color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+									<span className="mono album-rating__review-date">{fmtDate(r.created_at)}</span>
 								</div>
-								{r.comment && <p className="sans" style={{ margin: 0, fontSize: 13.5, color: 'var(--color-subtle)', lineHeight: 1.5 }}>{r.comment}</p>}
+								{r.comment && <p className="sans album-rating__review-comment">{r.comment}</p>}
 							</li>
 						)
 					})}
 				</ul>
 			)}
-		</div>
+		</section>
 	)
 }

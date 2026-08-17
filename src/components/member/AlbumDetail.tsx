@@ -170,14 +170,14 @@ function StandardModal({ album, mode, published, onClose, onOpenLyrics }: { albu
     >
       <div
 	ref={cardRef}
-	className="lf-modal-card"
+	className="lf-modal-card album-modal"
 	onClick={e => e.stopPropagation()}
 	role="dialog"
 	aria-modal="true"
 	aria-label="앨범 상세"
-	style={{ position: 'relative', width: '100%', maxWidth: 600, maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 34px 80px rgba(0,0,0,.42)', padding: '30px 30px 26px', pointerEvents: 'auto' }}
+	style={{ pointerEvents: 'auto' }}
       >
-        <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
+        <button type="button" className="iconbtn album-modal__close" onClick={onClose} aria-label="닫기">✕</button>
         {album.albumId ?
           <AlbumDetailView albumId={album.albumId} title={album.album} artist={album.artist} cover={album.cover} year={album.year} onOpenLyrics={onOpenLyrics} onAddTrack={onAddTrack} onPlayTrack={onPlayTrack} enableDrag hideArtists={mode === 'edit'} topSlot={mode === 'edit' ? <PublishedBanner published={published} /> : undefined} /> :
           <MinimalBody album={album} />}
@@ -944,9 +944,12 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
 function MinimalBody({ album }: { album: DetailTarget }) {
   const hasMeta = Boolean(album.track || album.genre || album.year)
   return (
-    <>
-      <Header cover={album.cover} title={album.track || album.album} artist={album.artist} meta={[]} kicker={album.track ? '트랙' : '앨범'} />
-      <div style={{ marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--color-border-soft)' }}>
+    <div className="album-modal__detail">
+      <div className="album-modal__plate album-modal__plate--identity-only">
+        <Header cover={album.cover} title={album.track || album.album} artist={album.artist} meta={[]} kicker={album.track ? '트랙' : '앨범'} modalPlate />
+      </div>
+      <div className="album-modal__body">
+       <div className="album-modal__minimal-meta">
         {album.rating != null ?
           <Stars score={album.rating} size={18} /> :
           <span className="unrated">미평가</span>}
@@ -963,7 +966,8 @@ function MinimalBody({ album }: { album: DetailTarget }) {
             ) :
             '추가 정보 없음'}
         </div>
+       </div>
       </div>
-    </>
+    </div>
   )
 }

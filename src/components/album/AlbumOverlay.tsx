@@ -141,14 +141,13 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
       >
       <div
 	ref={cardRef}
-	className="lf-modal-card"
+	className="lf-modal-card album-modal"
 	onClick={e => e.stopPropagation()}
 	role="dialog"
 	aria-modal="true"
 	aria-label="앨범 상세"
-	style={{ position: 'relative', width: '100%', maxWidth: 600, maxHeight: '86vh', overflowY: 'auto', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 12, boxShadow: '0 34px 80px rgba(0,0,0,.42)', padding: '30px 30px 26px' }}
       >
-        <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기" style={{ position: 'absolute', top: 16, right: 16, width: 30, height: 30, borderColor: 'var(--color-border-soft)', zIndex: 2 }}>✕</button>
+        <button type="button" className="iconbtn album-modal__close" onClick={onClose} aria-label="닫기">✕</button>
         <AlbumDetailView
 	albumId={target.albumId}
 	title={target.title}
@@ -157,13 +156,11 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
 	year={target.year}
 	interactive={!target.unresolved}
 	onPlayTrack={isLoggedIn() && !target.unresolved ? playTrack : undefined}
-	topSlot={isLoggedIn() && !target.unresolved ?
+	headerActions={isLoggedIn() && !target.unresolved ?
           (
-            <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--color-border-soft)', display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => { void playAlbum() }} disabled={playing} className="sans" style={{ padding: '8px 13px', borderRadius: 5, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', cursor: playing ? 'default' : 'pointer', opacity: playing ? 0.55 : 1, fontSize: 12.5 }}>
-                {playing ? '재생 요청 중…' : '이 앨범 재생 ▶'}
-              </button>
-            </div>
+            <button type="button" onClick={() => { void playAlbum() }} disabled={playing} className="sans album-modal__button album-modal__button--primary">
+              {playing ? '재생 요청 중…' : '이 앨범 재생 ▶'}
+            </button>
           ) :
 undefined}
         />
