@@ -192,7 +192,7 @@ const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
 
 function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
   return (
-    <button type="button" onClick={() => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating })} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
+    <button type="button" onClick={() => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating, cover: r.cover, albumId: r.albumIds[0], real: r.albumIds.length > 0 })} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
       <div style={{ width: 44, flex: '0 0 auto' }}><AlbumArt url={r.cover} label={r.album} size={44} /></div>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div className="meta">
@@ -259,6 +259,8 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
       rating: null,
       when: fmtWhen(it.last_played_at),
       cover: it.album?.cover_url ?? null,
+      albumId: it.album_id,
+      real: true,
     })))
     return snap.lastSyncedAt
   }, [])
@@ -446,6 +448,8 @@ function ListenedAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Det
         rating: null,
         when: `${r.play_count}회`,
         cover: r.album?.cover_url ?? null,
+        albumId: r.album_id,
+        real: true,
       }))))
       .catch(() => on && setItems([]))
     return () => {
