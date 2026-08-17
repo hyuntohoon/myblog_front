@@ -19,6 +19,10 @@ export interface SampleAlbum {
 	status?: LibraryStatus
 	/** Real album-art URL when sourced from a live API; null/absent → letter tile. */
 	cover?: string | null
+	/** Real DB album id, when sourced from a live API — see DetailTarget.albumId. */
+	albumId?: string
+	/** Set alongside `albumId` — routes the album-detail modal to the real view. */
+	real?: boolean
 }
 
 export interface SampleTrack {
