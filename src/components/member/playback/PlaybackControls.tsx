@@ -1,7 +1,8 @@
 import type { CSSProperties, KeyboardEvent, MouseEvent } from 'react'
 import type { DeviceListOutcome, PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, RepeatMode, SetTrackLikedOutcome, TransferOutcome } from '@lib/spotifyPlayback'
 import type { LikedState, PlaybackModeCommand } from '@lib/playback/session'
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { playbackSession } from '@lib/playback/session'
 import { useDismissable } from '@lib/useDismissable'
 
@@ -191,6 +192,27 @@ undefined
   return { ref, onClick, onKeyDown }
 }
 
+/**
+ * Read at popover-open time from the anchor, so the portaled dropdown (which
+ * escapes `.global-playback-bar`'s dark "deck" theme scope) still renders with
+ * the right colors instead of falling back to the page's ambient theme.
+ */
+const DEVICE_POPOVER_THEME_VARS = ['--color-bg', '--color-border', '--color-border-soft', '--color-faded', '--color-accent', '--color-text'] as const
+
+interface DevicePopoverPlacement {
+  left: number
+  width: number
+  bottom: number
+  theme: CSSProperties
+  /**
+   * `--deck-raised` when the anchor sits in the dark deck bar (a deliberate
+   * lighter-than-bar elevation, previously an `!important` CSS override that
+   * only matched while the listbox was DOM-nested under `.global-playback-bar`)
+   * — falls back to `--color-bg` for the plain-theme NowPlaying picker.
+   */
+  background: string | undefined
+}
+
 export function PlaybackDevicePicker({ name, devices, activeDeviceId, onRefresh, onTransfer, onSwitched }: {
   name: string | null
   devices: PlaybackDevice[] | null
@@ -202,8 +224,44 @@ export function PlaybackDevicePicker({ name, devices, activeDeviceId, onRefresh,
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const boxRef = useRef<HTMLDivElement>(null)
-  useDismissable(open, () => setOpen(false), boxRef)
+  const anchorRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const [placement, setPlacement] = useState<DevicePopoverPlacement | null>(null)
+  useDismissable(open, () => setOpen(false), listRef)
+
+  // Portaled to <body> (see the popover below) so a queue panel opened at the
+  // same time — a `.pbp-panel` fixed sibling of `.global-playback-bar` with a
+  // higher z-index — can never trap this dropdown inside the bar's own
+  // stacking context. Measured in viewport coordinates on open + kept in sync
+  // while open, since the anchor is no longer this node's DOM parent.
+  useLayoutEffect(() => {
+    if (!open)
+      return
+    const measure = () => {
+      const anchor = anchorRef.current
+      if (!anchor)
+        return
+      const rect = anchor.getBoundingClientRect()
+      const computed = getComputedStyle(anchor)
+      const theme = {} as Record<string, string>
+      for (const cssVar of DEVICE_POPOVER_THEME_VARS)
+        theme[cssVar] = computed.getPropertyValue(cssVar)
+      setPlacement({
+        left: rect.left + 8,
+        width: Math.max(0, rect.width - 16),
+        bottom: window.innerHeight - rect.top + 4,
+        theme: theme as CSSProperties,
+        background: computed.getPropertyValue('--deck-raised').trim() || undefined,
+      })
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [open])
 
   const openList = async () => {
     if (open) {
@@ -255,7 +313,7 @@ export function PlaybackDevicePicker({ name, devices, activeDeviceId, onRefresh,
   const alreadyListed = devices?.some(device => device.isInPage) ?? false
 
   return (
-    <div ref={boxRef} style={{ position: 'relative' }}>
+    <div ref={anchorRef} style={{ position: 'relative' }}>
       <button
 	type="button"
 	onClick={() => { void openList() }}
@@ -277,11 +335,12 @@ export function PlaybackDevicePicker({ name, devices, activeDeviceId, onRefresh,
         </span>
         <span aria-hidden="true" style={{ marginLeft: 'auto', flex: '0 0 auto', opacity: 0.7 }}>{open ? '▾' : '▸'}</span>
       </button>
-      {open && (
+      {open && placement && typeof document !== 'undefined' && createPortal(
         <div
+	ref={listRef}
 	role="listbox"
 	aria-label="재생 기기"
-	style={{ position: 'absolute', left: 8, right: 8, bottom: '100%', marginBottom: 4, zIndex: 40, background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 7, boxShadow: '0 18px 44px rgba(0,0,0,.32)', padding: 5, maxHeight: 240, overflowY: 'auto' }}
+	style={{ position: 'fixed', left: placement.left, width: placement.width, bottom: placement.bottom, zIndex: 'calc(var(--z-pocket, 70) + 6)', ...placement.theme, background: placement.background ?? 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 7, boxShadow: '0 18px 44px rgba(0,0,0,.32)', padding: 5, maxHeight: 240, overflowY: 'auto' }}
         >
           {devices == null && !error && <div className="mono" style={{ padding: '8px 9px', fontSize: 10.5, color: 'var(--color-faded)' }}>기기를 찾는 중…</div>}
           {error && <div className="mono" style={{ padding: '8px 9px', fontSize: 10.5, color: 'var(--color-accent)' }}>{error}</div>}
@@ -308,7 +367,8 @@ export function PlaybackDevicePicker({ name, devices, activeDeviceId, onRefresh,
               다른 기기가 없어요. Spotify 앱을 켜면 여기에 나타납니다.
             </div>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

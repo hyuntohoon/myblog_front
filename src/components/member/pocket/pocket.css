@@ -586,7 +586,6 @@
   font-family: ui-monospace, 'IBM Plex Mono', monospace !important;
   font-variant-numeric: tabular-nums;
 }
-.pb-scope .global-playback-bar .deck-device-picker [role='listbox'] { background: var(--deck-raised) !important; border-color: #323A47 !important; }
 .pb-scope .deck-volume-menu { position: relative; }
 .pb-scope .deck-popover {
   position: absolute;
@@ -615,6 +614,36 @@
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Collapsed state — the bar is replaced entirely by this small floating pill
+   (never a height-reserving element, unlike the bar itself: `--global-player-h`
+   goes to 0px while collapsed, same as when nothing is playing). */
+.pb-scope .global-playback-pill {
+  --deck-night: #12151B;
+  --deck-raised: #1B2028;
+  --deck-ink: #F4F7FB;
+  --deck-muted: #9DA8B6;
+  position: fixed;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: calc(var(--z-pocket, 70) + 4);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(220px, calc(100vw - 24px));
+  padding: 6px 12px 6px 6px;
+  border: 1px solid #323A47;
+  border-radius: 999px;
+  color: var(--deck-ink);
+  background: var(--deck-raised);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .34);
+  cursor: pointer;
+}
+.pb-scope .global-playback-pill .pbp-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pb-scope .global-playback-pill .pbp-cover { width: 30px; height: 30px; border-radius: 50%; border-color: #323A47; }
+.pb-scope .global-playback-pill .pbp-current-title { font-size: 12px; font-style: normal; max-width: 130px; }
+.pb-scope .global-playback-pill .pbp-current-artist,
+.pb-scope .global-playback-pill .pbp-current-outside { display: none; }
 
 .pb-scope .pbp-dock-slot {
   position: fixed;

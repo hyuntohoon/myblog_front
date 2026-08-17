@@ -578,9 +578,19 @@ function DesktopPlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { on
     reducedMotion: reduced,
   })
 
+  // Same `astro:after-swap` restore as `GlobalPlaybackBar`'s `--global-player-h` —
+  // ClientRouter's `swapRootAttributes` strips this custom property off <html> on
+  // every navigation, and nothing else re-applies it.
   useEffect(() => {
-    document.documentElement.style.setProperty('--pbp-dock-w', dock.docked ? `${DOCK_WIDTH}px` : '0px')
-    return () => document.documentElement.style.setProperty('--pbp-dock-w', '0px')
+    const apply = () => {
+      document.documentElement.style.setProperty('--pbp-dock-w', dock.docked ? `${DOCK_WIDTH}px` : '0px')
+    }
+    apply()
+    document.addEventListener('astro:after-swap', apply)
+    return () => {
+      document.removeEventListener('astro:after-swap', apply)
+      document.documentElement.style.setProperty('--pbp-dock-w', '0px')
+    }
   }, [dock.docked])
 
   return (
