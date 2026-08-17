@@ -12,6 +12,8 @@ import type { NpStyle, OnOpenLyrics } from './NowPlaying'
 import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/member'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
+import { TrackCard } from '@components/shared/TrackCard'
 import { bucketCount, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
 import { useDismissable } from '@lib/useDismissable'
 import { LastfmNowPlaying } from './LastfmNowPlaying'
@@ -45,117 +47,146 @@ interface DashCtx {
   goBucket: () => void
   reviews: MemberReview[]
   onOpenLyrics?: OnOpenLyrics
+  /**
+   * 최근 재생 트랙 카드의 "가사" 액션 — NowPlaying's `onOpenLyrics` is the LIVE
+   * viewer (progress-bound); a recent (non-playing) track needs the static
+   * viewer instead, same one StatsTab/AlbumDetail already open via
+   * SelfDashboard's `openStaticLyrics`. Distinct prop, distinct signature —
+   * reusing `onOpenLyrics`'s name would collide with NowPlaying's contract.
+   */
+  onOpenTrackLyrics?: (spotifyTrackId: string) => void
 }
 
 interface HandleProps { onPointerDown?: (e: React.PointerEvent) => void, style: CSSProperties }
 
 /* ── album / track collections (list · grid · card) ──────── */
+const OVERVIEW_ALBUM_CARD_CSS = `
+.overview-album-coll--card .album-card{--album-card-cover-size:56px}
+.overview-album-coll--list .album-card{--album-card-cover-size:38px;padding:9px 2px}
+.overview-album-coll--list .overview-album-card-item + .overview-album-card-item{border-top:1px solid var(--color-border-soft)}
+.overview-album-coll--card .overview-album-card__card-secondary{display:flex;flex-direction:column;align-items:flex-start;gap:5px}
+.overview-album-coll--list .overview-album-card__list-secondary{display:flex;align-items:center;gap:10px;width:100%}
+.overview-album-coll--list .overview-album-card__list-when{margin-left:auto;color:var(--color-faded)}
+`
+
 function AlbumColl({ items, view, onOpen }: { items: SampleAlbum[], view: ViewKey, onOpen: (t: DetailTarget) => void }) {
   if (view === 'grid') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
+      <div className="overview-album-coll--grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
+        <style>{OVERVIEW_ALBUM_CARD_CSS}</style>
         {items.map(a => (
-          <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
-            <AlbumArt url={a.cover} label={a.album} />
-            <div className="serif italic" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
-            <div className="mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
-          </button>
+          <div key={a.id} className="overview-album-card-item">
+            <CatalogAlbumCardAdapter
+	data={{ catalogAlbumId: a.albumId ?? null, spotifyAlbumId: null, title: a.album, artist: a.artist, artistId: null, cover: a.cover ?? null, year: a.year ?? null }}
+	layout="grid"
+	capabilities={{ open: () => onOpen(a) }}
+            />
+          </div>
         ))}
       </div>
     )
   }
   if (view === 'card') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+      <div className="overview-album-coll--card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+        <style>{OVERVIEW_ALBUM_CARD_CSS}</style>
         {items.map(a => (
-          <button key={a.id} type="button" onClick={() => onOpen(a)} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
-            <div style={{ width: 56, flex: '0 0 auto' }}><AlbumArt url={a.cover} label={a.album} size={56} /></div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="meta" style={{ marginBottom: 3 }}>{a.when}</div>
-              <div className="serif italic" style={{ fontSize: 16, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
-              <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.artist}</div>
-              <div style={{ marginTop: 5 }}>{a.rating != null ? <Stars score={a.rating} size={12} /> : <span className="meta" style={{ fontSize: 9 }}>미평가</span>}</div>
-            </div>
-          </button>
+          <div key={a.id} className="panel overview-album-card-item" style={{ padding: 12, background: 'var(--color-bg)' }}>
+            <CatalogAlbumCardAdapter
+	data={{ catalogAlbumId: a.albumId ?? null, spotifyAlbumId: null, title: a.album, artist: a.artist, artistId: null, cover: a.cover ?? null, year: a.year ?? null }}
+	layout="row"
+	capabilities={{ open: () => onOpen(a) }}
+	secondaryLine={(
+              <span className="overview-album-card__card-secondary">
+                <span className="meta">{a.when}</span>
+                {a.rating != null ? <Stars score={a.rating} size={12} /> : <span className="meta" style={{ fontSize: 9 }}>미평가</span>}
+              </span>
+            )}
+            />
+          </div>
         ))}
       </div>
     )
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {items.map((a, i) => (
-        <button key={a.id} type="button" onClick={() => onOpen(a)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
-          <div style={{ width: 38, flex: '0 0 auto' }}><AlbumArt url={a.cover} label={a.album} size={38} /></div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="serif italic" style={{ fontSize: 15, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.album}</div>
-            <div className="mono" style={{ fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{a.artist}</div>
-          </div>
-          {a.rating != null && <Stars score={a.rating} size={12} />}
-          <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 44, textAlign: 'right' }}>{a.when}</span>
-        </button>
+    <div className="overview-album-coll--list" style={{ display: 'flex', flexDirection: 'column' }}>
+      <style>{OVERVIEW_ALBUM_CARD_CSS}</style>
+      {items.map(a => (
+        <div key={a.id} className="overview-album-card-item">
+          <CatalogAlbumCardAdapter
+	data={{ catalogAlbumId: a.albumId ?? null, spotifyAlbumId: null, title: a.album, artist: a.artist, artistId: null, cover: a.cover ?? null, year: a.year ?? null }}
+	layout="row"
+	capabilities={{ open: () => onOpen(a) }}
+	secondaryLine={(
+            <span className="overview-album-card__list-secondary">
+              {a.rating != null && <Stars score={a.rating} size={12} />}
+              <span className="mono overview-album-card__list-when" style={{ fontSize: 10.5 }}>{a.when}</span>
+            </span>
+          )}
+          />
+        </div>
       ))}
     </div>
   )
 }
 
-function TrackColl({ items, view, onOpen }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void }) {
-  const open = (t: SampleTrack) => onOpen({ album: t.album, artist: t.artist, track: t.track })
+const TRACK_COLL_CSS = `
+.overview-track-coll--card .track-card{--track-card-cover-size:50px}
+.overview-track-coll--list .track-card{--track-card-cover-size:34px}
+`
+
+function TrackColl({ items, view, onOpen, onOpenLyrics }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
+  const capabilities = (t: SampleTrack) => ({
+    open: () => onOpen({ album: t.album, artist: t.artist, track: t.track }),
+    ...(onOpenLyrics && t.spotifyTrackId ? { lyrics: () => onOpenLyrics(t.spotifyTrackId!) } : {}),
+  })
+  const data = (t: SampleTrack) => ({ title: t.track, artist: t.artist, album: t.album, cover: t.cover ?? null })
   if (view === 'grid') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
-        {items.map(t => (
-          <button key={t.id} type="button" onClick={() => open(t)} style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
-            <AlbumArt url={t.cover} label={t.album} />
-            <div className="serif" style={{ fontSize: 13.5, marginTop: 6, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
-            <div className="mono" style={{ fontSize: 9.5, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>{t.artist}</div>
-          </button>
-        ))}
-      </div>
+      <>
+        <style>{TRACK_COLL_CSS}</style>
+        <div className="overview-track-coll overview-track-coll--grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px,1fr))', gap: 16 }}>
+          {items.map(t => <TrackCard key={t.id} capabilities={capabilities(t)} data={data(t)} layout="grid" />)}
+        </div>
+      </>
     )
   }
   if (view === 'card') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
-        {items.map(t => (
-          <button key={t.id} type="button" onClick={() => open(t)} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', textAlign: 'left', cursor: 'pointer', background: 'var(--color-bg)' }}>
-            <div style={{ width: 50, flex: '0 0 auto' }}><AlbumArt url={t.cover} label={t.album} size={50} /></div>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="serif" style={{ fontSize: 15, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
-              <div className="sans" style={{ fontSize: 12, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-{t.artist}
-{' '}
-·
-{' '}
-{t.album}
-              </div>
-              <div className="meta" style={{ marginTop: 4 }}>
-{t.when}
-{' '}
-·
-{' '}
-{t.len}
-              </div>
+      <>
+        <style>{TRACK_COLL_CSS}</style>
+        <div className="overview-track-coll overview-track-coll--card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px,1fr))', gap: 12 }}>
+          {items.map(t => (
+            <div key={t.id} className="panel" style={{ padding: 12, background: 'var(--color-bg)' }}>
+              <TrackCard
+	capabilities={capabilities(t)}
+	data={data(t)}
+	layout="row"
+	secondaryLine={<span className="meta">{[t.when, t.len].filter(Boolean).join(' · ')}</span>}
+              />
             </div>
-          </button>
-        ))}
-      </div>
+          ))}
+        </div>
+      </>
     )
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {items.map((t, i) => (
-        <button key={t.id} type="button" onClick={() => open(t)} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', width: '100%' }}>
-          <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 20 }}>{String(i + 1).padStart(2, '0')}</span>
-          <div style={{ width: 34, flex: '0 0 auto' }}><AlbumArt url={t.cover} label={t.album} size={34} /></div>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="serif" style={{ fontSize: 14.5, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.track}</div>
-            <div className="sans" style={{ fontSize: 11, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{t.artist}</div>
+    <>
+      <style>{TRACK_COLL_CSS}</style>
+      <div className="overview-track-coll overview-track-coll--list" style={{ display: 'flex', flexDirection: 'column' }}>
+        {items.map((t, i) => (
+          <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '20px minmax(0, 1fr)', gap: 12, alignItems: 'center', padding: '9px 2px', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', width: 20 }}>{String(i + 1).padStart(2, '0')}</span>
+            <TrackCard
+	capabilities={capabilities(t)}
+	data={data(t)}
+	layout="row"
+	secondaryLine={<span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>{[t.len, t.when].filter(Boolean).join(' · ')}</span>}
+            />
           </div>
-          <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)' }}>{t.len}</span>
-          <span className="mono" style={{ fontSize: 10.5, color: 'var(--color-faded)', width: 46, textAlign: 'right' }}>{t.when}</span>
-        </button>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -350,7 +381,7 @@ function RecentAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
 const RECENT_TRACKS_LIMIT = 8
 
 /** Modal listing every 최근 재생 트랙 (list). Reuses the slide-over shell + scrim. */
-export function RecentTracksModal({ items, view, onOpen, onClose }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void, onClose: () => void }) {
+export function RecentTracksModal({ items, view, onOpen, onClose, onOpenLyrics }: { items: SampleTrack[], view: ViewKey, onOpen: (t: DetailTarget) => void, onClose: () => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
   const modalRef = useRef<HTMLElement>(null)
   useDismissable(true, onClose, modalRef, { lockScroll: true })
 
@@ -367,7 +398,7 @@ export function RecentTracksModal({ items, view, onOpen, onClose }: { items: Sam
           {items.length}
           곡
         </div>
-        <TrackColl items={items} view={view === 'grid' ? 'grid' : 'list'} onOpen={openAndClose} />
+        <TrackColl items={items} view={view === 'grid' ? 'grid' : 'list'} onOpen={openAndClose} onOpenLyrics={onOpenLyrics} />
       </aside>
     </div>,
     document.body,
@@ -378,7 +409,7 @@ export function RecentTracksModal({ items, view, onOpen, onClose }: { items: Sam
  * 최근 재생 트랙 widget — real (worker-fed track cache, D-B), mapped to TrackColl.
  *  Duration isn't stored (we only cache play timestamps), so `len` is left blank.
  */
-function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: DetailTarget) => void }) {
+function RecentTracksWidget({ view, onOpen, onOpenLyrics }: { view: ViewKey, onOpen: (t: DetailTarget) => void, onOpenLyrics?: (spotifyTrackId: string) => void }) {
   const [items, setItems] = useState<SampleTrack[] | null>(null)
   const [showAll, setShowAll] = useState(false)
   useEffect(() => {
@@ -392,6 +423,7 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
         len: '',
         when: fmtWhen(it.played_at),
         cover: it.album?.cover_url ?? null,
+        spotifyTrackId: it.spotify_track_id,
       }))))
       .catch(() => on && setItems([]))
     return () => {
@@ -413,7 +445,7 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
   const hidden = items.length - shown.length
   return (
     <>
-      <TrackColl items={shown} view={view} onOpen={onOpen} />
+      <TrackColl items={shown} view={view} onOpen={onOpen} onOpenLyrics={onOpenLyrics} />
       {hidden > 0 && (
         <button
 	type="button"
@@ -424,7 +456,7 @@ function RecentTracksWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Detai
           {`더 보기 (+${hidden})`}
         </button>
       )}
-      {showAll && <RecentTracksModal items={items} view={view} onOpen={onOpen} onClose={() => setShowAll(false)} />}
+      {showAll && <RecentTracksModal items={items} view={view} onOpen={onOpen} onClose={() => setShowAll(false)} onOpenLyrics={onOpenLyrics} />}
     </>
   )
 }
@@ -475,7 +507,7 @@ function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
     case 'nowplaying': return <NowPlaying variant={ctx.npStyle} onOpenLyrics={ctx.onOpenLyrics} />
     case 'lastfm-nowplaying': return <LastfmNowPlaying />
     case 'recent-albums': return <RecentAlbumsWidget view={ctx.views['recent-albums']} onOpen={ctx.onOpen} />
-    case 'recent-tracks': return <RecentTracksWidget view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} />
+    case 'recent-tracks': return <RecentTracksWidget view={ctx.views['recent-tracks']} onOpen={ctx.onOpen} onOpenLyrics={ctx.onOpenTrackLyrics} />
     case 'listened-albums': return <ListenedAlbumsWidget view={ctx.views['listened-albums']} onOpen={ctx.onOpen} />
     case 'bucket': return <BucketShortcut count={bucketCount()} onGo={ctx.goBucket} />
     // MiniReview key: runtime member rows (merge PR2) carry slug '' → fall back to the album id.
@@ -675,7 +707,7 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
 /* ── dashboard ───────────────────────────────────────────── */
 const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['listened-albums'], ['bucket']]
 
-export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, onOpenLyrics }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[], onOpenLyrics?: OnOpenLyrics }) {
+export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, onOpenLyrics, onOpenTrackLyrics }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[], onOpenLyrics?: OnOpenLyrics, onOpenTrackLyrics?: (spotifyTrackId: string) => void }) {
   const [rows, setRows] = useState<string[][]>(() => {
     try {
       const s = JSON.parse(localStorage.getItem(OV_ROWS_KEY) || 'null')
@@ -726,7 +758,7 @@ export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, o
     document.addEventListener('pointerdown', onDown, true)
     return () => document.removeEventListener('pointerdown', onDown, true)
   }, [addOpen])
-  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, goBucket, reviews, onOpenLyrics }
+  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, goBucket, reviews, onOpenLyrics, onOpenTrackLyrics }
   const flat = rows.flat()
   const remove = (id: string) => setRows(prev => prev.map(r => r.filter(x => x !== id)).filter(r => r.length))
   const add = (id: string) => {

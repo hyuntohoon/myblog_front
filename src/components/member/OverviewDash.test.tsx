@@ -32,4 +32,24 @@ describe('recentTracksModal', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledTimes(3)
   })
+
+  it('offers static lyrics only for rows carrying a Spotify track id', () => {
+    const onOpenLyrics = vi.fn()
+    render(
+		<RecentTracksModal
+			items={[
+				{ id: 'one', track: 'So What', artist: 'Miles Davis', album: 'Kind of Blue', len: '9:22', when: '오늘', spotifyTrackId: 'spotify-track-1' },
+				{ id: 'two', track: 'Freddie Freeloader', artist: 'Miles Davis', album: 'Kind of Blue', len: '9:46', when: '어제' },
+			]}
+			view="list"
+			onOpen={vi.fn()}
+			onClose={vi.fn()}
+			onOpenLyrics={onOpenLyrics}
+		/>,
+    )
+
+    fireEvent.click(screen.getByLabelText('So What 가사 보기'))
+    expect(onOpenLyrics).toHaveBeenCalledWith('spotify-track-1')
+    expect(screen.queryByLabelText('Freddie Freeloader 가사 보기')).toBeNull()
+  })
 })

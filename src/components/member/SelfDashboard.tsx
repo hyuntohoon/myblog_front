@@ -186,7 +186,7 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 	}
 
 	const panels: { id: string, node: ReactNode }[] = [
-		{ id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => onSelectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} /> },
+		{ id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => onSelectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} onOpenTrackLyrics={openStaticLyrics} /> },
 		{ id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> },
 		{ id: 'bucket', node: <BucketBoard onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
 		{ id: 'stats', node: <StatsTab onOpen={openDetail} onOpenLyrics={openStaticLyrics} /> },

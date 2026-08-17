@@ -34,6 +34,8 @@ export interface SampleTrack {
 	when: string
 	/** Real album-art URL when sourced from a live API; null/absent → letter tile. */
 	cover?: string | null
+	/** Spotify track id, when sourced from a live API — lets the card offer 가사. */
+	spotifyTrackId?: string
 }
 
 export type LibraryStatus = '듣는 중' | '들음' | '평론함' | '위시리스트'
