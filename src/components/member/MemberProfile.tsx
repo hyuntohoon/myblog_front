@@ -12,6 +12,7 @@
 // presence merely gates the attempt (and avoids apiFetch's login redirect for
 // anonymous visitors); any error/401 leaves the page fully public.
 import type { RatingSortKey } from '@lib/ratingStats'
+import type { MemberRerating } from '../album/reratings.api'
 import type { MemberNowPlaying, MemberRating, MemberProfile as Profile } from '../album/reviews.api'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
@@ -20,6 +21,7 @@ import { artistHref } from '@lib/entityLinks'
 import { isPlaceholderIdentity } from '@lib/member'
 import { RATING_SORTS, sortRatings } from '@lib/ratingStats'
 import HalfStarInput from '../album/HalfStarInput'
+import { cancelRerating, fetchMyReratings, startRerating } from '../album/reratings.api'
 import { fetchMemberNowPlaying, fetchMemberProfile, putMyAlbumState, RATING_COMMENT_MAX, RatingRateLimitError } from '../album/reviews.api'
 import { boardTabHref } from './dashboardLinks'
 import { getMe } from './me.api'
@@ -176,15 +178,36 @@ function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
  * behaves the same wherever it's reached from. Author-only (mounted only when
  * the row's edit toggle is on, which is itself gated isSelf by the caller).
  */
-function RatingEditPanel({ r, onCancel, onSaved }: {
+function RatingEditPanel({ r, onCancel, onSaved, onRerated }: {
 	r: MemberRating
 	onCancel: () => void
 	onSaved: (patch: { rating: number, comment: string | null }) => void
+	/** The 평가 was withdrawn — the caller drops the row and refetches the profile. */
+	onRerated: () => void
 }) {
 	const [draftRating, setDraftRating] = useState(r.rating)
 	const [draftComment, setDraftComment] = useState(r.comment ?? '')
 	const [saving, setSaving] = useState(false)
 	const [err, setErr] = useState<string | null>(null)
+
+	/**
+	 * 재평가 — withdraw this 평가 so the album can be listened to again and rated
+	 * fresh. Placed inside the 수정 panel rather than beside 수정 on the row: it
+	 * destroys the score this row exists to show, so it should take the same two
+	 * deliberate clicks an edit does, not one stray one.
+	 */
+	async function rerate() {
+		setSaving(true)
+		setErr(null)
+		const result = await startRerating(r.album_id)
+		if (result === 'ok') {
+			notifyAlbumStateChanged({ albumId: r.album_id, rating: null })
+			onRerated()
+			return
+		}
+		setErr(result === 'conflict' ? '되돌릴 평가가 없습니다.' : '재평가를 시작하지 못했습니다.')
+		setSaving(false)
+	}
 
 	async function save() {
 		setSaving(true)
@@ -240,8 +263,108 @@ function RatingEditPanel({ r, onCancel, onSaved }: {
 				<button type="button" onClick={onCancel} disabled={saving} className="sans" style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-subtle)', fontSize: 12, cursor: 'pointer' }}>
 					취소
 				</button>
+				<button type="button" onClick={() => void rerate()} disabled={saving} className="sans" style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-subtle)', fontSize: 12, cursor: 'pointer' }}>
+					재평가
+				</button>
 			</div>
 		</div>
+	)
+}
+
+/**
+ * 재평가 중 — albums whose 평가 was withdrawn and is being redone
+ * (FEAT-album-rerating).
+ *
+ * PUBLIC (owner decision): the list appears on anyone's profile. What is NOT
+ * public is the withdrawn score — `previous_rating` exists only on the author's
+ * own `GET /api/me/reratings` payload, so it is passed in separately here rather
+ * than read off the public profile response. Rendering it from `mine` is the
+ * only path; a visitor's `mine` is empty and the hint simply does not appear.
+ *
+ * Rating again happens in the album overlay (owner decision), not inline: the
+ * whole premise is that you went and listened again, so the surface that
+ * re-rates should be the one with the tracklist and the player on it.
+ */
+function ReratingSection({ reratings, mine, isSelf, onCancelled }: {
+	reratings: MemberRerating[]
+	mine: Map<string, number>
+	isSelf: boolean
+	onCancelled: (albumId: string) => void
+}) {
+	const [busy, setBusy] = useState<string | null>(null)
+
+	if (reratings.length === 0)
+		return null
+
+	return (
+		<section style={{ marginTop: 34 }}>
+			<SectionTitle title="재평가 중" />
+			<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
+				{reratings.map(r => (
+					<li key={r.album_id} style={{ display: 'flex', gap: 14 }}>
+						<button
+							type="button"
+							onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
+							title={r.album_title}
+							style={{ width: 48, flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+						>
+							<AlbumArt url={r.album_cover_url} label={r.album_title} size={48} />
+						</button>
+						<div style={{ minWidth: 0, flex: 1 }}>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+								<button
+									type="button"
+									onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
+									className="serif italic"
+									style={{ fontSize: 'var(--text-base)', fontWeight: 500, padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+								>
+									{r.album_title}
+								</button>
+								{/* Author-only: the withdrawn score never reaches a visitor. */}
+								{isSelf && mine.has(r.album_id) && (
+									<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>
+										이전
+										{' '}
+										{mine.get(r.album_id)!.toFixed(1)}
+									</span>
+								)}
+								<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+								{isSelf && (
+									<button
+										type="button"
+										disabled={busy === r.album_id}
+										onClick={async () => {
+											setBusy(r.album_id)
+											if (await cancelRerating(r.album_id)) {
+												notifyAlbumStateChanged({ albumId: r.album_id, rating: mine.get(r.album_id) ?? null })
+												onCancelled(r.album_id)
+											}
+											setBusy(null)
+										}}
+										className="sans"
+										style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}
+									>
+										재평가 취소
+									</button>
+								)}
+							</div>
+							{r.artist_name && (
+								<div className="sans" style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--color-subtle)' }}>
+									{r.artist_id ?
+										<a href={artistHref(r.artist_id)} style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)' }}>{r.artist_name}</a> :
+										r.artist_name}
+								</div>
+							)}
+							{isSelf && (
+								<div className="sans" style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--color-faded)' }}>
+									다시 듣고 앨범을 열어 새로 평가하세요.
+								</div>
+							)}
+						</div>
+					</li>
+				))}
+			</ul>
+		</section>
 	)
 }
 
@@ -367,6 +490,18 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 		}
 	}, [handle])
 
+	/**
+	 * Re-read the profile after a 재평가 starts or is cancelled — an album moves
+	 * BETWEEN the two lists, so patching one of them in place would leave the
+	 * other stale.
+	 */
+	function reloadProfile() {
+		fetchMemberProfile(handle).then((p) => {
+			if (p)
+				setProfile(p)
+		})
+	}
+
 	const dashActive = isSelf && DASH_TAB_IDS.includes(tab)
 	useEffect(() => {
 		if (dashActive)
@@ -402,6 +537,27 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	// Which row's "수정" panel is open — at most one at a time, mirroring the
 	// single-editor pattern on AlbumRatingBlock.
 	const [editingId, setEditingId] = useState<string | null>(null)
+	// FEAT-album-rerating. The LIST comes from the public profile payload (anyone
+	// may see it); this map is the author-only half — album_id → withdrawn score,
+	// read from /api/me/reratings and never present for a visitor.
+	const reratings = profile?.reratings ?? []
+	const [myWithdrawn, setMyWithdrawn] = useState<Map<string, number>>(new Map())
+
+	// FEAT-album-rerating: the withdrawn scores behind MY open 재평가. Author-only
+	// by construction — the endpoint is JWT-scoped to the caller, so this stays
+	// empty on someone else's profile and the 이전 ★ hint never renders there.
+	useEffect(() => {
+		if (!isSelf)
+			return
+		let alive = true
+		fetchMyReratings().then((rs) => {
+			if (alive)
+				setMyWithdrawn(new Map(rs.map(r => [r.album_id, Number(r.previous_rating)])))
+		})
+		return () => {
+			alive = false
+		}
+	}, [isSelf, profile])
 
 	return (
 		<div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 20px 80px' }}>
@@ -453,6 +609,13 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 					{np && <NowPlayingStrip np={np} />}
 
 					{state === 'ok' && <RatingStats ratings={reviews} />}
+
+					<ReratingSection
+						reratings={reratings}
+						mine={myWithdrawn}
+						isSelf={isSelf}
+						onCancelled={reloadProfile}
+					/>
 
 					<section style={{ marginTop: 34 }}>
 						<SectionTitle
@@ -513,6 +676,10 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 												<RatingEditPanel
 													r={r}
 													onCancel={() => setEditingId(null)}
+													onRerated={() => {
+														setEditingId(null)
+														reloadProfile()
+													}}
 													onSaved={(patch) => {
 														setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, ...patch } : row) } : p))
 														setEditingId(null)

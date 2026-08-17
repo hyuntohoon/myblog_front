@@ -947,6 +947,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/reratings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Reratings
+         * @description The caller's open 재평가 list (FEAT-album-rerating).
+         *
+         *     This is the AUTHOR-ONLY view: it carries `previous_rating`/`previous_comment`,
+         *     the withdrawn 평가 that powers the 이전 ★ hint and the 재평가 취소 restore.
+         *     The same rows appear publicly on GET /api/members/{handle}, but without those
+         *     two fields — see MemberReratingResponse.
+         *
+         *     Rides the edge_guard GET catch-all like every other authed GET here.
+         */
+        get: operations["get_my_reratings_api_me_reratings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/reratings/{album_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Start Rerating
+         * @description Withdraw the caller's 평가 for an album and open a 재평가.
+         *
+         *     PUT, not POST, to match the neighbouring /planned-ratings mark: both are
+         *     "make this state exist", idempotent — starting a 재평가 that is already open
+         *     is a no-op, not an error.
+         *
+         *     409 when the caller has no 평가 to withdraw: 재평가 means redoing a finished
+         *     one, so there is nothing to redo. Distinct from the 404 for an album that
+         *     does not exist at all.
+         */
+        put: operations["start_rerating_api_me_reratings__album_id__put"];
+        post?: never;
+        /**
+         * Cancel Rerating
+         * @description Cancel an open 재평가 — the withdrawn 평가 comes back exactly as it was.
+         *
+         *     Idempotent: cancelling a 재평가 that is not open is a no-op, 204 either way.
+         *     Note this is the only way BACK; completing the 재평가 (saving a new star via
+         *     PUT /api/reviews/albums/{album_id}) ends it forward, from RatingService.
+         */
+        delete: operations["cancel_rerating_api_me_reratings__album_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/review-candidates": {
         parameters: {
             query?: never;
@@ -2490,6 +2553,8 @@ export interface components {
             display_name: string;
             /** Handle */
             handle: string;
+            /** Reratings */
+            reratings?: components["schemas"]["Backend_MemberReratingResponse"][];
             /** Review Count */
             review_count: number;
             /** Reviews */
@@ -2527,6 +2592,33 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * MemberReratingResponse
+         * @description One open 재평가 on a member's PUBLIC profile (FEAT-album-rerating).
+         *
+         *     Public by owner decision: seeing that someone pulled an album back for
+         *     another listen is part of their profile. The withdrawn score is NOT here —
+         *     `previous_rating`/`previous_comment` live only on MyReratingResponse. A
+         *     withdrawn verdict must not be published; the whole feature rests on the star
+         *     being gone.
+         */
+        Backend_MemberReratingResponse: {
+            /** Album Cover Url */
+            album_cover_url?: string | null;
+            /** Album Id */
+            album_id: string;
+            /** Album Title */
+            album_title: string;
+            /** Artist Id */
+            artist_id?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** MemberSummary */
         Backend_MemberSummary: {
@@ -2601,6 +2693,38 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** MyReratingListResponse */
+        Backend_MyReratingListResponse: {
+            /** Reratings */
+            reratings?: components["schemas"]["Backend_MyReratingResponse"][];
+        };
+        /**
+         * MyReratingResponse
+         * @description The caller's own view of an open 재평가 — the public fields plus the
+         *     withdrawn 평가, which only its author may read (it powers the 이전 ★ hint and
+         *     the 재평가 취소 restore).
+         */
+        Backend_MyReratingResponse: {
+            /** Album Cover Url */
+            album_cover_url?: string | null;
+            /** Album Id */
+            album_id: string;
+            /** Album Title */
+            album_title: string;
+            /** Artist Id */
+            artist_id?: string | null;
+            /** Artist Name */
+            artist_name?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Previous Comment */
+            previous_comment?: string | null;
+            /** Previous Rating */
+            previous_rating: number;
         };
         /**
          * NightlyGrowRequest
@@ -5807,6 +5931,84 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_ReleaseFeedResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_my_reratings_api_me_reratings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_MyReratingListResponse"];
+                };
+            };
+        };
+    };
+    start_rerating_api_me_reratings__album_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_rerating_api_me_reratings__album_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

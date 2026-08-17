@@ -96,8 +96,18 @@ export function openTrackAlbum(t: OpenTrackAlbumDetail): void {
 // this event means "the stored state changed", not "someone clicked".
 export interface AlbumStateChangedDetail {
   albumId: string
-  /** The stored value after the write, so a listener can update without a fetch. */
-  reviewCandidate: boolean
+  /**
+   * The stored value after the write, so a listener can update without a fetch.
+   *
+   * OPTIONAL since FEAT-album-rerating, for the same reason `rating` below is:
+   * undefined means the field was NOT TOUCHED, not that the mark is now false.
+   * Starting or cancelling a 재평가 rewrites the star and deliberately leaves
+   * 평론 쓸 것 alone, and the profile row that triggers it does not even know
+   * the mark's value (it is private and absent from the public payload). A
+   * required boolean forced those call sites to invent `false`, which listeners
+   * would have applied as an unmark.
+   */
+  reviewCandidate?: boolean
   /**
    * ARCH-bucket-album-modal-unification Step 1 — the stored 평가 rating after
    * the write (null when cleared), so the bucket board's tile score badge can

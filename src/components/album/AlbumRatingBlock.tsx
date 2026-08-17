@@ -2,6 +2,7 @@
 // album detail surface. Renders on BOTH the app-wide public overlay and the
 // authed member modal (via AlbumDetailView.topSlot). Reads are public; the write
 // panel appears only when signed in. Everything here is public-bundle-safe.
+import type { MyRerating } from './reratings.api'
 import type { AlbumRatingAggregate, MyAlbumState } from './reviews.api'
 import { useEffect, useState } from 'react'
 import { goLogin, isLoggedIn } from '@lib/auth'
@@ -9,6 +10,7 @@ import { isPlaceholderIdentity } from '@lib/member'
 import { notifyAlbumStateChanged } from '@lib/entityEvents'
 import { Stars } from '../member/ui'
 import HalfStarInput from './HalfStarInput'
+import { cancelRerating, fetchMyReratings, startRerating } from './reratings.api'
 import {
 	deleteMyReview,
 	fetchAlbumReviews,
@@ -41,6 +43,10 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	const [saving, setSaving] = useState(false)
 	const [marking, setMarking] = useState(false)
 	const [err, setErr] = useState<string | null>(null)
+	// FEAT-album-rerating: MY open 재평가 for this album, if any. Read from the
+	// author-only list because it carries the withdrawn score — the public album
+	// payload has no idea a 재평가 exists, by design.
+	const [rerating, setRerating] = useState<MyRerating | null>(null)
 
 	const authed = isLoggedIn()
 
@@ -53,10 +59,12 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	useEffect(() => {
 		let alive = true
 		setMyState(null)
+		setRerating(null)
 		load().then(() => {
 			if (alive && authed) {
 				fetchMyHandle().then(h => alive && setMyHandle(h))
 				fetchMyAlbumStates(albumId).then(s => alive && setMyState(s[0] ?? null))
+				fetchMyReratings().then(rs => alive && setRerating(rs.find(r => r.album_id === albumId) ?? null))
 			}
 		})
 		return () => {
@@ -114,6 +122,50 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 		}
 		setSaving(false)
 		setEditing(false)
+	}
+
+	/**
+	 * Withdraw this 평가 and open a 재평가. The star really goes — that is the
+	 * point — so the panel falls back to its "평가 남기기" state, with the 재평가
+	 * 중 strip below carrying the withdrawn score until it is redone or cancelled.
+	 *
+	 * Completing it is NOT a call from here: saving a new star through the normal
+	 * editor ends the 재평가 server-side, in the same transaction. Nothing on this
+	 * screen has to remember to clean up.
+	 */
+	async function beginRerating() {
+		setSaving(true)
+		setErr(null)
+		const result = await startRerating(albumId)
+		if (result === 'ok') {
+			setEditing(false)
+			await load()
+			setMyState((await fetchMyAlbumStates(albumId))[0] ?? null)
+			setRerating((await fetchMyReratings()).find(r => r.album_id === albumId) ?? null)
+			notifyAlbumStateChanged({ albumId, rating: null })
+		}
+		else {
+			setErr(result === 'conflict' ? '되돌릴 평가가 없습니다.' : '재평가를 시작하지 못했습니다.')
+		}
+		setSaving(false)
+	}
+
+	/** Undo a 재평가 — the withdrawn 평가 comes back exactly as it was. */
+	async function undoRerating() {
+		setSaving(true)
+		setErr(null)
+		const ok = await cancelRerating(albumId)
+		if (ok) {
+			setRerating(null)
+			await load()
+			const restored = (await fetchMyAlbumStates(albumId))[0] ?? null
+			setMyState(restored)
+			notifyAlbumStateChanged({ albumId, rating: restored?.rating ?? null })
+		}
+		else {
+			setErr('재평가를 취소하지 못했습니다.')
+		}
+		setSaving(false)
 	}
 
 	/**
@@ -221,12 +273,35 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 									<div className="album-rating__editor-actions">
 										<button type="button" onClick={save} disabled={saving} className="album-modal__button album-modal__button--primary">{saving ? '저장 중…' : '저장'}</button>
 										<button type="button" onClick={() => setEditing(false)} disabled={saving} className="album-modal__button album-modal__button--quiet">취소</button>
+										{/* 재평가 lives inside the 수정 panel (owner decision): it is a
+										    thing you do TO an existing 평가, so it belongs where that
+										    평가 is being edited — not as a fourth always-visible button
+										    that invites a mis-click on a score you meant to keep. */}
+										{myReview && (
+											<button type="button" onClick={beginRerating} disabled={saving} className="album-modal__button album-modal__button--quiet">재평가</button>
+										)}
 									</div>
 								</div>
 							) :
 							(
 								<button type="button" onClick={startEdit} className="album-modal__button album-modal__button--primary">평가 남기기</button>
 							)}
+
+					{/* 재평가 중 (FEAT-album-rerating). Shown wherever the album is opened,
+					    not only on the profile: the withdrawn score is the one thing a
+					    member cannot recover from anywhere else, and 취소 has to be
+					    reachable from the same screen that took it away. */}
+					{rerating && (
+						<div className="album-rating__mark">
+							<span className="meta album-rating__label">재평가 중</span>
+							<span className="mono album-rating__private-note">
+								이전
+								{' '}
+								{Number(rerating.previous_rating).toFixed(1)}
+							</span>
+							<button type="button" onClick={undoRerating} disabled={saving} className="album-modal__button album-modal__button--quiet">재평가 취소</button>
+						</div>
+					)}
 
 					{/* The private editorial mark. Outside the rating editor on purpose:
 					    it must be reachable without opening one and without a star,
