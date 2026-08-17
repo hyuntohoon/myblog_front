@@ -1,0 +1,185 @@
+/* Track-card presentation — sibling of album-card.css, same layout/meta
+   conventions minus drag (see TrackCard.tsx for why). */
+.track-card {
+	position: relative;
+	min-width: 0;
+	color: var(--color-text);
+}
+
+.track-card--grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 9px;
+}
+
+.track-card--row {
+	display: grid;
+	grid-template-columns: var(--track-card-cover-size, 56px) minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 12px;
+}
+
+.track-card__open-hit {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	width: 100%;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+
+.track-card__open-hit:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 3px;
+	border-radius: 6px;
+}
+
+.track-card__cover {
+	width: 100%;
+	aspect-ratio: 1 / 1;
+	border-radius: 4px;
+	transition: transform 0.18s;
+}
+
+.track-card--row .track-card__cover {
+	width: var(--track-card-cover-size, 56px);
+	height: var(--track-card-cover-size, 56px);
+	grid-row: 1 / span 2;
+}
+
+.track-card:has(.track-card__open-hit:hover) .track-card__cover {
+	transform: translateY(-3px);
+}
+
+.track-card--row:has(.track-card__open-hit:hover) .track-card__cover {
+	transform: translateX(2px);
+}
+
+.track-card__cover .cover-ph {
+	font-size: clamp(18px, 3.5vw, 32px);
+}
+
+.track-card__badge,
+.track-card__secondary,
+.track-card__actions {
+	position: relative;
+	z-index: 2;
+}
+
+.track-card__badge {
+	position: absolute;
+	left: 7px;
+	bottom: 7px;
+	max-width: calc(100% - 14px);
+	pointer-events: none;
+}
+
+.track-card__secondary {
+	pointer-events: none;
+}
+
+.track-card__badge :is(a, button, [role='button']),
+.track-card__secondary :is(a, button, [role='button']) {
+	pointer-events: auto;
+}
+
+.track-card__meta {
+	min-width: 0;
+}
+
+.track-card__title,
+.track-card__byline,
+.track-card__eyebrow,
+.track-card__secondary {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.track-card__eyebrow {
+	display: block;
+	margin-bottom: 7px;
+}
+
+.track-card__title {
+	font-size: 14.5px;
+	font-weight: 500;
+	line-height: 1.15;
+	white-space: nowrap;
+	transition: color 0.16s;
+}
+
+.track-card:has(.track-card__open-hit:hover) .track-card__title {
+	color: var(--color-accent);
+}
+
+.track-card__byline {
+	margin-top: 3px;
+	font-size: 11px;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	color: var(--color-subtle);
+}
+
+.track-card__secondary {
+	margin-top: 4px;
+}
+
+.track-card__actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	justify-self: end;
+}
+
+.track-card--grid .track-card__actions {
+	position: absolute;
+	right: 6px;
+	bottom: 6px;
+}
+
+.track-card__action {
+	padding: 3px 9px;
+	font-size: 10.5px;
+	letter-spacing: 0.06em;
+	border-radius: 3px;
+}
+
+.track-card__cover--loading {
+	border-color: transparent;
+}
+
+.track-card__skeleton-cover,
+.track-card__skeleton-line {
+	display: block;
+	border-radius: 3px;
+	background: var(--color-border-soft);
+}
+
+.track-card__skeleton-cover {
+	position: absolute;
+	inset: 0;
+}
+
+.track-card__skeleton-line {
+	height: 0.78em;
+}
+
+.track-card__skeleton-line--title {
+	width: 78%;
+}
+
+.track-card__skeleton-line--artist {
+	width: 52%;
+	margin-top: 7px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.track-card__cover,
+	.track-card__title {
+		transition: none;
+	}
+}
