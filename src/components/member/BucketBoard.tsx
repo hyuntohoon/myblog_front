@@ -47,7 +47,9 @@ import type { SheetAction } from './ActionSheet'
 import { ENT_ALBUM_STATE_CHANGED, notifyAlbumStateChanged } from '@lib/entityEvents'
 import type { AlbumStateChangedDetail } from '@lib/entityEvents'
 import type { PlannedRating } from '../album/plannedRatings.api'
+import type { MyRerating } from '../album/reratings.api'
 import { fetchMyPlannedRatings, markPlannedRating } from '../album/plannedRatings.api'
+import { fetchMyReratings, startRerating } from '../album/reratings.api'
 import { fetchMyAlbumStates, putMyAlbumState } from '../album/reviews.api'
 import { listRecentlyListened } from './spotify.api'
 import type { SpotifyLibraryAlbumState } from './spotify.api'
@@ -75,6 +77,12 @@ const RECENT_ID = '__recent__'
 // only as this component's own DetailTarget.bucketId / AlbumChip.bucketId.
 const RATING_DONE_ID = '__rating_done__'
 const RATING_PLANNED_ID = '__rating_planned__'
+// FEAT-album-rerating — 다시 들어볼 앨범. Same synthesized-tile mechanism as the
+// two above: `pending_reratings` is its own table, never a review_buckets row.
+// That is what makes "평가가 완료되면 스태틱 버킷에서도 삭제" hold with no code
+// here — the tile is a VIEW of that table, and the server deletes the row in the
+// same write that saves the new star.
+const RATING_RERATE_ID = '__rating_rerate__'
 // Recoverable album trash, mirrored to localStorage so it survives reloads.
 const TRASH_KEY = 'lf_crate_trash'
 // Last-seen 최근 들은 앨범 strip, cached so it paints instantly on the next mount
@@ -1973,6 +1981,14 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
   // `tree`/bucketStore on purpose: planned_ratings is its own table (Option B),
   // never a review_buckets row.
   const [plannedRatings, setPlannedRatings] = useState<PlannedRating[]>([])
+  // FEAT-album-rerating — 다시 들어볼 앨범 tile contents, same reasoning.
+  const [reratings, setReratings] = useState<MyRerating[]>([])
+  // Read inside the ENT_ALBUM_STATE_CHANGED handler, which is registered once —
+  // a ref keeps it from closing over the first render's empty list.
+  const reratingsRef = useRef<MyRerating[]>([])
+  useEffect(() => {
+    reratingsRef.current = reratings
+  }, [reratings])
   const [error, setError] = useState(false)
   const [addingTo, setAddingTo] = useState<{ id: string, name: string, type: string } | null>(null)
   // FEAT-my-buckit-artist: a transient board-level toast for the source-expansion
@@ -2327,6 +2343,24 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     researchSelected: false,
   })), [plannedRatings])
 
+  // 다시 들어볼 앨범 tile — `pending_reratings`. The API joins album display data
+  // like the other two, so no board lookup is needed.
+  const rerateTileAlbums = useMemo<BoardAlbum[]>(() => reratings.map(r => ({
+    itemId: `rerate:${r.album_id}`,
+    itemType: 'album',
+    albumId: r.album_id,
+    trackId: null,
+    reviewTargetId: null,
+    artistId: r.artist_id ?? null,
+    title: r.album_title,
+    artist: r.artist_name ?? '—',
+    cover: r.album_cover_url ?? null,
+    year: null,
+    alreadyReviewed: false,
+    postId: null,
+    researchSelected: false,
+  })), [reratings])
+
   const openRatedDrop = (albumId: string) => {
     const fromTree = tree ? findAlbumByAlbumId(tree, albumId) : null
     const fromRecent = recent?.find(a => a.albumId === albumId) ?? null
@@ -2344,6 +2378,26 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
       note: null,
       prepTonight: false,
     })
+  }
+
+  /**
+   * Drop onto 다시 들어볼 앨범 = withdraw that album's 평가 and start a 재평가.
+   *
+   * An unrated album is REFUSED rather than silently added: there is no 평가 to
+   * withdraw, so a row here would be a 재평가 that can never be completed or
+   * cancelled back to anything. The server says 409; this surfaces it as the one
+   * message a member can act on.
+   */
+  const startRerateDrop = async (albumId: string) => {
+    if (reratings.some(r => r.album_id === albumId))
+      return
+    const result = await startRerating(albumId)
+    if (result === 'ok') {
+      setReratings(await fetchMyReratings())
+      setFlash('재평가를 시작했습니다 · 별점이 지워졌어요')
+      return
+    }
+    setFlash(result === 'conflict' ? '아직 평가하지 않은 앨범입니다' : '재평가를 시작하지 못했습니다')
   }
 
   const markRatedPlanned = async (albumId: string) => {
@@ -2434,6 +2488,7 @@ ids.push(a.albumId)
   useEffect(() => {
     let alive = true
     fetchMyPlannedRatings().then(rows => alive && setPlannedRatings(rows))
+    fetchMyReratings().then(rows => alive && setReratings(rows))
     return () => {
       alive = false
     }
@@ -2485,19 +2540,30 @@ ids.push(a.albumId)
       const d = (e as CustomEvent<AlbumStateChangedDetail>).detail
       if (!d?.albumId)
         return
-      setMarkedAlbumIds((prev) => {
-        const next = new Set(prev)
-        if (d.reviewCandidate)
-          next.add(d.albumId)
-        else next.delete(d.albumId)
-        return next
-      })
+      // Undefined = the writer did not touch the mark (a 재평가 start/cancel);
+      // treating that as false would silently unmark 평론 쓸 것.
+      if (d.reviewCandidate !== undefined) {
+        setMarkedAlbumIds((prev) => {
+          const next = new Set(prev)
+          if (d.reviewCandidate)
+            next.add(d.albumId)
+          else next.delete(d.albumId)
+          return next
+        })
+      }
       if (d.rating !== undefined) {
         setRatingOverrides((prev) => {
           const next = new Map(prev)
           next.set(d.albumId, d.rating ?? null)
           return next
         })
+        // FEAT-album-rerating: a star landing anywhere ENDS that album's 재평가
+        // server-side, so the 다시 들어볼 앨범 tile has to re-read. Re-reading
+        // rather than removing the row locally on purpose — the server owns when
+        // a 재평가 ends (a cleared star, for instance, ends nothing), and this
+        // tile must never invent a different answer.
+        if (reratingsRef.current.some(r => r.album_id === d.albumId))
+          fetchMyReratings().then(rows => alive && setReratings(rows))
       }
     }
     window.addEventListener(ENT_ALBUM_STATE_CHANGED, onChanged)
@@ -3132,6 +3198,19 @@ ids.push(a.albumId)
 	ratings={null}
 	onOpen={onOpen}
 	onDropAlbum={markRatedPlanned}
+	draggingId={draggingId}
+	setDraggingId={setDraggingId}
+	setDragKind={setDragKind}
+      />
+      <RatingSmartTile
+	id={RATING_RERATE_ID}
+	title="다시 들어볼 앨범"
+	hint="평가를 다시 하고 싶은 앨범을 여기로 드롭하면 별점이 지워집니다"
+	albums={rerateTileAlbums}
+	// No score badge by definition — the star was withdrawn; that IS the state.
+	ratings={null}
+	onOpen={onOpen}
+	onDropAlbum={startRerateDrop}
 	draggingId={draggingId}
 	setDraggingId={setDraggingId}
 	setDragKind={setDragKind}
