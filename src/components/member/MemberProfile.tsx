@@ -92,6 +92,10 @@ function fmtDate(iso: string): string {
  * comment goes through the row's "수정" affordance (RatingEditPanel below),
  * which edits both facets together, mirroring AlbumRatingBlock's edit panel
  * on the album overlay.
+ *
+ * A visitor's "없음" case must say so explicitly (owner feedback, 2026-08-19):
+ * blank space next to a star rating reads as "not loaded yet", not "no
+ * comment" — same reasoning as Stars' 미평가 text for a null score.
  */
 function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
 	albumId: string
@@ -107,8 +111,9 @@ function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
 	if (comment) {
 		return <p className="sans" style={{ margin: '4px 0 0', fontSize: 'var(--text-base)', color: 'var(--color-subtle)', lineHeight: 'var(--leading-normal)' }}>{comment}</p>
 	}
-	if (!isSelf)
-		return null
+	if (!isSelf) {
+		return <p className="sans" style={{ margin: '4px 0 0', fontSize: 'var(--text-base)', color: 'var(--color-faded)', lineHeight: 'var(--leading-normal)' }}>한 줄 감상 없음</p>
+	}
 
 	async function commit() {
 		const trimmed = value.trim()
