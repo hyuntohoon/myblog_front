@@ -533,7 +533,11 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	// Step 2 — 정렬 (OQ7: 최신 · 별점 · 이름). Client-side: the feed is the whole
 	// history in one response, so sorting it needs no round trip and no index.
 	const [sort, setSort] = useState<RatingSortKey>('recent')
-	const sortedReviews = useMemo(() => sortRatings(reviews, sort), [reviews, sort])
+	// 한줄 감상 유무 필터 — 오너 요청: "평가한 앨범에서 한줄 감상이 있는 것과
+	// 없는 것을 구분". Client-side, same reasoning as 정렬 above.
+	const [commentOnly, setCommentOnly] = useState(false)
+	const filteredReviews = commentOnly ? reviews.filter(r => r.comment) : reviews
+	const sortedReviews = useMemo(() => sortRatings(filteredReviews, sort), [filteredReviews, sort])
 	// Which row's "수정" panel is open — at most one at a time, mirroring the
 	// single-editor pattern on AlbumRatingBlock.
 	const [editingId, setEditingId] = useState<string | null>(null)
@@ -622,13 +626,41 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 							title="평가한 앨범"
 							// The sort control appears only with something to sort — on an
 							// empty history it would be three dead buttons above a message
-							// explaining there is nothing there.
-							right={reviews.length > 1 ? <Seg value={sort} onChange={v => setSort(v as RatingSortKey)} options={[...RATING_SORTS]} /> : undefined}
+							// explaining there is nothing there. Same gate for the 감상 필터.
+							right={reviews.length > 1 ?
+								(
+									<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+										<button
+											type="button"
+											aria-pressed={commentOnly}
+											onClick={() => setCommentOnly(v => !v)}
+											className="mono"
+											style={{
+												border: '1px solid var(--color-border)',
+												padding: '6px 11px',
+												fontSize: 11,
+												letterSpacing: '0.06em',
+												textTransform: 'uppercase',
+												cursor: 'pointer',
+												background: commentOnly ? 'var(--color-text)' : 'transparent',
+												color: commentOnly ? 'var(--color-bg)' : 'var(--color-text)',
+												transition: 'all .14s',
+											}}
+										>
+											감상 있는 것만
+										</button>
+										<Seg value={sort} onChange={v => setSort(v as RatingSortKey)} options={[...RATING_SORTS]} />
+									</div>
+								) :
+								undefined}
 						/>
 
 						{state === 'loading' && <div className="meta">불러오는 중…</div>}
 						{state === 'missing' && <div className="sans" style={{ fontSize: 'var(--text-base)', color: 'var(--color-subtle)' }}>존재하지 않는 사용자입니다.</div>}
 						{state === 'ok' && reviews.length === 0 && <NoRatingsYet isSelf={isSelf} />}
+						{state === 'ok' && reviews.length > 0 && sortedReviews.length === 0 && (
+							<div className="sans" style={{ fontSize: 'var(--text-base)', color: 'var(--color-subtle)' }}>한 줄 감상을 남긴 평가가 없습니다.</div>
+						)}
 
 						<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
 							{sortedReviews.map(r => (
@@ -637,9 +669,26 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 										type="button"
 										onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
 										title={r.album_title}
-										style={{ width: 64, flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
+										style={{ position: 'relative', width: 64, flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
 									>
 										<AlbumArt url={r.album_cover_url} label={r.album_title} size={64} />
+										{/* 한줄 감상 유무 마커 — BucketBoard의 평론함/미평가 배지와 같은
+										    상호배타 패턴(항상 둘 중 하나만 뜬다). */}
+										<span
+											aria-hidden="true"
+											title={r.comment ? '한 줄 감상 있음' : '한 줄 감상 없음'}
+											style={{
+												position: 'absolute',
+												top: 4,
+												right: 4,
+												width: 8,
+												height: 8,
+												borderRadius: '50%',
+												boxShadow: '0 0 0 1px var(--color-bg)',
+												background: r.comment ? 'var(--color-accent)' : 'transparent',
+												border: r.comment ? 'none' : '1px solid var(--color-border)',
+											}}
+										/>
 									</button>
 									<div style={{ minWidth: 0, flex: 1 }}>
 										<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
