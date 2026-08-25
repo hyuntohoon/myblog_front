@@ -993,6 +993,12 @@ export interface paths {
          *     409 when the caller has no 평가 to withdraw: 재평가 means redoing a finished
          *     one, so there is nothing to redo. Distinct from the 404 for an album that
          *     does not exist at all.
+         *
+         *     Owner-only side effect: opening a 재평가 also adds the album into the
+         *     spotify_library bucket and enqueues a sync, so it's ready to re-listen to in
+         *     Spotify (rule #9 — this only enqueues, the worker does the actual Spotify
+         *     write). Gated on `is_owner` because the Spotify lane itself is owner-only
+         *     until Phase 3b; a member's 재평가 has no library side effect today.
          */
         put: operations["start_rerating_api_me_reratings__album_id__put"];
         post?: never;
@@ -1575,6 +1581,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reviews/albums/{album_id}/best-new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Album Best New
+         * @description Owner-only: mark/unmark this album BEST NEW from the rating surface
+         *     (AlbumRatingBlock), without opening the post editor. See
+         *     RatingService.set_best_new — same `albums.best_new` column.
+         */
+        put: operations["put_album_best_new_api_reviews_albums__album_id__best_new_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reviews/{review_id}": {
         parameters: {
             query?: never;
@@ -1825,6 +1853,26 @@ export interface components {
             /** Already Tracked */
             already_tracked: number;
         };
+        /** AlbumBestNewResponse */
+        Backend_AlbumBestNewResponse: {
+            /** Album Id */
+            album_id: string;
+            /** Best New */
+            best_new: boolean;
+        };
+        /**
+         * AlbumBestNewUpdateRequest
+         * @description Owner-only: mark/unmark an album BEST NEW from the rating surface.
+         *
+         *     Writes the same `albums.best_new` column the post editor sets at publish
+         *     time (`subject_best_new` on POST/PUT /api/posts) — this is a second entry
+         *     point onto that column, not a new per-review flag. BEST NEW stays a
+         *     property of the album itself, not of any one person's 평가.
+         */
+        Backend_AlbumBestNewUpdateRequest: {
+            /** Best New */
+            best_new: boolean;
+        };
         /** AlbumBrief */
         Backend_AlbumBrief: {
             /** Artist Names */
@@ -1854,6 +1902,11 @@ export interface components {
             album_id: string;
             /** Average */
             average?: number | null;
+            /**
+             * Best New
+             * @default false
+             */
+            best_new: boolean;
             /** Count */
             count: number;
             /** Reviews */
@@ -7174,6 +7227,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_album_best_new_api_reviews_albums__album_id__best_new_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                album_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AlbumBestNewUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AlbumBestNewResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { goLogin, isLoggedIn } from '@lib/auth'
 import { isPlaceholderIdentity } from '@lib/member'
 import { notifyAlbumStateChanged } from '@lib/entityEvents'
+import { isOwnerUser } from '@lib/owner'
 import { Stars } from '../member/ui'
 import HalfStarInput from './HalfStarInput'
 import { cancelRerating, fetchMyReratings, startRerating } from './reratings.api'
@@ -16,6 +17,7 @@ import {
 	fetchAlbumReviews,
 	fetchMyAlbumStates,
 	fetchMyHandle,
+	putAlbumBestNew,
 	putMyAlbumState,
 	RATING_COMMENT_MAX,
 	RatingRateLimitError,
@@ -43,6 +45,11 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	const [saving, setSaving] = useState(false)
 	const [marking, setMarking] = useState(false)
 	const [err, setErr] = useState<string | null>(null)
+	// Owner-only affordance (isOwnerUser is fail-closed — a member never sees
+	// this even briefly). Resolved separately from `authed` since any signed-in
+	// member passes that check post multi-user.
+	const [isOwner, setIsOwner] = useState(false)
+	const [bestNewSaving, setBestNewSaving] = useState(false)
 	// FEAT-album-rerating: MY open 재평가 for this album, if any. Read from the
 	// author-only list because it carries the withdrawn score — the public album
 	// payload has no idea a 재평가 exists, by design.
@@ -65,6 +72,7 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 				fetchMyHandle().then(h => alive && setMyHandle(h))
 				fetchMyAlbumStates(albumId).then(s => alive && setMyState(s[0] ?? null))
 				fetchMyReratings().then(rs => alive && setRerating(rs.find(r => r.album_id === albumId) ?? null))
+				isOwnerUser().then(v => alive && setIsOwner(v))
 			}
 		})
 		return () => {
@@ -192,12 +200,33 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 		}
 	}
 
+	/**
+	 * Owner-only: mark/unmark this album BEST NEW. Writes `albums.best_new` —
+	 * the same column the post editor's "BEST NEW MUSIC" button sets — so it is
+	 * an album-wide property, not a personal pick, and shows the same on
+	 * everyone's screen immediately after.
+	 */
+	async function toggleBestNew() {
+		if (!agg)
+			return
+		const next = !agg.best_new
+		setBestNewSaving(true)
+		setErr(null)
+		const res = await putAlbumBestNew(albumId, next)
+		if (res == null)
+			setErr('BEST NEW 표시를 바꾸지 못했습니다.')
+		else
+			setAgg({ ...agg, best_new: res })
+		setBestNewSaving(false)
+	}
+
 	const count = agg?.count ?? 0
 	const average = agg?.average ?? null
 
 	return (
 		<section className="album-rating">
 			<div className="album-rating__summary">
+				{agg?.best_new && <span className="mono album-rating__best-new-badge">BEST NEW ALBUM</span>}
 				<div className="album-rating__community">
 					<span className="meta album-rating__label">커뮤니티</span>
 				{average != null ?
@@ -319,6 +348,24 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 						</button>
 						<span className="mono album-rating__private-note">나만 봅니다</span>
 					</div>
+
+					{/* Owner-only. BEST NEW is an album-wide property (same column the
+					    writer's "BEST NEW MUSIC" button sets), not a personal pick — so
+					    unlike the mark above, this is public and visible to everyone the
+					    moment it's toggled. */}
+					{isOwner && agg && (
+						<div className="album-rating__mark">
+							<button
+								type="button"
+								onClick={toggleBestNew}
+								disabled={bestNewSaving}
+								aria-pressed={agg.best_new}
+								className={`album-modal__button album-modal__button--quiet${agg.best_new ? ' is-marked' : ''}`}
+							>
+								{agg.best_new ? '✓ BEST NEW ALBUM' : 'BEST NEW ALBUM으로 표시'}
+							</button>
+						</div>
+					)}
 				</div>
 			)}
 
