@@ -77,6 +77,25 @@ export async function putMyAlbumState(
 }
 
 /**
+ * Owner-only: mark/unmark this album BEST NEW from the rating surface.
+ *
+ * Writes the same `albums.best_new` the writer sets at publish time — see
+ * `PUT /api/reviews/albums/{album_id}/best-new` (require_owner). Callers must
+ * gate the affordance with `isOwnerUser()` first: the server 403s a non-owner,
+ * this just keeps the UI honest. Returns null on any failure.
+ */
+export async function putAlbumBestNew(albumId: string, bestNew: boolean): Promise<boolean | null> {
+	const res = await apiFetch(`${BASE}/api/reviews/albums/${albumId}/best-new`, {
+		method: 'PUT',
+		body: JSON.stringify({ best_new: bestNew }),
+	})
+	if (!res || !res.ok)
+		return null
+	const body = (await res.json()) as components['schemas']['Backend_AlbumBestNewResponse']
+	return body.best_new
+}
+
+/**
  * MY states, private mark included. `albumId` filters to one album; omit it for
  * the whole set (the bucket board's single read). Authed — logged out yields [].
  */

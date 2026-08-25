@@ -177,6 +177,14 @@
   letter-spacing: 0.14em;
 }
 
+.album-rating__best-new-badge {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--color-accent);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
 .album-rating__community-value,
 .album-rating__mine-row,
 .album-rating__editor-score,
