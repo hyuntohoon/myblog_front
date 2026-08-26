@@ -8,8 +8,9 @@ on:
   workflow_dispatch:
 
 # Least privilege: default GITHUB_TOKEN is too broad; this workflow only reads this repo.
-# (The workspace-contracts checkout uses its own WORKSPACE_GITHUB_TOKEN PAT, not GITHUB_TOKEN,
-# and AWS deploy uses AWS_* secrets — so contents: read is sufficient.)
+# (The workspace-contracts checkout uses its own WORKSPACE_GITHUB_TOKEN PAT, not GITHUB_TOKEN.)
+# The AWS deploy needs `id-token: write` on top of this, but it is granted on the `deploy` job
+# alone — see there — so `check`, which runs on every pull request, cannot mint an OIDC token.
 permissions:
   contents: read
 
