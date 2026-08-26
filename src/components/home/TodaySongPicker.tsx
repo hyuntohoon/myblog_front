@@ -9,16 +9,24 @@
 // Promote is server-atomic (posts the pick AND consumes the queue row), so it
 // finishes through `onPromoted`, not `onPick` — the parent treats both the same.
 //
+// FEAT-todays-pick-liked-tab — a third tab, 좋아요: the owner's Spotify saved
+// tracks (the same GET /api/library/saved-tracks the dashboard's LikedBoard
+// reads), so the day's song can be picked from what the owner already liked
+// instead of being searched for or pre-staged. Rows carry DB ids already, so
+// they post/queue through the SAME payload shape as a search hit — no re-resolve.
+//
 // recallTypes=['track','artist']: we render tracks, but REQUEST artist so the DB
 // endpoint's artist→track expansion fires (searching an artist by name returns
 // their tracks) — same rationale as AddAlbumModal's ['album','artist'].
 import type { ChangeEvent, KeyboardEvent } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TrackHit } from '@lib/useMusicSearch'
 import { useMusicSearch } from '@lib/useMusicSearch'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ResultRow, SourceTag } from '@components/search/atoms'
+import type { SavedTrack } from '@components/member/analysis.api'
+import { listSavedTracks } from '@components/member/analysis.api'
 import type { DailyPick, DailyPickQueueItem, UpsertTodaysPick } from '@lib/todaysPick'
 import { addToPickQueue, getPickQueue, promoteFromPickQueue, removeFromPickQueue } from '@lib/todaysPick'
 // The qb-* modal shell. This island renders on the HOME page, which never loads
@@ -37,8 +45,58 @@ interface Props {
 	onClose: () => void
 }
 
-type Tab = 'search' | 'queue'
+type Tab = 'search' | 'queue' | 'liked'
 interface Pending { key: string, action: 'pick' | 'queue' }
+
+// 좋아요 tab. The filter is client-side, so the WHOLE set has to be resident or
+// the filter would silently only search the pages already fetched. The endpoint
+// caps `limit` at 500/call, so we accumulate by offset up to LIKED_CEILING and
+// say so on screen when the set is larger (never a silent truncation).
+const LIKED_PAGE = 500
+const LIKED_CEILING = 2000
+// Rendering cap — how many filtered rows go into the DOM before "더 보기". This
+// one costs no network; it only keeps a 1000-row modal from painting at once.
+const LIKED_RENDER_STEP = 60
+
+/** A saved track flattened for the picker: display fields + the post/queue payload. */
+interface LikedRow {
+	/** spotify_track_id — stable key. */
+	key: string
+	title: string
+	artist: string
+	albumTitle: string | null
+	cover: string | null
+	/**
+	 * null ⇒ not postable. `daily_picks.track_id`/`album_id` are both NOT NULL, so a
+	 * liked track whose track (or album) is not in our catalog cannot be posted or
+	 * queued — same refusal the 검색 tab applies to a Spotify-only hit.
+	 */
+	payload: UpsertTodaysPick | null
+}
+
+function toLikedRow(t: SavedTrack): LikedRow {
+	const title = t.track_name
+	const artist = t.artist_name ?? '—'
+	const cover = t.album?.cover_url ?? null
+	const albumId = t.album_id ?? null
+	return {
+		key: t.spotify_track_id,
+		title,
+		artist,
+		albumTitle: t.album_name ?? null,
+		cover,
+		payload: (t.track_id && albumId) ?
+			{
+					track_id: t.track_id,
+					album_id: albumId,
+					title,
+					artist,
+					cover_url: cover,
+					spotify_track_id: t.spotify_track_id,
+				} :
+			null,
+	}
+}
 
 export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) {
 	const search = useMusicSearch({ recallTypes: ['track', 'artist'] })
@@ -50,6 +108,14 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 	const [queue, setQueue] = useState<DailyPickQueueItem[] | null>(null)
 	const [queueLoading, setQueueLoading] = useState(false)
 	const [queueBusyId, setQueueBusyId] = useState<string | null>(null)
+	// null = not loaded (never opened, still loading the first page, or failed).
+	// Loaded lazily on the tab's first open — the home page should not pay for
+	// ~1000 saved tracks just because the modal was opened to search.
+	const [liked, setLiked] = useState<LikedRow[] | null>(null)
+	const [likedLoading, setLikedLoading] = useState(false)
+	const [likedTotal, setLikedTotal] = useState(0)
+	const [likedFilter, setLikedFilter] = useState('')
+	const [likedShown, setLikedShown] = useState(LIKED_RENDER_STEP)
 	const inputRef = useRef<HTMLInputElement>(null)
 	const modalRef = useRef<HTMLDivElement>(null)
 
@@ -75,6 +141,34 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 		}
 		finally {
 			setQueueLoading(false)
+		}
+	}
+
+	/**
+	 * Fetch the whole 좋아요 set (offset pages of LIKED_PAGE, up to LIKED_CEILING)
+	 * so the client-side filter searches everything the tab claims to hold. Any
+	 * page failing leaves `liked` at null → the tab shows its retry state.
+	 */
+	async function loadLiked() {
+		setLikedLoading(true)
+		try {
+			const rows: LikedRow[] = []
+			let total = 0
+			do {
+				const page = await listSavedTracks(LIKED_PAGE, rows.length)
+				total = page.total
+				if (page.items.length === 0)
+					break
+				rows.push(...page.items.map(toLikedRow))
+			} while (rows.length < Math.min(total, LIKED_CEILING))
+			setLikedTotal(total)
+			setLiked(rows)
+		}
+		catch {
+			setLiked(null)
+		}
+		finally {
+			setLikedLoading(false)
 		}
 	}
 
@@ -120,6 +214,9 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 		// A failed initial load gets a fresh chance whenever the 큐 tab opens.
 		if (next === 'queue' && queue === null && !queueLoading)
 			void loadQueue()
+		// Same for 좋아요, which additionally defers its FIRST load to this point.
+		if (next === 'liked' && liked === null && !likedLoading)
+			void loadLiked()
 	}
 
 	/**
@@ -180,13 +277,13 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 		return hit.id ?? hit.spotifyId ?? hit.title
 	}
 
-	async function pick(hit: TrackHit) {
-		setNotice('')
-		setPending({ key: hitKey(hit), action: 'pick' })
+	// ── post / stage cores, shared by the 검색 and 좋아요 tabs ──────────────────
+	// A 좋아요 row already carries DB ids, so it skips `resolvePayload` entirely and
+	// hands the identical body straight in.
+
+	async function postPayload(key: string, payload: UpsertTodaysPick) {
+		setPending({ key, action: 'pick' })
 		try {
-			const payload = await resolvePayload(hit)
-			if (!payload)
-				return
 			const ok = await onPick(payload)
 			if (!ok)
 				setNotice('올리지 못했어요. 다시 시도해주세요.')
@@ -196,13 +293,9 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 		}
 	}
 
-	async function queueAdd(hit: TrackHit) {
-		setNotice('')
-		setPending({ key: hitKey(hit), action: 'queue' })
+	async function stagePayload(key: string, payload: UpsertTodaysPick) {
+		setPending({ key, action: 'queue' })
 		try {
-			const payload = await resolvePayload(hit)
-			if (!payload)
-				return
 			const saved = await addToPickQueue(payload)
 			if (!saved) {
 				setNotice('큐에 담지 못했어요. 다시 시도해주세요.')
@@ -215,6 +308,45 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 		finally {
 			setPending(null)
 		}
+	}
+
+	async function pick(hit: TrackHit) {
+		setNotice('')
+		const key = hitKey(hit)
+		// Pending covers the resolve too — it makes a network call of its own.
+		setPending({ key, action: 'pick' })
+		const payload = await resolvePayload(hit)
+		if (!payload) {
+			setPending(null)
+			return
+		}
+		await postPayload(key, payload)
+	}
+
+	async function queueAdd(hit: TrackHit) {
+		setNotice('')
+		const key = hitKey(hit)
+		setPending({ key, action: 'queue' })
+		const payload = await resolvePayload(hit)
+		if (!payload) {
+			setPending(null)
+			return
+		}
+		await stagePayload(key, payload)
+	}
+
+	function likedPick(row: LikedRow) {
+		setNotice('')
+		if (!row.payload)
+			return
+		void postPayload(row.key, row.payload)
+	}
+
+	function likedQueueAdd(row: LikedRow) {
+		setNotice('')
+		if (!row.payload)
+			return
+		void stagePayload(row.key, row.payload)
 	}
 
 	async function promote(item: DailyPickQueueItem) {
@@ -251,6 +383,27 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 		}
 	}
 
+	// Filter over the WHOLE resident set (title / artist / album), not just the
+	// painted slice — LIKED_RENDER_STEP caps rendering, never matching.
+	const likedFiltered = useMemo(() => {
+		if (!liked)
+			return []
+		const q = likedFilter.trim().toLowerCase()
+		if (!q)
+			return liked
+		return liked.filter(r =>
+			r.title.toLowerCase().includes(q) ||
+			r.artist.toLowerCase().includes(q) ||
+			(r.albumTitle?.toLowerCase().includes(q) ?? false),
+		)
+	}, [liked, likedFilter])
+
+	// A new filter starts the render window over, so results are not hidden behind
+	// a "더 보기" left scrolled from the previous query.
+	useEffect(() => {
+		setLikedShown(LIKED_RENDER_STEP)
+	}, [likedFilter])
+
 	const statusText = notice || (tab === 'search' ? search.status : '')
 
 	return (
@@ -269,6 +422,10 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 					<button type="button" role="tab" aria-selected={tab === 'queue'} className={`qb-modal-tab${tab === 'queue' ? ' is-active' : ''}`} onClick={() => switchTab('queue')}>
 						큐
 						{queue !== null && <span className="qb-modal-tab-count">{queue.length}</span>}
+					</button>
+					<button type="button" role="tab" aria-selected={tab === 'liked'} className={`qb-modal-tab${tab === 'liked' ? ' is-active' : ''}`} onClick={() => switchTab('liked')}>
+						좋아요
+						{liked !== null && <span className="qb-modal-tab-count">{likedTotal}</span>}
 					</button>
 				</div>
 
@@ -297,6 +454,23 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 						>
 							Spotify 싱크
 						</button>
+					</div>
+				)}
+
+				{tab === 'liked' && liked !== null && (
+					<div className="qb-modal-searchrow">
+						<div className="qb-modal-search">
+							<span className="qb-modal-search-icon" aria-hidden="true">⌕</span>
+							<input
+								className="qb-modal-search-input"
+								placeholder="좋아요한 곡 안에서 거르기…"
+								value={likedFilter}
+								onChange={e => setLikedFilter(e.target.value)}
+								autoComplete="off"
+								aria-label="좋아요 목록 거르기"
+							/>
+							{likedFilter && <button type="button" className="qb-modal-search-clear" onClick={() => setLikedFilter('')}>✕</button>}
+						</div>
 					</div>
 				)}
 
@@ -392,6 +566,73 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 								</div>
 							)
 						})}
+					</div>
+				)}
+
+				{tab === 'liked' && (
+					<div className="qb-modal-results">
+						{likedLoading && <div className="qb-modal-empty">좋아요 목록 불러오는 중…</div>}
+						{!likedLoading && liked === null && (
+							<div className="qb-modal-empty">
+								좋아요 목록을 불러오지 못했어요.
+								{' '}
+								<button type="button" className="qb-modal-more" onClick={() => void loadLiked()}>다시 시도</button>
+							</div>
+						)}
+						{!likedLoading && liked !== null && liked.length === 0 && (
+							<div className="qb-modal-empty">좋아요한 곡이 없어요.</div>
+						)}
+						{!likedLoading && liked !== null && liked.length > 0 && likedFiltered.length === 0 && (
+							<div className="qb-modal-empty">{`'${likedFilter}'와 맞는 곡이 없어요.`}</div>
+						)}
+						{!likedLoading && liked !== null && likedTotal > liked.length && (
+							<p className="qb-modal-status">
+								{`좋아요 ${likedTotal}곡 중 최근 ${liked.length}곡에서 고릅니다.`}
+							</p>
+						)}
+						{!likedLoading && likedFiltered.slice(0, likedShown).map((row) => {
+							const pendingThis = pending?.key === row.key
+							const postable = row.payload !== null
+							return (
+								<div className="qb-pickrow" key={row.key}>
+									<ResultRow
+										name={row.title}
+										src={row.cover}
+										title={row.title}
+										sub={[row.artist, row.albumTitle].filter(Boolean).join(' · ')}
+										trailing={postable ? undefined : <span className="gs-row-tag">카탈로그에 없음</span>}
+										action={{ type: 'static' }}
+									/>
+									<button
+										type="button"
+										className="qb-pickrow-side qb-pickrow-side--primary"
+										onClick={() => likedPick(row)}
+										disabled={!postable || pending !== null}
+										title={postable ? undefined : '이 곡은 아직 카탈로그에 없어 올릴 수 없어요.'}
+									>
+										{(pendingThis && pending.action === 'pick') ? '올리는 중…' : '오늘의 곡으로 ↑'}
+									</button>
+									<button
+										type="button"
+										className="qb-pickrow-side"
+										onClick={() => likedQueueAdd(row)}
+										disabled={!postable || pending !== null}
+										title={postable ? undefined : '이 곡은 아직 카탈로그에 없어 담을 수 없어요.'}
+									>
+										{(pendingThis && pending.action === 'queue') ? '담는 중…' : '큐에 담기'}
+									</button>
+								</div>
+							)
+						})}
+						{!likedLoading && likedFiltered.length > likedShown && (
+							<button
+								type="button"
+								className="qb-modal-more"
+								onClick={() => setLikedShown(n => n + LIKED_RENDER_STEP)}
+							>
+								{`더 보기 (${likedShown}/${likedFiltered.length})`}
+							</button>
+						)}
 					</div>
 				)}
 			</div>
