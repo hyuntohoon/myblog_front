@@ -3246,6 +3246,8 @@ export interface components {
             duration_ms?: number | null;
             /** Spotify Track Id */
             spotify_track_id: string;
+            /** Track Id */
+            track_id?: string | null;
             /** Track Name */
             track_name: string;
         };
