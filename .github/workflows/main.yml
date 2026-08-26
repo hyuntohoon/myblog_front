@@ -8,8 +8,9 @@ on:
   workflow_dispatch:
 
 # Least privilege: default GITHUB_TOKEN is too broad; this workflow only reads this repo.
-# (The workspace-contracts checkout uses its own WORKSPACE_GITHUB_TOKEN PAT, not GITHUB_TOKEN,
-# and AWS deploy uses AWS_* secrets — so contents: read is sufficient.)
+# (The workspace-contracts checkout uses its own WORKSPACE_GITHUB_TOKEN PAT, not GITHUB_TOKEN.)
+# The AWS deploy needs `id-token: write` on top of this, but it is granted on the `deploy` job
+# alone — see there — so `check`, which runs on every pull request, cannot mint an OIDC token.
 permissions:
   contents: read
 
@@ -91,6 +92,13 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Job-level permissions REPLACE the workflow-level block, so `contents: read` is
+    # restated here rather than inherited. `id-token: write` is what lets this job mint
+    # the OIDC token it trades for the AWS role — it is granted to this job only, so the
+    # `check` job (which runs on every PR, including from a fork) cannot request one.
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -130,10 +138,19 @@ jobs:
           PUBLIC_SPOTIFY_CLIENT_ID: ${{ vars.PUBLIC_SPOTIFY_CLIENT_ID }}
         run: pnpm build
 
+      # SEC-system-hardening Step 3: OIDC, not a long-lived key. The action trades this
+      # job's OIDC token for a ~1h session on a role whose trust policy pins
+      # `sub` to `repo:hyuntohoon/myblog_front:ref:refs/heads/main` with StringEquals —
+      # a run from any other ref, repo, or event type cannot assume it. The role can do
+      # exactly four things: list myblog-prod-web, put and delete objects under it, and
+      # invalidate this one CloudFront distribution. See infra/github_oidc.tf.
+      #
+      # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY remain set as repo secrets and are now
+      # unused; they are deleted only after this lane is confirmed green in production.
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: gha-front-deploy-${{ github.run_id }}
           aws-region: ${{ secrets.AWS_REGION }}
 
       # 1) Hashed static assets — cache forever
