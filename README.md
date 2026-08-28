@@ -54,6 +54,7 @@
 myblog_front
   ├── → myblog_backend   : 글/카테고리 CRUD + 발행 (POST /api/publish)
   └── → myblog_music     : 음악 검색 (GET /api/music/search/{unified,candidates})
+                          + 후보 앨범 동기화 요청 (POST /api/music/sync-requests)
 ```
 
 > 옛 `myblog_publish` 서비스는 ARCH-11 으로 backend 에 흡수되었음. `/api/publish` 는 이제 backend 에서 직접 처리.

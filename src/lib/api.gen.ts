@@ -1374,7 +1374,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Spotify 후보 검색(읽기 전용 + 앨범 동기화 enqueue) */
+        /** Spotify 후보 검색(읽기 전용 + 앨범 동기화 enqueue; deprecated side effect) */
         get: operations["search_candidates_api_music_search_candidates_get"];
         put?: never;
         post?: never;
@@ -1395,6 +1395,23 @@ export interface paths {
         get: operations["unified_search_api_music_search_unified_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/music/sync-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 앨범 동기화 요청 enqueue */
+        post: operations["create_sync_request_api_music_sync_requests_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3928,6 +3945,48 @@ export interface components {
             spotify_id?: string | null;
             /** Title */
             title: string;
+        };
+        /** AlbumSyncAccepted */
+        Music_AlbumSyncAccepted: {
+            /** Enqueued Album Ids */
+            enqueued_album_ids?: string[];
+            /**
+             * Queued Message Count
+             * @default 0
+             */
+            queued_message_count: number;
+            /** Skipped Existing Album Ids */
+            skipped_existing_album_ids?: string[];
+            /**
+             * Status
+             * @default accepted
+             * @constant
+             */
+            status: "accepted";
+        };
+        /** AlbumSyncFailed */
+        Music_AlbumSyncFailed: {
+            /**
+             * Message
+             * @default Album sync request could not be accepted
+             */
+            message: string;
+            /**
+             * Status
+             * @default failed
+             * @constant
+             */
+            status: "failed";
+        };
+        /** AlbumSyncRequest */
+        Music_AlbumSyncRequest: {
+            /** Album Ids */
+            album_ids: string[];
+            /**
+             * Market
+             * @default KR
+             */
+            market: string;
         };
         /** ArtistHero */
         Music_ArtistHero: {
@@ -6736,6 +6795,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_sync_request_api_music_sync_requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Music_AlbumSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_AlbumSyncAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+            /** @description The queue could not accept every requested album-sync message. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_AlbumSyncFailed"];
                 };
             };
         };

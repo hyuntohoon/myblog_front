@@ -310,7 +310,7 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
     }
 
     // Spotify-only tile — by-spotify lookup, possibly pending while the worker
-    // absorbs the candidate that the prior candidates search enqueued.
+    // absorbs the candidate accepted by the explicit sync-request POST.
     if (!sr.spotify_id) {
       setViewArtistFailed(true)
       return

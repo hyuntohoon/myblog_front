@@ -4,9 +4,13 @@
 // failure status.
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { apiFetch } from './api'
 import { useMusicSearch } from './useMusicSearch'
 
+vi.mock('./api', () => ({ apiFetch: vi.fn() }))
+
 afterEach(() => {
+  vi.clearAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -54,5 +58,84 @@ describe('useMusicSearch cancellation', () => {
     })
 
     expect(result.current.status).not.toBe('검색 실패')
+  })
+})
+
+describe('useMusicSearch Spotify sync split', () => {
+  const candidateBody = {
+    albums: [{ spotify_id: 'album-1', title: 'Candidate album' }],
+    tracks: [{
+      spotify_id: 'track-1',
+      title: 'Candidate track',
+      album: { spotify_id: 'album-2', title: 'Track album' },
+    }],
+  }
+
+  it('performs candidate GET before explicit sync POST and reports acceptance', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(candidateBody), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'accepted' }), { status: 202 }))
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album', 'track'] }))
+    act(() => result.current.setQuery('candidate'))
+    await act(async () => {
+      await result.current.runSpotifySync()
+    })
+
+    expect(apiFetch).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(apiFetch).mock.calls[0]?.[0]).toContain('/api/music/search/candidates?')
+    expect(vi.mocked(apiFetch).mock.calls[0]?.[1]?.method).toBeUndefined()
+    expect(vi.mocked(apiFetch).mock.calls[1]?.[0]).toContain('/api/music/sync-requests')
+    expect(vi.mocked(apiFetch).mock.calls[1]?.[1]).toMatchObject({ method: 'POST' })
+    expect(JSON.parse(String(vi.mocked(apiFetch).mock.calls[1]?.[1]?.body))).toEqual({
+      album_ids: ['album-1', 'album-2'],
+      market: 'KR',
+    })
+    expect(result.current.status).toBe('Spotify 결과 · 동기화 요청됨')
+  })
+
+  it('preserves candidate results and reports sync failure when POST is rejected', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(candidateBody), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'failed' }), { status: 503 }))
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album', 'track'] }))
+    act(() => result.current.setQuery('candidate'))
+    await act(async () => {
+      await result.current.runSpotifySync()
+    })
+
+    expect(result.current.albums).toHaveLength(1)
+    expect(result.current.tracks).toHaveLength(1)
+    expect(result.current.albums[0]?.title).toBe('Candidate album')
+    expect(result.current.status).toBe('Spotify 결과 · 동기화 요청 실패')
+  })
+
+  it('does not publish an old sync result after the query changes during POST', async () => {
+    let resolvePost!: (response: Response) => void
+    const deferredPost = new Promise<Response>((resolve) => {
+      resolvePost = resolve
+    })
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(candidateBody), { status: 200 }))
+      .mockReturnValueOnce(deferredPost)
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album', 'track'] }))
+    act(() => result.current.setQuery('candidate'))
+    let pending: Promise<void> = Promise.resolve()
+    await act(async () => {
+      pending = result.current.runSpotifySync()
+      await Promise.resolve()
+    })
+    expect(vi.mocked(apiFetch)).toHaveBeenCalledTimes(2)
+
+    act(() => result.current.setQuery('new query'))
+    resolvePost(new Response(JSON.stringify({ status: 'accepted' }), { status: 202 }))
+    await act(async () => {
+      await pending
+    })
+
+    expect(result.current.query).toBe('new query')
+    expect(result.current.status).toBe('')
   })
 })

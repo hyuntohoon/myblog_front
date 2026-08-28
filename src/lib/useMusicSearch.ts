@@ -17,6 +17,8 @@ import { apiFetch } from './api'
 
 type UnifiedSearchResult = components['schemas']['Music_UnifiedSearchResult']
 type CandidateSearchResult = components['schemas']['Music_CandidateSearchResult']
+type AlbumSyncRequest = components['schemas']['Music_AlbumSyncRequest']
+type AlbumSyncAccepted = components['schemas']['Music_AlbumSyncAccepted']
 
 // Minimal structural shapes the mappers read. Both the DB (unified) and Spotify
 // (candidate) result element types satisfy these, so one mapper handles both.
@@ -53,8 +55,8 @@ interface RawTrack {
 
 const MUSIC = import.meta.env.PUBLIC_API_URL as string
 
-// Spotify candidates enqueues SQS absorb jobs; rapid re-firing wastes quota and
-// crowds the queue. 3 s cooldown matches the writer's BUG-19-era guard.
+// A Spotify sync is a read-only candidate GET followed by an explicit enqueue
+// POST. Rapid re-firing still wastes provider quota and crowds the queue.
 const SPOTIFY_COOLDOWN_MS = 3000
 
 export type SearchKind = 'album' | 'artist' | 'track'
@@ -189,7 +191,7 @@ export interface UseMusicSearchOptions {
 }
 
 export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOptions): UseMusicSearch {
-  const [query, setQuery] = useState('')
+  const [query, setQueryState] = useState('')
   const [buckets, setBuckets] = useState<Buckets>(EMPTY)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState<SearchKind | null>(null)
@@ -209,6 +211,17 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
   // superseded search-as-you-type fetch is aborted on the wire — not just dropped
   // after it arrives (the seqRef guard). One ref covers all three network ops.
   const abortRef = useRef<AbortController | null>(null)
+  const invalidateRequests = useCallback(() => {
+    seqRef.current += 1
+    abortRef.current?.abort()
+  }, [])
+  const setQuery = useCallback((next: string) => {
+    invalidateRequests()
+    setQueryState(next)
+    setLoading(false)
+    setLoadingMore(null)
+    setStatus('')
+  }, [invalidateRequests])
   const nextSignal = useCallback(() => {
     abortRef.current?.abort()
     const ac = new AbortController()
@@ -219,12 +232,15 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
   const typeParam = recallTypes.join(',')
 
   const reset = useCallback(() => {
-    setQuery('')
+    invalidateRequests()
+    setQueryState('')
+    setLoading(false)
+    setLoadingMore(null)
     setBuckets(EMPTY)
     setStatus('')
     setOffsets(ZERO)
     setLastReturned(ZERO)
-  }, [])
+  }, [invalidateRequests])
 
   const runDbSearch = useCallback(async () => {
     const q = query.trim()
@@ -284,11 +300,12 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     const signal = nextSignal()
     setSource('spotify')
     setLoading(true)
-    setStatus('Spotify 싱크 중…')
+    setStatus('Spotify 검색 중…')
     setBuckets(EMPTY)
     // Spotify candidates don't support per-bucket offset paging — no "더 보기".
     setOffsets(ZERO)
     setLastReturned(ZERO)
+    let candidateSearchSucceeded = false
     try {
       const r = await apiFetch(
         `${MUSIC}/api/music/search/candidates?q=${encodeURIComponent(q)}&type=${typeParam}&limit=20`,
@@ -303,14 +320,42 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
       const artist = dedupeBySpotify(mapArtists(data.artists, 'spotify'))
       const track = dedupeBySpotify(mapTracks(data.tracks, 'spotify'))
       setBuckets({ album, artist, track })
+      candidateSearchSucceeded = true
       const total = album.length + artist.length + track.length
-      setStatus(total === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과')
+      const albumIds = [...new Set([
+        ...(data.albums ?? []).map(item => item.spotify_id),
+        ...(data.tracks ?? []).map(item => item.album?.spotify_id),
+      ].filter((id): id is string => Boolean(id)))]
+      if (albumIds.length === 0) {
+        setStatus(total === 0 ? 'Spotify에도 결과 없음' : 'Spotify 결과 · 동기화할 앨범 없음')
+        return
+      }
+
+      setStatus('Spotify 결과 · 동기화 요청 중…')
+      const payload: AlbumSyncRequest = { album_ids: albumIds, market: 'KR' }
+      const accepted = await apiFetch(`${MUSIC}/api/music/sync-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+      })
+      if (!accepted || accepted.status !== 202)
+        throw new Error(`HTTP ${accepted?.status}`)
+      const acceptedBody = await accepted.json() as AlbumSyncAccepted
+      if (acceptedBody.status !== 'accepted')
+        throw new Error('sync request was not accepted')
+      if (seq !== seqRef.current)
+        return
+      setStatus('Spotify 결과 · 동기화 요청됨')
     }
     catch {
       // apiFetch swallows an abort into a null return (→ HTTP undefined throw
       // above); guard on the signal so a superseded sync doesn't flash a failure.
-      if (seq === seqRef.current && !signal.aborted)
-        setStatus('Spotify 싱크 실패')
+      if (seq === seqRef.current && !signal.aborted) {
+        setStatus(candidateSearchSucceeded ?
+          'Spotify 결과 · 동기화 요청 실패' :
+          'Spotify 검색 실패')
+      }
     }
     finally {
       if (seq === seqRef.current)
