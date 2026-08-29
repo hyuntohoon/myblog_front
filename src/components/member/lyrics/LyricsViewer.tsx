@@ -83,7 +83,6 @@
 // FEAT-lyrics-auto-progression Step 2 is visual-only (album-blur backdrop +
 // always-dark + large sans-serif typography); it lives in the `.lyv-*` CSS.
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { PlayerCommand } from '@lib/spotifyPlayback'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import type { QueueEntry, QueueResult } from './queue.api'
@@ -91,15 +90,14 @@ import type { JumpContext } from './queueJump'
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
 import { playbackSession } from '@lib/playback/session'
-import { MYBLOG_PLAYBACK_CHANGED, sendPlayerCommand } from '@lib/spotifyPlayback'
+import { canControlPlayback } from '@lib/playback/ownership'
+import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ArtistNames } from '../NowPlaying'
-import { confirmTransport } from './confirmTransport'
 import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 import { readQueue } from './queue.api'
-import { jumpToQueueIndex } from './queueJump'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
 const DRAG_STEP = 56
@@ -155,31 +153,23 @@ const BROWSE_IDLE_MS = 3000
 const EVENT_RESYNC_FLOOR_MS = 1500
 
 /**
- * How many times a jump re-reads identity before giving up, and how far apart
- * (FEAT-lyrics-viewer-playback Step 3 follow-up).
+ * ARCH-playback-authority-convergence Step 1 deleted three constants that used to
+ * live here — `JUMP_CONFIRM_TRIES`, `JUMP_CONFIRM_GAP_MS` and `PLAY_STATE_GUARD_MS`
+ * — along with the refs they governed (`awaitingTrack`, `awaitingChangeFrom`,
+ * `awaitingPlayState`), `confirmSkip`, `confirmJump`, `commandBusy` and
+ * `transportDead`.
  *
- * Spotify applies `PUT /me/player/play` **asynchronously**: the 204 is an
- * acknowledgement, not a completion, so `GET /me/player` fired straight after
- * it can still report the track we just left. Reproduced 2026-08-02 against a
- * stub that delays its state change by 1.2s — the single post-jump read
- * returned the OLD track and the viewer then sat on it indefinitely: title,
- * lyrics and queue all stale, the queue worst of all because its effect is
- * keyed on `trackId`, which never moved.
+ * They all existed for ONE reason: this component issued Spotify transport
+ * commands itself, behind `playbackSession`'s back, and therefore had to track
+ * Spotify Connect's ack→apply lag on its own — a second playback state machine
+ * racing the first. It is now a consumer. Every mutation goes through the session,
+ * which owns the confirmation burst, the `localWriteSeq` discard rule and the
+ * ownership gate, so there is nothing left here to guard.
  *
- * A burst, NOT a cadence — it is bounded, it only ever runs behind one tap, and
- * it stops the moment Spotify agrees. D28 (nothing polls playback state) holds.
+ * The bugs that went with them: transport that ignored multi-tab ownership
+ * entirely, and a jump whose confirmation failure left the viewer showing a track
+ * Spotify was not playing, permanently.
  */
-const JUMP_CONFIRM_TRIES = 4
-const JUMP_CONFIRM_GAP_MS = 500
-
-/**
- * How long a ⏸/▶ keeps the right to drop a read that disagrees with it
- * (`awaitingPlayState`, OQ4). Same budget the jump/skip confirmation spends
- * (`JUMP_CONFIRM_TRIES * JUMP_CONFIRM_GAP_MS`), because the thing being waited
- * on — Spotify Connect applying a transport command — is the same. It is a
- * ceiling, not a wait: the guard clears the moment a read agrees.
- */
-const PLAY_STATE_GUARD_MS = JUMP_CONFIRM_TRIES * JUMP_CONFIRM_GAP_MS
 
 /**
  * What triggered a re-anchor (FEAT-lyrics-sync-precision Step 2). Recorded with
@@ -415,35 +405,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // Which row is mid-jump, for the row's own busy state. `commandBusy` already
   // guards concurrency; this is only what the member sees.
   const [jumpingIndex, setJumpingIndex] = useState<number | null>(null)
-  // The track a jump asked Spotify for, while we are still waiting for Spotify
-  // to admit it changed (see JUMP_CONFIRM_TRIES). A read that disagrees with
-  // this is Spotify lagging, not the member changing songs, so it is dropped —
-  // otherwise it drags the viewer back to the track we just left. Declared here
-  // rather than beside `refresh` because the queue effect below reads it too.
-  const awaitingTrack = useRef<string | null>(null)
-  // The twin of `awaitingTrack` for ⏭/⏮ (owner bug report 2026-08-02: the
-  // viewer stayed on the previous track's lyrics after a skip). A skip cannot
-  // name the track it is going TO, so it names the one it is coming FROM and
-  // waits for any read that disagrees. Without this the single post-command
-  // read was a race against Spotify Connect propagation: a read that still
-  // said the old track took `refresh`'s SAME-track branch, re-anchored to the
-  // track being left, and nothing ever asked again.
-  const awaitingChangeFrom = useRef<string | null>(null)
-  // The third member of the same family, added with OQ4 (2026-08-03). ⏸/▶ never
-  // needed one while nothing read back after them; now `sendPlayerCommand`
-  // dispatches MYBLOG_PLAYBACK_CHANGED, so the listener below issues a read into
-  // exactly the same propagation lag the other two guard against — and a read
-  // that still says `playing` after a ⏸ would overwrite the optimistic `playing`
-  // write that Step 1 established as the ONLY mechanism, leaving the scheduler
-  // advancing lines over silence.
-  //
-  // Unlike its twins this one has no confirmation loop, deliberately: the
-  // optimistic write is already the right answer, so a disagreeing read is just
-  // dropped and the next event/visibility read reconciles. All that is lost is
-  // one residual sample, and that channel is best-effort by construction.
-  // It expires so a guard that never sees agreement (the member paused from the
-  // Spotify app mid-flight) cannot suppress reads for the rest of the session.
-  const awaitingPlayState = useRef<{ playing: boolean, untilMs: number } | null>(null)
   // Bumped by 다시 시도 — the read is keyed on it so a retry is a re-run of the
   // same effect rather than a second, separately-cancelled fetch path.
   const [queueSeq, setQueueSeq] = useState(0)
@@ -460,12 +421,10 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       return
     let live = true
     setQueue({ k: 'loading' })
-    // Mid-jump: this effect just fired on the OPTIMISTIC `trackId`, but Spotify
-    // has not applied the play yet and would hand back the pre-jump queue —
-    // a list contradicting the head. `confirmJump` bumps `queueSeq` once
-    // identity settles, and that is the read that lands.
-    if (awaitingTrack.current !== null || awaitingChangeFrom.current !== null)
-      return
+    // No mid-jump guard any more: `trackId` only moves once `playbackSession` has
+    // CONFIRMED the change (or a live read has), so this effect can never fire on
+    // an optimistic identity Spotify has not applied yet. That guard — and the
+    // `queueSeq` bump that used to release it — went with `confirmJump`.
     void Promise.all([readQueue(), readLivePlayback()]).then(([q, p]) => {
       if (!live)
         return
@@ -704,31 +663,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     try {
       const r = await readLivePlayback()
       if (r.state === 'playing' || r.state === 'paused') {
-        // Still the track we jumped away from? Then Spotify has not applied the
-        // play yet. Write nothing — the caller reads again — because every
-        // write below would undo the identity the jump already established.
-        if (awaitingTrack.current !== null && r.trackId !== awaitingTrack.current)
-          return
-        // Same reasoning for a skip, inverted: still the track we skipped away
-        // from means Spotify has not applied the skip yet. Write nothing —
-        // `confirmSkip` reads again — because the same-track branch below would
-        // re-anchor to the track being left and end the correction there.
-        if (awaitingChangeFrom.current !== null && r.trackId === awaitingChangeFrom.current)
-          return
-        // Third of the same shape (OQ4): still reporting the state we just
-        // commanded away from means the ⏸/▶ has not propagated. Drop the read
-        // rather than write it back over the optimistic state.
-        const wantState = awaitingPlayState.current
-        if (wantState) {
-          if (performance.now() > wantState.untilMs)
-            awaitingPlayState.current = null
-          else if ((r.state === 'playing') !== wantState.playing)
-            return
-          else
-            awaitingPlayState.current = null
-        }
-        awaitingTrack.current = null
-        awaitingChangeFrom.current = null
+        // No ack→apply guards here any more. This component no longer issues
+        // transport, so there is no in-flight command of its own for a read to
+        // contradict; `playbackSession` owns that race and its own reads discard
+        // themselves against `localWriteSeq`. What is left is an honest read used
+        // for the manual ↻, a visibility return, the end-of-track re-sync and the
+        // fallback path below — none of which can be racing a local write.
         setNotice(null)
         setContext(r.contextUri ? { uri: r.contextUri, type: r.contextType ?? '' } : null)
         // Re-render the blur backdrop against the current track's cover (Step 2).
@@ -782,242 +722,137 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     refreshRef.current = refresh
   })
 
-  // FEAT-lyrics-viewer-playback Step 1 — transport commands from the bottom
-  // bar. Same client-side Spotify Connect transport NowPlaying uses; nothing
-  // new server-side (rule #9 holds — the only server hit is the token mint).
+  // ARCH-playback-authority-convergence Step 1 — transport is the SESSION's.
   //
-  // `no-capability` is sticky: a 403 (no Premium / missing scope) or 404 (no
-  // active device) will not resolve by retrying, so the cluster degrades to
-  // disabled with one line of reason instead of offering dead buttons.
-  const [transportDead, setTransportDead] = useState(false)
-  const commandBusy = useRef(false)
+  // What was here: a `transportDead` boolean, a `commandBusy` ref, direct
+  // `sendPlayerCommand()` calls, and two confirmation loops (`confirmSkip`,
+  // `confirmJump`). Between them they reproduced, badly, machinery
+  // `playbackSession` already owned — and the reproduction had three defects the
+  // original does not:
+  //
+  //   · it never consulted ownership, so in a mirror tab whose owner holds the
+  //     in-page SDK device these buttons worked while the Global Player's
+  //     identical buttons two inches away were correctly disabled;
+  //   · `confirmJump` DISCARDED `confirmTransport`'s boolean, so a confirmation
+  //     that ran out of budget left this viewer showing track B while Spotify
+  //     played A, with nothing left anywhere to correct it;
+  //   · `if (commandBusy.current) return` silently swallowed a second ⏭ while the
+  //     button still looked pressable.
+  //
+  // Now: `canControl` decides whether the buttons are offered at all (identical
+  // predicate to the Global Player's, imported from the session rather than
+  // re-derived), and every press is a session action. Failures come back as the
+  // session's own notice; identity converges because the session is the only
+  // writer.
+  const canControl = canControlPlayback(sessionState)
+  // Only while this viewer is bound to live playback — the static/debug entry has
+  // no relationship to the session and must not inherit its sentences.
+  const sessionNotice = canRefresh ? sessionState.notice?.message ?? null : null
+  const [transportBusy, setTransportBusy] = useState(false)
 
-  /**
-   * Re-read identity until Spotify reports a track other than `from`.
-   *
-   * The ⏭/⏮ counterpart of `confirmJump`. A skip knows only which track it is
-   * leaving, so "settled" means any disagreement with `from` rather than
-   * agreement with a named id — but the retry budget, the gap and the queue
-   * re-read on settle are deliberately identical, because the thing being
-   * waited on (Spotify Connect applying a transport command) is identical.
-   *
-   * Giving up leaves the viewer on the old track, which is what it already did
-   * before this existed — a wrong-but-current view beats suppressing reads for
-   * the rest of the session.
-   */
-  const confirmSkip = async (from: string) => {
-    awaitingChangeFrom.current = from
-    try {
-      await confirmTransport(
-        () => refreshRef.current('command'),
-        () => awaitingChangeFrom.current === null,
-        { tries: JUMP_CONFIRM_TRIES, gapMs: JUMP_CONFIRM_GAP_MS },
-      )
-      awaitingChangeFrom.current = null
-    }
-    finally {
-      setQueueSeq(s => s + 1)
-    }
-  }
-
-  const runCommand = async (cmd: PlayerCommand) => {
-    if (commandBusy.current || transportDead)
+  const runTransport = async (action: () => Promise<unknown>) => {
+    // Busy DISABLES rather than silently returning (RFC principle 6): a press that
+    // does nothing must never look like a press that did something. The buttons
+    // below read `transportBusy`, so the guard here is only the re-entrancy
+    // backstop for a keyboard repeat that outruns a render.
+    if (transportBusy || !canControl)
       return
-    commandBusy.current = true
-    // Optimistic `playing` write. The event-driven resync (Step 2 of
-    // FEAT-lyrics-sync-precision) is rate-limited to one read per
-    // EVENT_RESYNC_FLOOR_MS, so a ⏭ immediately followed by a ⏸ would have its
-    // pause read swallowed — leaving the icon claiming playback and the focus
-    // scheduler still advancing lines over silence. The command we issued is
-    // the most direct evidence we will ever have; the resync stays the
-    // correction of record, not the write path.
-    const wasPlaying = playing
-    const a = anchor.current
-    if (cmd.kind === 'pause' && a) {
-      // Freeze the clock at the current estimate so the held line is exact and
-      // a later resume starts from truth (NowPlaying's idiom, member-player
-      // Step 3). Without this the anchor keeps ageing through the pause.
-      const at = estimateMs(a)
-      setAnchor({ ms: durationMs != null ? Math.min(at, durationMs) : at, wallMs: performance.now() })
-    }
-    else if (cmd.kind === 'play' && a) {
-      // Resume: restart the wall clock from the frozen position.
-      setAnchor({ ms: a.ms, wallMs: performance.now() })
-    }
-    if (cmd.kind === 'play' || cmd.kind === 'pause') {
-      setPlaying(cmd.kind === 'play')
-      // Armed BEFORE the request, not after it resolves: `sendPlayerCommand`
-      // dispatches MYBLOG_PLAYBACK_CHANGED synchronously on success (OQ4), so the
-      // listener's read is already in flight by the time we are handed `r`.
-      awaitingPlayState.current = { playing: cmd.kind === 'play', untilMs: performance.now() + PLAY_STATE_GUARD_MS }
-    }
+    setTransportBusy(true)
     try {
-      const r = await sendPlayerCommand(cmd)
-      if (r.ok) {
-        setNotice(null)
-        // A skip changes WHICH track is playing, so the viewer needs an
-        // identity read to swap the lyrics. Since OQ4 the listener above does
-        // also see the skip, but it cannot be the mechanism: it is behind
-        // EVENT_RESYNC_FLOOR_MS, so a ⏭⏭ has its second read swallowed, and it
-        // reads exactly once where a skip needs a confirmation loop.
-        //
-        // This was ONE read until 2026-08-02, and one read is a race the skip
-        // usually loses: Spotify answers `GET /me/player` with the pre-skip
-        // track for a beat after returning 204, and that stale read took the
-        // same-track branch and closed the case. The 2026-08-01 browser check
-        // that blessed the single read happened to win the race. `confirmSkip`
-        // retries on the same schedule the queue-row jump already used.
-        if (cmd.kind === 'next' || cmd.kind === 'previous')
-          void confirmSkip(trackId)
-        return
-      }
-      // Failed: put the optimistic state back before reporting. No event was
-      // dispatched (only a successful command dispatches), so the guard has
-      // nothing left to protect and must not outlive the command.
-      if (cmd.kind === 'play' || cmd.kind === 'pause') {
-        setPlaying(wasPlaying)
-        awaitingPlayState.current = null
-        if (a)
-          setAnchor(a)
-      }
-      if (r.reason === 'no-capability') {
-        setTransportDead(true)
-        setNotice('이 계정/기기에서는 재생을 조작할 수 없어요')
-      }
-      else if (r.reason === 'token') {
-        setNotice('Spotify 연결이 끊겼어요. 다시 연결해 주세요')
-      }
-      else {
-        setNotice('조작에 실패했어요. 잠시 후 다시 시도해 주세요')
-      }
+      await action()
     }
     finally {
-      commandBusy.current = false
+      setTransportBusy(false)
     }
   }
 
-  /**
-   * Re-read identity until Spotify reports the track the jump asked for.
-   *
-   * `refresh` drops any read that still names the old track (see
-   * `awaitingTrack`), so this loop is what eventually collects the cover,
-   * duration and artist ids the tapped row could not carry. It stops the
-   * instant Spotify agrees, and after JUMP_CONFIRM_TRIES it gives up and lets
-   * normal reads resume — a wrong-but-current read beats suppressing reads
-   * forever.
-   */
-  const confirmJump = async () => {
-    try {
-      // Shares `confirmTransport` with `confirmSkip` (2026-08-02) so the two
-      // cannot drift. Behaviour is unchanged except that the loop no longer
-      // sleeps after its final attempt — the queue re-read below used to wait
-      // out a gap it never used.
-      await confirmTransport(
-        () => refreshRef.current('command'),
-        () => awaitingTrack.current === null,
-        { tries: JUMP_CONFIRM_TRIES, gapMs: JUMP_CONFIRM_GAP_MS },
-      )
-      awaitingTrack.current = null
-    }
-    finally {
-      // Identity has settled (agreed or given up), so the queue can be read
-      // for real. Its own effect fired on the optimistic `trackId` change and
-      // deliberately did not read — at that moment Spotify was still serving
-      // the PRE-jump queue, and rendering it would have put a list on screen
-      // that contradicted the head we had just set.
-      setQueueSeq(s => s + 1)
-    }
-  }
-
-  // FEAT-lyrics-viewer-playback Step 3 — tapping a queue row. The chain lives
-  // in `queueJump.ts`; this is what the viewer does around it.
+  // FEAT-lyrics-viewer-playback Step 3 — tapping a queue row. The chain still
+  // lives in `queueJump.ts`; what moved is WHO calls it. The session runs the
+  // confirmation burst and, when the burst is exhausted, has already re-adopted
+  // whatever is genuinely playing — so a failed jump ends as a sentence, never as
+  // a viewer stranded on a track that is not sounding.
   const jumpTo = async (index: number) => {
-    if (commandBusy.current || transportDead)
+    if (transportBusy || !canControl)
       return
     if (queue.k !== 'ready' || !queue.data.ok)
       return
-    commandBusy.current = true
+    setTransportBusy(true)
     setJumpingIndex(index)
     try {
-      const tapped = queue.data.items[index]
-      const r = await jumpToQueueIndex(queue.data.items, index, context)
+      const r = await playbackSession.jumpToSpotifyQueue(queue.data.items, index, context)
       if (r.ok) {
         setNotice(null)
-        setPlaying(true)
-        // Write identity from the row that was tapped, exactly as Step 1 writes
-        // `playing` at command-issue time: the command we just sent is the most
-        // direct evidence we will ever have of what is playing. Waiting for the
-        // read instead is what left the head, the lyrics and the queue on the
-        // previous track whenever Spotify had not caught up yet.
-        awaitingTrack.current = tapped.id
-        if (tapped.id !== trackId) {
-          // A jump starts the track from the top; the confirming read replaces
-          // this with the real position as soon as Spotify reports it.
-          pendingSeed.current = { ms: 0, wallMs: performance.now() }
-          setTrackId(tapped.id)
-        }
-        // The queue row carries no cover, duration or artist ids — those arrive
-        // with the confirming read. `artists: []` renders the plain artist text
-        // (no links) until then, which is honest rather than wrong.
-        setMeta({ track: tapped.name, artist: tapped.artist, artists: [] })
-        void confirmJump()
-        // Stay on the queue screen: the member tapped a list they were reading,
-        // and that list re-reads itself when the track swaps.
+        // Identity is NOT written here. The session confirmed the track and this
+        // viewer adopts it through the session-adoption effect below, which is the
+        // whole point: one writer, one truth.
         return
       }
-      if (r.reason === 'nothing-to-send')
+      if (r.reason === 'nothing-to-send' || r.reason === 'forwarded')
         return
-      if (r.reason === 'no-capability') {
-        setTransportDead(true)
-        setNotice('이 계정/기기에서는 재생을 조작할 수 없어요')
-      }
-      else if (r.reason === 'token') {
-        setNotice('Spotify 연결이 끊겼어요. 다시 연결해 주세요')
-      }
-      else {
-        setNotice('그 곡으로 넘어가지 못했어요. 잠시 후 다시 시도해 주세요')
-      }
+      setNotice(
+        r.reason === 'no-capability' ?
+          '이 계정/기기에서는 재생을 조작할 수 없어요' :
+          r.reason === 'token' ?
+            'Spotify 연결이 끊겼어요. 다시 연결해 주세요' :
+            '그 곡으로 넘어가지 못했어요. 잠시 후 다시 시도해 주세요',
+      )
     }
     finally {
-      commandBusy.current = false
+      setTransportBusy(false)
       setJumpingIndex(null)
     }
   }
 
-  // FEAT-lyrics-sync-precision Step 2 — event-driven re-anchoring. A correct
-  // anchor stays correct: playback runs at 1.0x and browser-vs-device clock
-  // drift is ~10ms over a four-minute track. Only EVENTS invalidate it, so
-  // these are the two the browser hands us for free. No timer polls playback
-  // state (D28 upheld).
+  // FEAT-lyrics-sync-precision Step 2 — event-driven re-anchoring, reduced by
+  // ARCH-playback-authority-convergence Step 1 to a FALLBACK.
+  //
+  // `playbackSession` now reconciles every `MYBLOG_PLAYBACK_CHANGED` itself, with
+  // leading+trailing coalescing, and this viewer adopts the result through the
+  // effect below. So the normal path costs this component zero reads. What remains
+  // is the case the session genuinely cannot serve: it has no confirmed Spotify
+  // track id for what is sounding (a cold URI cache, or nothing adopted yet), so
+  // there is nothing for the viewer to adopt and its own read is the only source.
+  //
+  // The old floor here was a LEADING-edge throttle with no trailing call, which is
+  // the A→B→C bug: three skips inside 1.5s left the viewer parked on B forever.
+  // Rebuilt as leading + trailing — the first event reads immediately, anything
+  // during the floor sets `dirty`, and the floor's end spends exactly one more
+  // read. The last state can no longer be the one that is dropped.
   useEffect(() => {
     if (!canRefresh)
       return
-    // A floor, not a cadence: tab-flicking or a burst of transport commands
-    // must not turn one-shot reads into a request storm.
     let lastAtMs = 0
-    const resync = (source: ResyncSource) => {
-      const now = performance.now()
-      if (now - lastAtMs < EVENT_RESYNC_FLOOR_MS)
-        return
-      lastAtMs = now
+    let dirty = false
+    let floorTimer: number | null = null
+    const fire = (source: ResyncSource) => {
+      lastAtMs = performance.now()
       void refreshRef.current(source)
     }
-    // History worth keeping, because the comment here was wrong twice in the
-    // opposite direction. It originally claimed every transport command
-    // dispatched this; a browser check on 2026-08-01 disproved that (only
-    // `sendConnectPlay` did), and the bar was built to write `playing` itself
-    // and run its own post-skip confirmation instead of leaning on this path.
-    // OQ4 (2026-08-03) then made the claim true on purpose.
-    //
-    // Neither of those mechanisms moved as a result, and that is the point: this
-    // path is rate-limited (EVENT_RESYNC_FLOOR_MS) and reads once, so it can
-    // MEASURE a command but must never be what a command depends on. What it
-    // gains now is the ⏸/▶ of *other* surfaces — the NowPlaying card, a headset —
-    // and, for our own ⏯, the same-track read that finally puts a transport
-    // command into the `'command'` residual series.
+    const resync = (source: ResyncSource) => {
+      // Session-confirmed identity beats a viewer-local read; if the session can
+      // name the track, the adoption effect below is already handling this event.
+      if (playbackSession.currentSpotifyTrackId() !== null)
+        return
+      const now = performance.now()
+      const waited = now - lastAtMs
+      if (waited >= EVENT_RESYNC_FLOOR_MS) {
+        fire(source)
+        return
+      }
+      dirty = true
+      if (floorTimer == null) {
+        floorTimer = window.setTimeout(() => {
+          floorTimer = null
+          if (!dirty)
+            return
+          dirty = false
+          fire(source)
+        }, EVENT_RESYNC_FLOOR_MS - waited)
+      }
+    }
     const onCommand = () => resync('command')
     // Leaving the tab to operate Spotify elsewhere is precisely the case where
-    // "playback kept running" stops being true, and it was assumed until now.
+    // "playback kept running" stops being true.
     const onVisible = () => {
       if (!document.hidden)
         resync('visibility')
@@ -1027,51 +862,63 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     return () => {
       window.removeEventListener(MYBLOG_PLAYBACK_CHANGED, onCommand)
       document.removeEventListener('visibilitychange', onVisible)
+      if (floorTimer != null)
+        window.clearTimeout(floorTimer)
     }
   }, [canRefresh])
 
   /**
-   * ARCH-entity-interaction-domain-audit Step 3c — adopt `playbackSession`'s
-   * anchor when it is CONFIRMED the same track, additive to everything above.
-   * This never replaces the viewer's own read: that stays the only source
-   * whenever `playbackSession` cannot confirm the match (a different tab's
-   * playback the session has not adopted yet, no session at all, a cold URI
-   * cache making `currentSpotifyTrackId()` unable to name the queue-matched
-   * row). When it CAN confirm the match, the session's write is frequently
-   * fresher than a fresh round-trip — a local optimistic write (pause freeze,
-   * `playFrom`'s own authoritative patch) or another surface's already-landed
-   * read — the same class of gain Step 3a/3b shipped for `NowPlaying`.
+   * Adopt `playbackSession`'s view of what is playing.
    *
-   * Guarded by the SAME refs `refresh()` guards itself with, and for the same
-   * reason: this viewer's OWN ⏸/▶/⏭/⏮ go through `sendPlayerCommand` directly
-   * (not through `playbackSession`), so `playbackSession`'s own re-adoption of
-   * the resulting `MYBLOG_PLAYBACK_CHANGED` is racing the identical ack→apply
-   * lag `awaitingPlayState`/`awaitingTrack`/`awaitingChangeFrom` exist to
-   * survive — session has no visibility into a command THIS component issued,
-   * so it cannot guard against it on its own. Deferring here is safe: the
-   * guarded window is short and this viewer's own confirmation read (or the
-   * next session update once the guard clears) supersedes it a moment later.
+   * ARCH-entity-interaction-domain-audit Step 3c shipped this for the ANCHOR only,
+   * and gated it on `currentSpotifyTrackId() === trackId` — so a session that had
+   * authoritatively moved on to track C could not move a viewer sitting on B. It
+   * could only ever confirm what the viewer already believed.
    *
-   * Keyed on the session's own anchor/playing/durationMs (not on `trackId`):
-   * re-checking only when the SESSION actually wrote something new means a
-   * local track swap can never re-apply a stale, merely-coincidentally-
-   * matching session anchor left over from an earlier session update.
+   * ARCH-playback-authority-convergence Step 1 makes it adopt IDENTITY too, which
+   * is the rule the whole RFC turns on: **session-confirmed identity beats a
+   * viewer-local guess.** A confirmed different track swaps the lyric document; a
+   * confirmed same track re-anchors as before. The one thing that is still deferred
+   * to the viewer's own read is the case the session cannot answer —
+   * `currentSpotifyTrackId()` is null because no URI has resolved — where adopting
+   * would mean adopting nothing.
+   *
+   * The `awaiting*` guards this effect used to carry are gone with the state
+   * machine they belonged to: this viewer issues no commands of its own any more,
+   * so there is no local optimism for a session update to overwrite.
    */
   useEffect(() => {
+    const sessionTrackId = playbackSession.currentSpotifyTrackId()
+    if (sessionTrackId == null)
+      return
+    if (sessionTrackId !== trackId) {
+      // Identity moved under us — a skip from the Global Player, a natural track
+      // change, another tab. Seed the new document from the session's own anchor
+      // so the swap lands on the right line instead of at 0.
+      const a = sessionState.anchor
+      pendingSeed.current = a ? { ms: a.ms, wallMs: a.wallMs } : null
+      const row = playbackSession.currentRow()
+      setCoverUrl(sessionState.external?.albumCoverUrl ?? row?.cover ?? null)
+      setMeta({
+        track: sessionState.external?.title ?? row?.title ?? null,
+        artist: sessionState.external?.artist ?? row?.artist ?? null,
+        // Artist ids are not in either source; the next live read fills them, and
+        // plain text until then is honest rather than wrong.
+        artists: [],
+      })
+      setDurationMs(sessionState.durationMs)
+      setPlaying(sessionState.playing)
+      setNotice(null)
+      setTrackId(sessionTrackId)
+      return
+    }
     if (sessionState.anchor == null)
-      return
-    if (playbackSession.currentSpotifyTrackId() !== trackId)
-      return
-    if (awaitingTrack.current !== null || awaitingChangeFrom.current !== null)
-      return
-    const guard = awaitingPlayState.current
-    if (guard && performance.now() <= guard.untilMs)
       return
     logResidual('session', sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing ? 'playing' : 'paused')
     setDurationMs(sessionState.durationMs)
     setPlaying(sessionState.playing)
     applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs)
-  }, [sessionState.anchor, sessionState.playing, sessionState.durationMs])
+  }, [sessionState.anchor, sessionState.playing, sessionState.durationMs, sessionState.currentItemId, sessionState.external, trackId])
 
   const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
   const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
@@ -1091,20 +938,54 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     }
   }
 
-  // Explicit line taps are the ONLY manual navigation that re-anchors: tapping
-  // chooses a new playback-relative starting line and resumes follow from it.
-  // Browse steps below move visual focus only, preserving the live anchor that
-  // idle/pill return needs. Untimed lines leave the anchor unchanged (best effort).
-  const moveFocusTo = (next: number) => {
+  /**
+   * An explicit line tap is a SEEK (ARCH-playback-authority-convergence Step 1).
+   *
+   * It used to move this component's clock anchor and nothing else, which made the
+   * viewer confidently wrong: real playback at 1:10, a tap on the 2:35 line, and
+   * from then on the lyrics ran from 2:35 over audio still at 1:10 with no way back
+   * except a manual ↻. Tapping a line means "play from here" — nobody taps a lyric
+   * to re-time a caption.
+   *
+   * The distinction the RFC draws, and this file now honours: swipe / wheel / ↑↓
+   * are BROWSE — visual only, playback untouched, `step()` below. A line tap is
+   * INTENT — it goes to the provider through `playbackSession.seekTo`.
+   *
+   * The optimistic re-anchor is `seekTo`'s own `onReanchored` callback, so the
+   * viewer moves the instant the command is accepted and, if it is not, never moves
+   * at all — the session reconciles from a live read and this viewer adopts that,
+   * rather than running an independent clock from a position nothing is playing.
+   */
+  const seekToLine = (next: number) => {
     const start = segs[next]?.start_ms
-    // Untimed lines leave the anchor (and so the scheduler) untouched — the
-    // visual focus moves best-effort and the next scheduled boundary reclaims
-    // it, exactly as the old interval did within one tick.
-    if (start != null)
+    // Untimed lines carry no position to seek to — the visual focus moves
+    // best-effort and the next scheduled boundary reclaims it, exactly as before.
+    if (start == null) {
+      clearSuspendTimer()
+      setSuspended(false)
+      setFocus(next)
+      return
+    }
+    // Nothing to seek on: no live playback binding (the static/debug entry), or a
+    // mirror tab that may not mutate playback. Browse-style focus is still the
+    // right answer there — it is what those entries have always done.
+    if (!canRefresh || !canControl) {
       setAnchor({ ms: start, wallMs: performance.now() })
+      clearSuspendTimer()
+      setSuspended(false)
+      setFocus(next)
+      return
+    }
     clearSuspendTimer()
     setSuspended(false)
-    setFocus(next)
+    void playbackSession.seekTo(start, () => {
+      // Accepted — re-anchor here and follow from this line.
+      setAnchor({ ms: start, wallMs: performance.now() })
+      setFocus(next)
+    }).then((r) => {
+      if (r && !r.ok)
+        setNotice('그 위치로 이동하지 못했어요')
+    })
   }
 
   const step = (delta: number) => {
@@ -1356,14 +1237,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // Stable handlers for the memoized lines (latest-ref pattern, same as
   // refreshRef): identity never changes, so a focus step's shallow compare
   // re-renders only the lines whose `cls` flipped.
-  const moveFocusToRef = useRef(moveFocusTo)
+  const seekToLineRef = useRef(seekToLine)
   useEffect(() => {
-    moveFocusToRef.current = moveFocusTo
+    seekToLineRef.current = seekToLine
   })
   const onLineTap = useCallback((i: number) => {
     if (suppressTap.current)
       return
-    moveFocusToRef.current(i)
+    seekToLineRef.current(i)
   }, [])
   const registerLine = useCallback((i: number, el: HTMLButtonElement | null) => {
     segRefs.current[i] = el
@@ -1542,7 +1423,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           )}
         </div>
 
-        {notice && <div className="lyv-note mono" role="status">{notice}</div>}
+        {/*
+          Two sentences can reach this line: this viewer's own (a failed lyrics
+          read, a failed translation request) and `playbackSession`'s, which since
+          ARCH-playback-authority-convergence Step 1 owns every transport failure —
+          so a ⏭ that fails says the same thing here as it does in the Global
+          Player, because it IS the same string.
+        */}
+        {(notice ?? sessionNotice) && <div className="lyv-note mono" role="status">{notice ?? sessionNotice}</div>}
 
         {view === 'lyrics' && phase.k === 'loading' && <div className="lyv-status mono">불러오는 중…</div>}
 
@@ -1561,7 +1449,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	state={queue}
 	onRetry={() => setQueueSeq(s => s + 1)}
 	onJump={jumpTo}
-	jumpDisabled={transportDead}
+	jumpDisabled={!canControl || transportBusy}
 	jumpingIndex={jumpingIndex}
           />
         )}
@@ -1644,13 +1532,25 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         */}
         {canRefresh && (
           <div className="lyv-transport">
+            {/*
+              Mirror tab whose owner holds the in-page SDK device: the audio is in
+              THAT tab, so the honest offer is the same one the Global Player makes
+              — take it over — not a row of buttons that quietly do nothing here.
+              Same predicate, same wording, one source (`canControlPlayback`).
+            */}
+            {!canControl && (
+              <div className="lyv-owner-banner" role="status">
+                <span>다른 탭에서 재생 중이에요</span>
+                <button type="button" onClick={() => void playbackSession.takeOver()}>이 탭에서 재생하기</button>
+              </div>
+            )}
             <div className="lyv-transport-main">
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={transportDead}
+	disabled={!canControl || transportBusy}
 	onClick={() => {
-                  void runCommand({ kind: 'previous' })
+                  void runTransport(() => playbackSession.previous())
                 }}
 	aria-label="이전 곡"
               >
@@ -1659,9 +1559,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn is-play"
-	disabled={transportDead}
+	disabled={!canControl || transportBusy}
 	onClick={() => {
-                  void runCommand({ kind: playing ? 'pause' : 'play' })
+                  void runTransport(() => playbackSession.togglePlay())
                 }}
 	aria-label={playing ? '일시정지' : '재생'}
               >
@@ -1670,9 +1570,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={transportDead}
+	disabled={!canControl || transportBusy}
 	onClick={() => {
-                  void runCommand({ kind: 'next' })
+                  void runTransport(() => playbackSession.next())
                 }}
 	aria-label="다음 곡"
               >

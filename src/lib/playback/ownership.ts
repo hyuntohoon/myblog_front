@@ -13,6 +13,31 @@ export interface PlaybackOwnershipState {
   ownerPresent: boolean
 }
 
+/**
+ * May this tab OFFER a playback mutation at all?
+ *
+ * False in exactly one case: this tab is a mirror whose owner is on rung 2, where
+ * the audio is inside that other tab and moving it here means taking the lease. On
+ * rung 1 the audio is on a Connect device in no tab at all, so every tab stays a
+ * usable remote (T4) — the session forwards those presses to the owner.
+ *
+ * Lives HERE, rather than in `PlaybackPanel.tsx` where it was defined until
+ * ARCH-playback-authority-convergence Step 1, because it is an ownership question
+ * and every playback surface has to be able to ask it. That was not a cosmetic
+ * move: `LyricsViewer` could not reasonably import a 600-line panel module, so it
+ * asked nobody and shipped a transport that bypassed the gate the Global Player
+ * enforces two inches away. Taking the three fields structurally (rather than
+ * importing `PlaybackSessionState`) keeps this module free of a dependency on the
+ * session that depends on it.
+ */
+export function canControlPlayback(state: {
+  isOwner: boolean
+  ownerPresent: boolean
+  ownerRung: 'remote' | 'in-page' | null
+}): boolean {
+  return state.isOwner || !state.ownerPresent || state.ownerRung !== 'in-page'
+}
+
 export type OwnershipMessage =
 	| { type: 'claimed', from: string } |
 	{ type: 'released', from: string } |

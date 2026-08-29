@@ -260,7 +260,10 @@ beforeEach(() => {
   mocks.deleteBucketItem.mockImplementation(async (_bucketId: string, itemId: string) => {
     server = server.filter(item => item.itemId !== itemId)
   })
-  mocks.resolveTail.mockImplementation(async (ids: string[]) => ids.map(id => `provider:track:${id}`))
+  mocks.resolveTail.mockImplementation(async (rows: Array<{ itemId: string, trackId: string }>) => ({
+    resolved: rows.map(r => ({ ...r, uri: `provider:track:${r.trackId}` })),
+    failed: [],
+  }))
   mocks.prefetchUris.mockResolvedValue(undefined)
   mocks.cachedUri.mockImplementation((trackId: string) => `provider:track:${trackId}`)
   mocks.readLivePlayback.mockResolvedValue({ state: 'idle' })
@@ -1345,5 +1348,218 @@ describe('session-owned playback experience axes', () => {
 
     expect(playbackSession.getSnapshot().activeDeviceId).toBe('speaker')
     expect(playbackSession.getSnapshot().devices?.find(device => device.id === 'speaker')?.isActive).toBe(true)
+  })
+})
+
+// ── ARCH-playback-authority-convergence Step 1 ──────────────────────────────
+// The session is now the ONLY writer of playback truth, so these are its
+// regressions rather than the lyrics viewer's. Each one is a bug that shipped.
+describe('reconciliation the session owns', () => {
+  /** Identity matching is cache-only; the default harness prefix deliberately never matches. */
+  function matchQueueRowsToLiveTracks(): void {
+    mocks.cachedUri.mockImplementation((trackId: string) => `spotify:track:${trackId}`)
+  }
+
+  /** Past the end of a 180s row plus the boundary buffer, with room for one burst gap. */
+  const PAST_BOUNDARY_MS = 180_000 + 1_500 + 100
+
+  /**
+   * Answer reads in order, each stamped with the CURRENT wall instant.
+   *
+   * `liveTrack`'s fixed `readAtMs` is fine for tests that never move the clock, and
+   * wrong for these: the session ages its anchor by `performance.now() - wallMs` to
+   * decide when the next boundary is, so a wall instant from 180 seconds of fake
+   * time ago makes it think every track is already over and re-arm instantly.
+   */
+  function answerReads(...reads: Array<ReturnType<typeof liveTrack>>): void {
+    let i = 0
+    mocks.readLivePlayback.mockImplementation(async () => {
+      const r = reads[Math.min(i, reads.length - 1)]
+      i += 1
+      return { ...r, readAtMs: performance.now() }
+    })
+  }
+
+  it('keeps asking at a natural boundary until Spotify stops naming the old track', async () => {
+    matchQueueRowsToLiveTracks()
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    mocks.readLivePlayback.mockClear()
+    // The race the single read used to lose: Connect still answers with the track
+    // that just ended, and that stale answer is indistinguishable from a real
+    // same-track read — so the one-shot re-anchored to the finished track and
+    // nothing ever asked again.
+    answerReads(
+      { ...liveTrack('track-a'), progressMs: 180_000 },
+      { ...liveTrack('track-b'), progressMs: 900 },
+    )
+
+    await vi.advanceTimersByTimeAsync(PAST_BOUNDARY_MS + 600)
+
+    expect(mocks.readLivePlayback.mock.calls.length).toBeGreaterThan(1)
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+  })
+
+  it('treats a same-track restart near zero as a new epoch (repeat-one)', async () => {
+    matchQueueRowsToLiveTracks()
+    setQueue([row('a')])
+    await startAt('a')
+    mocks.readLivePlayback.mockClear()
+    // Repeat `track`: identity never changes, so nothing but the rewound playhead
+    // says the song started again.
+    answerReads({ ...liveTrack('track-a'), progressMs: 400 })
+
+    // Well past the first burst GAP as well as the boundary: a restart that is not
+    // recognised as an answer keeps retrying, and this window is what makes the
+    // call-count assertion below able to see that. (It could not, at first — the
+    // window ended 100ms after the boundary, so a non-settling burst still managed
+    // exactly one read and the test passed against a mutant that had the epoch
+    // rule deleted.)
+    await vi.advanceTimersByTimeAsync(PAST_BOUNDARY_MS + 2_000)
+
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(400)
+    // Settled on the FIRST read — a restart is an answer, not a reason to retry.
+    expect(mocks.readLivePlayback).toHaveBeenCalledTimes(1)
+  })
+
+  it('spends one more read after a burst so the LAST change is never the dropped one', async () => {
+    const pending: Array<(value: unknown) => void> = []
+    mocks.readLivePlayback.mockImplementation(() => new Promise((resolve) => {
+      pending.push(resolve)
+    }))
+
+    // A → ⏭ B → ⏭ C, all inside one round trip.
+    window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+    window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+    window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+    expect(pending).toHaveLength(1)
+
+    pending[0](liveTrack('track-a'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    // The trailing read — the whole point. Without it the session settles on A.
+    expect(pending).toHaveLength(2)
+    pending[1](liveTrack('track-c'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-c')
+  })
+})
+
+describe('identity follows what actually started', () => {
+  // The bug: `resolveTail` filtered unresolvable rows out of a bare string[], so a
+  // head with no Spotify id made Spotify start at row 2 while the session recorded
+  // row 1 as current — audio and identity disagreeing from the first note, with
+  // nothing anywhere able to notice.
+  it('adopts the first PLAYABLE row when the pressed row cannot be resolved', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    mocks.resolveTail.mockImplementation(async (rows: Array<{ itemId: string, trackId: string }>) => ({
+      resolved: rows.filter(r => r.itemId !== 'a').map(r => ({ ...r, uri: `provider:track:${r.trackId}` })),
+      failed: rows.filter(r => r.itemId === 'a'),
+    }))
+
+    await startAt('a')
+
+    expect(mocks.play).toHaveBeenCalledWith({
+      kind: 'uris',
+      uris: ['provider:track:track-b', 'provider:track:track-c'],
+    })
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+    // And it SAYS so — a skipped row must not be a mysterious one.
+    expect(playbackSession.getSnapshot().notice?.message).toContain('재생할 수 없어')
+  })
+
+  it('still names the pressed row when everything resolves', async () => {
+    setQueue([row('a'), row('b')])
+
+    await startAt('a')
+
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+    expect(playbackSession.getSnapshot().notice).toBeNull()
+  })
+})
+
+describe('spotify queue jump', () => {
+  const items = [
+    { id: 'now', uri: 'spotify:track:now', name: 'Now', artist: null },
+    { id: 'target', uri: 'spotify:track:target', name: 'Target', artist: null },
+  ]
+
+  it('reports the jump once Spotify names the target track', async () => {
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('target'))
+
+    const pending = playbackSession.jumpToSpotifyQueue(items, 1, null)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await expect(pending).resolves.toEqual({ ok: true })
+    expect(mocks.play).toHaveBeenCalledWith({ kind: 'uris', uris: ['spotify:track:target'] })
+  })
+
+  // The bug this replaces: `confirmJump` discarded confirmTransport's boolean, so a
+  // spent budget left the viewer showing the target track forever while Spotify
+  // played something else.
+  it('reconciles to what is really playing when the confirmation budget runs out', async () => {
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('now'))
+
+    const pending = playbackSession.jumpToSpotifyQueue(items, 1, null)
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    await expect(pending).resolves.toEqual({ ok: false, reason: 'unconfirmed' })
+    // Not left on the optimistic target — the session believes the truth.
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('now')
+    expect(playbackSession.getSnapshot().notice?.message).toContain('넘어가지 못했어요')
+  })
+
+  it('forwards to the owning tab instead of acting from a mirror', async () => {
+    setOwnership({ isOwner: false, ownerTabId: 'other-tab', ownerPresent: true })
+
+    await expect(playbackSession.jumpToSpotifyQueue(items, 1, null)).resolves.toEqual({ ok: false, reason: 'forwarded' })
+
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command', cmd: expect.objectContaining({ kind: 'queue-jump', index: 1 }) }),
+    )
+  })
+})
+
+describe('every mutation passes the same ownership gate', () => {
+  beforeEach(() => {
+    setOwnership({ isOwner: false, ownerTabId: 'other-tab', ownerPresent: true })
+  })
+
+  it('forwards shuffle/repeat/volume rather than writing from a mirror', async () => {
+    await expect(playbackSession.setMode({ kind: 'volume', percent: 70 })).resolves.toBeNull()
+
+    expect(mocks.sendPlaybackMode).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command', cmd: { kind: 'mode', cmd: { kind: 'volume', percent: 70 } } }),
+    )
+  })
+
+  it('forwards a device transfer rather than moving playback from a mirror', async () => {
+    await playbackSession.transferTo('speaker')
+
+    expect(mocks.transferPlayback).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command', cmd: { kind: 'transfer', deviceId: 'speaker' } }),
+    )
+  })
+
+  // "이 브라우저" raises an SDK device in THIS tab, so forwarding it would raise the
+  // wrong one. It claims the lease instead — which is what stops a mirror ending up
+  // as a second SDK device while the lease sits elsewhere.
+  it('claims the lease before raising this tab as the in-page device', async () => {
+    await playbackSession.transferTo('', { raiseInPageFirst: true })
+
+    expect(mocks.ensureOwner).toHaveBeenCalled()
+    expect(mocks.transferPlayback).toHaveBeenCalledWith('', { raiseInPageFirst: true })
+    expect(playbackSession.getSnapshot().isOwner).toBe(true)
+  })
+
+  it('does not raise a device when the lease cannot be taken', async () => {
+    mocks.ensureOwner.mockResolvedValueOnce(false)
+
+    await expect(playbackSession.transferTo('', { raiseInPageFirst: true })).resolves.toMatchObject({ ok: false })
+    expect(mocks.transferPlayback).not.toHaveBeenCalled()
   })
 })

@@ -9,6 +9,7 @@ import { INITIAL_DOCK, useDockTear } from '@lib/dockTear'
 import { openAlbum } from '@lib/entityEvents'
 import { playbackQueue, withoutQueueItems, withReorderedQueueItems } from '@lib/playback/queue'
 import { playbackSession } from '@lib/playback/session'
+import { canControlPlayback } from '@lib/playback/ownership'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { resolveDbAlbumId } from '@lib/spotifyCatalog'
 import { useDismissable } from '@lib/useDismissable'
@@ -180,16 +181,13 @@ export function PlaybackIdentity({ row, external, compact = false }: {
 }
 
 /**
- * May this tab offer transport at all?
- *
- * False in exactly one case: this tab is a mirror whose owner is on rung 2, where
- * the audio is inside that other tab and moving it here means taking the lease.
- * On rung 1 the audio is on a Connect device in no tab at all, so every tab stays
- * a usable remote (T4) — the session forwards those presses to the owner.
+ * Re-exported, not defined here. The predicate moved to `lib/playback/session.ts`
+ * (ARCH-playback-authority-convergence Step 1) so surfaces that cannot import this
+ * panel — the lyrics viewer above all — can ask the same question instead of
+ * shipping transport that bypasses the gate. This binding stays because every
+ * existing importer takes it from here.
  */
-export function canControlPlayback(state: PlaybackSessionState): boolean {
-  return state.isOwner || !state.ownerPresent || state.ownerRung !== 'in-page'
-}
+export { canControlPlayback }
 
 export function PlaybackTransport({ state, canControl }: { state: PlaybackSessionState, canControl: boolean }) {
   return (

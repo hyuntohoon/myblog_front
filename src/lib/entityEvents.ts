@@ -127,13 +127,19 @@ export function notifyAlbumStateChanged(detail: AlbumStateChangedDetail): void {
 }
 
 // FEAT-playback-bucket-player Step 6/6b follow-up — the playback panel's 가사
-// entry is a site-wide island (`PocketBuckit`, layout-mounted) but the live
-// `LyricsViewer` overlay only exists inside `SelfDashboard` (member-dashboard
-// local, per the RFC's "two React roots, no shared context" architecture).
-// This is the "app-wide event like albums" the panel's own NOOP comment named
-// as the fix: same shape as `openAlbum`/`ENT_OPEN_ALBUM`. A listener only
-// exists where `SelfDashboard` is mounted (the member dashboard), so opening
-// it from elsewhere is a deliberate, honest no-op rather than a crash.
+// entry is a site-wide island (`PocketBuckit`, layout-mounted), and this is the
+// "app-wide event like albums" the panel's own NOOP comment named as the fix:
+// same shape as `openAlbum`/`ENT_OPEN_ALBUM`.
+//
+// CORRECTED (ARCH-playback-authority-convergence Step 1). This block used to say
+// the live `LyricsViewer` overlay "only exists inside `SelfDashboard`" and that a
+// listener "only exists where `SelfDashboard` is mounted", so opening it from
+// elsewhere was a no-op. That stopped being true when `ARCH-global-playback-
+// experience` Step 2 relocated the host: the single listener is in
+// `PocketBuckit.tsx`, which is layout-mounted, so this event opens the viewer on
+// ANY route. `SelfDashboard` no longer listens for it at all — it still renders a
+// `LyricsViewer` for its own dashboard-internal 가사 tap, which is a direct call,
+// not this event.
 export interface OpenLiveLyricsDetail {
   /** Spotify track id — `GET /api/lyrics/{id}` takes this, not a DB id. */
   trackId: string
