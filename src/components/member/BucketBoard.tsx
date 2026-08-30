@@ -165,6 +165,24 @@ function removeBucketNode(buckets: BoardBucket[], id: string): BoardBucket | nul
   rec(buckets)
   return removed
 }
+function projectedBucketMove(tree: BoardBucket[], bucketId: string, parentId: string | null, beforeId: string | null): { tree: BoardBucket[], position: number } | null {
+  const next = clone(tree)
+  const moved = removeBucketNode(next, bucketId)
+  if (!moved)
+    return null
+  const siblings = parentId == null ? next : findBucket(next, parentId)?.children
+  if (!siblings)
+    return null
+  const beforeIndex = beforeId == null ? -1 : siblings.findIndex(bucket => bucket.id === beforeId)
+  const position = beforeIndex < 0 ? siblings.length : beforeIndex
+  siblings.splice(position, 0, moved)
+  return { tree: next, position }
+}
+function projectedBucketDelete(tree: BoardBucket[], bucketId: string): BoardBucket[] {
+  const next = clone(tree)
+  removeBucketNode(next, bucketId)
+  return next
+}
 function countAlbums(b: BoardBucket): number {
   let n = b.albums.length
   for (const c of b.children)
@@ -2532,6 +2550,16 @@ ids.push(a.albumId)
     await bucketStore.ensureFresh(true)
   }
 
+  function finishStructuralMutation(endMutation: () => void, request: Promise<unknown>): void {
+    void request.then(
+      () => endMutation(),
+      () => {
+        endMutation()
+        void refresh()
+      },
+    )
+  }
+
   // FEAT-spotify-library-sync — the special bucket's sync surface (state banners,
   // per-album badge map, listened-album hint, manual-sync poll) lives in a
   // dedicated hook (REFACTOR Step 4b). It repaints the board via `refresh` once a
@@ -2763,26 +2791,28 @@ ids.push(a.albumId)
       const src = findBucket(tree, bucketId)
       if (targetId && src && subtreeHas(src, targetId))
         return
-      const siblings = targetId ? (findBucket(tree, targetId)?.children ?? []) : tree
-      const position = siblings.length
-      const t = clone(tree)
-      const rm = removeBucketNode(t, bucketId)
-      if (!rm)
+      const optimistic = projectedBucketMove(tree, bucketId, targetId, null)
+      if (!optimistic)
         return
-      if (targetId == null) {
-        t.push(rm)
-      }
-      else {
-        const dst = findBucket(t, targetId)
-        ;(dst ? dst.children : t).push(rm)
-      }
-      setTree(t)
+      const endMutation = bucketStore.beginStructuralMutation()
+      setTree(optimistic.tree)
       // Don't reconcile with the server snapshot: the optimistic splice already
       // reflects the move, and a whole-tree overwrite would clobber any concurrent
       // optimistic edit (rename/color/add) made during the round-trip (BB-1). Each
       // such edit persists via its own PUT; on error the .catch refreshes/rolls back.
-      api.moveBucket(bucketId, targetId, position)
-        .catch(() => void refresh())
+      finishStructuralMutation(
+        endMutation,
+        bucketStore.enqueueStructuralMutation(
+          async ({ tree: replayTree, commitTree }) => {
+            const replayed = projectedBucketMove(replayTree, bucketId, targetId, null)
+            if (!replayed)
+              return
+            const serverTree = await api.moveBucket(bucketId, targetId, replayed.position)
+            commitTree(serverTree)
+          },
+          replayTree => projectedBucketMove(replayTree, bucketId, targetId, null)?.tree ?? replayTree,
+        ),
+      )
     },
     // Reposition a bucket among `parentId`'s children, before `beforeId` (null =
     // append). Drives both reorder (drop in a sibling gap) and un-nest (drop in a
@@ -2795,32 +2825,44 @@ ids.push(a.albumId)
       const src = findBucket(tree, bucketId)
       if (parentId != null && src && (parentId === bucketId || subtreeHas(src, parentId)))
         return
-      const t = clone(tree)
-      const rm = removeBucketNode(t, bucketId)
-      if (!rm)
+      const optimistic = projectedBucketMove(tree, bucketId, parentId, beforeId)
+      if (!optimistic)
         return
-      const list = parentId == null ? t : findBucket(t, parentId)?.children
-      if (!list)
-        return
-      const idx = beforeId ? list.findIndex(b => b.id === beforeId) : -1
-      const position = idx < 0 ? list.length : idx
-      if (idx < 0)
-        list.push(rm)
-      else
-        list.splice(idx, 0, rm)
-      setTree(t)
-      api.moveBucket(bucketId, parentId, position)
-        .catch(() => void refresh())
+      const endMutation = bucketStore.beginStructuralMutation()
+      setTree(optimistic.tree)
+      finishStructuralMutation(
+        endMutation,
+        bucketStore.enqueueStructuralMutation(
+          async ({ tree: replayTree, commitTree }) => {
+            const replayed = projectedBucketMove(replayTree, bucketId, parentId, beforeId)
+            if (!replayed)
+              return
+            const serverTree = await api.moveBucket(bucketId, parentId, replayed.position)
+            commitTree(serverTree)
+          },
+          replayTree => projectedBucketMove(replayTree, bucketId, parentId, beforeId)?.tree ?? replayTree,
+        ),
+      )
     },
     addBucket(parentId, type = 'general') {
       if (tree == null)
         return
       const position = parentId ? (findBucket(tree, parentId)?.children.length ?? 0) : tree.length
-      api.createBucket(type === 'artist' ? '새 아티스트 버킷' : '새 버킷', type)
-        .then((created) => {
+      const endMutation = bucketStore.beginStructuralMutation()
+      finishStructuralMutation(
+        endMutation,
+        bucketStore.enqueueStructuralMutation(async ({ tree: replayTree, commitTree, reconcileTree }) => {
+          const requestPosition = parentId != null ?
+            (findBucket(replayTree, parentId)?.children.length ?? position) :
+            position
+          const created = await api.createBucket(type === 'artist' ? '새 아티스트 버킷' : '새 버킷', type)
+          // Creation and nesting are two server writes. Record the root-level create
+          // before attempting move so a failed second call does not erase real state
+          // from the replay model used by later queued intents.
+          commitTree([...replayTree, created])
           if (parentId == null) {
             setTree(prev => [...(prev ?? []), created])
-            return undefined
+            return
           }
           // Optimistically nest the new bucket under the parent on the LATEST tree,
           // then persist the parent assignment — but don't overwrite the tree with the
@@ -2834,9 +2876,16 @@ ids.push(a.albumId)
               parent.children.push(created)
             return t
           })
-          return api.moveBucket(created.id, parentId, position).then(() => undefined)
-        })
-        .catch(() => void refresh())
+          try {
+            const serverTree = await api.moveBucket(created.id, parentId, requestPosition)
+            commitTree(serverTree)
+          }
+          catch (error) {
+            reconcileTree()
+            throw error
+          }
+        }),
+      )
     },
     rename(id, name) {
       if (tree == null)
@@ -3048,6 +3097,7 @@ ids.push(a.albumId)
     }
     const t = clone(tree)
     removeBucketNode(t, id)
+    const endMutation = bucketStore.beginStructuralMutation()
     setTree(t)
     setExpandedBucketIds((prev) => {
       if (!prev.has(id))
@@ -3057,7 +3107,16 @@ ids.push(a.albumId)
       return next
     })
     setPendingBucketDelete(null)
-    api.deleteBucket(id).catch(() => void refresh())
+    finishStructuralMutation(
+      endMutation,
+      bucketStore.enqueueStructuralMutation(
+        async ({ tree: replayTree, commitTree }) => {
+          await api.deleteBucket(id)
+          commitTree(projectedBucketDelete(replayTree, id))
+        },
+        replayTree => projectedBucketDelete(replayTree, id),
+      ),
+    )
   }
 
   async function onAddAlbum(album: { id: string, title: string }): Promise<AddOutcome> {

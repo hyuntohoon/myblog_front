@@ -1008,12 +1008,32 @@ export function PocketTray({ onOpenPlaybackPanel = () => {} }: { onOpenPlaybackP
   })
 
   const moreChip = moreCount > 0 && (
-    <span className={sticker ? 'schip' : light ? 'lchip' : 'tgt'} style={{ display: 'grid', placeItems: 'center', minWidth: sc(64), opacity: 0.7 }}>
+    <a
+	className={sticker ? 'schip' : light ? 'lchip' : 'tgt'}
+	href="/members/?me&tab=bucket"
+	aria-label={`숨겨진 버킷 ${moreCount}개 전체 페이지에서 보기`}
+	style={{
+          display: 'grid',
+          placeItems: 'center',
+          minWidth: sc(64),
+          opacity: sticker ?
+            1 :
+            0.7,
+          textDecoration: 'none',
+          ...(sticker ?
+              {
+                color: 'var(--color-text)',
+                background: 'color-mix(in srgb, var(--color-accent) 14%, var(--color-bg))',
+                border: '1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border))',
+              } :
+              {}),
+        }}
+    >
       <span className="mono" style={{ fontSize: sc(11) }}>
 +
 {moreCount}
       </span>
-    </span>
+    </a>
   )
 
   return (

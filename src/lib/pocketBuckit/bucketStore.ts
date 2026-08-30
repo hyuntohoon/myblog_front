@@ -65,7 +65,28 @@ let inflight: Promise<void> | null = null
 // result when it is still the latest (`seq === fetchSeq`); an earlier fetch that
 // a later `force` superseded drops its (now-stale) result instead of overwriting.
 let fetchSeq = 0
+// Structural writes (move/delete) are optimistic and may remain in flight while
+// another island asks for a full-tree refresh. Such a read can observe the server
+// before the write commits, so hold it until every pending structural write settles.
+let structuralMutations = 0
+const structuralWaiters = new Set<() => void>()
+let structuralQueue: Promise<void> = Promise.resolve()
+let structuralReplayTree: BoardBucket[] | null = null
 let seeded = false
+
+export interface StructuralMutationContext {
+  /** Expected server tree after every earlier queued structural write. */
+  tree: BoardBucket[]
+  /** Advance the expected server tree after this task succeeds. */
+  commitTree: (tree: BoardBucket[]) => void
+  /** Repaint from the expected server tree plus every still-pending intent. */
+  reconcileTree: () => void
+}
+
+type StructuralProjection = (tree: BoardBucket[]) => BoardBucket[]
+interface PendingStructuralProjection { id: number, apply: StructuralProjection }
+let structuralProjectionSeq = 0
+let pendingStructuralProjections: PendingStructuralProjection[] = []
 
 function emit(): void {
   for (const l of listeners)
@@ -113,6 +134,46 @@ function writeCache(): void {
   catch { /* quota → in-memory only */ }
 }
 
+async function waitForStructuralMutations(): Promise<void> {
+  if (structuralMutations === 0)
+    return
+  await new Promise<void>((resolve) => {
+    structuralWaiters.add(resolve)
+  })
+  return waitForStructuralMutations()
+}
+
+function mergeCurrentNodeData(projected: BoardBucket[], live: BoardBucket[]): BoardBucket[] {
+  const liveById = new Map<string, BoardBucket>()
+  const collect = (tree: BoardBucket[]) => tree.forEach((bucket) => {
+    liveById.set(bucket.id, bucket)
+    collect(bucket.children)
+  })
+  collect(live)
+  const merge = (tree: BoardBucket[]): BoardBucket[] => tree.map(bucket => ({
+    ...(liveById.get(bucket.id) ?? bucket),
+    children: merge(bucket.children),
+  }))
+  return merge(projected)
+}
+
+function replaceTree(tree: BoardBucket[]): void {
+  fetchSeq += 1
+  current = { ...current, tree, fetchedAt: Date.now(), loading: false, error: null }
+  writeCache()
+  emit()
+}
+
+function reconcileStructuralTree(): void {
+  if (!structuralReplayTree)
+    return
+  const projected = pendingStructuralProjections.reduce(
+    (tree, intent) => intent.apply(tree),
+    structuralReplayTree,
+  )
+  replaceTree(mergeCurrentNodeData(projected, current.tree ?? []))
+}
+
 // ── public store API ─────────────────────────────────────────────────────────
 export const bucketStore = {
   subscribe(cb: () => void): () => void {
@@ -142,6 +203,8 @@ export const bucketStore = {
     if (typeof window === 'undefined')
       return
     ensureSeeded()
+    if (structuralMutations > 0)
+      await waitForStructuralMutations()
     const fresh = current.tree != null && (Date.now() - current.fetchedAt) < staleMs
     if (fresh && !force)
       return
@@ -170,7 +233,7 @@ export const bucketStore = {
         emit()
       })
       .finally(() => {
-        if (seq === fetchSeq)
+        if (inflight === p)
           inflight = null
       })
     inflight = p
@@ -178,13 +241,76 @@ export const bucketStore = {
   },
   /** Optimistic local replace (a mutation patched the tree). Persists + notifies all islands. */
   setTree(tree: BoardBucket[]): void {
-    current = { ...current, tree, fetchedAt: Date.now(), error: null }
-    writeCache()
-    emit()
+    // A read issued before this write is older by definition. Invalidating its
+    // sequence prevents its full-tree response from reverting the optimistic UI.
+    replaceTree(tree)
+  },
+  /**
+   * Mark a structural write as pending. Full-tree refreshes wait for all such writes
+   * to settle, because the server snapshot is not authoritative mid-mutation.
+   * Returns an idempotent completion callback for success and failure paths.
+   */
+  beginStructuralMutation(): () => void {
+    if (structuralMutations === 0)
+      structuralReplayTree = current.tree ?? []
+    structuralMutations += 1
+    fetchSeq += 1 // also supersede a refresh that started immediately before the write
+    let completed = false
+    return () => {
+      if (completed)
+        return
+      completed = true
+      structuralMutations -= 1
+      if (structuralMutations === 0) {
+        structuralReplayTree = null
+        const waiters = [...structuralWaiters]
+        structuralWaiters.clear()
+        for (const resolve of waiters)
+          resolve()
+      }
+    }
+  },
+  /**
+   * Run structural API writes in one cross-island FIFO. Callers begin their barrier
+   * before the optimistic patch and end it only after their own failure rollback;
+   * this executor owns request order only. Rejections are returned to the caller but
+   * normalized on the private tail so one failed request cannot poison later work.
+   */
+  enqueueStructuralMutation<T>(task: (context: StructuralMutationContext) => Promise<T>, project?: StructuralProjection): Promise<T> {
+    const projection = project ? { id: ++structuralProjectionSeq, apply: project } : null
+    if (projection)
+      pendingStructuralProjections.push(projection)
+    const taskResult = structuralQueue.then(() => task({
+      tree: structuralReplayTree ?? current.tree ?? [],
+      commitTree: (tree) => {
+        structuralReplayTree = tree
+      },
+      reconcileTree: reconcileStructuralTree,
+    }))
+    const removeProjection = () => {
+      if (projection)
+        pendingStructuralProjections = pendingStructuralProjections.filter(item => item.id !== projection.id)
+    }
+    const result = taskResult.then(
+      (value) => {
+        removeProjection()
+        return value
+      },
+      (error: unknown) => {
+        removeProjection()
+        if (projection)
+          reconcileStructuralTree()
+        throw error
+      },
+    )
+    structuralQueue = result.then(() => undefined, () => undefined)
+    return result
   },
   /** Drop this scope's cache (in-memory + sessionStorage). */
   clear(): void {
     current = { tree: null, fetchedAt: 0, loading: false, error: null }
+    structuralReplayTree = null
+    pendingStructuralProjections = []
     try {
       sessionStorage.removeItem(cacheKey)
     }
