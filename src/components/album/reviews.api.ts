@@ -56,8 +56,10 @@ export async function fetchAlbumReviews(albumId: string): Promise<AlbumRatingAgg
  * saves a rating without holding the mark; neither can wipe the other's facet.
  * Passing `rating: null` / `comment: null` explicitly means "clear it".
  *
- * Returns the resulting state, or null when the state has no facet left (204,
- * the row is gone) or the write failed. Throws RatingRateLimitError on 429.
+ * Returns the resulting state, or null only when the state has no facet left
+ * (204, the row is gone). Transport and non-ok responses throw so callers never
+ * announce a write that the server did not confirm. Throws the distinct
+ * RatingRateLimitError on 429.
  */
 export async function putMyAlbumState(
 	albumId: string,
@@ -68,10 +70,12 @@ export async function putMyAlbumState(
 		body: JSON.stringify(changes),
 	})
 	if (!res)
-		return null
+		throw new Error('Album state update failed')
 	if (res.status === 429)
 		throw new RatingRateLimitError()
-	if (!res.ok || res.status === 204)
+	if (!res.ok)
+		throw new Error(`Album state update failed (${res.status})`)
+	if (res.status === 204)
 		return null
 	return (await res.json()) as MyAlbumState
 }
@@ -132,7 +136,11 @@ export async function fetchMyReviewCandidates(): Promise<ReviewCandidate[]> {
  */
 export async function deleteMyReview(albumId: string): Promise<boolean> {
 	const res = await apiFetch(`${BASE}/api/reviews/albums/${albumId}`, { method: 'DELETE' })
-	return !!res && res.status === 204
+	if (!res)
+		throw new Error('Album rating delete failed')
+	if (!res.ok || res.status !== 204)
+		throw new Error(`Album rating delete failed (${res.status})`)
+	return true
 }
 
 /** Public: a member's profile + newest-first review feed. */

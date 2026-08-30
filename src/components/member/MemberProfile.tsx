@@ -13,10 +13,11 @@
 // anonymous visitors); any error/401 leaves the page fully public.
 import type { RatingSortKey } from '@lib/ratingStats'
 import type { MemberRerating } from '../album/reratings.api'
-import type { MemberNowPlaying, MemberRating, MemberProfile as Profile } from '../album/reviews.api'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import type { MemberNowPlaying, MemberRating, MyAlbumState, MemberProfile as Profile } from '../album/reviews.api'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
-import { notifyAlbumStateChanged, openAlbum } from '@lib/entityEvents'
+import { ENT_ALBUM_STATE_CHANGED, notifyAlbumStateChanged, openAlbum } from '@lib/entityEvents'
+import type { AlbumStateChangedDetail } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
 import { isPlaceholderIdentity } from '@lib/member'
 import { RATING_SORTS, sortRatings } from '@lib/ratingStats'
@@ -101,7 +102,7 @@ function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
 	albumId: string
 	comment: string | null | undefined
 	isSelf: boolean
-	onSaved: (comment: string | null) => void
+	onSaved: (state: MyAlbumState | null) => void
 }) {
 	const [editing, setEditing] = useState(false)
 	const [value, setValue] = useState('')
@@ -121,8 +122,7 @@ function RatingCommentCell({ albumId, comment, isSelf, onSaved }: {
 		setErr(null)
 		try {
 			const res = await putMyAlbumState(albumId, { comment: trimmed || null })
-			onSaved(res?.comment ?? null)
-			notifyAlbumStateChanged({ albumId, reviewCandidate: res?.review_candidate ?? false, rating: res?.rating ?? null })
+			onSaved(res)
 			setEditing(false)
 		}
 		catch (e) {
@@ -206,7 +206,6 @@ function RatingEditPanel({ r, onCancel, onSaved, onRerated }: {
 		setErr(null)
 		const result = await startRerating(r.album_id)
 		if (result === 'ok') {
-			notifyAlbumStateChanged({ albumId: r.album_id, rating: null })
 			onRerated()
 			return
 		}
@@ -224,7 +223,6 @@ function RatingEditPanel({ r, onCancel, onSaved, onRerated }: {
 				return
 			}
 			onSaved({ rating: res.rating ?? draftRating, comment: res.comment ?? null })
-			notifyAlbumStateChanged({ albumId: r.album_id, reviewCandidate: res.review_candidate ?? false, rating: res.rating ?? null })
 		}
 		catch (e) {
 			setErr(e instanceof RatingRateLimitError ? '오늘 남길 수 있는 평가 수를 초과했습니다.' : '저장하지 못했습니다.')
@@ -294,7 +292,7 @@ function ReratingSection({ reratings, mine, isSelf, onCancelled }: {
 	reratings: MemberRerating[]
 	mine: Map<string, number>
 	isSelf: boolean
-	onCancelled: (albumId: string) => void
+	onCancelled: (albumId: string) => void | Promise<void>
 }) {
 	const [busy, setBusy] = useState<string | null>(null)
 
@@ -337,12 +335,11 @@ function ReratingSection({ reratings, mine, isSelf, onCancelled }: {
 								{isSelf && (
 									<button
 										type="button"
-										disabled={busy === r.album_id}
+										disabled={busy !== null}
 										onClick={async () => {
 											setBusy(r.album_id)
 											if (await cancelRerating(r.album_id)) {
-												notifyAlbumStateChanged({ albumId: r.album_id, rating: mine.get(r.album_id) ?? null })
-												onCancelled(r.album_id)
+												await onCancelled(r.album_id)
 											}
 											setBusy(null)
 										}}
@@ -461,11 +458,23 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	const [isSelf, setIsSelf] = useState(false)
 	const [tab, setTab] = useState<string>(initialTab)
 	const [dashSeen, setDashSeen] = useState(false)
+	const profileFetchSeq = useRef(0)
+	const [cancelSyncErrorAlbumId, setCancelSyncErrorAlbumId] = useState<string | null>(null)
+	const cancelConfirmSeq = useRef(0)
+	const cancelRetryToken = useRef(0)
+	const cancelRetryInFlight = useRef<string | null>(null)
+	const [cancelRetryingAlbumId, setCancelRetryingAlbumId] = useState<string | null>(null)
+	const forwardedCancelEvents = useRef(new Set<string>())
+	// Local row edits already patch/reload this profile. Their synchronous global
+	// event still has to reach other React roots, but must not cause a duplicate
+	// profile request here.
+	const localRatingEvent = useRef<string | null>(null)
 
 	useEffect(() => {
 		let alive = true
+		const seq = ++profileFetchSeq.current
 		fetchMemberProfile(handle).then((p) => {
-			if (!alive)
+			if (!alive || seq !== profileFetchSeq.current)
 				return
 			setProfile(p)
 			setState(p ? 'ok' : 'missing')
@@ -476,6 +485,8 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 		})
 		return () => {
 			alive = false
+			if (seq === profileFetchSeq.current)
+				profileFetchSeq.current += 1
 		}
 	}, [handle])
 
@@ -500,12 +511,76 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 	 * BETWEEN the two lists, so patching one of them in place would leave the
 	 * other stale.
 	 */
-	function reloadProfile() {
-		fetchMemberProfile(handle).then((p) => {
-			if (p)
-				setProfile(p)
-		})
+	async function reloadProfile(): Promise<{ profile: Profile | null, fresh: boolean }> {
+		const seq = ++profileFetchSeq.current
+		const p = await fetchMemberProfile(handle)
+		const fresh = seq === profileFetchSeq.current
+		if (fresh && p) {
+			setProfile(p)
+			setState('ok')
+		}
+		return { profile: p, fresh }
 	}
+
+	async function confirmCancelledRating(albumId: string): Promise<boolean> {
+		const attempt = ++cancelConfirmSeq.current
+		const { profile: confirmed } = await reloadProfile()
+		const restoredRow = confirmed?.reviews?.find(row => row.album_id === albumId && row.rating != null)
+		const reratingGone = !(confirmed?.reratings ?? []).some(row => row.album_id === albumId)
+		if (confirmed && restoredRow && reratingGone) {
+			if (!forwardedCancelEvents.current.has(albumId)) {
+				forwardedCancelEvents.current.add(albumId)
+				notifyLocalRatingChange({ albumId, rating: Number(restoredRow.rating) })
+			}
+			if (attempt === cancelConfirmSeq.current)
+				setCancelSyncErrorAlbumId(null)
+			return true
+		}
+		if (attempt === cancelConfirmSeq.current)
+			setCancelSyncErrorAlbumId(albumId)
+		return false
+	}
+
+	async function retryCancelledRating(albumId: string): Promise<void> {
+		if (cancelRetryInFlight.current === albumId)
+			return
+		const token = ++cancelRetryToken.current
+		cancelRetryInFlight.current = albumId
+		setCancelRetryingAlbumId(albumId)
+		try {
+			await confirmCancelledRating(albumId)
+		}
+		finally {
+			if (token === cancelRetryToken.current) {
+				cancelRetryInFlight.current = null
+				setCancelRetryingAlbumId(null)
+			}
+		}
+	}
+
+	function notifyLocalRatingChange(detail: AlbumStateChangedDetail) {
+		localRatingEvent.current = detail.albumId
+		notifyAlbumStateChanged(detail)
+	}
+
+	useEffect(() => {
+		if (!isSelf)
+			return
+		const onAlbumStateChanged = (event: Event) => {
+			const detail = (event as CustomEvent<AlbumStateChangedDetail>).detail
+			// undefined means a mark-only update. null is meaningful: a rating was
+			// deleted, and the profile count/stats must be refreshed.
+			if (!detail || detail.rating === undefined)
+				return
+			if (localRatingEvent.current === detail.albumId) {
+				localRatingEvent.current = null
+				return
+			}
+				void reloadProfile()
+		}
+		window.addEventListener(ENT_ALBUM_STATE_CHANGED, onAlbumStateChanged)
+		return () => window.removeEventListener(ENT_ALBUM_STATE_CHANGED, onAlbumStateChanged)
+	}, [handle, isSelf])
 
 	const dashActive = isSelf && DASH_TAB_IDS.includes(tab)
 	useEffect(() => {
@@ -623,8 +698,40 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 						reratings={reratings}
 						mine={myWithdrawn}
 						isSelf={isSelf}
-						onCancelled={reloadProfile}
+						onCancelled={async (albumId) => {
+							const restored = myWithdrawn.get(albumId)
+							forwardedCancelEvents.current.delete(albumId)
+							// DELETE 204 confirms the rerating is gone. Remove that stale row
+							// immediately, and use the author-only withdrawn score to update
+							// other roots while the public profile catches up.
+							setProfile(p => (p ? { ...p, reratings: (p.reratings ?? []).filter(row => row.album_id !== albumId) } : p))
+							setMyWithdrawn((current) => {
+								const next = new Map(current)
+								next.delete(albumId)
+								return next
+							})
+							if (restored != null) {
+								forwardedCancelEvents.current.add(albumId)
+								notifyLocalRatingChange({ albumId, rating: restored })
+							}
+							await confirmCancelledRating(albumId)
+						}}
 					/>
+					{cancelSyncErrorAlbumId && (
+						<div className="sans" role="alert" style={{ marginTop: 12, fontSize: 'var(--text-xs)', color: 'var(--color-danger, #c0392b)' }}>
+							재평가 취소는 완료됐지만 평가 목록을 확인하지 못했습니다.
+							{' '}
+							<button
+								type="button"
+								onClick={() => void retryCancelledRating(cancelSyncErrorAlbumId)}
+								disabled={cancelRetryingAlbumId === cancelSyncErrorAlbumId}
+								className="sans"
+								style={{ padding: 0, border: 'none', borderBottom: '1px solid currentColor', background: 'none', color: 'inherit', cursor: 'pointer' }}
+							>
+								{cancelRetryingAlbumId === cancelSyncErrorAlbumId ? '확인 중…' : '다시 확인'}
+							</button>
+						</div>
+					)}
 
 					<section style={{ marginTop: 34 }}>
 						<SectionTitle
@@ -732,11 +839,13 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 													onCancel={() => setEditingId(null)}
 													onRerated={() => {
 														setEditingId(null)
-														reloadProfile()
+												void reloadProfile()
+														notifyLocalRatingChange({ albumId: r.album_id, rating: null })
 													}}
 													onSaved={(patch) => {
 														setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, ...patch } : row) } : p))
 														setEditingId(null)
+														notifyLocalRatingChange({ albumId: r.album_id, rating: patch.rating })
 													}}
 												/>
 											) :
@@ -745,7 +854,15 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 													albumId={r.album_id}
 													comment={r.comment}
 													isSelf={isSelf}
-													onSaved={comment => setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, comment } : row) } : p))}
+													onSaved={(confirmed) => {
+													if (confirmed) {
+														setProfile(p => (p ? { ...p, reviews: (p.reviews ?? []).map(row => row.album_id === r.album_id ? { ...row, rating: confirmed.rating ?? row.rating, comment: confirmed.comment ?? null } : row) } : p))
+													}
+													else {
+														void reloadProfile()
+													}
+													notifyLocalRatingChange({ albumId: r.album_id, reviewCandidate: confirmed?.review_candidate, rating: confirmed?.rating ?? null })
+													}}
 												/>
 											)}
 									</div>

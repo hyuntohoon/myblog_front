@@ -109,6 +109,7 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 			if (!myHandle)
 				fetchMyHandle().then(setMyHandle)
 			await load()
+			notifyAlbumStateChanged({ albumId, reviewCandidate: res.review_candidate ?? false, rating: res.rating ?? null })
 			setEditing(false)
 		}
 		catch (e) {
@@ -121,15 +122,22 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 
 	async function remove() {
 		setSaving(true)
-		const ok = await deleteMyReview(albumId)
-		if (ok) {
-			// The mark outlives the rating server-side, so re-read rather than
-			// assuming the whole state is gone.
+		setErr(null)
+		try {
+			await deleteMyReview(albumId)
+			// DELETE touches only the public rating/comment facets. Preserve the
+			// already-loaded private mark instead of turning an ambiguous failed
+			// follow-up read into a false unmark.
 			await load()
-			setMyState((await fetchMyAlbumStates(albumId))[0] ?? null)
+			setMyState(prev => prev?.review_candidate ? { ...prev, rating: null, comment: null } : null)
+			notifyAlbumStateChanged({ albumId, rating: null })
 		}
-		setSaving(false)
-		setEditing(false)
+		catch {
+			setErr('삭제에 실패했습니다. 다시 시도해 주세요.')
+		}
+		finally {
+			setSaving(false)
+		}
 	}
 
 	/**
@@ -315,6 +323,7 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 							(
 								<button type="button" onClick={startEdit} className="album-modal__button album-modal__button--primary">평가 남기기</button>
 							)}
+					{err && !editing && <div className="sans album-rating__error">{err}</div>}
 
 					{/* 재평가 중 (FEAT-album-rerating). Shown wherever the album is opened,
 					    not only on the profile: the withdrawn score is the one thing a
