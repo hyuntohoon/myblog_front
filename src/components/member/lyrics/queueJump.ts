@@ -31,6 +31,14 @@ export async function jumpToQueueIndex(items: QueueEntry[], index: number, conte
 	const tapped = items[index]
 	if (!tapped?.uri)
 		return { ok: false, reason: 'nothing-to-send' }
+	// E4 backstop. The row renders inert for an episode, so this is unreachable
+	// from the UI — it is here because the harm is one layer down, not in the
+	// button: `readLivePlayback` classifies a playing episode as `idle`, so a jump
+	// to one would leave the session adopting "nothing is playing" over a player
+	// that is audibly running. The tail below still CARRIES episodes, which is the
+	// Step 2 invariant: what plays next is the order on screen.
+	if (tapped.mediaType === 'episode')
+		return { ok: false, reason: 'nothing-to-send' }
 
 	// This is a plain slice of what is ON SCREEN — the queue screen renders
 	// `재생 중` separately from the numbered rows, so "everything after the tap"

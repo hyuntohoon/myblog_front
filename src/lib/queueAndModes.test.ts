@@ -11,7 +11,7 @@
 //     speaker has no volume API.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as authLib from '@lib/auth'
-import { __resetPlaybackState, isSdkLoaded, queueTrack, sendPlaybackMode } from '@lib/spotifyPlayback'
+import { __resetPlaybackState, isSdkLoaded, queueTrack, sendPlaybackMode, sendPlayerCommand } from '@lib/spotifyPlayback'
 
 vi.mock('@lib/auth', () => ({ isLoggedIn: vi.fn(() => true), getAuthHeader: vi.fn(() => ({})) }))
 
@@ -144,5 +144,49 @@ describe('6e — playback modes', () => {
     await expect(sendPlaybackMode({ kind: 'shuffle', on: true }))
       .resolves
       .toEqual({ ok: false, reason: 'no-capability' })
+  })
+})
+
+// ── ARCH-playback-authority-convergence Step 3, E1 ───────────────────────────
+//
+// 403 and 404 were ONE reason (`no-capability`) on every transport command, and
+// the session answered it by degrading the tier and writing the transport probe
+// the settings matrix reads as "보통 Premium이 아닐 때". So a member whose phone
+// had gone to sleep — a 404, recoverable by opening the app — was told their
+// account could not control playback, and nothing ever cleared it.
+//
+// `sendPlayerCommand`'s own header already said this was wrong ("a transport
+// command racing a device change 404s and the bar reads as 'no capability' when
+// the real answer is 'wrong device'"). This pins the split at the provider, which
+// is the only place both codes are still visible.
+describe('transport capability splits 403 from 404', () => {
+  it('403 is no-capability — durable, the account cannot do this', async () => {
+    install({ mode: () => json({}, 403) })
+
+    await expect(sendPlayerCommand({ kind: 'next' }))
+      .resolves
+      .toEqual({ ok: false, reason: 'no-capability' })
+  })
+
+  it('404 is no-active-device — recoverable, there is just nowhere to send it', async () => {
+    install({ mode: () => json({}, 404) })
+
+    await expect(sendPlayerCommand({ kind: 'next' }))
+      .resolves
+      .toEqual({ ok: false, reason: 'no-active-device' })
+  })
+
+  it('carries the split through sendPlaybackMode, volume included', async () => {
+    // A missing device is a missing device whatever the command. Only 403 gets the
+    // volume-specific reading, and folding 404 into `unsupported-on-device` would
+    // tell the member their speaker has no volume knob when it is simply asleep.
+    install({ mode: () => json({}, 404) })
+
+    await expect(sendPlaybackMode({ kind: 'volume', percent: 50 }))
+      .resolves
+      .toEqual({ ok: false, reason: 'no-active-device' })
+    await expect(sendPlaybackMode({ kind: 'shuffle', on: true }))
+      .resolves
+      .toEqual({ ok: false, reason: 'no-active-device' })
   })
 })

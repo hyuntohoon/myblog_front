@@ -576,7 +576,19 @@ export type RepeatMode = 'off' | 'context' | 'track'
 
 export type PlayerCommandOutcome =
 	| { ok: true } |
+  /**
+   * 403 — the account or the grant cannot do this. DURABLE: nothing the member
+   * does in this tab makes it work, so a caller may disable on it.
+   */
 	{ ok: false, reason: 'no-capability' } |
+  /**
+   * 404 — Spotify has no active device to send the command to. RECOVERABLE, and
+   * that is the whole point of separating it from `no-capability`: opening the
+   * Spotify app, or starting playback anywhere, makes the very same command
+   * work. Folding it into `no-capability` is what made a member who simply had
+   * no player open look permanently un-Premium (E1).
+   */
+	{ ok: false, reason: 'no-active-device' } |
 	{ ok: false, reason: 'token', status: Exclude<StreamingStatus, 'ready'>, httpStatus?: number } |
 	{ ok: false, reason: 'transient' }
 
@@ -648,8 +660,14 @@ export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerComma
       cachedToken = null
       continue
     }
-    if (res.status === 403 || res.status === 404)
+    // SPLIT (ARCH-playback-authority-convergence Step 3). These two codes were
+    // one reason until now, and the comment 100 lines up already said why that
+    // was wrong ("a transport command racing a device change 404s and the bar
+    // reads as 'no capability' when the real answer is 'wrong device'").
+    if (res.status === 403)
       return { ok: false, reason: 'no-capability' }
+    if (res.status === 404)
+      return { ok: false, reason: 'no-active-device' }
     return { ok: false, reason: 'transient' }
   }
   return { ok: false, reason: 'transient' }
@@ -683,6 +701,12 @@ export async function sendPlaybackMode(cmd: Extract<PlayerCommand, { kind: 'shuf
     return { ok: true }
   if (r.reason === 'token')
     return { ok: false, reason: 'token' }
+  // Step 3: `no-active-device` was already in this outcome's union and had no
+  // producer, because `sendPlayerCommand` never returned it. Now it does, and it
+  // passes through unchanged for volume too — a missing device is a missing
+  // device whatever the command, never "this speaker has no volume knob".
+  if (r.reason === 'no-active-device')
+    return { ok: false, reason: 'no-active-device' }
   if (r.reason === 'no-capability') {
     if (cmd.kind === 'volume')
       return { ok: false, reason: 'unsupported-on-device' }

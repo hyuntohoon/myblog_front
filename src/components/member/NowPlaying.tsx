@@ -221,7 +221,6 @@ export function useNowPlaying() {
   const [note, setNote] = useState<string | null>(null)
   const busyRef = useRef(false)
   const controlBusyRef = useRef(false)
-  const modeBusyRef = useRef(false)
   const seekBusyRef = useRef(false)
   /**
    * Bumped once per LOCAL authoritative write (a control call whose command
@@ -373,6 +372,15 @@ export function useNowPlaying() {
       flashNote('이 계정/기기에선 재생 제어를 사용할 수 없어요')
       return
     }
+    if (r.reason === 'no-active-device') {
+      // Step 3's split reaches this card too. `recordControlFailure` records it as
+      // the RECOVERABLE state — no tier degrade, no `no-capability` probe written
+      // to the standing the settings matrix reads — and the sentence names the one
+      // thing that fixes it instead of telling the member their account cannot.
+      playbackSession.recordControlFailure(r)
+      flashNote('Spotify에 재생 중인 기기가 없어요. 앱에서 재생을 시작해 주세요')
+      return
+    }
     if (r.reason === 'token') {
       playbackSession.recordControlFailure(r)
       return
@@ -381,7 +389,7 @@ export function useNowPlaying() {
   }
 
   const playPause = async () => {
-    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
+    if (controlBusyRef.current || seekBusyRef.current)
       return
     controlBusyRef.current = true
     try {
@@ -416,7 +424,7 @@ export function useNowPlaying() {
   }
 
   const seek = async (ms: number) => {
-    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
+    if (controlBusyRef.current || seekBusyRef.current)
       return
     seekBusyRef.current = true
     try {
@@ -432,7 +440,7 @@ export function useNowPlaying() {
   }
 
   const skip = async (kind: 'next' | 'previous') => {
-    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
+    if (controlBusyRef.current || seekBusyRef.current)
       return
     controlBusyRef.current = true
     try {
@@ -464,15 +472,14 @@ export function useNowPlaying() {
    * has no volume API. `sendPlaybackMode` separates the two; this just honors it.
    */
   const setMode = async (cmd: PlaybackModeCommand) => {
-    if (controlBusyRef.current || modeBusyRef.current || seekBusyRef.current)
-      return
-    modeBusyRef.current = true
-    try {
-      await setPlaybackMode(cmd, message => onRef.current && flashNote(message))
-    }
-    finally {
-      modeBusyRef.current = false
-    }
+    // NO busy guard (ARCH-playback-authority-convergence Step 3, E3 sweep). This
+    // is the same silent-drop as `session.setMode`'s old `if (modeBusy) return
+    // null`, one layer up — and fixing only the session copy would have left the
+    // volume drag on THIS card still discarding every value issued during a
+    // request, including the last one. `playbackSession.setMode` now coalesces
+    // latest-intent per mode, which is both the correctness fix and the rate
+    // limit: a 60-event drag costs 2 requests, not 60.
+    await setPlaybackMode(cmd, message => onRef.current && flashNote(message))
   }
 
   const toggleLiked = async () => {

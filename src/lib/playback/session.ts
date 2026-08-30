@@ -40,8 +40,15 @@ import { cachedUri, prefetchUris, resolveTail } from './uris'
 export interface SessionNotice {
   tone: 'info' | 'degraded' | 'error'
   message: string
-  /** Present on failure — the shipped taxonomy, never a new string. */
-  reason?: PlayFailure['reason']
+  /**
+   * Present on failure — the shipped taxonomy, never a new string.
+   *
+   * `'no-active-device'` joins it in ARCH-playback-authority-convergence Step 3.
+   * It is not a `PlayFailure` reason (the play ladder answers a missing device by
+   * raising this tab as one, so it never surfaces there) but it IS a transport
+   * one, and surfaces branch on `reason` to decide whether to offer a retry.
+   */
+  reason?: PlayFailure['reason'] | 'no-active-device'
 }
 
 /**
@@ -101,6 +108,17 @@ export interface PlaybackSessionState {
   degraded: boolean
   device: PlaybackDevice | null
   capabilityTier: CapabilityTier
+  /**
+   * Spotify answered a command with "no active device" and none has appeared
+   * since (E1). RECOVERABLE, and deliberately NOT `capabilityTier: 'fallback'`:
+   * the tier is a durable statement about the account, this is a statement about
+   * the world right now. Folding the two is what left a member whose phone had
+   * simply gone to sleep with a dead transport until they reloaded the page.
+   *
+   * Cleared by anything that proves a device exists — a successful command, a
+   * live read that finds playback, a device list with an entry in it.
+   */
+  noActiveDevice: boolean
   devices: PlaybackDevice[] | null
   activeDeviceId: string | null
   shuffle: boolean | null
@@ -110,8 +128,21 @@ export interface PlaybackSessionState {
   reconnect: ReconnectState
   /** One sentence about the last attempt. Cleared on the next successful action. */
   notice: SessionNotice | null
-  /** A play/transport call is in flight — the forms disable transport rather than double-fire. */
+  /** A play call that CANNOT coalesce is in flight — the forms disable rather than double-fire. */
   busy: boolean
+  /**
+   * A COALESCING transport command (⏮ ⏯ ⏭, seek, a mode) is in flight.
+   *
+   * Split out of `busy` by ARCH-playback-authority-convergence Step 3. The two say
+   * different things to the UI and it matters: `busy` means "do not offer this",
+   * `transportBusy` means "this is in the air, and pressing again is fine — the
+   * session will remember your press". Leaving them merged is what made ⏭⏭ advance
+   * one track, because `busy` disabled the button the second press needed.
+   *
+   * Machinery that must NOT race a transport command still reads both — see
+   * `reissueFromCurrent`, which steps aside for either.
+   */
+  transportBusy: boolean
   /** Only the owner owns the in-page SDK device and writes playback state. */
   isOwner: boolean
   ownerPresent: boolean
@@ -165,6 +196,11 @@ interface BroadcastSessionState {
   rung: PlayRung | null
   degraded: boolean
   device: PlaybackDevice | null
+  /**
+   * Carried across tabs because it describes SPOTIFY, not this tab: a mirror whose
+   * owner just learned there is no device must not keep offering a live transport.
+   */
+  noActiveDevice: boolean
   shuffle: boolean | null
   repeat: RepeatMode | null
   volumePercent: number | null
@@ -181,6 +217,7 @@ const EMPTY: PlaybackSessionState = {
   degraded: false,
   device: null,
   capabilityTier: 'fallback',
+  noActiveDevice: false,
   devices: null,
   activeDeviceId: null,
   shuffle: null,
@@ -190,6 +227,7 @@ const EMPTY: PlaybackSessionState = {
   reconnect: false,
   notice: null,
   busy: false,
+  transportBusy: false,
   isOwner: false,
   ownerPresent: false,
   ownerRung: null,
@@ -298,8 +336,103 @@ let replaceChain: Promise<unknown> = Promise.resolve()
 let capabilityInflight: Promise<void> | null = null
 let likedTrackId: string | null = null
 let libraryBusy = false
-let modeBusy = false
 let playbackChangeAdoption: Promise<LivePlayback | null> | null = null
+
+/**
+ * Latest-intent coalescing for the commands a member can issue faster than
+ * Spotify can answer (E2, E3).
+ *
+ * What this replaces: `if (modeBusy) return null` and `if (current.busy) return
+ * null`, both of which SILENTLY discarded the press. That is the failure mode
+ * this step exists to end — a press that does nothing must never look like a
+ * press that did something. A ⏭⏭ double-tap lost the second skip; a volume drag
+ * lost every value issued during the in-flight request, including the last one,
+ * so the slider settled visually on 40 while the speaker stayed at 70.
+ *
+ * The rule, per key: run the first intent immediately; while it is in flight keep
+ * exactly ONE pending intent, the most recent. On settle, run it.
+ *
+ * Why "keep the latest" is right for both shapes, which look opposite:
+ *   · volume — the intents are values, and only the last value is wanted. Depth 1
+ *     gives last-write-wins for free, and bounds a 60-event drag to 2 requests.
+ *   · ⏭⏭ — the intents are steps, and each one is discrete. The first runs, the
+ *     second is remembered and then runs, so two presses advance two tracks. A
+ *     five-press mash advances two, which is the honest limit of depth 1 and is
+ *     still strictly better than the one it used to advance.
+ *
+ * Keys are per command FAMILY so a volume drag cannot swallow a shuffle toggle.
+ * Callers that cannot coalesce (playAt, queue-jump, replace, transfer) are not
+ * routed through here at all — they keep `state.busy` and render disabled.
+ *
+ * The pended caller gets `null`, which every call site already handles: it is the
+ * same value a mirror tab's forwarded command returns.
+ */
+type IntentKey = 'transport' | 'seek' | 'mode:shuffle' | 'mode:repeat' | 'mode:volume'
+const intentInFlight = new Set<IntentKey>()
+const intentPending = new Map<IntentKey, () => Promise<unknown>>()
+
+async function coalesced<T>(key: IntentKey, run: () => Promise<T>): Promise<T | null> {
+  if (intentInFlight.has(key)) {
+    intentPending.set(key, run)
+    return null
+  }
+  intentInFlight.add(key)
+  patch({ transportBusy: true })
+  try {
+    const result = await run()
+    // Drain in a loop rather than recursing: a member who keeps dragging while the
+    // drain runs adds another pending intent, and the last one must still land.
+    for (;;) {
+      const next = intentPending.get(key)
+      if (!next)
+        return result
+      intentPending.delete(key)
+      // Deliberately NOT returned to this caller — its own intent already ran and
+      // its outcome is what it asked about. The drained one belongs to the press
+      // that was pended, which was told `null` at the time.
+      await next()
+    }
+  }
+  finally {
+    intentInFlight.delete(key)
+    intentPending.delete(key)
+    if (intentInFlight.size === 0)
+      patch({ transportBusy: false })
+  }
+}
+
+/** Reset between tests — the coalescer is module state like every other let above. */
+export function __resetPlaybackIntents(): void {
+  intentInFlight.clear()
+  intentPending.clear()
+}
+
+/**
+ * Does anything own the player right now — coalescing or not?
+ *
+ * `own` excludes the caller's OWN in-flight intent. The deferred resume runs
+ * INSIDE the `'transport'` intent (⏯ is what pays the debt), so a predicate that
+ * counted it would have the resume step aside for itself and never reissue —
+ * a self-deadlock that reads as "the paused edit was silently dropped".
+ */
+function playerCommandInFlight(own?: IntentKey): boolean {
+  if (current.busy)
+    return true
+  for (const key of intentInFlight) {
+    if (key !== own)
+      return true
+  }
+  return false
+}
+
+/**
+ * Spotify just proved a device exists. Clears the recoverable half of the
+ * capability split; never touches `capabilityTier`, which is the durable half.
+ */
+function deviceSeen(): void {
+  if (current.noActiveDevice)
+    patch({ noActiveDevice: false })
+}
 /** Set when an event arrives while a reconcile is in flight — see `reconcileFromEvent`. */
 let adoptionDirty = false
 
@@ -346,6 +479,7 @@ function broadcastState(): void {
     rung: current.rung,
     degraded: current.degraded,
     device: current.device,
+    noActiveDevice: current.noActiveDevice,
     shuffle: current.shuffle,
     repeat: current.repeat,
     volumePercent: current.volumePercent,
@@ -373,6 +507,7 @@ function applyBroadcastState(payload: unknown): void {
     rung: state.rung,
     degraded: state.degraded,
     device: state.device,
+    noActiveDevice: state.noActiveDevice ?? false,
     shuffle: state.shuffle,
     repeat: state.repeat,
     volumePercent: state.volumePercent,
@@ -446,6 +581,10 @@ function noticeForFailure(f: PlayFailure): SessionNotice {
 function noticeForCommand(r: Exclude<PlayerCommandOutcome, { ok: true }>): SessionNotice {
   if (r.reason === 'no-capability')
     return { tone: 'error', message: '이 계정/기기에선 재생 제어를 사용할 수 없어요', reason: 'no-capability' }
+  // Step 3 — a SEPARATE sentence, because the member's next action is different.
+  // "이 계정에선 안 돼요" is a dead end; this one names the thing that fixes it.
+  if (r.reason === 'no-active-device')
+    return { tone: 'error', message: 'Spotify에 재생 중인 기기가 없어요. 앱에서 재생을 시작하면 여기서 조작할 수 있어요', reason: 'no-active-device' }
   if (r.reason === 'token')
     return { tone: 'error', message: '제어에 실패했어요. 잠시 후 다시 시도해 주세요', reason: 'token' }
   return { tone: 'error', message: '제어에 실패했어요. 잠시 후 다시 시도해 주세요', reason: 'transient' }
@@ -660,12 +799,17 @@ function onQueueChanged(): void {
  * one mechanic, so "what Spotify is executing" can only ever be established one way.
  *
  */
-async function reissueFromCurrent(): Promise<boolean> {
+async function reissueFromCurrent(ownIntent?: IntentKey): Promise<boolean> {
   if (!current.isOwner)
     return false
-  if (current.busy) {
+  if (playerCommandInFlight(ownIntent)) {
     // A play or transport call owns the session right now. Reissuing across it
     // would race two writes over one player; wait one window and look again.
+    //
+    // Reads BOTH busy flags (Step 3): transport stopped setting `busy` when it
+    // started coalescing, and gating on `busy` alone would have let a reissue run
+    // straight through an in-flight ⏭ — the exact two-writers race this guard
+    // exists to prevent, reintroduced by the split rather than by a new call site.
     reissueBusyTries += 1
     if (reissueBusyTries > QUEUE_REISSUE_BUSY_TRIES) {
       reissueBusyTries = 0
@@ -911,6 +1055,9 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
   // with a working ▶, which is the whole point of adopting external playback.
   // (`NowPlaying` folded paused into idle until 2026-08-03 and cleared its own card
   // in response to its own pause — the same trap.)
+  // A read that got this far carries a device and a track, whatever else it says:
+  // the recoverable half of the capability split is over (E1).
+  deviceSeen()
   const playing = live.state === 'playing'
   // Anchor on `readAtMs`, not `performance.now()`: Spotify stamps the position
   // somewhere inside the request window, and that field is the measured midpoint.
@@ -1148,6 +1295,13 @@ function recordControlFailure(r: Exclude<PlayerCommandOutcome, { ok: true }>): v
     rememberSpotifyTransportProbe('no-capability')
     patch({ capabilityTier: 'fallback' })
   }
+  else if (r.reason === 'no-active-device') {
+    // NEITHER of the two lines above. `rememberSpotifyTransportProbe` writes the
+    // session-storage standing that the settings matrix and the help page read as
+    // "Spotify가 컨트롤을 거절했어요 — 보통 Premium이 아닐 때", and the tier degrade
+    // is durable. A sleeping phone must not produce either claim.
+    patch({ noActiveDevice: true })
+  }
   else if (r.reason === 'token') {
     const reconnect = r.httpStatus === 502 ? true : current.reconnect
     patch({ capabilityTier: 'fallback', reconnect })
@@ -1233,9 +1387,14 @@ async function setMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome | 
   // as every other command; the owner acts locally.
   if (!current.isOwner && !await gate({ kind: 'mode', cmd }))
     return null
-  if (modeBusy)
-    return null
-  modeBusy = true
+  // COALESCED (Step 3, E3). This used to be `if (modeBusy) return null`, which
+  // threw away every value a volume drag produced while one request was in
+  // flight — the last one included, so the speaker settled on whichever value
+  // happened to win the race rather than on where the member left the slider.
+  return coalesced(`mode:${cmd.kind}` as const, () => runMode(cmd))
+}
+
+async function runMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome> {
   const before = {
     shuffle: current.shuffle,
     repeat: current.repeat,
@@ -1249,27 +1408,30 @@ async function setMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome | 
   else
     optimisticPatch = { volumePercent: cmd.percent }
   authoritativePatch(optimisticPatch)
-  try {
-    const r = await sendPlaybackMode(cmd)
-    if (r.ok)
-      return r
-    if (r.reason === 'unsupported-on-device') {
-      // Roll back to the exact pre-write value; null is only one possible device value.
-      authoritativePatch({ volumePercent: before.volumePercent })
-    }
-    else if (r.reason === 'no-capability') {
-      rememberSpotifyTransportProbe('no-capability')
-      patch({ capabilityTier: 'fallback' })
-    }
-    else {
-      // The old card reconciled transient/token failures with its ordinary one-shot.
-      void syncFromLive()
-    }
+  const r = await sendPlaybackMode(cmd)
+  if (r.ok) {
+    deviceSeen()
     return r
   }
-  finally {
-    modeBusy = false
+  if (r.reason === 'unsupported-on-device') {
+    // Roll back to the exact pre-write value; null is only one possible device value.
+    authoritativePatch({ volumePercent: before.volumePercent })
   }
+  else if (r.reason === 'no-capability') {
+    rememberSpotifyTransportProbe('no-capability')
+    patch({ capabilityTier: 'fallback' })
+  }
+  else if (r.reason === 'no-active-device') {
+    // Recoverable — roll the optimistic write back to what the device last said,
+    // and record the recoverable state WITHOUT degrading the tier (E1).
+    authoritativePatch({ ...before })
+    patch({ noActiveDevice: true, notice: noticeForCommand({ ok: false, reason: 'no-active-device' }) })
+  }
+  else {
+    // The old card reconciled transient/token failures with its ordinary one-shot.
+    void syncFromLive()
+  }
+  return r
 }
 
 async function refreshDevices() {
@@ -1280,6 +1442,11 @@ async function refreshDevices() {
       devices: r.devices,
       activeDeviceId: r.devices.find(device => device.isActive)?.id ?? null,
     })
+    // The device the last command could not find has appeared. This is the
+    // recovery the split exists for: the member opens Spotify, the picker lists
+    // it, and the transport comes back without a reload (E1).
+    if (r.devices.length > 0)
+      deviceSeen()
   }
   return r
 }
@@ -1332,24 +1499,33 @@ async function transferTo(deviceId: string, opts?: { raiseInPageFirst?: boolean 
  */
 async function seekTo(ms: number, onReanchored?: () => void): Promise<PlayerCommandOutcome | null> {
   const target = Math.max(0, Math.round(ms))
-  if (current.busy)
-    return null
   if (!current.currentItemId && !current.external)
     return null
   if (!current.isOwner && !await gate({ kind: 'seek', positionMs: target }))
     return null
+  // COALESCED (Step 3, E2) — the `if (current.busy) return null` that stood here
+  // silently discarded a scrub issued while the previous one was still in flight,
+  // and a scrub is exactly the gesture that produces those.
+  return coalesced('seek', () => runSeek(target, onReanchored))
+}
 
-  patch({ busy: true })
+async function runSeek(target: number, onReanchored?: () => void): Promise<PlayerCommandOutcome> {
+  // `busy` is NOT set here any more (Step 3). It means "an operation that cannot
+  // coalesce is in flight", and every surface renders the transport and the seek
+  // bar disabled while it is true — which, for a command that now coalesces, would
+  // block the very second press the coalescer exists to accept. A seek DRAG issues
+  // a command per pointermove, so this was the difference between the last value
+  // landing and the drag ending wherever the first request happened to finish.
   const result = await sendPlayerCommand({ kind: 'seek', positionMs: target })
   if (!result.ok) {
     recordControlFailure(result)
-    authoritativePatch({ busy: false, notice: noticeForCommand(result) })
+    authoritativePatch({ notice: noticeForCommand(result) })
     return result
   }
 
   rememberSpotifyTransportProbe('available')
+  deviceSeen()
   authoritativePatch({
-    busy: false,
     anchor: { ms: target, wallMs: performance.now() },
     notice: current.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
   })
@@ -1478,6 +1654,73 @@ async function jumpToSpotifyQueue(items: QueueEntry[], index: number, context: J
   // playing, so nothing is left dangling — say it plainly and stop.
   patch({ notice: { tone: 'error', message: '그 곡으로 넘어가지 못했어요. 잠시 후 다시 시도해 주세요', reason: 'transient' } })
   return { ok: false, reason: 'unconfirmed' }
+}
+
+async function runTogglePlay(): Promise<void> {
+  // Anything we can SEE, we can control. Gating this on `currentItemId` was the
+  // shipped bug: a track playing from an album page or a phone showed up nowhere
+  // and could not be paused from here. External playback is a first-class subject
+  // of the transport, not a read-only curiosity.
+  if (!current.currentItemId && !current.external)
+    return
+  if (!current.isOwner && !await gate({ kind: 'toggle-play' }))
+    return
+  // ARCH-playback-authority-convergence Step 2. A future-tail mutation made while
+  // paused was DEFERRED, not dropped — reissuing then would have started audio the
+  // member did not ask for. Resuming is when that debt comes due, and paying it
+  // with the reissue IS the resume: `play({uris:[current, …tail]})` starts sound
+  // and `seekTo` puts the playhead back, so the first thing heard after ▶ already
+  // follows the order on screen. A plain resume here would play the stale order.
+  if (!current.playing && queueDirty && current.isOwner && rowIndex(current.currentItemId) >= 0) {
+    if (await reissueFromCurrent('transport'))
+      return
+    // The reissue could not be delivered and has said so. Fall through to the
+    // ordinary resume: refusing to start playback because an ORDER could not be
+    // applied would be a worse failure than the stale order it is protecting.
+  }
+  // No `busy` here either — see `runSeek`. ⏯⏯ is the same double-press ⏭⏭ is.
+  const r = await sendPlayerCommand({ kind: current.playing ? 'pause' : 'play' })
+  if (!r.ok) {
+    recordControlFailure(r)
+    authoritativePatch({ notice: noticeForCommand(r) })
+    return
+  }
+  deviceSeen()
+  const nowPlaying = !current.playing
+  // AUTHORITATIVE — this is exactly the RFC's own recorded bug ("start playback
+  // and the panel shows ▶, pause and it snaps back to Ⅱ"): `sendPlayerCommand`
+  // already dispatched `MYBLOG_PLAYBACK_CHANGED` before returning here, which may
+  // already be mid-flight on a stale `adoptLive()` read. Bumping the seq now is
+  // what makes that read discard itself instead of overwriting this.
+  authoritativePatch({
+    playing: nowPlaying,
+    // Freeze the clock where it stands on pause; re-anchor from there on resume.
+    // Same trick NowPlaying uses — no extra read just to learn a position we know.
+    anchor: current.anchor ? { ms: positionNow(), wallMs: performance.now() } : null,
+    // Rung 2's quality limit is a session fact, not a one-action toast. Keep its
+    // shipped sentence through successful transport changes until a full-quality
+    // play replaces the session.
+    notice: current.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
+  })
+  if (nowPlaying)
+    scheduleBoundaryCheck()
+  else
+    clearBoundaryCheck()
+}
+
+async function runNext(): Promise<void> {
+  if (!current.currentItemId && current.external)
+    return externalAdvance('next')
+  if (current.isOwner || await gate({ kind: 'next' }))
+    await advance('skip')
+}
+
+async function runPrevious(): Promise<void> {
+  if (!current.currentItemId && current.external)
+    return externalAdvance('previous')
+  const i = rowIndex(current.currentItemId)
+  if (i > 0 && (current.isOwner || await gate({ kind: 'previous' })))
+    await playFrom(i - 1)
 }
 
 export const playbackSession = {
@@ -1633,71 +1876,23 @@ export const playbackSession = {
     return settled
   },
 
+  /**
+   * COALESCED under the shared `'transport'` key (Step 3, E2), along with
+   * next/previous: they are three presses on one row of buttons and a member
+   * mashing them expects each press to land, not to be swallowed because the
+   * previous one is still in the air.
+   */
   async togglePlay(): Promise<void> {
-    // Anything we can SEE, we can control. Gating this on `currentItemId` was the
-    // shipped bug: a track playing from an album page or a phone showed up nowhere
-    // and could not be paused from here. External playback is a first-class subject
-    // of the transport, not a read-only curiosity.
-    if (!current.currentItemId && !current.external)
-      return
-    if (!current.isOwner && !await gate({ kind: 'toggle-play' }))
-      return
-    // ARCH-playback-authority-convergence Step 2. A future-tail mutation made while
-    // paused was DEFERRED, not dropped — reissuing then would have started audio the
-    // member did not ask for. Resuming is when that debt comes due, and paying it
-    // with the reissue IS the resume: `play({uris:[current, …tail]})` starts sound
-    // and `seekTo` puts the playhead back, so the first thing heard after ▶ already
-    // follows the order on screen. A plain resume here would play the stale order.
-    if (!current.playing && queueDirty && current.isOwner && rowIndex(current.currentItemId) >= 0) {
-      if (await reissueFromCurrent())
-        return
-      // The reissue could not be delivered and has said so. Fall through to the
-      // ordinary resume: refusing to start playback because an ORDER could not be
-      // applied would be a worse failure than the stale order it is protecting.
-    }
-    patch({ busy: true })
-    const r = await sendPlayerCommand({ kind: current.playing ? 'pause' : 'play' })
-    if (!r.ok) {
-      authoritativePatch({ busy: false, notice: noticeForCommand(r) })
-      return
-    }
-    const nowPlaying = !current.playing
-    // AUTHORITATIVE — this is exactly the RFC's own recorded bug ("start playback
-    // and the panel shows ▶, pause and it snaps back to Ⅱ"): `sendPlayerCommand`
-    // already dispatched `MYBLOG_PLAYBACK_CHANGED` before returning here, which may
-    // already be mid-flight on a stale `adoptLive()` read. Bumping the seq now is
-    // what makes that read discard itself instead of overwriting this.
-    authoritativePatch({
-      busy: false,
-      playing: nowPlaying,
-      // Freeze the clock where it stands on pause; re-anchor from there on resume.
-      // Same trick NowPlaying uses — no extra read just to learn a position we know.
-      anchor: current.anchor ? { ms: positionNow(), wallMs: performance.now() } : null,
-      // Rung 2's quality limit is a session fact, not a one-action toast. Keep its
-      // shipped sentence through successful transport changes until a full-quality
-      // play replaces the session.
-      notice: current.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
-    })
-    if (nowPlaying)
-      scheduleBoundaryCheck()
-    else
-      clearBoundaryCheck()
+    await coalesced('transport', () => runTogglePlay())
   },
 
   /** Skip forward. Completion and an explicit skip are the same transition for the queue. */
   async next(): Promise<void> {
-    if (!current.currentItemId && current.external)
-      return externalAdvance('next')
-    if (current.isOwner || await gate({ kind: 'next' }))
-      await advance('skip')
+    await coalesced('transport', () => runNext())
   },
 
   async previous(): Promise<void> {
-    if (!current.currentItemId && current.external)
-      return externalAdvance('previous')
-    const i = rowIndex(current.currentItemId)
-    if (i > 0 && (current.isOwner || await gate({ kind: 'previous' })))
-      await playFrom(i - 1)
+    await coalesced('transport', () => runPrevious())
   },
 
   /**
@@ -1770,6 +1965,19 @@ export const playbackSession = {
 
   dismissNotice(): void {
     patch({ notice: null })
+  },
+
+  /**
+   * Put one sentence on the shipped notice channel from OUTSIDE the session.
+   *
+   * Added by ARCH-playback-authority-convergence Step 3 for exactly one caller:
+   * `openPlaybackLyrics`, which could fail (a URI it could not resolve) and had
+   * nowhere to say so, so it simply `return`ed and the 가사 button did nothing.
+   * A failure with no channel is the G-family bug; this is the channel, and it is
+   * the one every playback surface already renders.
+   */
+  reportNotice(notice: SessionNotice): void {
+    patch({ notice })
   },
 
   /**
@@ -1846,7 +2054,8 @@ export const playbackSession = {
     capabilityInflight = null
     likedTrackId = null
     libraryBusy = false
-    modeBusy = false
+    reissueBusyTries = 0
+    __resetPlaybackIntents()
     playbackChangeAdoption = null
     adoptionDirty = false
     const ownership = playbackOwnership.getSnapshot()
@@ -1973,9 +2182,13 @@ async function confirmCompletion(endingUri: string | null): Promise<void> {
 async function externalAdvance(cause: 'next' | 'previous'): Promise<void> {
   if (!current.isOwner && !await gate({ kind: cause }))
     return
-  patch({ busy: true })
+  // Coalesced through `next`/`previous`, so no `busy` — see `runSeek`.
   const r = await sendPlayerCommand({ kind: cause })
-  authoritativePatch({ busy: false, notice: r.ok ? null : noticeForCommand(r) })
+  if (r.ok)
+    deviceSeen()
+  else
+    recordControlFailure(r)
+  authoritativePatch({ notice: r.ok ? null : noticeForCommand(r) })
 }
 
 /**

@@ -192,14 +192,31 @@ export function PlaybackIdentity({ row, external, compact = false }: {
 export { canControlPlayback }
 export { PlaybackOwnerBanner }
 
+/**
+ * ⏮ ⏯ ⏭.
+ *
+ * `state.busy` is deliberately NOT in the disabled predicate any more
+ * (ARCH-playback-authority-convergence Step 3, E2). It was, and that is precisely
+ * what made a ⏭⏭ double-tap advance one track: the first press disabled the button
+ * for the length of the request, so the second press had nothing to hit. The
+ * session now coalesces these three (latest-intent, depth 1), so a press during a
+ * press is REMEMBERED and runs on settle. `aria-busy` says a command is in flight
+ * without taking the control away.
+ *
+ * `noActiveDevice` DOES disable, and is the other half of the same step: Spotify
+ * has told us there is nowhere to send the command, so offering it would be a lie.
+ * It is recoverable — the session clears it the moment a device appears — which is
+ * exactly why it is a separate field from `capabilityTier`, the durable one.
+ */
 export function PlaybackTransport({ state, canControl }: { state: PlaybackSessionState, canControl: boolean }) {
+  const disabled = !canControl || state.noActiveDevice || (!state.currentItemId && !state.external)
   return (
-    <div className="pbp-transport" role="group" aria-label="재생 제어">
-      <button type="button" onClick={() => void playbackSession.previous()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label="이전 곡">‹</button>
-      <button type="button" className="pbp-play-toggle" onClick={() => void playbackSession.togglePlay()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label={state.playing ? '일시정지' : '재생'}>
+    <div className="pbp-transport" role="group" aria-label="재생 제어" aria-busy={state.busy || undefined}>
+      <button type="button" onClick={() => void playbackSession.previous()} disabled={disabled} aria-label="이전 곡">‹</button>
+      <button type="button" className="pbp-play-toggle" onClick={() => void playbackSession.togglePlay()} disabled={disabled} aria-label={state.playing ? '일시정지' : '재생'}>
         {state.playing ? 'Ⅱ' : '▶'}
       </button>
-      <button type="button" onClick={() => void playbackSession.next()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label="다음 곡">›</button>
+      <button type="button" onClick={() => void playbackSession.next()} disabled={disabled} aria-label="다음 곡">›</button>
     </div>
   )
 }
@@ -224,7 +241,20 @@ export function PlaybackNotices({ state, queue }: { state: PlaybackSessionState,
       {state.notice?.tone === 'error' && (
         <div className="pbp-notice is-error" role="alert">
           <span>{state.notice.message}</span>
-          <button type="button" disabled={!retryId || state.busy} onClick={() => retryId && void playbackSession.playAt(retryId)}>다시 시도</button>
+          {/*
+            A missing device is not retried by replaying the queue here — the
+            member has to open a player first, and 다시 시도 would just fail again
+            and say the same sentence. 기기 다시 찾기 is the action that can
+            actually clear it, and succeeding at it re-enables the transport
+            (Step 3, E1).
+          */}
+          {state.notice.reason === 'no-active-device' ?
+            (
+              <button type="button" onClick={() => void playbackSession.refreshDevices()}>기기 다시 찾기</button>
+            ) :
+            (
+              <button type="button" disabled={!retryId || state.busy} onClick={() => retryId && void playbackSession.playAt(retryId)}>다시 시도</button>
+            )}
         </div>
       )}
     </>

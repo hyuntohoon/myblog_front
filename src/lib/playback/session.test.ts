@@ -303,9 +303,11 @@ describe('drop semantics', () => {
     await startAt('a')
     if (mode === 'paused') {
       const pausing = playbackSession.togglePlay()
-      expect(playbackSession.getSnapshot().busy).toBe(true)
+      // `transportBusy` since Step 3: ⏯ coalesces, so it no longer claims `busy`,
+      // the flag that makes the surfaces render the controls disabled.
+      expect(playbackSession.getSnapshot().transportBusy).toBe(true)
       await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS - 1)
-      expect(playbackSession.getSnapshot()).toMatchObject({ busy: true, playing: true })
+      expect(playbackSession.getSnapshot()).toMatchObject({ transportBusy: true, playing: true })
       await vi.advanceTimersByTimeAsync(1)
       await pausing
       expect(playbackSession.getSnapshot().playing).toBe(false)
@@ -1573,8 +1575,8 @@ describe('identity follows what actually started', () => {
 
 describe('spotify queue jump', () => {
   const items = [
-    { id: 'now', uri: 'spotify:track:now', name: 'Now', artist: null },
-    { id: 'target', uri: 'spotify:track:target', name: 'Target', artist: null },
+    { id: 'now', uri: 'spotify:track:now', name: 'Now', artist: null, mediaType: 'track' as const },
+    { id: 'target', uri: 'spotify:track:target', name: 'Target', artist: null, mediaType: 'track' as const },
   ]
 
   it('reports the jump once Spotify names the target track', async () => {
@@ -2143,7 +2145,10 @@ describe('queue execution invariant', () => {
     }))
     void playbackSession.seekTo(1_000)
     await flushPlaybackStart()
-    expect(playbackSession.getSnapshot().busy).toBe(true)
+    // `transportBusy`, not `busy`, since Step 3 split the two — a coalescing
+    // command no longer claims the flag that disables the controls. The invariant
+    // under test is unchanged: a reissue steps aside for an in-flight player call.
+    expect(playbackSession.getSnapshot().transportBusy).toBe(true)
 
     setQueue([row('a'), row('c'), row('b')])
     await vi.advanceTimersByTimeAsync(300 * 40)
@@ -2164,5 +2169,146 @@ describe('queue execution invariant', () => {
       'provider:track:track-d',
     ])
     expectInvariant()
+  })
+})
+
+// ── ARCH-playback-authority-convergence Step 3 ───────────────────────────────
+
+describe('capability splits into a durable half and a recoverable one (E1)', () => {
+  // 403 and 404 were ONE reason (`no-capability`) until this step, and the session
+  // answered it by degrading the tier and writing the transport probe that the
+  // settings matrix and the help page read as "Spotify가 컨트롤을 거절했어요 —
+  // 보통 Premium이 아닐 때". A member whose phone had simply gone to sleep got that
+  // sentence, and nothing ever cleared it.
+  async function playingExternal(): Promise<void> {
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('track-x'))
+    await playbackSession.syncFromLive()
+    await vi.advanceTimersByTimeAsync(1)
+  }
+
+  it('404 records a RECOVERABLE state: no tier degrade, no probe, and a device clears it', async () => {
+    await playbackSession.resolveCapability()
+    expect(playbackSession.getSnapshot().capabilityTier).toBe('full')
+    await playingExternal()
+
+    mocks.sendPlayerCommand.mockResolvedValue({ ok: false, reason: 'no-active-device' })
+    await playbackSession.togglePlay()
+
+    const after = playbackSession.getSnapshot()
+    expect(after.noActiveDevice).toBe(true)
+    expect(after.capabilityTier).toBe('full')
+    expect(mocks.rememberSpotifyTransportProbe).not.toHaveBeenCalledWith('no-capability')
+    expect(after.notice?.reason).toBe('no-active-device')
+
+    // The recovery: the member opens Spotify and the device list has one in it.
+    mocks.listDevices.mockResolvedValue({ ok: true, devices: [{ id: 'dev-1', name: 'Phone', isActive: true, isInPage: false }] })
+    await playbackSession.refreshDevices()
+    expect(playbackSession.getSnapshot().noActiveDevice).toBe(false)
+  })
+
+  // The control. Without it, the assertions above could pass on a session that had
+  // simply stopped degrading on ANY failure, which would be a worse bug than the
+  // one being fixed.
+  it('403 still degrades the tier and writes the probe, unchanged', async () => {
+    await playbackSession.resolveCapability()
+    await playingExternal()
+
+    mocks.sendPlayerCommand.mockResolvedValue({ ok: false, reason: 'no-capability' })
+    await playbackSession.togglePlay()
+
+    const after = playbackSession.getSnapshot()
+    expect(after.capabilityTier).toBe('fallback')
+    expect(after.noActiveDevice).toBe(false)
+    expect(mocks.rememberSpotifyTransportProbe).toHaveBeenCalledWith('no-capability')
+    expect(after.notice?.reason).toBe('no-capability')
+  })
+
+  it('an empty device list does NOT clear it — nothing appeared', async () => {
+    await playingExternal()
+    mocks.sendPlayerCommand.mockResolvedValue({ ok: false, reason: 'no-active-device' })
+    await playbackSession.togglePlay()
+    expect(playbackSession.getSnapshot().noActiveDevice).toBe(true)
+
+    mocks.listDevices.mockResolvedValue({ ok: true, devices: [] })
+    await playbackSession.refreshDevices()
+    expect(playbackSession.getSnapshot().noActiveDevice).toBe(true)
+  })
+
+  it('a live read that finds playback clears it, so recovery needs no explicit refresh', async () => {
+    await playingExternal()
+    mocks.sendPlayerCommand.mockResolvedValue({ ok: false, reason: 'no-active-device' })
+    await playbackSession.togglePlay()
+    expect(playbackSession.getSnapshot().noActiveDevice).toBe(true)
+
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('track-x'))
+    await playbackSession.syncFromLive()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(playbackSession.getSnapshot().noActiveDevice).toBe(false)
+  })
+})
+
+describe('a press made during a press is remembered, not swallowed (E2, E3)', () => {
+  it('⏭⏭ advances TWO rows — the second press is not lost to the first being busy', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+
+    // No await between them: this is the double-tap, and `sendPlayerCommand`/`play`
+    // both carry the shipped ack→apply lag, so the second press genuinely lands
+    // while the first is still in the air.
+    const first = playbackSession.next()
+    const second = playbackSession.next()
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 4)
+    await Promise.all([first, second])
+
+    expect(playbackSession.getSnapshot().currentItemId).toBe('c')
+  })
+
+  it('a volume drag issues the FIRST and the LAST value, and nothing in between', async () => {
+    await playbackSession.resolveCapability()
+    // The stub has to LAG. An instant resolve erases the very window the coalescer
+    // exists for and the test would pass against the shipped `if (modeBusy) return`.
+    mocks.sendPlaybackMode.mockImplementation(() =>
+      new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), PLAYBACK_LAG_MS)))
+
+    const drag = [10, 25, 40, 55, 70].map(percent => playbackSession.setMode({ kind: 'volume', percent }))
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 4)
+    await Promise.all(drag)
+
+    expect(mocks.sendPlaybackMode.mock.calls.map(c => c[0].percent)).toEqual([10, 70])
+    // And the session's own value is where the member left the slider, not where
+    // the race happened to stop.
+    expect(playbackSession.getSnapshot().volumePercent).toBe(70)
+  })
+
+  it('coalesces per command family, so a drag cannot swallow a shuffle toggle', async () => {
+    mocks.sendPlaybackMode.mockImplementation(() =>
+      new Promise(resolve => window.setTimeout(() => resolve({ ok: true }), PLAYBACK_LAG_MS)))
+
+    const pending = [
+      playbackSession.setMode({ kind: 'volume', percent: 10 }),
+      playbackSession.setMode({ kind: 'volume', percent: 90 }),
+      playbackSession.setMode({ kind: 'shuffle', on: true }),
+    ]
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 4)
+    await Promise.all(pending)
+
+    expect(mocks.sendPlaybackMode.mock.calls.map(c => c[0].kind).filter(k => k === 'shuffle')).toEqual(['shuffle'])
+    expect(playbackSession.getSnapshot().shuffle).toBe(true)
+    expect(playbackSession.getSnapshot().volumePercent).toBe(90)
+  })
+
+  it('reports transportBusy, not busy, so the surfaces keep the controls pressable', async () => {
+    setQueue([row('a')])
+    await startAt('a')
+
+    const pending = playbackSession.togglePlay()
+    await flushPlaybackStart()
+    const during = playbackSession.getSnapshot()
+    expect(during.transportBusy).toBe(true)
+    expect(during.busy).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 2)
+    await pending
+    expect(playbackSession.getSnapshot().transportBusy).toBe(false)
   })
 })

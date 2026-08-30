@@ -40,20 +40,41 @@ export interface QueueEntry {
 	name: string
 	/** Joined artist names, or null for an entry that has none (episode). */
 	artist: string | null
+	/**
+	 * What KIND of thing this is (E4). Episodes really are in the member's queue
+	 * and are kept, but they are not tappable: `readLivePlayback` classifies an
+	 * episode as `idle`, so a jump to one would hand the session a track it then
+	 * reports as "nothing playing". Until this field existed the row rendered as a
+	 * button purely because Spotify happens to give episodes a uri, and the two
+	 * models contradicted each other in the member's hands.
+	 *
+	 * Anything that is not explicitly an episode is a track: an unknown future
+	 * `type` stays tappable rather than silently going inert.
+	 */
+	mediaType: 'track' | 'episode'
 }
 
 export type QueueResult =
 	| { ok: true, current: QueueEntry | null, items: QueueEntry[] } |
 	/** Token mint failed — Spotify is not connected/usable at all right now. */
 	{ ok: false, reason: 'token' } |
-	/** 403/404: the grant lacks a scope, or there is no active device. */
+	/** 403: the grant lacks a scope. Durable — a retry cannot clear it. */
 	{ ok: false, reason: 'no-capability' } |
+	/**
+	 * 404: no active device. Recoverable — opening Spotify makes the same read
+	 * work, so this one DOES get a 다시 시도 (ARCH-playback-authority-convergence
+	 * Step 3; it used to be folded into `no-capability` and told the member their
+	 * account could not see a queue).
+	 */
+	{ ok: false, reason: 'no-active-device' } |
 	{ ok: false, reason: 'transient' }
 
 interface RawEntry {
 	id?: string | null
 	uri?: string | null
 	name?: string | null
+	/** `'track' | 'episode'` from Spotify. Absent on nothing it documents, read defensively. */
+	type?: string | null
 	artists?: Array<{ name?: string | null } | null> | null
 }
 
@@ -72,7 +93,13 @@ function toEntry(raw: RawEntry | null | undefined): QueueEntry | null {
 		.map(a => a?.name)
 		.filter((n): n is string => Boolean(n))
 		.join(', ')
-	return { id: String(raw.id), uri: raw.uri ? String(raw.uri) : null, name: String(raw.name), artist: artist || null }
+	return {
+		id: String(raw.id),
+		uri: raw.uri ? String(raw.uri) : null,
+		name: String(raw.name),
+		artist: artist || null,
+		mediaType: raw.type === 'episode' ? 'episode' : 'track',
+	}
 }
 
 /** Read the member's playback queue once. Never throws. */
@@ -98,8 +125,10 @@ export async function readQueue(): Promise<QueueResult> {
 		clearTimeout(timer)
 	}
 
-	if (res.status === 403 || res.status === 404)
+	if (res.status === 403)
 		return { ok: false, reason: 'no-capability' }
+	if (res.status === 404)
+		return { ok: false, reason: 'no-active-device' }
 	// 204 = no active device. Not a failure: an empty queue is a real, sayable
 	// state, and it is what the screen already renders for `items: []`.
 	if (res.status === 204)
