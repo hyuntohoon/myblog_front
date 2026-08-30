@@ -2536,7 +2536,7 @@ ids.push(a.albumId)
   // per-album badge map, listened-album hint, manual-sync poll) lives in a
   // dedicated hook (REFACTOR Step 4b). It repaints the board via `refresh` once a
   // real sync advances last_synced_at.
-  const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh)
+  const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh, isOwner)
 
   // FEAT-album-review-authoring Step 1 — my private "평론 쓸 것" marks.
   //
