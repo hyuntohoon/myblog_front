@@ -10,6 +10,7 @@ import { openAlbum } from '@lib/entityEvents'
 import { playbackQueue, withoutQueueItems, withReorderedQueueItems } from '@lib/playback/queue'
 import { playbackSession } from '@lib/playback/session'
 import { canControlPlayback } from '@lib/playback/ownership'
+import { PlaybackOwnerBanner } from './PlaybackOwnerBanner'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { resolveDbAlbumId } from '@lib/spotifyCatalog'
 import { useDismissable } from '@lib/useDismissable'
@@ -181,13 +182,15 @@ export function PlaybackIdentity({ row, external, compact = false }: {
 }
 
 /**
- * Re-exported, not defined here. The predicate moved to `lib/playback/session.ts`
+ * Re-exported, not defined here. The predicate moved to `lib/playback/ownership.ts`
  * (ARCH-playback-authority-convergence Step 1) so surfaces that cannot import this
  * panel — the lyrics viewer above all — can ask the same question instead of
  * shipping transport that bypasses the gate. This binding stays because every
- * existing importer takes it from here.
+ * existing importer takes it from here, and so does `PlaybackOwnerBanner`, which
+ * moved out for the same reason.
  */
 export { canControlPlayback }
+export { PlaybackOwnerBanner }
 
 export function PlaybackTransport({ state, canControl }: { state: PlaybackSessionState, canControl: boolean }) {
   return (
@@ -197,19 +200,6 @@ export function PlaybackTransport({ state, canControl }: { state: PlaybackSessio
         {state.playing ? 'Ⅱ' : '▶'}
       </button>
       <button type="button" onClick={() => void playbackSession.next()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label="다음 곡">›</button>
-    </div>
-  )
-}
-
-export function PlaybackOwnerBanner({ state }: { state: PlaybackSessionState }) {
-  // Exactly the inverse of `canControlPlayback` — the one case transport is
-  // withheld is the one case there is something to offer instead.
-  if (canControlPlayback(state))
-    return null
-  return (
-    <div className="pbp-owner-banner" role="status">
-      <span>다른 탭에서 재생 중이에요</span>
-      <button type="button" onClick={() => void playbackSession.takeOver()}>이 탭에서 재생하기</button>
     </div>
   )
 }

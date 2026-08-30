@@ -91,6 +91,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExterna
 import { estimateMs } from '@lib/clockEstimate'
 import { playbackSession } from '@lib/playback/session'
 import { canControlPlayback } from '@lib/playback/ownership'
+import { PlaybackOwnerBanner } from '../playback/PlaybackOwnerBanner'
 import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
@@ -1536,14 +1537,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               Mirror tab whose owner holds the in-page SDK device: the audio is in
               THAT tab, so the honest offer is the same one the Global Player makes
               — take it over — not a row of buttons that quietly do nothing here.
-              Same predicate, same wording, one source (`canControlPlayback`).
+              Same predicate, same wording, one component: `PlaybackOwnerBanner`
+              renders itself away when `canControlPlayback` is true, so the guard
+              here is the banner's own. `className` only re-lays it out for this
+              grid (ARCH-playback-authority-convergence Step 1, OQ2).
             */}
-            {!canControl && (
-              <div className="lyv-owner-banner" role="status">
-                <span>다른 탭에서 재생 중이에요</span>
-                <button type="button" onClick={() => void playbackSession.takeOver()}>이 탭에서 재생하기</button>
-              </div>
-            )}
+            <PlaybackOwnerBanner state={sessionState} className="lyv-owner-banner" />
             <div className="lyv-transport-main">
               <button
 	type="button"
