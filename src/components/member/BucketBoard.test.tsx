@@ -13,6 +13,9 @@ vi.mock('@lib/buckets', async importOriginal => ({
 	...(await importOriginal<typeof import('@lib/buckets')>()),
 	listBuckets: vi.fn(),
 	addBucketItem: vi.fn(),
+	createBucket: vi.fn(),
+	deleteBucket: vi.fn(),
+	moveBucket: vi.fn(),
 	reorderItems: vi.fn(),
 }))
 
@@ -73,6 +76,20 @@ function bucket(id: string, name: string): BoardBucket {
 	}
 }
 
+function deferred<T>() {
+	let resolve!: (value: T) => void
+	let reject!: (reason?: unknown) => void
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res
+		reject = rej
+	})
+	return { promise, resolve, reject }
+}
+
+function findStoredBucket(id: string, tree = bucketStore.getTree()): BoardBucket | null {
+	return api.findBucket(tree, id)
+}
+
 function album(itemId: string): BoardAlbum {
 	return {
 		itemId,
@@ -122,6 +139,9 @@ beforeEach(() => {
 	vi.clearAllMocks()
 	vi.mocked(api.listBuckets).mockResolvedValue([])
 	vi.mocked(api.addBucketItem).mockResolvedValue({ item: null, conflict: true })
+	vi.mocked(api.createBucket).mockResolvedValue(bucket('created', 'Created'))
+	vi.mocked(api.deleteBucket).mockResolvedValue()
+	vi.mocked(api.moveBucket).mockResolvedValue([])
 	vi.mocked(api.reorderItems).mockResolvedValue()
 	vi.mocked(spotifyApi.listRecentlyListened).mockResolvedValue({
 		items: [{
@@ -136,6 +156,160 @@ beforeEach(() => {
 			},
 		}],
 		lastSyncedAt: null,
+	})
+})
+
+describe('bucketBoard structural request queue', () => {
+	it('creates a nested bucket before issuing its queued move', async () => {
+		let resolveCreate!: (created: BoardBucket) => void
+		const creating = new Promise<BoardBucket>((resolve) => {
+			resolveCreate = resolve
+		})
+		vi.mocked(api.createBucket).mockReturnValue(creating)
+		const parent = bucket('parent', 'Parent')
+		bucketStore.setTree([parent])
+
+		render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		fireEvent.click(screen.getByTitle('하위 버킷 추가'))
+
+		await waitFor(() => expect(api.createBucket).toHaveBeenCalledWith('새 버킷', 'general'))
+		expect(api.moveBucket).not.toHaveBeenCalled()
+
+		await act(async () => {
+			resolveCreate(bucket('child', 'Child'))
+			await creating
+		})
+
+		await waitFor(() => expect(api.moveBucket).toHaveBeenCalledWith('child', 'parent', 0))
+	})
+
+	it('reconciles a created bucket to root after nesting fails without losing a later board move', async () => {
+		const creating = deferred<BoardBucket>()
+		const nesting = deferred<BoardBucket[]>()
+		const laterMove = deferred<BoardBucket[]>()
+		const parent = bucket('parent', 'Parent')
+		const later = bucket('later', 'Later')
+		const target = bucket('target', 'Target')
+		const created = bucket('created', 'Created')
+		const finalTree = [parent, { ...target, children: [later] }, created]
+		vi.mocked(api.createBucket).mockReturnValue(creating.promise)
+		vi.mocked(api.moveBucket)
+			.mockReturnValueOnce(nesting.promise)
+			.mockReturnValueOnce(laterMove.promise)
+		vi.mocked(api.listBuckets).mockResolvedValue(finalTree)
+		bucketStore.setTree([parent, later, target])
+
+		render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		openBucket('Parent')
+		fireEvent.click(within(bucketRegion('Parent')).getByTitle('하위 버킷 추가'))
+		await waitFor(() => expect(api.createBucket).toHaveBeenCalledTimes(1))
+
+		await act(async () => {
+			creating.resolve(created)
+			await creating.promise
+		})
+		await waitFor(() => expect(api.moveBucket).toHaveBeenNthCalledWith(1, 'created', 'parent', 0))
+		expect(findStoredBucket('parent')?.children.map(item => item.id)).toEqual(['created'])
+
+		openBucket('Later')
+		fireEvent.click(within(bucketRegion('Later')).getByTitle('버킷 동작'))
+		fireEvent.click(within(screen.getByRole('dialog', { name: 'Later' })).getByRole('button', { name: '이동 / 중첩' }))
+		fireEvent.click(within(screen.getByRole('dialog', { name: '이동 / 중첩할 위치' })).getByRole('button', { name: 'Target' }))
+		expect(findStoredBucket('target')?.children.map(item => item.id)).toEqual(['later'])
+		expect(api.moveBucket).toHaveBeenCalledTimes(1)
+
+		await act(async () => {
+			nesting.reject(new Error('nest failed'))
+			await Promise.resolve()
+		})
+		await waitFor(() => expect(api.moveBucket).toHaveBeenNthCalledWith(2, 'later', 'target', 0))
+		expect(bucketStore.getTree().map(item => item.id)).toEqual(['parent', 'target', 'created'])
+		expect(findStoredBucket('parent')?.children).toEqual([])
+		expect(findStoredBucket('target')?.children.map(item => item.id)).toEqual(['later'])
+		expect(api.listBuckets).not.toHaveBeenCalled()
+
+		await act(async () => {
+			laterMove.resolve(finalTree)
+			await laterMove.promise
+		})
+		await waitFor(() => expect(api.listBuckets).toHaveBeenCalledTimes(1))
+		expect(bucketStore.getTree()).toEqual(finalTree)
+	})
+
+	it('replays a later cross-island move when a nested before-gap move fails', async () => {
+		const nestedMove = deferred<BoardBucket[]>()
+		const laterMove = deferred<void>()
+		const childX = bucket('child-x', 'Child X')
+		const childY = bucket('child-y', 'Child Y')
+		const parent = bucket('parent', 'Parent')
+		parent.children = [childX, childY]
+		const rootZ = bucket('root-z', 'Root Z')
+		const initial = [parent, rootZ]
+		const laterProjection = (tree: BoardBucket[]) => {
+			const next = structuredClone(tree)
+			const rootIndex = next.findIndex(item => item.id === 'root-z')
+			const parentNode = api.findBucket(next, 'parent')
+			if (rootIndex < 0 || !parentNode)
+				return next
+			const [moved] = next.splice(rootIndex, 1)
+			const beforeIndex = parentNode.children.findIndex(item => item.id === 'child-y')
+			parentNode.children.splice(beforeIndex, 0, moved)
+			return next
+		}
+		const finalTree = laterProjection(initial)
+		vi.mocked(api.moveBucket).mockReturnValueOnce(nestedMove.promise)
+		vi.mocked(api.listBuckets).mockResolvedValue(finalTree)
+		bucketStore.setTree(initial)
+
+		const { container } = render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByTitle(TILE_TITLE)
+		openBucket('Parent')
+		const source = screen.getByRole('button', { name: 'Child Y 버킷 열기' })
+		const childXNode = container.querySelector('[data-bucket-inline-node="child-x"]')
+		const beforeChildXGap = childXNode?.parentElement?.firstElementChild
+		if (!(beforeChildXGap instanceof HTMLElement))
+			throw new Error('Missing nested gap before Child X')
+		fireEvent.dragStart(source, { dataTransfer: { effectAllowed: 'move' } })
+		fireEvent.dragOver(beforeChildXGap)
+		fireEvent.drop(beforeChildXGap)
+
+		await waitFor(() => expect(api.moveBucket).toHaveBeenCalledWith('child-y', 'parent', 0))
+		expect(findStoredBucket('parent')?.children.map(item => item.id)).toEqual(['child-y', 'child-x'])
+
+		let endLaterMove!: () => void
+		let laterRun!: Promise<void>
+		act(() => {
+			endLaterMove = bucketStore.beginStructuralMutation()
+			bucketStore.setTree(laterProjection(bucketStore.getTree()))
+			laterRun = bucketStore.enqueueStructuralMutation(
+				async ({ tree, commitTree }) => {
+					expect(findStoredBucket('parent', tree)?.children.map(item => item.id)).toEqual(['child-x', 'child-y'])
+					await laterMove.promise
+					commitTree(laterProjection(tree))
+				},
+				laterProjection,
+			)
+		})
+		expect(findStoredBucket('parent')?.children.map(item => item.id)).toEqual(['root-z', 'child-y', 'child-x'])
+
+		await act(async () => {
+			nestedMove.reject(new Error('nested move failed'))
+			await Promise.resolve()
+		})
+		await waitFor(() => {
+			expect(findStoredBucket('parent')?.children.map(item => item.id)).toEqual(['child-x', 'root-z', 'child-y'])
+		})
+		expect(api.listBuckets).not.toHaveBeenCalled()
+
+		await act(async () => {
+			laterMove.resolve()
+			await laterRun
+			endLaterMove()
+		})
+		await waitFor(() => expect(api.listBuckets).toHaveBeenCalledTimes(1))
+		expect(bucketStore.getTree()).toEqual(finalTree)
 	})
 })
 

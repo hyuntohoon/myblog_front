@@ -130,6 +130,21 @@ function pruneBucket(tree: BoardBucket[], id: string): BoardBucket[] {
     .map(b => (b.children.length ? { ...b, children: pruneBucket(b.children, id) } : b))
 }
 
+function reorderedRoots(tree: BoardBucket[], draggedId: string, targetId: string, place: 'before' | 'after'): { tree: BoardBucket[], fromIndex: number, toIndex: number } | null {
+  if (draggedId === targetId)
+    return null
+  const fromIndex = tree.findIndex(bucket => bucket.id === draggedId)
+  if (fromIndex < 0 || tree.findIndex(bucket => bucket.id === targetId) < 0)
+    return null
+  const next = [...tree]
+  const [moved] = next.splice(fromIndex, 1)
+  let insertAt = next.findIndex(bucket => bucket.id === targetId)
+  if (place === 'after')
+    insertAt += 1
+  next.splice(insertAt, 0, moved)
+  return { tree: next, fromIndex, toIndex: next.findIndex(bucket => bucket.id === draggedId) }
+}
+
 const PocketContext = createContext<PocketContextValue | null>(null)
 
 /** Access the Pocket context. Throws when used outside the provider. */
@@ -305,46 +320,59 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   }, [showUndo])
 
   const reorderBucket = useCallback(async (draggedId: string, targetId: string, place: 'before' | 'after') => {
-    if (draggedId === targetId)
-      return
     // The shared store's tree has only roots at the top level. Tray reorder operates on
     // those roots (the common flat case); a non-root chip is a no-op so we never
     // accidentally reparent it. Read the LIVE tree, not a render closure.
-    const cur = bucketStore.getTree()
-    const fromIdx = cur.findIndex(b => b.id === draggedId)
-    if (fromIdx < 0 || cur.findIndex(b => b.id === targetId) < 0)
+    const optimistic = reorderedRoots(bucketStore.getTree(), draggedId, targetId, place)
+    if (!optimistic || optimistic.toIndex === optimistic.fromIndex)
       return
-    const next = [...cur]
-    const [moved] = next.splice(fromIdx, 1)
-    let insertAt = next.findIndex(b => b.id === targetId)
-    if (place === 'after')
-      insertAt += 1
-    next.splice(insertAt, 0, moved)
-    const newIndex = next.findIndex(b => b.id === draggedId)
-    if (newIndex === fromIdx)
-      return
-    bucketStore.setTree(next) // optimistic — every island sees it
+    const endMutation = bucketStore.beginStructuralMutation()
+    bucketStore.setTree(optimistic.tree) // optimistic — every island sees it
     try {
       // a root's parent_id is null; keep it at root, new position.
-      const tree = await moveBucket(draggedId, null, newIndex)
-      bucketStore.setTree(tree) // authoritative server order
+      await bucketStore.enqueueStructuralMutation(
+        async ({ tree, commitTree }) => {
+          const replayed = reorderedRoots(tree, draggedId, targetId, place)
+          if (!replayed)
+            return
+          const serverTree = await moveBucket(draggedId, null, replayed.toIndex)
+          commitTree(serverTree)
+        },
+        tree => reorderedRoots(tree, draggedId, targetId, place)?.tree ?? tree,
+      )
+      // The optimistic splice already represents this write. A whole-tree response
+      // may predate a later mutation, so success never reapplies it (same as BucketBoard).
     }
     catch {
+      endMutation()
       void bucketStore.ensureFresh(true) // revert to the server's truth
+      return
     }
+    endMutation()
   }, [])
 
   const deleteBucket = useCallback(async (bucketId: string) => {
     closeDrawer(bucketId)
     const snapshot = bucketStore.getTree()
+    if (!findBucket(snapshot, bucketId))
+      return
+    const endMutation = bucketStore.beginStructuralMutation()
     bucketStore.setTree(pruneBucket(snapshot, bucketId)) // optimistic — every island
     try {
-      await apiDeleteBucket(bucketId)
+      await bucketStore.enqueueStructuralMutation(
+        async ({ tree, commitTree }) => {
+          await apiDeleteBucket(bucketId)
+          commitTree(pruneBucket(tree, bucketId))
+        },
+        tree => pruneBucket(tree, bucketId),
+      )
     }
     catch {
-      bucketStore.setTree(snapshot) // restore on failure
+      endMutation()
       void bucketStore.ensureFresh(true)
+      return
     }
+    endMutation()
   }, [closeDrawer])
 
   const runUndo = useCallback(() => {
