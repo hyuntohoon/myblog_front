@@ -1,5 +1,6 @@
 import type { AddItemOutcome, BoardAlbum, BoardBucket } from '@lib/buckets'
 import type { ComponentProps } from 'react'
+import { useLayoutEffect } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '@lib/buckets'
@@ -150,7 +151,7 @@ describe('bucketBoard optimistic album copy', () => {
 			bucket('bucket-b', 'B'),
 		])
 
-		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 
 		openBucket('A')
 		const recentTile = await screen.findByTitle(TILE_TITLE)
@@ -206,7 +207,7 @@ describe('bucketBoard inline disclosure ownership', () => {
 			length: history.length,
 		}
 
-		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		const { container } = render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 		await screen.findByTitle(TILE_TITLE)
 		expect(screen.getByRole('button', { name: 'A 버킷 열기' })).toHaveAttribute('aria-expanded', 'false')
 		expect(screen.getByRole('button', { name: 'B 버킷 열기' })).toHaveAttribute('aria-expanded', 'false')
@@ -229,7 +230,7 @@ describe('bucketBoard inline disclosure ownership', () => {
 		parent.children = [bucket('child', 'Child')]
 		bucketStore.setTree([parent])
 
-		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		const { container } = render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 		await screen.findByTitle(TILE_TITLE)
 		openBucket('Parent')
 		openBucket('Child')
@@ -248,7 +249,7 @@ describe('bucketBoard inline disclosure ownership', () => {
 		const name = '2026 다시 듣기 Revisit Notes 모음 Albums that reward another patient listen'
 		bucketStore.setTree([bucket('long-name', name)])
 
-		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		const { container } = render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 		await screen.findByTitle(TILE_TITLE)
 		const toggle = screen.getByRole('button', { name: `${name} 버킷 열기` })
 		expect(toggle).toHaveAttribute('aria-controls', 'bucket-inline-region-long-name')
@@ -258,7 +259,7 @@ describe('bucketBoard inline disclosure ownership', () => {
 	it('toggles the owning disclosure with Enter and Space', async () => {
 		bucketStore.setTree([bucket('keyboard', 'Keyboard')])
 
-		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 		await screen.findByTitle(TILE_TITLE)
 		const closed = screen.getByRole('button', { name: 'Keyboard 버킷 열기' })
 		fireEvent.keyDown(closed, { key: 'Enter' })
@@ -274,7 +275,7 @@ describe('bucketBoard inline disclosure ownership', () => {
 		const artist = bucket('artist', 'Artist target')
 		artist.type = 'artist'
 		bucketStore.setTree([general, artist])
-		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		const { container } = render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 		await screen.findByTitle(TILE_TITLE)
 		vi.useFakeTimers()
 		const generalToggle = screen.getByRole('button', { name: 'General target 버킷 열기' })
@@ -316,7 +317,7 @@ describe('bucketBoard inline disclosure ownership', () => {
 		child.type = 'artist'
 		parent.children = [child]
 		bucketStore.setTree([parent])
-		const { container } = render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		const { container } = render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 		await screen.findByTitle(TILE_TITLE)
 		openBucket('General parent')
 		openBucket('Artist child')
@@ -439,9 +440,86 @@ describe('bucketAlbumCardAdapter', () => {
 		target.albums = [track]
 		bucketStore.setTree([target])
 
-		render(<BucketBoard onOpen={vi.fn()} reviews={[]} />)
+		render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
 		const tile = await screen.findByTitle(`Track member — ${ALBUM_ARTIST}`)
 		expect(tile.querySelector('[data-album-card-layout]')).toBeNull()
 		expect(within(tile).getByText('트랙')).toBeInTheDocument()
+	})
+})
+
+// SEC-member-listening-data-boundary Step 1 — the 최근 들은 앨범 strip.
+//
+// Gating the FETCH alone is not enough here: this strip seeds its state from a
+// localStorage cache (`lf_crate_recent`), so a member who loaded the board while
+// the read was still ungated would keep painting the OWNER's albums from their
+// own browser forever after the server closed. These two pin both halves.
+function _cachedOwnerAlbum() {
+	return {
+		itemId: 'recent:owner-album',
+		itemType: 'album',
+		albumId: 'owner-album',
+		trackId: null,
+		reviewTargetId: null,
+		artistId: null,
+		title: '오너의 앨범',
+		artist: 'Owner Artist',
+		cover: null,
+		year: 2026,
+		alreadyReviewed: false,
+		postId: null,
+		researchSelected: false,
+	}
+}
+
+describe('bucketBoard 최근 들은 앨범 owner boundary', () => {
+	beforeEach(() => {
+		localStorage.clear()
+		vi.mocked(spotifyApi.listRecentlyListened).mockResolvedValue({ items: [], lastSyncedAt: null })
+	})
+
+	it('does not read recently-listened for a member', async () => {
+		render(<BucketBoard isOwner={false} onOpen={vi.fn()} reviews={[]} />)
+		await waitFor(() => expect(vi.mocked(api.listBuckets)).toHaveBeenCalled())
+		expect(vi.mocked(spotifyApi.listRecentlyListened)).not.toHaveBeenCalled()
+	})
+
+	// The eviction effect and the refused seed are indistinguishable AFTER mount —
+	// both end at an empty strip. This probe separates them. Its `useLayoutEffect`
+	// fires after the initial commit but before BucketBoard's passive effect, so it
+	// captures exactly the frame a member would see painted if the seed were read.
+	// Without it, dropping the seed guard and keeping only the eviction is a mutant
+	// the suite cannot kill (checked — it survived).
+	function FirstPaintProbe({ onCommit }: { onCommit: (html: string) => void }) {
+		useLayoutEffect(() => {
+			onCommit(document.body.innerHTML)
+		}, [onCommit])
+		return null
+	}
+
+	it('never paints a cache written before the gate, not even for one frame', async () => {
+		localStorage.setItem('lf_crate_recent', JSON.stringify([_cachedOwnerAlbum()]))
+		let firstPaint = ''
+		const onCommit = (html: string) => {
+			firstPaint = html
+		}
+
+		render(
+			<>
+				<BucketBoard isOwner={false} onOpen={vi.fn()} reviews={[]} />
+				<FirstPaintProbe onCommit={onCommit} />
+			</>,
+		)
+
+		expect(firstPaint).not.toContain('오너의 앨범')
+		await waitFor(() => expect(localStorage.getItem('lf_crate_recent')).toBeNull())
+	})
+
+	it('evicts a cache written before the gate instead of painting it', async () => {
+		localStorage.setItem('lf_crate_recent', JSON.stringify([_cachedOwnerAlbum()]))
+
+		render(<BucketBoard isOwner={false} onOpen={vi.fn()} reviews={[]} />)
+
+		await waitFor(() => expect(localStorage.getItem('lf_crate_recent')).toBeNull())
+		expect(screen.queryByText('오너의 앨범')).toBeNull()
 	})
 })

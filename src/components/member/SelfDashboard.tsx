@@ -186,10 +186,17 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 	}
 
 	const panels: { id: string, node: ReactNode }[] = [
-		{ id: 'overview', node: <OverviewDash npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => onSelectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} onOpenTrackLyrics={openStaticLyrics} /> },
+		// SEC-member-listening-data-boundary Step 1 — `isOwner` is the same page-vs-
+		// OWNER_HANDLE comparison the 평론 source already branches on, and
+		// MemberProfile has proved the page handle equals the AUTHED /api/me handle
+		// before this module mounts. It gates the widgets backed by an owner-global
+		// listening read (see OverviewDash's OWNER_ONLY_WIDGETS, StatsTab and
+		// BucketBoard's 최근 들은 앨범 strip). The backend's `require_owner` is the
+		// real boundary; this stops a member's browser making the request at all.
+		{ id: 'overview', node: <OverviewDash isOwner={isOwner} npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => onSelectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} onOpenTrackLyrics={openStaticLyrics} /> },
 		{ id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> },
-		{ id: 'bucket', node: <BucketBoard onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
-		{ id: 'stats', node: <StatsTab onOpen={openDetail} onOpenLyrics={openStaticLyrics} /> },
+		{ id: 'bucket', node: <BucketBoard isOwner={isOwner} onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
+		{ id: 'stats', node: <StatsTab isOwner={isOwner} onOpen={openDetail} onOpenLyrics={openStaticLyrics} /> },
 		{ id: 'integration', node: <SpotifyIntegrationTab /> },
 	]
 
