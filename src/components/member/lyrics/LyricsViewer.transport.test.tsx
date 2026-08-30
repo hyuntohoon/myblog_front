@@ -29,6 +29,14 @@ const mocks = vi.hoisted(() => ({
   readLivePlayback: vi.fn(),
   readQueue: vi.fn(),
   canControl: true,
+  /**
+   * Subscribers, so a test can push a session update into a MOUNTED viewer.
+   * `useSyncExternalStore` bails when the snapshot reference is unchanged, so
+   * `setSession` below replaces the object rather than mutating it — which is
+   * also how the real session behaves (`patch` builds a new state).
+   */
+  subscribers: new Set<() => void>(),
+  snapshot: { v: null as unknown as Record<string, unknown> },
   sessionState: {
     currentItemId: null,
     external: null,
@@ -36,6 +44,9 @@ const mocks = vi.hoisted(() => ({
     anchor: null as { ms: number, wallMs: number } | null,
     durationMs: null as number | null,
     notice: null as { tone: string, message: string } | null,
+    busy: false,
+    transportBusy: false,
+    noActiveDevice: false,
     isOwner: true,
     ownerPresent: true,
     ownerRung: null,
@@ -43,10 +54,17 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@lib/playback/session', () => ({
+  // The REAL predicate, not a stub: whether a queue row is offered while a ⏭ is
+  // in flight is the question the E4/jump tests are asking, and a stub that
+  // always said "not blocked" could not tell the two answers apart.
+  nonCoalescingBlocked: (st: { busy?: boolean, transportBusy?: boolean }) => Boolean(st.busy || st.transportBusy),
   playbackSession: {
-    subscribe: () => () => {},
-    getSnapshot: () => mocks.sessionState,
-    getServerSnapshot: () => mocks.sessionState,
+    subscribe: (cb: () => void) => {
+      mocks.subscribers.add(cb)
+      return () => mocks.subscribers.delete(cb)
+    },
+    getSnapshot: () => mocks.snapshot.v,
+    getServerSnapshot: () => mocks.snapshot.v,
     seekTo: mocks.seekTo,
     togglePlay: mocks.togglePlay,
     next: mocks.next,
@@ -98,10 +116,20 @@ async function open() {
   await act(async () => {})
 }
 
+/** Replace the snapshot (new reference) and, if a viewer is mounted, notify it. */
+function setSession(patch: Record<string, unknown>): void {
+  mocks.snapshot.v = { ...mocks.snapshot.v, ...patch }
+  act(() => {
+    for (const cb of mocks.subscribers)
+      cb()
+  })
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.canControl = true
-  Object.assign(mocks.sessionState, { playing: true, anchor: null, durationMs: null, notice: null })
+  mocks.subscribers.clear()
+  mocks.snapshot.v = { ...mocks.sessionState, playing: true, anchor: null, durationMs: null, notice: null, busy: false, transportBusy: false, noActiveDevice: false }
   mocks.currentSpotifyTrackId.mockReturnValue(null)
   mocks.getLyrics.mockResolvedValue(LYRICS)
   mocks.readLivePlayback.mockResolvedValue({ state: 'idle' })
@@ -235,10 +263,264 @@ describe('session-confirmed identity beats a viewer-local guess', () => {
     expect(mocks.getLyrics).toHaveBeenCalledWith('track-1')
 
     mocks.currentSpotifyTrackId.mockReturnValue('track-2')
-    Object.assign(mocks.sessionState, { anchor: { ms: 1_000, wallMs: 0 }, durationMs: 200_000 })
+    setSession({ anchor: { ms: 1_000, wallMs: 0 }, durationMs: 200_000 })
     // A fresh render is how a subscription update reaches the component here.
     render(<LyricsViewer spotifyTrackId="track-1" canRefresh onClose={() => {}} />)
 
     await waitFor(() => expect(mocks.getLyrics).toHaveBeenCalledWith('track-2'))
+  })
+})
+
+// ── ARCH-playback-authority-convergence Step 3 ───────────────────────────────
+
+describe('the viewer opens in the play state the session is actually in (E5)', () => {
+  // It seeded `useState(true)` on the premise that "the live entry only exists
+  // while a track is playing". 가사 is a button on a PAUSED Global Player too, so
+  // opening from there showed ⏸ over silence and ran the line scheduler forward.
+  //
+  // The seed reads `playbackSession.getSnapshot()` rather than a new field on
+  // `OpenLiveLyricsDetail`: the session is this RFC's single writer of playback
+  // truth, and growing the event would put a second copy of it on the wire.
+  it('shows ▶ and not ⏸ when the session is paused at open', async () => {
+    setSession({ playing: false })
+    await open()
+
+    expect(screen.getByLabelText('재생')).toBeTruthy()
+    expect(screen.queryByLabelText('일시정지')).toBeNull()
+  })
+
+  it('still shows ⏸ when the session is playing', async () => {
+    await open()
+
+    expect(screen.getByLabelText('일시정지')).toBeTruthy()
+  })
+})
+
+describe('paused browse does not snap back on a timer', () => {
+  async function openWithAnchor() {
+    render(
+      <LyricsViewer
+	spotifyTrackId="track-1"
+	canRefresh
+	initialProgressMs={0}
+	initialProgressAtMs={0}
+	initialDurationMs={200_000}
+	onClose={() => {}}
+      />,
+    )
+    await screen.findByText('second line')
+  }
+
+  it('keeps the browsed line while the music is stopped, past the idle window', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      setSession({ playing: false })
+      await openWithAnchor()
+
+      fireEvent.keyDown(document.querySelector('.lyv-panel')!, { key: 'ArrowDown' })
+      expect(focusedText()).toBe('second line')
+      // ↩ is still offered — the way back exists, it just is not automatic.
+      expect(screen.getByLabelText('현재 줄로 돌아가기')).toBeTruthy()
+
+      // Four times the browse-idle window. Before Step 3 the timer fired at 3s and
+      // yanked the reader back to line 1, over and over, for as long as the viewer
+      // stayed open on a stopped player.
+      //
+      // `act` around the advance is load-bearing, not decoration: without it the
+      // timer's `setFocus` has fired but React has not re-rendered, so the DOM
+      // still shows the browsed line and this assertion passes no matter what the
+      // timer did. Verified by mutation — restoring the timer left this test green
+      // until the wrapper went in.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000)
+      })
+      expect(focusedText()).toBe('second line')
+      // And the browse is still ON, rather than silently ended with the focus
+      // happening to sit where it was.
+      expect(screen.getByLabelText('현재 줄로 돌아가기')).toBeTruthy()
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('snaps back on the idle timer while the music IS playing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      await openWithAnchor()
+
+      fireEvent.keyDown(document.querySelector('.lyv-panel')!, { key: 'ArrowDown' })
+      expect(focusedText()).toBe('second line')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000)
+      })
+      await waitFor(() => expect(focusedText()).toBe('first line'))
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('survives a re-anchor while still paused', async () => {
+    // A visibility return or a `MYBLOG_PLAYBACK_CHANGED` reconcile re-anchors the
+    // held position. `applyAnchor` used to exit the browse unconditionally, so
+    // removing the idle timer alone would have moved the yank from a timer to
+    // whenever the session next spoke — the same failure, harder to see.
+    mocks.currentSpotifyTrackId.mockReturnValue('track-1')
+    setSession({ playing: false })
+    await openWithAnchor()
+
+    fireEvent.keyDown(document.querySelector('.lyv-panel')!, { key: 'ArrowDown' })
+    expect(focusedText()).toBe('second line')
+
+    setSession({ playing: false, anchor: { ms: 3_000, wallMs: performance.now() } })
+
+    expect(focusedText()).toBe('second line')
+    expect(screen.getByLabelText('현재 줄로 돌아가기')).toBeTruthy()
+  })
+
+  it('returns to follow when playback resumes', async () => {
+    // The session has to NAME the track for its play state to reach the viewer:
+    // the adoption effect is keyed on `currentSpotifyTrackId()`, and a session that
+    // cannot say what is sounding has nothing to hand over.
+    mocks.currentSpotifyTrackId.mockReturnValue('track-1')
+    setSession({ playing: false })
+    await openWithAnchor()
+
+    fireEvent.keyDown(document.querySelector('.lyv-panel')!, { key: 'ArrowDown' })
+    expect(focusedText()).toBe('second line')
+
+    // The resume arrives as a session update to the MOUNTED viewer: the play state
+    // and the fresh position land on one patch, and `applyAnchor` exits the browse
+    // because it landed with `isPlaying`. Without that branch's `isPlaying` arm the
+    // lyrics stay parked on the browsed line while the song runs on.
+    setSession({ playing: true, anchor: { ms: 0, wallMs: performance.now() } })
+    await waitFor(() => expect(focusedText()).toBe('first line'))
+  })
+})
+
+describe('the queue screen agrees with what the session can adopt (E4)', () => {
+  const track = { id: 't1', uri: 'spotify:track:t1', name: 'A Song', artist: 'Someone', mediaType: 'track' as const }
+  const episode = { id: 'e1', uri: 'spotify:episode:e1', name: 'An Episode', artist: null, mediaType: 'episode' as const }
+
+  it('renders an episode row inert while a track row stays tappable', async () => {
+    mocks.readQueue.mockResolvedValue({ ok: true, current: null, items: [episode, track] })
+    await open()
+
+    fireEvent.click(screen.getByLabelText('대기열'))
+    const rows = await screen.findAllByText(/A Song|An Episode/)
+    const episodeRow = rows.find(n => n.textContent === 'An Episode')!.closest('.lyv-queue-row')!
+    const trackRow = rows.find(n => n.textContent === 'A Song')!.closest('.lyv-queue-row')!
+
+    // The episode is still LISTED — it really is in the member's queue, and hiding
+    // it would make this screen disagree with the Spotify app.
+    expect(episodeRow.tagName).toBe('DIV')
+    expect(trackRow.tagName).toBe('BUTTON')
+  })
+
+  it('offers a retry for a missing device, which is recoverable, unlike a missing scope', async () => {
+    mocks.readQueue.mockResolvedValue({ ok: false, reason: 'no-active-device' })
+    await open()
+
+    fireEvent.click(screen.getByLabelText('대기열'))
+    await screen.findByText('재생 중인 기기가 없어요. Spotify 앱에서 재생을 시작해 주세요')
+    expect(screen.getByText('다시 시도')).toBeTruthy()
+  })
+
+  it('offers no retry for a missing scope', async () => {
+    mocks.readQueue.mockResolvedValue({ ok: false, reason: 'no-capability' })
+    await open()
+
+    fireEvent.click(screen.getByLabelText('대기열'))
+    await screen.findByText('이 계정에서는 대기열을 볼 수 없어요')
+    expect(screen.queryByText('다시 시도')).toBeNull()
+  })
+})
+
+describe('a queue jump and the transport cannot race over one player', () => {
+  // REVIEW BLOCKED the first commit on this. `origin/main` used one local
+  // `transportBusy` as a SHARED interlock — ⏮⏯⏭ and a queue-row jump each set it
+  // and each refused while the other held it. Step 3 removed the transport half
+  // (correctly — that is E2) and removed the jump half too (not correctly), and
+  // nothing at the session replaced it. Both are `play({uris})`; whichever lands
+  // last at Spotify owns the audio, while the session has already recorded the
+  // other one as current.
+  const track = (id: string) => ({ id, uri: `spotify:track:${id}`, name: id, artist: null, mediaType: 'track' as const })
+
+  it('renders the queue rows inert while a transport command is in flight', async () => {
+    mocks.readQueue.mockResolvedValue({ ok: true, current: null, items: [track('t1'), track('t2')] })
+    await open()
+    fireEvent.click(screen.getByLabelText('대기열'))
+    await screen.findByText('t1')
+
+    const row = () => screen.getByText('t1').closest('.lyv-queue-row') as HTMLButtonElement
+    expect(row().disabled).toBe(false)
+
+    // A ⏭ is in the air. It goes through `playFrom` → `play({uris: tail})`.
+    setSession({ transportBusy: true })
+    expect(row().disabled).toBe(true)
+
+    setSession({ transportBusy: false })
+    expect(row().disabled).toBe(false)
+  })
+
+  it('renders them inert while a non-coalescing play is in flight too', async () => {
+    mocks.readQueue.mockResolvedValue({ ok: true, current: null, items: [track('t1')] })
+    await open()
+    fireEvent.click(screen.getByLabelText('대기열'))
+    await screen.findByText('t1')
+
+    setSession({ busy: true })
+    expect((screen.getByText('t1').closest('.lyv-queue-row') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('still leaves ⏭ pressable while a transport command is in flight — that is E2', async () => {
+    await open()
+    setSession({ transportBusy: true })
+
+    // The whole point of the split: the thing that CAN coalesce stays live.
+    expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
+    expect(screen.getByLabelText('다음 곡').getAttribute('aria-busy')).toBe('true')
+  })
+
+  it('disables the transport when Spotify says there is no device to send to', async () => {
+    await open()
+    expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
+
+    // The same state the Global Player disables on. Two surfaces, one answer.
+    setSession({ noActiveDevice: true })
+    expect(screen.getByLabelText('다음 곡')).toBeDisabled()
+
+    setSession({ noActiveDevice: false })
+    expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
+  })
+})
+
+describe('a paused re-anchor still moves the line when nobody is browsing', () => {
+  // Review caught this: gating `applyAnchor` on `!isPlaying` alone also skipped
+  // `setFocus`, and the follow scheduler bails while paused — so nothing
+  // recomputed the highlight. A manual ↻ on a paused track became a visual no-op,
+  // which is the opposite of what the call site's own comment promises.
+  it('moves the highlight on a paused re-anchor with no browse in progress', async () => {
+    mocks.currentSpotifyTrackId.mockReturnValue('track-1')
+    setSession({ playing: false })
+    render(
+      <LyricsViewer
+	spotifyTrackId="track-1"
+	canRefresh
+	initialProgressMs={0}
+	initialProgressAtMs={performance.now()}
+	initialDurationMs={200_000}
+	onClose={() => {}}
+      />,
+    )
+    await screen.findByText('second line')
+    expect(focusedText()).toBe('first line')
+
+    // The member scrubbed to 1:00 on their phone; ↻ / a reconcile re-anchors.
+    setSession({ playing: false, anchor: { ms: 60_000, wallMs: performance.now() } })
+
+    await waitFor(() => expect(focusedText()).toBe('second line'))
   })
 })

@@ -75,6 +75,7 @@ const EMPTY_SESSION_STATE: PlaybackSessionState = {
   degraded: false,
   device: null,
   capabilityTier: 'fallback',
+  noActiveDevice: false,
   devices: null,
   activeDeviceId: null,
   shuffle: null,
@@ -84,6 +85,7 @@ const EMPTY_SESSION_STATE: PlaybackSessionState = {
   reconnect: false,
   notice: null,
   busy: false,
+  transportBusy: false,
   isOwner: false,
   ownerPresent: false,
   ownerRung: null,
@@ -323,14 +325,13 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     expect(playback.readLivePlayback).toHaveBeenCalledTimes(readsBefore)
   })
 
-  it('keeps seek mutually exclusive with local transport and mode writes', async () => {
+  it('keeps seek mutually exclusive with local transport writes', async () => {
     const result = await mountReady()
     let resolveSeek!: (value: { ok: true }) => void
     session.seekTo.mockReturnValueOnce(new Promise((resolve) => {
       resolveSeek = resolve
     }) as never)
     player.sendPlayerCommand.mockClear()
-    session.setMode.mockClear()
 
     act(() => {
       void result.current.seek(20_000)
@@ -338,15 +339,53 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     act(() => {
       void result.current.playPause()
       void result.current.skip('next')
-      void result.current.setMode({ kind: 'shuffle', on: true })
     })
 
+    // Still excluded: `playPause`/`skip` issue a DIRECT `sendPlayerCommand` here and
+    // then apply their own live read, so running one across an in-flight seek races
+    // two writers over this card's anchor.
     expect(player.sendPlayerCommand).not.toHaveBeenCalled()
-    expect(session.setMode).not.toHaveBeenCalled()
     await act(async () => resolveSeek({ ok: true }))
   })
 
-  it('does not start seek while a direct transport or mode write is in flight', async () => {
+  // E3, the sweep half (ARCH-playback-authority-convergence Step 3). `setMode` used
+  // to sit behind the same interlock, in BOTH directions — which is the local twin
+  // of `session.setMode`'s old `if (modeBusy) return null`. Fixing only the session
+  // copy would have left a volume drag on this card still discarding every value
+  // issued while another write was in flight, the last one included. Shuffle,
+  // repeat and volume touch neither the playhead nor the anchor, so there is no
+  // race to protect here — and the session coalesces them latest-intent, which is
+  // both the correctness fix and the rate limit.
+  it('lets a mode write through while a seek is in flight, and vice versa', async () => {
+    const result = await mountReady()
+    let resolveSeek!: (value: { ok: true }) => void
+    session.seekTo.mockReturnValueOnce(new Promise((resolve) => {
+      resolveSeek = resolve
+    }) as never)
+    session.setMode.mockClear()
+
+    act(() => {
+      void result.current.seek(20_000)
+    })
+    await act(async () => result.current.setMode({ kind: 'volume', percent: 40 }))
+    expect(session.setMode).toHaveBeenCalledWith({ kind: 'volume', percent: 40 })
+    await act(async () => resolveSeek({ ok: true }))
+
+    // And the other direction: a seek is not blocked by an in-flight mode write.
+    let resolveMode!: (value: { ok: true }) => void
+    session.setMode.mockReturnValueOnce(new Promise((resolve) => {
+      resolveMode = resolve
+    }) as never)
+    session.seekTo.mockClear()
+    act(() => {
+      void result.current.setMode({ kind: 'volume', percent: 70 })
+    })
+    await act(async () => result.current.seek(30_000))
+    expect(session.seekTo).toHaveBeenCalledWith(30_000, expect.any(Function))
+    await act(async () => resolveMode({ ok: true }))
+  })
+
+  it('does not start seek while a direct transport write is in flight', async () => {
     const result = await mountReady()
     let resolveTransport!: (value: { ok: true }) => void
     player.sendPlayerCommand.mockReturnValueOnce(new Promise((resolve) => {
@@ -360,17 +399,6 @@ describe('useNowPlaying — playbackSession convergence (Step 3b)', () => {
     await act(async () => result.current.seek(20_000))
     expect(session.seekTo).not.toHaveBeenCalled()
     await act(async () => resolveTransport({ ok: true }))
-
-    let resolveMode!: (value: { ok: true }) => void
-    session.setMode.mockReturnValueOnce(new Promise((resolve) => {
-      resolveMode = resolve
-    }) as never)
-    act(() => {
-      void result.current.setMode({ kind: 'shuffle', on: true })
-    })
-    await act(async () => result.current.seek(30_000))
-    expect(session.seekTo).not.toHaveBeenCalled()
-    await act(async () => resolveMode({ ok: true }))
   })
 
   it('converges track identity + anchor from a play started in the Playback Bucket panel, without a page reload', async () => {

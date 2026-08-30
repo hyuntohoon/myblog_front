@@ -3,8 +3,9 @@
 // The screen's contract is that NO response shape may close the viewer or blank
 // the lyrics behind it, so every branch has to land on a typed result rather
 // than throw. The two that are easy to get wrong are pinned first: 204 (no
-// active device) is an EMPTY queue, not a failure, and 403/404 is the one
-// outcome the screen must phrase as "can't read this" rather than "retry".
+// active device) is an EMPTY queue, not a failure, and 403 is the one outcome the
+// screen must phrase as "can't read this" rather than "retry" — 404 is the
+// opposite, and ARCH-playback-authority-convergence Step 3 split it back out.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as playbackLib from '@lib/spotifyPlayback'
 import { readQueue } from './queue.api'
@@ -42,8 +43,33 @@ describe('readQueue outcome mapping', () => {
     expect(r.ok).toBe(true)
     if (!r.ok)
       throw new Error('expected ok')
-    expect(r.current).toEqual({ id: 'trk1', uri: 'spotify:track:trk1', name: 'Some Track', artist: 'Someone' })
+    expect(r.current).toEqual({ id: 'trk1', uri: 'spotify:track:trk1', name: 'Some Track', artist: 'Someone', mediaType: 'track' })
     expect(r.items.map(i => i.id)).toEqual(['trk2', 'trk3'])
+  })
+
+  // E4 (Step 3). The row is only inert if the mapping SAYS it is an episode; the
+  // screen has nothing else to go on, since Spotify gives episodes a uri like any
+  // other entry. An unknown/absent `type` stays a track rather than silently going
+  // inert, so a future Spotify type does not blank the queue.
+  it('carries the media type, defaulting anything that is not an episode to track', async () => {
+    respond(200, {
+      currently_playing: null,
+      queue: [
+        entry({ id: 'ep', type: 'episode', artists: [] }),
+        entry({ id: 'tr', type: 'track' }),
+        entry({ id: 'unknown', type: undefined }),
+        entry({ id: 'future', type: 'audiobook-chapter' }),
+      ],
+    })
+    const r = await readQueue()
+    if (!r.ok)
+      throw new Error('expected ok')
+    expect(r.items.map(i => [i.id, i.mediaType])).toEqual([
+      ['ep', 'episode'],
+      ['tr', 'track'],
+      ['unknown', 'track'],
+      ['future', 'track'],
+    ])
   })
 
   it('joins multiple artists into one subtitle', async () => {
@@ -101,9 +127,12 @@ describe('readQueue outcome mapping', () => {
     expect(await readQueue()).toEqual({ ok: false, reason: 'no-capability' })
   })
 
-  it('404 → no-capability', async () => {
+  // Step 3 SPLIT these. 403 is the account/grant and is durable; 404 is "no active
+  // device" and clears the moment the member opens Spotify — folded together, a
+  // sleeping phone told them their account could not see a queue at all.
+  it('404 → no-active-device, distinct from 403', async () => {
     respond(404, {})
-    expect(await readQueue()).toEqual({ ok: false, reason: 'no-capability' })
+    expect(await readQueue()).toEqual({ ok: false, reason: 'no-active-device' })
   })
 
   it('500 → transient', async () => {

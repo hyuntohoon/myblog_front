@@ -89,7 +89,7 @@ import type { QueueEntry, QueueResult } from './queue.api'
 import type { JumpContext } from './queueJump'
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
-import { playbackSession } from '@lib/playback/session'
+import { nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
 import { canControlPlayback } from '@lib/playback/ownership'
 import { PlaybackOwnerBanner } from '../playback/PlaybackOwnerBanner'
 import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
@@ -475,9 +475,20 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // FEAT-lyrics-sync-precision Step 2 — is playback actually running? Until
   // now the viewer had no pause concept at all (unlike NowPlaying, which
   // passes `!paused` to `useClockEstimate`), so a 30s pause left the estimate
-  // 30s ahead until something else happened to fire. Seeded true: the live
-  // entry only exists while a track is playing.
-  const [playing, setPlaying] = useState(true)
+  // 30s ahead until something else happened to fire.
+  //
+  // E5 (ARCH-playback-authority-convergence Step 3): it used to be seeded `true`
+  // on the premise that "the live entry only exists while a track is playing".
+  // That premise is false — 가사 is a button on a PAUSED Global Player too, and
+  // opening it from there showed ⏸ and ran the scheduler over silence.
+  //
+  // The fix is NOT another field on `OpenLiveLyricsDetail`. The session already
+  // holds the answer and is the RFC's single writer of playback truth, so the
+  // seed reads its snapshot: growing the event would put a second copy of the
+  // play state on the wire, which is the thing this RFC exists to stop. Static and
+  // debug entries (`!canRefresh`) have no relationship to the session and keep the
+  // old optimistic seed.
+  const [playing, setPlaying] = useState(() => (canRefresh ? playbackSession.getSnapshot().playing : true))
 
   /**
    * The accuracy series (FEAT-lyrics-sync-precision Step 2). Every event-driven
@@ -534,6 +545,17 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     setSuspended(false)
   }
 
+  // PAUSED BROWSE, the other half (Step 3). `armSuspend` refuses to set a timer
+  // while the music is stopped, so something has to end the browse when the music
+  // comes back — and that something is `applyAnchor`, which already exits the
+  // browse whenever it lands with `isPlaying`. A resume IS a re-anchor: the play
+  // state and the fresh position arrive on the same session patch.
+  //
+  // A separate false→true edge effect was written here first and then REMOVED. It
+  // could not be reached except when a resume carried a null position, and on that
+  // path it would have snapped the reader to an anchor gone stale by the length of
+  // the pause — a worse answer than leaving the browse alone. Two mechanisms for
+  // one rule, one of them untestable and wrong where it applied.
   const armSuspend = () => {
     // With no trackable clock seed there is no live position to return to, so
     // navigation remains free and no suspend UI/timer is created.
@@ -541,6 +563,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       return
     clearSuspendTimer()
     setSuspended(true)
+    // PAUSED BROWSE (ARCH-playback-authority-convergence Step 3). No idle timer
+    // while the music is stopped. The 3s snap-back is a courtesy for a member who
+    // scrolled ahead of a RUNNING track and stopped touching it — it returns them
+    // to where the song now is. With the player paused the song is not anywhere
+    // new, so the timer only yanks the reader off the line they were reading, over
+    // and over, for as long as they keep the viewer open. Follow resumes on ↩ or
+    // when playback resumes (the effect below), never on a timer over silence.
+    if (!playing)
+      return
     // Every browse input extends the timer, so the ring restarts with it.
     setRingRestart(k => k + 1)
     suspendTimer.current = window.setTimeout(returnToFollow, BROWSE_IDLE_MS)
@@ -561,19 +592,48 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // focus from it. Centralizes the "position → anchor + focus" step used by
   // same-track re-sync. `readAtMs` is the wall instant the
   // position was read (defaults to now for callers without one).
-  const applyAnchor = (progressMs: number | null, readAtMs?: number) => {
+  /**
+   * `isPlaying` is passed rather than read from the `playing` state because both
+   * call sites `setPlaying(...)` immediately before calling this, and the closure
+   * here would still hold the value from before that press.
+   */
+  const applyAnchor = (progressMs: number | null, readAtMs: number | undefined, isPlaying: boolean) => {
     if (progressMs == null)
       return
     const next: ClockAnchor = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
     setAnchor(next)
-    clearSuspendTimer()
-    setSuspended(false)
     // Re-arm end detection only when the fresh position sits meaningfully
     // before the end. A same-track read still pinned inside the grace window
     // (a player stuck reporting `playing` at ≈duration) keeps the auto
     // re-sync spent — one automatic read, never a hammer; manual ↻ remains.
     if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
       endSynced.current = false
+    // PAUSED BROWSE (ARCH-playback-authority-convergence Step 3). While the music
+    // is stopped AND the member is browsing, a re-anchor updates where the player
+    // is held and nothing more.
+    //
+    // This half is easy to miss and undoes the other one completely: dropping the
+    // 3s idle timer stops the browse ending on a timer, but every visibility
+    // return and every `MYBLOG_PLAYBACK_CHANGED` reconcile lands here, and this
+    // function exited the browse unconditionally. So the reader was still yanked
+    // off their line — just on someone else's schedule instead of a timer's.
+    // The RFC names exactly two triggers that resume follow: ↩, and playback
+    // resuming. A re-anchor is neither.
+    //
+    // `suspended` is load-bearing in that condition, and review caught it missing:
+    // gating on `!isPlaying` alone also skipped `setFocus`, and the follow
+    // scheduler bails while paused, so NOTHING recomputed the line. A manual ↻ on
+    // a paused track — the case the caller's own comment calls "the frozen line is
+    // exact rather than guessed" — became a visual no-op.
+    if (!isPlaying && suspended) {
+      // Kill a countdown armed while the music WAS running, though. `armSuspend`
+      // refuses to start one while paused, but a browse begun a second before the
+      // pause already has one, and it would fire the snap-back over silence.
+      clearSuspendTimer()
+      return
+    }
+    clearSuspendTimer()
+    setSuspended(false)
     if (n > 0)
       setFocus(focusIndexForMs(segs, estimateMs(next) + leadMs))
   }
@@ -691,7 +751,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           // position, so the frozen line is exact rather than guessed, and a
           // later resume resumes from truth.
           logResidual(source, r.progressMs, r.readAtMs, r.state)
-          applyAnchor(r.progressMs, r.readAtMs)
+          applyAnchor(r.progressMs, r.readAtMs, r.state === 'playing')
         }
       }
       else if (r.state === 'idle') {
@@ -749,22 +809,19 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // Only while this viewer is bound to live playback — the static/debug entry has
   // no relationship to the session and must not inherit its sentences.
   const sessionNotice = canRefresh ? sessionState.notice?.message ?? null : null
-  const [transportBusy, setTransportBusy] = useState(false)
+  // The session owns this now (ARCH-playback-authority-convergence Step 3). Step 1
+  // kept a local boolean and DISABLED the buttons on it, which is honest but still
+  // loses the second press of a ⏭⏭ — there is nothing left to press. Transport
+  // coalesces at the session (latest-intent, depth 1), so the buttons stay live and
+  // this only says a command is in the air. Reading `sessionState.transportBusy`
+  // rather than counting locally also makes the indicator right when the press came
+  // from another surface — the Global Player two inches away, or another tab.
+  const transportBusy = sessionState.transportBusy
 
   const runTransport = async (action: () => Promise<unknown>) => {
-    // Busy DISABLES rather than silently returning (RFC principle 6): a press that
-    // does nothing must never look like a press that did something. The buttons
-    // below read `transportBusy`, so the guard here is only the re-entrancy
-    // backstop for a keyboard repeat that outruns a render.
-    if (transportBusy || !canControl)
+    if (!canControl)
       return
-    setTransportBusy(true)
-    try {
-      await action()
-    }
-    finally {
-      setTransportBusy(false)
-    }
+    await action()
   }
 
   // FEAT-lyrics-viewer-playback Step 3 — tapping a queue row. The chain still
@@ -773,11 +830,22 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // whatever is genuinely playing — so a failed jump ends as a sentence, never as
   // a viewer stranded on a track that is not sounding.
   const jumpTo = async (index: number) => {
-    if (transportBusy || !canControl)
+    // A jump CANNOT coalesce (Step 3): it replaces Spotify's context with a whole
+    // tail, so running a second one behind the first would issue two competing
+    // lists. It therefore keeps the shipped rule for anything that cannot
+    // coalesce — the rows RENDER disabled while one is in flight, and this guard
+    // is the backstop for a press that outruns a render.
+    //
+    // `nonCoalescingBlocked` covers the OTHER direction, which review caught:
+    // ⏭ and the queue rows are on the same screen (the transport bar renders on
+    // the queue view too), a ⏭ goes through `playFrom` → `play({uris: tail})`,
+    // and until this guard went in a row tap during that flight issued a second
+    // competing `play`. Whichever landed last owned the audio, while the session
+    // had already recorded the ⏭ target as current.
+    if (jumpingIndex != null || !canControl || nonCoalescingBlocked(sessionState))
       return
     if (queue.k !== 'ready' || !queue.data.ok)
       return
-    setTransportBusy(true)
     setJumpingIndex(index)
     try {
       const r = await playbackSession.jumpToSpotifyQueue(queue.data.items, index, context)
@@ -799,7 +867,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       )
     }
     finally {
-      setTransportBusy(false)
       setJumpingIndex(null)
     }
   }
@@ -918,7 +985,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     logResidual('session', sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing ? 'playing' : 'paused')
     setDurationMs(sessionState.durationMs)
     setPlaying(sessionState.playing)
-    applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs)
+    applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing)
   }, [sessionState.anchor, sessionState.playing, sessionState.durationMs, sessionState.currentItemId, sessionState.external, trackId])
 
   const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
@@ -1457,7 +1524,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	state={queue}
 	onRetry={() => setQueueSeq(s => s + 1)}
 	onJump={jumpTo}
-	jumpDisabled={!canControl || transportBusy}
+	jumpDisabled={!canControl || jumpingIndex != null || nonCoalescingBlocked(sessionState)}
 	jumpingIndex={jumpingIndex}
           />
         )}
@@ -1515,8 +1582,16 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                 <button type="button" className="lyv-return" onClick={returnToFollow} aria-label="현재 줄로 돌아가기">
                   <svg className="lyv-return-ring" viewBox="0 0 20 20" aria-hidden="true">
                     <circle className="lyv-return-ring-track" cx="10" cy="10" r="8" />
-                    {/* duration from BROWSE_IDLE_MS so tuning the idle constant can't drift from the ring */}
-                    <circle key={ringRestart} className="lyv-return-ring-progress" cx="10" cy="10" r="8" style={{ animationDuration: `${BROWSE_IDLE_MS}ms` }} />
+                    {/*
+                      duration from BROWSE_IDLE_MS so tuning the idle constant can't
+                      drift from the ring. Rendered only while a timer is actually
+                      running: paused browse has none (Step 3), and a countdown ring
+                      that counts down to nothing is a promise the UI does not keep.
+                      ↩ stays — it is the way back, and it still works.
+                    */}
+                    {playing && (
+                      <circle key={ringRestart} className="lyv-return-ring-progress" cx="10" cy="10" r="8" style={{ animationDuration: `${BROWSE_IDLE_MS}ms` }} />
+                    )}
                   </svg>
                   <span aria-hidden="true">↩</span>
                 </button>
@@ -1554,7 +1629,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={!canControl || transportBusy}
+	disabled={!canControl || sessionState.noActiveDevice}
+	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.previous())
                 }}
@@ -1565,7 +1641,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn is-play"
-	disabled={!canControl || transportBusy}
+	disabled={!canControl || sessionState.noActiveDevice}
+	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.togglePlay())
                 }}
@@ -1576,7 +1653,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={!canControl || transportBusy}
+	disabled={!canControl || sessionState.noActiveDevice}
+	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.next())
                 }}
@@ -1646,14 +1724,22 @@ function QueueScreen({ rootRef, state, onRetry, onJump, jumpDisabled, jumpingInd
 		// hover state.
 		const message = r.reason === 'no-capability' ?
 			'이 계정에서는 대기열을 볼 수 없어요' :
-			r.reason === 'token' ?
-				'Spotify 연결이 끊겼어요. 다시 연결해 주세요' :
-				'대기열을 불러오지 못했어요'
+			r.reason === 'no-active-device' ?
+				'재생 중인 기기가 없어요. Spotify 앱에서 재생을 시작해 주세요' :
+				r.reason === 'token' ?
+					'Spotify 연결이 끊겼어요. 다시 연결해 주세요' :
+					'대기열을 불러오지 못했어요'
+		// 다시 시도 appears for the two failures a retry CAN clear. Step 3 split
+		// `no-active-device` out of `no-capability`, and it belongs on this side of
+		// the line: the member opens Spotify and the very same read works. Folded
+		// together, it told them their account could not see a queue and then hid
+		// the one button that would have proved otherwise.
+		const retryable = r.reason === 'transient' || r.reason === 'no-active-device'
 		return (
 			<div ref={rootRef} className="lyv-queue">
 				<div className="lyv-status">
 					<p>{message}</p>
-					{r.reason === 'transient' && (
+					{retryable && (
 						<button type="button" className="lyv-retry mono" onClick={onRetry}>다시 시도</button>
 					)}
 				</div>
@@ -1681,8 +1767,15 @@ function QueueScreen({ rootRef, state, onRetry, onJump, jumpDisabled, jumpingInd
 					// Spotify may legitimately repeat a track in one queue (a
 					// looped album, a manually re-queued song), so the id alone
 					// is not a key.
+					// E4 (Step 3): an episode is NOT tappable. It stays in the list —
+					// it really is in the member's queue and dropping it would make
+					// this screen disagree with the Spotify app — but jumping to one
+					// would hand the session a track `readLivePlayback` reports as
+					// `idle`, so the viewer would go blank over audible playback. The
+					// row rendered as a button until now purely because Spotify gives
+					// episodes a uri.
 					<li key={`${it.id}:${i}`} className="lyv-queue-item">
-						{it.uri ?
+						{it.uri && it.mediaType !== 'episode' ?
 							(
 								<button
 									type="button"

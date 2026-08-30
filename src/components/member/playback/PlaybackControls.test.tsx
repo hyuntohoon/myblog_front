@@ -204,3 +204,31 @@ describe('useSeekControl', () => {
     expect(onSeek.mock.calls.map(([ms]) => ms)).toEqual([25_000, 45_000, 55_000])
   })
 })
+
+describe('the E1 copy split reaches the helpers the player routes through', () => {
+  // Review caught this file as the miss. The split landed in `session.ts`,
+  // `NowPlaying`, the lyrics queue screen and `PlaybackNotices`, but seek and the
+  // modes go through these two helpers — which fell through to the generic
+  // "잠시 후 다시 시도", the retry sentence, for the one failure a retry cannot
+  // fix, shown beside the correct sentence at the same moment.
+  it('names the missing device on a seek rather than offering a retry', async () => {
+    const notices: string[] = []
+    sessionMocks.seekTo.mockResolvedValue({ ok: false, reason: 'no-active-device' })
+
+    await seekPlayback(1_000, m => notices.push(m))
+
+    expect(notices).toEqual([playbackControlCopy.noDevice])
+    expect(notices).not.toContain(playbackControlCopy.failed)
+  })
+
+  it('names it on a mode write too, and does not call it a device limit', async () => {
+    const notices: string[] = []
+    sessionMocks.setMode.mockResolvedValue({ ok: false, reason: 'no-active-device' })
+
+    await setPlaybackMode({ kind: 'volume', percent: 40 }, m => notices.push(m))
+
+    expect(notices).toEqual([playbackControlCopy.noDevice])
+    // A sleeping phone is not a speaker without a volume knob.
+    expect(notices).not.toContain(playbackControlCopy.fixedVolume)
+  })
+})

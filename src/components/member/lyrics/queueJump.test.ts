@@ -15,8 +15,8 @@ const lib = vi.mocked(playbackLib)
 const OK = { ok: true, rung: 'remote', degraded: false, message: '' } as const
 const fail = (reason: 'no-capability' | 'token' | 'transient') => ({ ok: false, reason, message: '' }) as const
 
-function entry(id: string, uri: string | null = `spotify:track:${id}`): QueueEntry {
-  return { id, uri, name: id, artist: null }
+function entry(id: string, uri: string | null = `spotify:track:${id}`, mediaType: 'track' | 'episode' = 'track'): QueueEntry {
+  return { id, uri, name: id, artist: null, mediaType }
 }
 
 afterEach(() => {
