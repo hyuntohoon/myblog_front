@@ -1510,6 +1510,42 @@ describe('spotify queue jump', () => {
     expect(playbackSession.getSnapshot().notice?.message).toContain('넘어가지 못했어요')
   })
 
+  // Found by the Step 1 browser clickthrough, not by this suite: on a cold start
+  // (`NO_ACTIVE_DEVICE`) the ladder falls to rung 2 and raises THIS tab as the SDK
+  // device, but `JumpOutcome` dropped `rung`/`degraded` on the floor. The session
+  // therefore stayed on `rung: null` — no 음질 제한 notice, and every mirror tab
+  // read `ownerRung: null` and kept a live transport over audio it does not hold.
+  it('adopts the rung the jump actually landed on, so mirrors see the in-page owner', async () => {
+    nextPlayOutcome = IN_PAGE_OK
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('target'))
+
+    const pending = playbackSession.jumpToSpotifyQueue(items, 1, null)
+    await vi.advanceTimersByTimeAsync(5_000)
+    await expect(pending).resolves.toEqual({ ok: true })
+
+    expect(playbackSession.getSnapshot().rung).toBe('in-page')
+    expect(playbackSession.getSnapshot().degraded).toBe(true)
+    expect(playbackSession.getSnapshot().notice?.message).toContain('음질 제한')
+
+    // The half of the gate the RFC's A3 is about: a mirror of this owner must be
+    // told the audio is inside another tab.
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    expect(playbackSession.getSnapshot().ownerRung).toBe('in-page')
+  })
+
+  it('leaves a remote jump undegraded and mirrors in control', async () => {
+    nextPlayOutcome = OK
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('target'))
+
+    const pending = playbackSession.jumpToSpotifyQueue(items, 1, null)
+    await vi.advanceTimersByTimeAsync(5_000)
+    await expect(pending).resolves.toEqual({ ok: true })
+
+    expect(playbackSession.getSnapshot().rung).toBe('remote')
+    expect(playbackSession.getSnapshot().degraded).toBe(false)
+    expect(playbackSession.getSnapshot().notice).toBeNull()
+  })
+
   it('forwards to the owning tab instead of acting from a mirror', async () => {
     setOwnership({ isOwner: false, ownerTabId: 'other-tab', ownerPresent: true })
 

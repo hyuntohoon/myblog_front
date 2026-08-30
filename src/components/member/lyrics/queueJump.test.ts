@@ -30,7 +30,7 @@ describe('jumpToQueueIndex fallback chain', () => {
 
     await expect(jumpToQueueIndex(items, 1, { uri: 'spotify:album:album1', type: 'album' }))
       .resolves
-      .toEqual({ ok: true, via: 'context' })
+      .toEqual({ ok: true, via: 'context', rung: 'remote', degraded: false })
     expect(lib.play).toHaveBeenCalledTimes(1)
     expect(lib.play).toHaveBeenCalledWith({
       kind: 'context',
@@ -48,7 +48,7 @@ describe('jumpToQueueIndex fallback chain', () => {
 
     await expect(jumpToQueueIndex(items, index, { uri: 'spotify:playlist:list1', type: 'playlist' }))
       .resolves
-      .toEqual({ ok: true, via: 'uris' })
+      .toEqual({ ok: true, via: 'uris', rung: 'remote', degraded: false })
     expect(lib.play).toHaveBeenCalledTimes(2)
     const fallback = lib.play.mock.calls[1][0]
     expect(fallback).toEqual({
@@ -60,11 +60,21 @@ describe('jumpToQueueIndex fallback chain', () => {
     expect(fallback.uris).toHaveLength(items.length - index)
   })
 
+  // The ladder's answer to "where did the sound come from" is the caller's to
+  // render — the session turns it into the 음질 제한 notice and into the
+  // `ownerRung` every mirror tab gates on. Dropping it here made both invisible.
+  it('carries the rung the ladder landed on, not just that it landed', async () => {
+    lib.play.mockResolvedValue({ ok: true, rung: 'in-page', degraded: true, message: '' })
+    const items = [entry('a'), entry('b')]
+
+    await expect(jumpToQueueIndex(items, 0, null)).resolves.toEqual({ ok: true, via: 'uris', rung: 'in-page', degraded: true })
+  })
+
   it('goes straight to play-uris when there is no context', async () => {
     lib.play.mockResolvedValue(OK)
     const items = [entry('a'), entry('b')]
 
-    await expect(jumpToQueueIndex(items, 0, null)).resolves.toEqual({ ok: true, via: 'uris' })
+    await expect(jumpToQueueIndex(items, 0, null)).resolves.toEqual({ ok: true, via: 'uris', rung: 'remote', degraded: false })
     expect(lib.play).toHaveBeenCalledTimes(1)
     expect(lib.play).toHaveBeenCalledWith({
       kind: 'uris',
@@ -78,7 +88,7 @@ describe('jumpToQueueIndex fallback chain', () => {
 
     await expect(jumpToQueueIndex(items, 0, { uri: 'spotify:artist:artist1', type: 'artist' }))
       .resolves
-      .toEqual({ ok: true, via: 'uris' })
+      .toEqual({ ok: true, via: 'uris', rung: 'remote', degraded: false })
     expect(lib.play).toHaveBeenCalledTimes(1)
     expect(lib.play).toHaveBeenCalledWith({
       kind: 'uris',
@@ -90,7 +100,7 @@ describe('jumpToQueueIndex fallback chain', () => {
     lib.play.mockResolvedValue(OK)
     const items = [entry('a'), entry('b'), entry('c')]
 
-    await expect(jumpToQueueIndex(items, 2, null)).resolves.toEqual({ ok: true, via: 'uris' })
+    await expect(jumpToQueueIndex(items, 2, null)).resolves.toEqual({ ok: true, via: 'uris', rung: 'remote', degraded: false })
     expect(lib.play).toHaveBeenCalledWith({ kind: 'uris', uris: ['spotify:track:c'] })
   })
 
@@ -98,7 +108,7 @@ describe('jumpToQueueIndex fallback chain', () => {
     lib.play.mockResolvedValue(OK)
     const items = [entry('a'), entry('missing', null), entry('c')]
 
-    await expect(jumpToQueueIndex(items, 0, null)).resolves.toEqual({ ok: true, via: 'uris' })
+    await expect(jumpToQueueIndex(items, 0, null)).resolves.toEqual({ ok: true, via: 'uris', rung: 'remote', degraded: false })
     expect(lib.play).toHaveBeenCalledWith({
       kind: 'uris',
       uris: ['spotify:track:a', 'spotify:track:c'],

@@ -3,7 +3,7 @@
 // The one property this module exists to protect is that the explicit `uris`
 // fallback carries the whole visible tail. A lone-track fallback would replace
 // Spotify's playback context and silently discard every queued row after it.
-import type { PlayOutcome } from '@lib/spotifyPlayback'
+import type { PlayOutcome, PlayRung } from '@lib/spotifyPlayback'
 import type { QueueEntry } from './queue.api'
 import { play } from '@lib/spotifyPlayback'
 
@@ -11,7 +11,16 @@ import { play } from '@lib/spotifyPlayback'
 export interface JumpContext { uri: string, type: string }
 
 export type JumpOutcome =
-	| { ok: true, via: 'context' | 'uris' } |
+	/**
+	 * `rung`/`degraded` are carried, not dropped. They are the ladder's answer to
+	 * "where did the sound actually come from", and the session patches them onto
+	 * the shared state — a jump that lands on rung 2 has to say 음질 제한 exactly
+	 * like `playFrom` does, and has to tell every mirror tab that the owner now
+	 * holds an in-page device (ARCH-playback-authority-convergence Step 1: a mirror
+	 * whose `ownerRung` stayed `null` kept a live transport and never offered the
+	 * takeover the Global Player offers two inches away).
+	 */
+	| { ok: true, via: 'context' | 'uris', rung: PlayRung, degraded: boolean } |
 	/** The row carried no uri — there was never anything to send. */
 	{ ok: false, reason: 'nothing-to-send' } |
 	{ ok: false, reason: 'no-capability' } |
@@ -37,14 +46,14 @@ export async function jumpToQueueIndex(items: QueueEntry[], index: number, conte
 			offsetUri: tapped.uri,
 		})
 		if (r.ok)
-			return { ok: true, via: 'context' }
+			return { ok: true, via: 'context', rung: r.rung, degraded: r.degraded }
 		// Fall through on ANY failure, including a legitimate 403 for a
 		// user-added row that is not part of the album/playlist context.
 	}
 
 	const r = await play({ kind: 'uris', uris: tail })
 	if (r.ok)
-		return { ok: true, via: 'uris' }
+		return { ok: true, via: 'uris', rung: r.rung, degraded: r.degraded }
 	// The ladder's richer failure set collapses back to this module's three, which is
 	// all its callers render. 'unresolvable'/'unavailable' cannot occur here — both
 	// intents carry provider URIs already, so nothing is resolved on this path.

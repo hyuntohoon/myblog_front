@@ -1172,7 +1172,20 @@ async function jumpToSpotifyQueue(items: QueueEntry[], index: number, context: J
   // Optimistic, and authoritative for the same reason `togglePlay` is: the command
   // we just issued is the most direct evidence there is, and `MYBLOG_PLAYBACK_CHANGED`
   // has already fired into Spotify's ack→apply window.
-  authoritativePatch({ busy: false, playing: true, notice: null })
+  //
+  // `rung`/`degraded` come from the ladder that just ran, exactly as in `playFrom`.
+  // Dropping them (the shape this had when the jump lived in `LyricsViewer`) meant a
+  // cold-start jump — rung 1 answers `NO_ACTIVE_DEVICE`, rung 2 raises this tab as
+  // the SDK device — left `rung: null` on the shared state: no 음질 제한 notice, and
+  // every mirror tab reading `ownerRung: null` decided it could still control
+  // playback. That is the ownership gate this step exists to close, half-open.
+  authoritativePatch({
+    busy: false,
+    playing: true,
+    rung: r.rung,
+    degraded: r.degraded,
+    notice: r.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
+  })
   const wanted = `spotify:track:${target.id}`
   let last: LivePlayback | null = null
   const settled = await confirmTransport(
