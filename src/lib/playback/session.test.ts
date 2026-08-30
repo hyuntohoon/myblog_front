@@ -2130,6 +2130,34 @@ describe('queue execution invariant', () => {
     expectInvariant()
   })
 
+  it('a mode in flight does not starve the queue reissue', async () => {
+    // `reissueFromCurrent` gives up after a bounded number of busy waits and says
+    // NOTHING when it does, so counting a volume drag as "the player is busy"
+    // meant a long drag silently cancelled the reissue and the visible order
+    // stopped being the order that plays.
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    mocks.play.mockClear()
+
+    let releaseVolume!: () => void
+    mocks.sendPlaybackMode.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseVolume = () => resolve({ ok: true })
+    }))
+    void playbackSession.setMode({ kind: 'volume', percent: 80 })
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot().transportBusy).toBe(true)
+
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+    expect(issuedUris()).toEqual([
+      'provider:track:track-a',
+      'provider:track:track-c',
+      'provider:track:track-b',
+    ])
+    releaseVolume()
+    expectInvariant()
+  })
+
   it('stops re-arming after a bounded number of busy waits', async () => {
     setQueue([row('a'), row('b'), row('c')])
     await startAt('a')
@@ -2310,5 +2338,97 @@ describe('a press made during a press is remembered, not swallowed (E2, E3)', ()
     await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 2)
     await pending
     expect(playbackSession.getSnapshot().transportBusy).toBe(false)
+  })
+})
+
+describe('step 3 defects review found in the first commit', () => {
+  async function playingExternal(): Promise<void> {
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('track-x'))
+    await playbackSession.syncFromLive()
+    await vi.advanceTimersByTimeAsync(1)
+  }
+
+  it('a mode 404 rolls back ONLY its own field, not a sibling that landed meanwhile', async () => {
+    // Safe while one `modeBusy` serialized every mode; not safe once the three
+    // became separate coalescer keys and genuinely OVERLAP.
+    //
+    // The interleaving is the whole test — a first attempt that ran the two
+    // commands back to back survived a mutant that restored all three fields,
+    // because the sibling had not changed during the flight and the blanket
+    // restore wrote the same value back.
+    await playingExternal()
+    mocks.sendPlaybackMode.mockResolvedValue({ ok: true })
+    await playbackSession.setMode({ kind: 'shuffle', on: false })
+    expect(playbackSession.getSnapshot().shuffle).toBe(false)
+
+    // Volume goes out and HANGS.
+    let failVolume!: () => void
+    mocks.sendPlaybackMode.mockImplementationOnce(() => new Promise((resolve) => {
+      failVolume = () => resolve({ ok: false, reason: 'no-active-device' })
+    }))
+    const volume = playbackSession.setMode({ kind: 'volume', percent: 80 })
+    await flushPlaybackStart()
+
+    // Shuffle goes out on its own key, and SUCCEEDS, while volume is still in air.
+    mocks.sendPlaybackMode.mockResolvedValue({ ok: true })
+    await playbackSession.setMode({ kind: 'shuffle', on: true })
+    expect(playbackSession.getSnapshot().shuffle).toBe(true)
+
+    failVolume()
+    await volume
+    await vi.advanceTimersByTimeAsync(1)
+
+    const after = playbackSession.getSnapshot()
+    expect(after.volumePercent).toBeNull()   // rolled back — this command failed
+    expect(after.shuffle).toBe(true)         // Spotify has it ON; do not undo it
+  })
+
+  it('a seek still refuses while a play that cannot coalesce is in flight', async () => {
+    // `seekTo`'s `if (current.busy)` WAS the guard for a lyric line tap, which has
+    // no busy check of its own. Dropping it let a tap seek into a `playAt` still
+    // in flight, against a track about to be replaced.
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    mocks.sendPlayerCommand.mockClear()
+
+    const pending = playbackSession.playAt('b')
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot().busy).toBe(true)
+
+    expect(await playbackSession.seekTo(30_000)).toBeNull()
+    expect(mocks.sendPlayerCommand).not.toHaveBeenCalled()
+
+    await finishPlayback(pending)
+  })
+
+  it('clears the "no device" sentence when the device comes back, not just the flag', async () => {
+    await playingExternal()
+    mocks.sendPlayerCommand.mockResolvedValue({ ok: false, reason: 'no-active-device' })
+    await playbackSession.togglePlay()
+    expect(playbackSession.getSnapshot().notice?.reason).toBe('no-active-device')
+
+    mocks.listDevices.mockResolvedValue({ ok: true, devices: [{ id: 'dev-1', name: 'Phone', isActive: true, isInPage: false }] })
+    await playbackSession.refreshDevices()
+
+    const after = playbackSession.getSnapshot()
+    expect(after.noActiveDevice).toBe(false)
+    // Re-enabling the transport under an alert still saying there is no device is
+    // the recovery working and the UI denying it.
+    expect(after.notice).toBeNull()
+  })
+
+  it('a mirror asks the OWNER to re-find devices rather than clearing its own copy', async () => {
+    // `noActiveDevice` is broadcast owner→mirror and a non-owner's patch is not
+    // broadcast back, so a mirror clearing it locally is overwritten by the
+    // owner's next patch and the owner never learns a device appeared.
+    setOwnership({ isOwner: false, ownerTabId: 'other-tab', ownerPresent: true })
+    mocks.ownershipPost.mockClear()
+    mocks.listDevices.mockResolvedValue({ ok: true, devices: [{ id: 'dev-1', name: 'Phone', isActive: true, isInPage: false }] })
+
+    await playbackSession.refreshDevices()
+
+    expect(mocks.ownershipPost).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'command', cmd: { kind: 'refresh-devices' } }),
+    )
   })
 })

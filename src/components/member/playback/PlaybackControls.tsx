@@ -8,6 +8,12 @@ import { useDismissable } from '@lib/useDismissable'
 
 export const playbackControlCopy = {
   unavailable: '이 계정/기기에선 재생 제어를 사용할 수 없어요',
+  // E1 (Step 3). Review caught this file as the miss: the 403/404 split reached
+  // `session.ts`, `NowPlaying`, the lyrics queue screen and `PlaybackNotices`, but
+  // the two helpers the Global Player actually routes seek and modes through fell
+  // to the generic "잠시 후 다시 시도" — the retry sentence, for the one failure a
+  // retry cannot fix, shown beside the correct sentence at the same moment.
+  noDevice: 'Spotify에 재생 중인 기기가 없어요. 앱에서 재생을 시작해 주세요',
   failed: '제어에 실패했어요. 잠시 후 다시 시도해 주세요',
   likeFailed: '좋아요 변경에 실패했어요. 잠시 후 다시 시도해 주세요',
   fixedVolume: '이 기기는 볼륨 조절을 지원하지 않아요',
@@ -22,6 +28,8 @@ export async function seekPlayback(ms: number, onNotice: Notice, onReanchored?: 
     return result
   if (result.reason === 'no-capability')
     onNotice(playbackControlCopy.unavailable)
+  else if (result.reason === 'no-active-device')
+    onNotice(playbackControlCopy.noDevice)
   else if (result.reason !== 'token')
     onNotice(playbackControlCopy.failed)
   return result
@@ -33,6 +41,8 @@ export async function setPlaybackMode(command: PlaybackModeCommand, onNotice: No
     return result
   if (result.reason === 'unsupported-on-device')
     onNotice(playbackControlCopy.fixedVolume)
+  else if (result.reason === 'no-active-device')
+    onNotice(playbackControlCopy.noDevice)
   else if (result.reason !== 'no-capability')
     onNotice(playbackControlCopy.modeFailed)
   return result

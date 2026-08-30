@@ -174,6 +174,14 @@ type SessionCommand =
 	{ kind: 'mode', cmd: PlaybackModeCommand } |
 	{ kind: 'transfer', deviceId: string } |
 	/**
+	 * "기기 다시 찾기". A mirror lists devices for its own picker perfectly well,
+	 * but the RECOVERY is the owner's to make: `noActiveDevice` is broadcast
+	 * owner→mirror and a non-owner's `patch` is not broadcast back, so a mirror
+	 * clearing its own copy is overwritten by the owner's next patch and the owner
+	 * never learns a device appeared. Forwarding is what makes the button honest.
+	 */
+	{ kind: 'refresh-devices' } |
+	/**
 	 * A tap on a row of SPOTIFY's own queue (the lyrics viewer's 대기열 screen) —
 	 * not the Playback Bucket, which `play-at` covers. It carries its payload
 	 * because the target list is Spotify's and this session cannot reconstruct it.
@@ -356,11 +364,21 @@ let playbackChangeAdoption: Promise<LivePlayback | null> | null = null
  *   · volume — the intents are values, and only the last value is wanted. Depth 1
  *     gives last-write-wins for free, and bounds a 60-event drag to 2 requests.
  *   · ⏭⏭ — the intents are steps, and each one is discrete. The first runs, the
- *     second is remembered and then runs, so two presses advance two tracks. A
- *     five-press mash advances two, which is the honest limit of depth 1 and is
- *     still strictly better than the one it used to advance.
+ *     second is remembered and then runs, so two presses advance two tracks.
  *
  * Keys are per command FAMILY so a volume drag cannot swallow a shuffle toggle.
+ *
+ * **What depth 1 still drops, stated plainly** (review was right that the two
+ * bullets above read as though nothing is lost): inside the `'transport'` family
+ * the pending slot holds ONE intent, and ⏭ → ⏯ → ⏭ therefore loses the ⏯ — a
+ * different command, not a repeat, which is the same "a press that does nothing"
+ * shape this step exists to end. It is not fixed here because the alternative is
+ * worse: giving ⏯ and ⏭ separate keys lets them run concurrently, and they are
+ * two writers over one playhead. A five-press mash likewise advances two, not
+ * five. Both are bounded and both are strictly better than the shipped
+ * behaviour — every press during a flight was discarded — but neither is "every
+ * press lands", and a later step that wants that needs an ordered queue with a
+ * single in-flight slot, not a bigger pending slot.
  * Callers that cannot coalesce (playAt, queue-jump, replace, transfer) are not
  * routed through here at all — they keep `state.busy` and render disabled.
  *
@@ -408,6 +426,30 @@ export function __resetPlaybackIntents(): void {
 }
 
 /**
+ * May a command that CANNOT coalesce be offered right now?
+ *
+ * Step 3 split `busy` in two, and the split has a trap review caught: `busy` used
+ * to be set by transport as well, so `disabled={state.busy}` on ▶ / 전체재생 /
+ * 다시 시도 / a lyrics queue-row jump also kept those from running across a ⏭.
+ * Once transport stopped setting it, every one of those predicates silently
+ * stopped protecting anything — and each of those actions issues its own
+ * `play({uris})`, so two writes could race over one player, with the session
+ * having already recorded one of them as current.
+ *
+ * The rule is asymmetric on purpose and both halves matter:
+ *   · coalescing commands (⏮ ⏯ ⏭, seek, modes) stay PRESSABLE while busy — that
+ *     is E2 itself, and disabling them here would put ⏭⏭ straight back;
+ *   · everything else renders DISABLED while ANY player command is in flight.
+ *
+ * Takes the two fields structurally rather than `PlaybackSessionState` so the
+ * lyrics viewer can import it without importing the 600-line panel — the same
+ * reason `canControlPlayback` lives in `ownership.ts` since Step 1.
+ */
+export function nonCoalescingBlocked(state: { busy: boolean, transportBusy: boolean }): boolean {
+  return state.busy || state.transportBusy
+}
+
+/**
  * Does anything own the player right now — coalescing or not?
  *
  * `own` excludes the caller's OWN in-flight intent. The deferred resume runs
@@ -419,6 +461,14 @@ function playerCommandInFlight(own?: IntentKey): boolean {
   if (current.busy)
     return true
   for (const key of intentInFlight) {
+    // Modes are excluded, and review is right that they must be: shuffle, repeat
+    // and volume touch neither the playhead nor the tail, so a reissue cannot
+    // race them — but `reissueFromCurrent` gives up after a bounded number of
+    // busy waits and says NOTHING when it does. Counting a volume drag here
+    // meant dragging the slider for ~2.4s silently cancelled the reissue, and
+    // the visible order stopped being the order that plays until the next edit.
+    if (key.startsWith('mode:'))
+      continue
     if (key !== own)
       return true
   }
@@ -430,8 +480,20 @@ function playerCommandInFlight(own?: IntentKey): boolean {
  * capability split; never touches `capabilityTier`, which is the durable half.
  */
 function deviceSeen(): void {
-  if (current.noActiveDevice)
-    patch({ noActiveDevice: false })
+  // #8: a mirror must not clear its own copy. The flag arrives by broadcast from
+  // the owner, and a non-owner's `patch` is not broadcast — so a mirror clearing
+  // it locally would be silently overwritten by the owner's next patch, and the
+  // owner would never learn a device had appeared. `refreshDevices` forwards
+  // instead, and the truth comes back the way it came.
+  if (!current.isOwner && current.ownerPresent)
+    return
+  if (!current.noActiveDevice)
+    return
+  // Clear the SENTENCE too, not just the flag. Leaving it would re-enable the
+  // transport underneath an alert still reading "재생 중인 기기가 없어요" — the
+  // recovery working and the UI denying it.
+  const stale = current.notice?.reason === 'no-active-device'
+  patch(stale ? { noActiveDevice: false, notice: null } : { noActiveDevice: false })
 }
 /** Set when an event arrives while a reconcile is in flight — see `reconcileFromEvent`. */
 let adoptionDirty = false
@@ -1394,6 +1456,18 @@ async function setMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome | 
   return coalesced(`mode:${cmd.kind}` as const, () => runMode(cmd))
 }
 
+/** The pre-write value of the ONE field `cmd` owns — never its siblings'. */
+function rollbackFor(
+  cmd: PlaybackModeCommand,
+  before: { shuffle: boolean | null, repeat: RepeatMode | null, volumePercent: number | null },
+): Partial<PlaybackSessionState> {
+  if (cmd.kind === 'shuffle')
+    return { shuffle: before.shuffle }
+  if (cmd.kind === 'repeat')
+    return { repeat: before.repeat }
+  return { volumePercent: before.volumePercent }
+}
+
 async function runMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome> {
   const before = {
     shuffle: current.shuffle,
@@ -1422,9 +1496,14 @@ async function runMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome> {
     patch({ capabilityTier: 'fallback' })
   }
   else if (r.reason === 'no-active-device') {
-    // Recoverable — roll the optimistic write back to what the device last said,
-    // and record the recoverable state WITHOUT degrading the tier (E1).
-    authoritativePatch({ ...before })
+    // Recoverable — roll the optimistic write back, and record the recoverable
+    // state WITHOUT degrading the tier (E1).
+    //
+    // Only THIS command's field, which review caught: a blanket `{...before}`
+    // was safe while one `modeBusy` serialized every mode, and is not now that
+    // the three are separate coalescer keys and genuinely overlap. A volume 404
+    // would have reverted a shuffle that had already succeeded.
+    authoritativePatch(rollbackFor(cmd, before))
     patch({ noActiveDevice: true, notice: noticeForCommand({ ok: false, reason: 'no-active-device' }) })
   }
   else {
@@ -1435,6 +1514,10 @@ async function runMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome> {
 }
 
 async function refreshDevices() {
+  // Forward, but do NOT return: the local list still populates this tab's own
+  // picker. Only `deviceSeen()` is owner-only (see its guard).
+  if (!current.isOwner && current.ownerPresent)
+    playbackOwnership.post({ type: 'command', cmd: { kind: 'refresh-devices' } })
   patch({ devices: null })
   const r = await listDevices()
   if (r.ok) {
@@ -1503,9 +1586,18 @@ async function seekTo(ms: number, onReanchored?: () => void): Promise<PlayerComm
     return null
   if (!current.isOwner && !await gate({ kind: 'seek', positionMs: target }))
     return null
-  // COALESCED (Step 3, E2) — the `if (current.busy) return null` that stood here
-  // silently discarded a scrub issued while the previous one was still in flight,
-  // and a scrub is exactly the gesture that produces those.
+  // COALESCED (Step 3, E2) — the old `if (current.busy) return null` discarded a
+  // scrub issued while the previous one was still in flight, and a scrub is
+  // exactly the gesture that produces those.
+  //
+  // But `busy` (now: a play that CANNOT coalesce) is still a refusal, and review
+  // caught me dropping it wholesale. `runSeek`'s claim that "every surface renders
+  // the seek bar disabled while it is true" holds for `GlobalPlaybackBar` and NOT
+  // for a lyric line tap, which never had its own busy check because THIS was it.
+  // A line tap could therefore seek into a `playAt`/`replaceQueueAndPlay` still in
+  // flight, against a track that is about to be replaced.
+  if (current.busy)
+    return null
   return coalesced('seek', () => runSeek(target, onReanchored))
 }
 
@@ -2254,6 +2346,8 @@ async function executeCommand(command: SessionCommand): Promise<void> {
     await playbackSession.setMode(command.cmd)
   else if (command.kind === 'transfer')
     await playbackSession.transferTo(command.deviceId)
+  else if (command.kind === 'refresh-devices')
+    await playbackSession.refreshDevices()
   else
     await playbackSession.jumpToSpotifyQueue(command.items, command.index, command.context)
 }

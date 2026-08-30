@@ -8,7 +8,7 @@ import { useClockEstimate } from '@lib/clockEstimate'
 import { INITIAL_DOCK, useDockTear } from '@lib/dockTear'
 import { openAlbum } from '@lib/entityEvents'
 import { playbackQueue, withoutQueueItems, withReorderedQueueItems } from '@lib/playback/queue'
-import { playbackSession } from '@lib/playback/session'
+import { nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
 import { canControlPlayback } from '@lib/playback/ownership'
 import { PlaybackOwnerBanner } from './PlaybackOwnerBanner'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
@@ -253,7 +253,7 @@ export function PlaybackNotices({ state, queue }: { state: PlaybackSessionState,
               <button type="button" onClick={() => void playbackSession.refreshDevices()}>기기 다시 찾기</button>
             ) :
             (
-              <button type="button" disabled={!retryId || state.busy} onClick={() => retryId && void playbackSession.playAt(retryId)}>다시 시도</button>
+              <button type="button" disabled={!retryId || nonCoalescingBlocked(state)} onClick={() => retryId && void playbackSession.playAt(retryId)}>다시 시도</button>
             )}
         </div>
       )}
@@ -411,7 +411,7 @@ export function PlaybackQueue({ model, limit, removable = false }: { model: Play
       {full && rows.length > 0 && (
         <div className="pbp-queue-summary">
           <span>{`${rows.length}곡 · ${formatTotalDuration(rows)} 총 재생 시간`}</span>
-          <button type="button" className="pbp-queue-playall" onClick={() => void playbackSession.playAt(rows[0].itemId)} disabled={model.state.busy}>전체재생</button>
+          <button type="button" className="pbp-queue-playall" onClick={() => void playbackSession.playAt(rows[0].itemId)} disabled={nonCoalescingBlocked(model.state)}>전체재생</button>
         </div>
       )}
       {reorderable && <span className="pbp-sr-only" role="status" aria-live="polite">{liveMsg}</span>}
@@ -440,7 +440,7 @@ export function PlaybackQueue({ model, limit, removable = false }: { model: Play
                   ⠿
                 </button>
               )}
-              <button type="button" className="pbp-queue-play" onClick={() => void playbackSession.playAt(row.itemId)} disabled={model.state.busy}>
+              <button type="button" className="pbp-queue-play" onClick={() => void playbackSession.playAt(row.itemId)} disabled={nonCoalescingBlocked(model.state)}>
                 <span className="pbp-queue-cover" aria-hidden="true">
                   {row.cover ?
                     <img src={row.cover} alt="" /> :

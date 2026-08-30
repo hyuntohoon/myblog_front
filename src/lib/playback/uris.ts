@@ -104,12 +104,25 @@ export function cachedUri(trackId: string): string | null | undefined {
   return cache.get(trackId)
 }
 
+/**
+ * Matches `apiFetch`'s ceiling, and `queue.api.ts` in this same tree.
+ *
+ * CLAUDE.md requires an explicit timeout on every outbound request and this one
+ * never had it. It mattered less while this only warmed a cache in the
+ * background; ARCH-playback-authority-convergence Step 3 puts it on a USER
+ * GESTURE (`openPlaybackLyrics` awaits it on a cache miss), so a hung request
+ * became 가사 doing nothing, forever, with no spinner and no sentence.
+ */
+const RESOLVE_TIMEOUT_MS = 8000
+
 async function fetchUri(trackId: string): Promise<UriResolution> {
   if (!BASE)
     return { kind: 'transient' }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS)
   try {
     const url = `${BASE}${RESOLVE_PATH}?type=track&id=${encodeURIComponent(trackId)}`
-    const res = await fetch(url, { headers: { ...getAuthHeader() } })
+    const res = await fetch(url, { headers: { ...getAuthHeader() }, signal: controller.signal })
     if (!res.ok) {
       // 404 is the endpoint's answer for "no such mapping" and is a fact about the
       // track. Everything else — 5xx, a gateway error, a 401 mid-refresh — is about
@@ -121,8 +134,12 @@ async function fetchUri(trackId: string): Promise<UriResolution> {
     return uri ? { kind: 'uri', uri } : { kind: 'unmapped' }
   }
   catch {
-    // Network/parse failure says nothing about the track — not a miss.
+    // Network/parse failure — and our own abort — say nothing about the track,
+    // so none of them is a miss and none is memoised.
     return { kind: 'transient' }
+  }
+  finally {
+    clearTimeout(timer)
   }
 }
 

@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
     anchor: null as { ms: number, wallMs: number } | null,
     durationMs: null as number | null,
     notice: null as { tone: string, message: string } | null,
+    busy: false,
     transportBusy: false,
     noActiveDevice: false,
     isOwner: true,
@@ -53,6 +54,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@lib/playback/session', () => ({
+  // The REAL predicate, not a stub: whether a queue row is offered while a ⏭ is
+  // in flight is the question the E4/jump tests are asking, and a stub that
+  // always said "not blocked" could not tell the two answers apart.
+  nonCoalescingBlocked: (st: { busy?: boolean, transportBusy?: boolean }) => Boolean(st.busy || st.transportBusy),
   playbackSession: {
     subscribe: (cb: () => void) => {
       mocks.subscribers.add(cb)
@@ -124,7 +129,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.canControl = true
   mocks.subscribers.clear()
-  mocks.snapshot.v = { ...mocks.sessionState, playing: true, anchor: null, durationMs: null, notice: null, transportBusy: false, noActiveDevice: false }
+  mocks.snapshot.v = { ...mocks.sessionState, playing: true, anchor: null, durationMs: null, notice: null, busy: false, transportBusy: false, noActiveDevice: false }
   mocks.currentSpotifyTrackId.mockReturnValue(null)
   mocks.getLyrics.mockResolvedValue(LYRICS)
   mocks.readLivePlayback.mockResolvedValue({ state: 'idle' })
@@ -430,5 +435,92 @@ describe('the queue screen agrees with what the session can adopt (E4)', () => {
     fireEvent.click(screen.getByLabelText('대기열'))
     await screen.findByText('이 계정에서는 대기열을 볼 수 없어요')
     expect(screen.queryByText('다시 시도')).toBeNull()
+  })
+})
+
+describe('a queue jump and the transport cannot race over one player', () => {
+  // REVIEW BLOCKED the first commit on this. `origin/main` used one local
+  // `transportBusy` as a SHARED interlock — ⏮⏯⏭ and a queue-row jump each set it
+  // and each refused while the other held it. Step 3 removed the transport half
+  // (correctly — that is E2) and removed the jump half too (not correctly), and
+  // nothing at the session replaced it. Both are `play({uris})`; whichever lands
+  // last at Spotify owns the audio, while the session has already recorded the
+  // other one as current.
+  const track = (id: string) => ({ id, uri: `spotify:track:${id}`, name: id, artist: null, mediaType: 'track' as const })
+
+  it('renders the queue rows inert while a transport command is in flight', async () => {
+    mocks.readQueue.mockResolvedValue({ ok: true, current: null, items: [track('t1'), track('t2')] })
+    await open()
+    fireEvent.click(screen.getByLabelText('대기열'))
+    await screen.findByText('t1')
+
+    const row = () => screen.getByText('t1').closest('.lyv-queue-row') as HTMLButtonElement
+    expect(row().disabled).toBe(false)
+
+    // A ⏭ is in the air. It goes through `playFrom` → `play({uris: tail})`.
+    setSession({ transportBusy: true })
+    expect(row().disabled).toBe(true)
+
+    setSession({ transportBusy: false })
+    expect(row().disabled).toBe(false)
+  })
+
+  it('renders them inert while a non-coalescing play is in flight too', async () => {
+    mocks.readQueue.mockResolvedValue({ ok: true, current: null, items: [track('t1')] })
+    await open()
+    fireEvent.click(screen.getByLabelText('대기열'))
+    await screen.findByText('t1')
+
+    setSession({ busy: true })
+    expect((screen.getByText('t1').closest('.lyv-queue-row') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('still leaves ⏭ pressable while a transport command is in flight — that is E2', async () => {
+    await open()
+    setSession({ transportBusy: true })
+
+    // The whole point of the split: the thing that CAN coalesce stays live.
+    expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
+    expect(screen.getByLabelText('다음 곡').getAttribute('aria-busy')).toBe('true')
+  })
+
+  it('disables the transport when Spotify says there is no device to send to', async () => {
+    await open()
+    expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
+
+    // The same state the Global Player disables on. Two surfaces, one answer.
+    setSession({ noActiveDevice: true })
+    expect(screen.getByLabelText('다음 곡')).toBeDisabled()
+
+    setSession({ noActiveDevice: false })
+    expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
+  })
+})
+
+describe('a paused re-anchor still moves the line when nobody is browsing', () => {
+  // Review caught this: gating `applyAnchor` on `!isPlaying` alone also skipped
+  // `setFocus`, and the follow scheduler bails while paused — so nothing
+  // recomputed the highlight. A manual ↻ on a paused track became a visual no-op,
+  // which is the opposite of what the call site's own comment promises.
+  it('moves the highlight on a paused re-anchor with no browse in progress', async () => {
+    mocks.currentSpotifyTrackId.mockReturnValue('track-1')
+    setSession({ playing: false })
+    render(
+      <LyricsViewer
+	spotifyTrackId="track-1"
+	canRefresh
+	initialProgressMs={0}
+	initialProgressAtMs={performance.now()}
+	initialDurationMs={200_000}
+	onClose={() => {}}
+      />,
+    )
+    await screen.findByText('second line')
+    expect(focusedText()).toBe('first line')
+
+    // The member scrubbed to 1:00 on their phone; ↻ / a reconcile re-anchors.
+    setSession({ playing: false, anchor: { ms: 60_000, wallMs: performance.now() } })
+
+    await waitFor(() => expect(focusedText()).toBe('second line'))
   })
 })

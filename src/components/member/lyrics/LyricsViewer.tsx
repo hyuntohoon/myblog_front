@@ -89,7 +89,7 @@ import type { QueueEntry, QueueResult } from './queue.api'
 import type { JumpContext } from './queueJump'
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
-import { playbackSession } from '@lib/playback/session'
+import { nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
 import { canControlPlayback } from '@lib/playback/ownership'
 import { PlaybackOwnerBanner } from '../playback/PlaybackOwnerBanner'
 import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
@@ -609,7 +609,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
       endSynced.current = false
     // PAUSED BROWSE (ARCH-playback-authority-convergence Step 3). While the music
-    // is stopped a re-anchor updates WHERE the player is held and nothing more.
+    // is stopped AND the member is browsing, a re-anchor updates where the player
+    // is held and nothing more.
     //
     // This half is easy to miss and undoes the other one completely: dropping the
     // 3s idle timer stops the browse ending on a timer, but every visibility
@@ -618,8 +619,19 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     // off their line — just on someone else's schedule instead of a timer's.
     // The RFC names exactly two triggers that resume follow: ↩, and playback
     // resuming. A re-anchor is neither.
-    if (!isPlaying)
+    //
+    // `suspended` is load-bearing in that condition, and review caught it missing:
+    // gating on `!isPlaying` alone also skipped `setFocus`, and the follow
+    // scheduler bails while paused, so NOTHING recomputed the line. A manual ↻ on
+    // a paused track — the case the caller's own comment calls "the frozen line is
+    // exact rather than guessed" — became a visual no-op.
+    if (!isPlaying && suspended) {
+      // Kill a countdown armed while the music WAS running, though. `armSuspend`
+      // refuses to start one while paused, but a browse begun a second before the
+      // pause already has one, and it would fire the snap-back over silence.
+      clearSuspendTimer()
       return
+    }
     clearSuspendTimer()
     setSuspended(false)
     if (n > 0)
@@ -820,10 +832,17 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const jumpTo = async (index: number) => {
     // A jump CANNOT coalesce (Step 3): it replaces Spotify's context with a whole
     // tail, so running a second one behind the first would issue two competing
-    // lists. So it keeps the shipped rule for anything that cannot coalesce — the
-    // rows RENDER disabled while one is in flight (`jumpDisabled` below), and this
-    // guard is only the backstop for a press that outruns a render.
-    if (jumpingIndex != null || !canControl)
+    // lists. It therefore keeps the shipped rule for anything that cannot
+    // coalesce — the rows RENDER disabled while one is in flight, and this guard
+    // is the backstop for a press that outruns a render.
+    //
+    // `nonCoalescingBlocked` covers the OTHER direction, which review caught:
+    // ⏭ and the queue rows are on the same screen (the transport bar renders on
+    // the queue view too), a ⏭ goes through `playFrom` → `play({uris: tail})`,
+    // and until this guard went in a row tap during that flight issued a second
+    // competing `play`. Whichever landed last owned the audio, while the session
+    // had already recorded the ⏭ target as current.
+    if (jumpingIndex != null || !canControl || nonCoalescingBlocked(sessionState))
       return
     if (queue.k !== 'ready' || !queue.data.ok)
       return
@@ -1505,7 +1524,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	state={queue}
 	onRetry={() => setQueueSeq(s => s + 1)}
 	onJump={jumpTo}
-	jumpDisabled={!canControl || jumpingIndex != null}
+	jumpDisabled={!canControl || jumpingIndex != null || nonCoalescingBlocked(sessionState)}
 	jumpingIndex={jumpingIndex}
           />
         )}
@@ -1610,7 +1629,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={!canControl}
+	disabled={!canControl || sessionState.noActiveDevice}
 	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.previous())
@@ -1622,7 +1641,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn is-play"
-	disabled={!canControl}
+	disabled={!canControl || sessionState.noActiveDevice}
 	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.togglePlay())
@@ -1634,7 +1653,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={!canControl}
+	disabled={!canControl || sessionState.noActiveDevice}
 	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.next())
