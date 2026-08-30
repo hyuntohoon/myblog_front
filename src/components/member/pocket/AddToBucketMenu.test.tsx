@@ -78,7 +78,12 @@ describe('addToBucketMenu dismissable stack', () => {
 		const picker = await screen.findByRole('dialog', { name: '버킷 선택' })
 		const controls = [...picker.querySelectorAll<HTMLButtonElement>('button')]
 		const close = screen.getByRole('button', { name: '닫기' })
-		expect(document.activeElement).toBe(close)
+		// The picker's autofocus runs in an effect, which `findByRole` above does not
+		// wait for — the dialog is in the DOM a tick before focus moves into it. The
+		// bare assertion was a race that only lost under load (it began failing in CI
+		// when this suite grew); waiting for the focus to land drops the timing
+		// assumption without weakening what is asserted.
+		await waitFor(() => expect(document.activeElement).toBe(close))
 
 		controls.at(-1)!.focus()
 		fireEvent.keyDown(controls.at(-1)!, { key: 'Tab' })

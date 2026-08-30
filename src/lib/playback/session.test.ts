@@ -315,9 +315,31 @@ describe('drop semantics', () => {
 
     await playbackSession.onDropped()
 
+    // `onDropped` itself still never interrupts: the drop does not seize playback
+    // and does not move the current row.
     expect(queueIds()).toEqual(['a', 'b'])
     expect(mocks.play).toHaveBeenCalledTimes(calls)
     expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+
+    // But the append IS a future-tail mutation, and since ARCH Step 2 (OQ1 (a))
+    // those apply live. Draining the coalescing window is what separates the two
+    // claims — without it this test would keep asserting "no play ever" and would
+    // be passing by timing accident rather than by design.
+    // (`unavailable` so the reissue's own confirmation read cannot fold the session
+    // into `idle` and erase the state under assertion.)
+    mocks.readLivePlayback.mockResolvedValue({ state: 'unavailable' })
+    await vi.advanceTimersByTimeAsync(300 + PLAYBACK_LAG_MS)
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+    if (mode === 'playing') {
+      expect(mocks.play).toHaveBeenLastCalledWith({
+        kind: 'uris',
+        uris: ['provider:track:track-a', 'provider:track:track-b'],
+      })
+    }
+    else {
+      // Paused stays silent — the reissue is deferred to the next resume.
+      expect(mocks.play).toHaveBeenCalledTimes(calls)
+    }
   })
 
   it('appends without interrupting while external playback is sounding (BUG-29)', async () => {
@@ -1041,7 +1063,7 @@ describe('single-tab ownership', () => {
     expect(playbackSession.getSnapshot().anchor?.ms).toBe(47_000)
   })
 
-  it('blocks an in-page mirror until takeover, then resumes from the current row', async () => {
+  it('blocks an in-page mirror until takeover, then MOVES the audio here before taking the lease', async () => {
     nextPlayOutcome = IN_PAGE_OK
     setQueue([row('a'), row('b')])
     await startAt('a')
@@ -1050,6 +1072,7 @@ describe('single-tab ownership', () => {
     mocks.play.mockClear()
     mocks.sendPlayerCommand.mockClear()
     mocks.ownershipPost.mockClear()
+    mocks.ensureOwner.mockClear()
 
     await playbackSession.togglePlay()
     await playbackSession.playAt('b')
@@ -1062,15 +1085,84 @@ describe('single-tab ownership', () => {
     expect(mocks.ownershipPost).toHaveBeenCalledWith({ type: 'command', cmd: { kind: 'toggle-play' } })
     expect(mocks.ownershipPost).toHaveBeenCalledWith({ type: 'command', cmd: { kind: 'play-at', itemId: 'b' } })
 
-    const takingOver = playbackSession.takeOver()
-    await flushPlaybackStart()
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-A'), progressMs: 61_000 })
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+    await playbackSession.takeOver()
+
+    // ARCH-playback-authority-convergence Step 2. The banner that offers this
+    // action renders ONLY while the owner holds the in-page device, so this is the
+    // common case, not the exotic one: the sound is inside the other TAB and has to
+    // come here. A device transfer is what moves it — re-issuing our tail would
+    // send a `play` with no `device_id`, which targets the active Connect device,
+    // i.e. the very tab being deposed.
+    expect(mocks.transferPlayback).toHaveBeenCalledWith('', { raiseInPageFirst: true })
+    expect(mocks.play).not.toHaveBeenCalled()
+    // And the lease follows the move rather than preceding it.
     expect(mocks.ensureOwner).toHaveBeenCalledOnce()
-    expect(mocks.play).toHaveBeenCalledWith({
-      kind: 'uris',
-      uris: ['provider:track:track-a', 'provider:track:track-b'],
-    })
-    await finishPlayback(takingOver)
-    expect(playbackSession.getSnapshot()).toMatchObject({ isOwner: true, currentItemId: 'a', playing: true })
+    expect(playbackSession.getSnapshot().isOwner).toBe(true)
+  })
+
+  it('keeps the playhead, and never forwards its restore to the tab being deposed', async () => {
+    nextPlayOutcome = IN_PAGE_OK
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    mocks.sendPlayerCommand.mockClear()
+    mocks.ownershipPost.mockClear()
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-A'), progressMs: 61_000 })
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+
+    await playbackSession.takeOver()
+
+    // A transfer carries the context and the playhead with it, so there is nothing
+    // to seek. The shape this pins is the one a reissue-based takeover produced:
+    // `seekTo` is ownership-gated, and running it while this tab is still a mirror
+    // POSTS the position to the outgoing owner — which then drops it, because
+    // `executeCommand` refuses to act once it is no longer the owner. The member's
+    // track silently restarted at 0:00 and the progress bar believed it.
+    expect(mocks.ownershipPost).not.toHaveBeenCalledWith(
+      expect.objectContaining({ cmd: expect.objectContaining({ kind: 'seek' }) }),
+    )
+    expect(mocks.sendPlayerCommand).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'seek' }))
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(61_000)
+  })
+
+  it('leaves the previous owner in place when the takeover transfer fails', async () => {
+    nextPlayOutcome = IN_PAGE_OK
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    mocks.ensureOwner.mockClear()
+    mocks.transferPlayback.mockResolvedValueOnce({ ok: false, reason: 'transient' })
+
+    await playbackSession.takeOver()
+
+    expect(mocks.ensureOwner).not.toHaveBeenCalled()
+    expect(playbackSession.getSnapshot().isOwner).toBe(false)
+    expect(playbackSession.getSnapshot().notice).toMatchObject({ tone: 'error' })
+  })
+
+  it('does not drag Connect playback into this tab — only the lease moves', async () => {
+    // `ownerRung` stays 'remote': the sound is on a speaker or a phone, so it
+    // belongs to the account rather than to any tab.
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    expect(playbackSession.getSnapshot().ownerRung).toBe('remote')
+    mocks.ensureOwner.mockClear()
+    mocks.play.mockClear()
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-A'), progressMs: 5_000 })
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+
+    await playbackSession.takeOver()
+
+    // Raising a quality-limited browser device, or re-issuing the live track as a
+    // one-URI list (which would discard the album context), would each take
+    // something away to gain nothing.
+    expect(mocks.transferPlayback).not.toHaveBeenCalled()
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(mocks.ensureOwner).toHaveBeenCalledOnce()
+    expect(playbackSession.getSnapshot().isOwner).toBe(true)
   })
 
   it('forwards a drop-start to a present owner whose rung is not yet known', async () => {
@@ -1597,5 +1689,480 @@ describe('every mutation passes the same ownership gate', () => {
 
     await expect(playbackSession.transferTo('', { raiseInPageFirst: true })).resolves.toMatchObject({ ok: false })
     expect(mocks.transferPlayback).not.toHaveBeenCalled()
+  })
+})
+
+// ── ARCH-playback-authority-convergence Step 2 ────────────────────────────────
+// One invariant, asserted the same way in every case below: the URI list Spotify
+// was last told to execute equals the visible order from the current row onward.
+// Asserting the ISSUED LIST rather than "a play happened" is the point — the whole
+// defect class was a session that believed an order it had never sent.
+describe('queue execution invariant', () => {
+  const REISSUE_MS = 300
+
+  /** The `uris` of the most recent `play()` — what Spotify is actually executing. */
+  function issuedUris(): string[] | null {
+    const calls = mocks.play.mock.calls
+    const last = calls[calls.length - 1]?.[0]
+    return last && last.kind === 'uris' ? last.uris : null
+  }
+
+  /** The visible order from the current row onward, as URIs. */
+  function visibleFromCurrent(): string[] {
+    const items = playbackQueue().items
+    const i = items.findIndex(item => item.itemId === playbackSession.getSnapshot().currentItemId)
+    return items.slice(i < 0 ? 0 : i).map(item => `provider:track:${item.trackId}`)
+  }
+
+  function expectInvariant(): void {
+    expect(issuedUris()).toEqual(visibleFromCurrent())
+  }
+
+  /** Let the coalescing window close and the reissue's own round trip land. */
+  async function settleReissue(): Promise<void> {
+    await vi.advanceTimersByTimeAsync(REISSUE_MS + PLAYBACK_LAG_MS)
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+  }
+
+  beforeEach(() => {
+    // The reissue's `seekTo` performs a confirmation read while playing; leaving the
+    // default `idle` in place would make adoption clear the current row and hide the
+    // very state these tests assert.
+    mocks.readLivePlayback.mockResolvedValue({ state: 'unavailable' })
+  })
+
+  it('reorders the future tail into the player, not just the screen (D1)', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-b', 'provider:track:track-c'])
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-c', 'provider:track:track-b'])
+    expectInvariant()
+  })
+
+  it('restores the playhead across the reissue instead of restarting the track', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+    await startAt('a')
+    // One live read so the session actually knows the track's duration; the assert
+    // at the end is that the reissue does not throw that away.
+    // `readAtMs` is an ABSOLUTE performance timestamp, and `liveTrack` pins it to
+    // 1_000 — fine at the top of the file, order-dependent anywhere else, because
+    // `positionNow()` then measures from the start of the whole run. Anchor it to
+    // the clock this test is actually on.
+    mocks.readLivePlayback.mockResolvedValueOnce({ ...liveTrack('SPOT-A'), progressMs: 0, readAtMs: performance.now() })
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().durationMs).toBe(240_000)
+    mocks.readLivePlayback.mockResolvedValue({ state: 'unavailable' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    mocks.sendPlayerCommand.mockClear()
+
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+
+    // Captured immediately before the write, so it is the coalescing window past
+    // the mutation — early by the round trip, never late.
+    expect(mocks.sendPlayerCommand).toHaveBeenCalledWith({ kind: 'seek', positionMs: 60_300 })
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(60_300)
+    // The track did not change, so the duration we already knew is still right —
+    // nulling it (as a fresh `playFrom` does) would drop `adoptLive`'s completion
+    // gate onto the row's coarser fallback at exactly the moment the playhead is
+    // being restored near the end.
+    expect(playbackSession.getSnapshot().durationMs).toBe(240_000)
+  })
+
+  it('sends a deleted future row out of the player (C2)', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('c')])
+    await settleReissue()
+
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-c'])
+    expectInvariant()
+  })
+
+  it('sends an appended row out of the player while it is still playing', async () => {
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('b'), row('d')])
+    await settleReissue()
+
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-b', 'provider:track:track-d'])
+    expectInvariant()
+  })
+
+  it('appends after the current row was originally LAST — the tail that did not exist when the play was issued', async () => {
+    setQueue([row('a')])
+    await startAt('a')
+    expect(issuedUris()).toEqual(['provider:track:track-a'])
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('b')])
+    await settleReissue()
+
+    // Before this step the appended row was unreachable: Spotify's frozen list was
+    // one track long and simply ended.
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-b'])
+    expectInvariant()
+  })
+
+  it('leaves the player alone when only rows BEFORE the current one change', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('b')
+    mocks.play.mockClear()
+
+    setQueue([row('x'), row('a'), row('b'), row('c')])
+    await settleReissue()
+
+    // Nothing that plays next changed, so the member is charged no restart.
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+  })
+
+  it('defers a reissue while PAUSED and pays it with the resume, in the visible order', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    await vi.advanceTimersByTimeAsync(30_000)
+    await finishPlayback(playbackSession.togglePlay())
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+    mocks.play.mockClear()
+    mocks.sendPlayerCommand.mockClear()
+
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+    // Starting audio nobody asked for is the worse failure — nothing is issued yet.
+    expect(mocks.play).not.toHaveBeenCalled()
+
+    const resuming = playbackSession.togglePlay()
+    // The resume pays for two round trips — the reissued play, then the seek that
+    // puts the playhead back — so one lag is not enough to drain it.
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 3)
+    await resuming
+
+    // The resume IS the reissue: no plain `play` transport command was needed.
+    expect(mocks.sendPlayerCommand).not.toHaveBeenCalledWith({ kind: 'play' })
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-c', 'provider:track:track-b'])
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+    expectInvariant()
+  })
+
+  it('defers an APPEND made while paused too, and resumes into the grown tail', async () => {
+    // Named separately from the reorder case above because the RFC's verification
+    // list names it separately: an append is the mutation a member is most likely
+    // to make with the music stopped, and it is also the one where "the row is
+    // simply there when I press play" is the whole expectation.
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    await finishPlayback(playbackSession.togglePlay())
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('b'), row('d')])
+    await settleReissue()
+    expect(mocks.play).not.toHaveBeenCalled()
+
+    const resuming = playbackSession.togglePlay()
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 3)
+    await resuming
+
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-b', 'provider:track:track-d'])
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+    expectInvariant()
+  })
+
+  it('coalesces a burst of edits into ONE reissue, so a drag costs one restart', async () => {
+    setQueue([row('a'), row('b'), row('c'), row('d')])
+    await startAt('a')
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('c'), row('b'), row('d')])
+    await vi.advanceTimersByTimeAsync(50)
+    setQueue([row('a'), row('c'), row('d'), row('b')])
+    await vi.advanceTimersByTimeAsync(50)
+    setQueue([row('a'), row('d'), row('c'), row('b')])
+    await settleReissue()
+
+    expect(mocks.play).toHaveBeenCalledTimes(1)
+    expect(issuedUris()).toEqual([
+      'provider:track:track-a',
+      'provider:track:track-d',
+      'provider:track:track-c',
+      'provider:track:track-b',
+    ])
+    expectInvariant()
+  })
+
+  it('holds the invariant across a natural completion without reissuing for the finished row', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    mocks.play.mockClear()
+
+    await finishPlayback(playbackSession.onCompleted())
+    await settleReissue()
+
+    // The completion's own DELETE is a store write like any other. It must NOT read
+    // as a member edit: the advance already issued the correct list, and a second
+    // reissue on top of it would be an audible restart of the track that just began.
+    expect(mocks.play).toHaveBeenCalledTimes(1)
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+    expect(issuedUris()).toEqual(['provider:track:track-b', 'provider:track:track-c'])
+    expectInvariant()
+  })
+
+  it('holds the invariant when the CURRENT row is deleted', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    mocks.play.mockClear()
+
+    const removing = playbackSession.onRemoved('a')
+    await flushPlaybackStart()
+    await finishPlayback(removing)
+    await settleReissue()
+
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+    expect(issuedUris()).toEqual(['provider:track:track-b', 'provider:track:track-c'])
+    expectInvariant()
+  })
+
+  it('keeps duplicate tracks distinct by ROW, so reordering one occurrence moves only it (D8)', async () => {
+    const dupe = { ...row('b'), trackId: 'track-a' }
+    setQueue([row('a'), dupe, row('c')])
+    await startAt('a')
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('c'), dupe])
+    await settleReissue()
+
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-c', 'provider:track:track-a'])
+    expectInvariant()
+  })
+
+  it('keeps a pending reissue owed across a track change we did not issue', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    mocks.cachedUri.mockImplementation((t: string) =>
+      t === 'track-a' ? 'spotify:track:SPOT-A' : t === 'track-b' ? 'spotify:track:SPOT-B' : null)
+    await startAt('a')
+    mocks.play.mockClear()
+
+    // The member appends a row, then — inside the coalescing window, before the
+    // reissue goes out — skips from their phone. The row changes without any play
+    // of ours, so Spotify is still executing the list issued for the OLD row: the
+    // append is still owed, and re-basing the signature on the row change alone
+    // would quietly write the debt off and strand the appended track forever.
+    setQueue([row('a'), row('b'), row('c'), row('d')])
+    await vi.advanceTimersByTimeAsync(100)
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-B'), progressMs: 3_000 })
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+
+    await settleReissue()
+
+    expect(issuedUris()).toEqual(['provider:track:track-b', 'provider:track:track-c', 'provider:track:track-d'])
+    expectInvariant()
+  })
+
+  it('keeps a FAILED reissue owed, so a later track change cannot write it off', async () => {
+    setQueue([row('a'), row('b'), row('c'), row('d')])
+    mocks.cachedUri.mockImplementation((t: string) =>
+      t === 'track-a' ? 'spotify:track:SPOT-A' : t === 'track-b' ? 'spotify:track:SPOT-B' : null)
+    await startAt('a')
+
+    nextPlayOutcome = FAILURE
+    setQueue([row('a'), row('c'), row('b'), row('d')])
+    await settleReissue()
+    expect(playbackSession.getSnapshot().notice).toMatchObject({ tone: 'error' })
+    nextPlayOutcome = OK
+    mocks.play.mockClear()
+
+    // Spotify advances on its own — no play of ours, so its frozen list is still
+    // the pre-reorder one and the debt is still real.
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-B'), progressMs: 3_000 })
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+
+    // Now an edit that touches only a row the member has ALREADY heard. It cannot
+    // change what plays next, so it is invisible to a signature that was re-based
+    // at the track change — and that is the whole point: if the failure had cleared
+    // the debt, `patch` would have re-based here, this write would compare equal,
+    // and the member's reorder would be lost with the error notice long since
+    // replaced. The debt standing is what makes this reissue.
+    setQueue([row('c'), row('b'), row('d')])
+    await settleReissue()
+    expect(issuedUris()).toEqual(['provider:track:track-b', 'provider:track:track-d'])
+    expectInvariant()
+  })
+
+  it('does not trust, after promotion, the baseline it kept while a mirror', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    mocks.play.mockClear()
+
+    // As a mirror this tab watched an edit go by and kept its baseline level with
+    // it — it never writes playback, and it has no way to learn what the OWNER
+    // actually issued.
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+    expect(mocks.play).not.toHaveBeenCalled()
+
+    // The owner tab goes away and this one is promoted.
+    setOwnership({ isOwner: true, ownerTabId: 'test-tab', ownerPresent: true })
+
+    // A write that leaves the visible order exactly where the mirror last saw it —
+    // a revalidate, or an edit to a row already heard. Carrying the mirror-era
+    // baseline forward makes this compare EQUAL and issue nothing, leaving Spotify
+    // executing whatever the dead tab left behind with nothing tracking the
+    // divergence. The baseline a mirror kept is a guess, not a fact: it never wrote
+    // playback and never learned what the owner actually issued.
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+
+    expect(issuedUris()).toEqual(['provider:track:track-a', 'provider:track:track-c', 'provider:track:track-b'])
+    expectInvariant()
+  })
+
+  it('does not let a transient un-anchoring write off a debt owed while paused', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+    await startAt('a')
+    await finishPlayback(playbackSession.togglePlay())
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+
+    // Edited while paused → owed, not issued.
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+    mocks.play.mockClear()
+
+    // A live read that matches no row un-anchors the session. A store write landing
+    // in that window sees a null signature — and must not take it as licence to
+    // forget what the member did, because the row comes straight back.
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-ELSEWHERE', 'paused'), progressMs: 1_000 })
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+    setQueue([row('a'), row('c'), row('b'), row('d')])
+    await settleReissue()
+
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-A', 'paused'), progressMs: 1_000 })
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+
+    const resuming = playbackSession.togglePlay()
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS * 3)
+    await resuming
+
+    expect(issuedUris()).toEqual([
+      'provider:track:track-a',
+      'provider:track:track-c',
+      'provider:track:track-b',
+      'provider:track:track-d',
+    ])
+    expectInvariant()
+  })
+
+  it('never reissues from a MIRROR — only the owner writes playback', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    setOwnership({ isOwner: false, ownerTabId: 'owner-tab', ownerPresent: true })
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+
+    expect(mocks.play).not.toHaveBeenCalled()
+  })
+
+  it('does not reissue for a queue edit while playback is EXTERNAL', async () => {
+    setQueue([row('a'), row('b')])
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-OUTSIDE'))
+    mocks.cachedUri.mockImplementation(() => 'provider:track:something-else')
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().external).not.toBeNull()
+    mocks.play.mockClear()
+
+    setQueue([row('a'), row('b'), row('c')])
+    await settleReissue()
+
+    // Our list is not driving that audio, so there is no order to be authoritative
+    // about — reissuing would seize playback the member started somewhere else.
+    expect(mocks.play).not.toHaveBeenCalled()
+  })
+
+  it('says so, and leaves audio alone, when the sounding row cannot head the reissue', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    mocks.play.mockClear()
+    mocks.resolveTail.mockImplementationOnce(async (rows: Array<{ itemId: string, trackId: string }>) => ({
+      resolved: rows.slice(1).map(r => ({ ...r, uri: `provider:track:${r.trackId}` })),
+      failed: [rows[0]],
+    }))
+
+    setQueue([row('a'), row('c'), row('b')])
+    await settleReissue()
+
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(playbackSession.getSnapshot()).toMatchObject({
+      currentItemId: 'a',
+      playing: true,
+      notice: { tone: 'error', message: '대기열 순서를 재생기에 반영하지 못했어요. 잠시 후 다시 시도해 주세요' },
+    })
+
+    // And the debt stands, exactly as on the play-failed branch: a later track
+    // change must not be able to re-base the discrepancy away and leave the queue
+    // lying with the notice long since replaced.
+    mocks.readLivePlayback.mockResolvedValue({ ...liveTrack('SPOT-B'), progressMs: 3_000, readAtMs: performance.now() })
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-b' ? 'spotify:track:SPOT-B' : null))
+    await playbackSession.syncFromLive()
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+    setQueue([row('c'), row('b')])
+    await settleReissue()
+
+    expect(issuedUris()).toEqual(['provider:track:track-b'])
+    expectInvariant()
+  })
+
+  it('stops re-arming after a bounded number of busy waits', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    mocks.play.mockClear()
+    // A transport call that never settles. `play()` and `sendPlayerCommand()` carry
+    // no abort signal, so `busy` can stay set with nothing left to clear it — and a
+    // reissue that steps aside for a busy session would otherwise re-arm forever in
+    // a tab nobody is looking at. A seek is used rather than a play because a play
+    // settles the debt itself on the way out, which would hide the difference.
+    let releaseHang!: () => void
+    mocks.sendPlayerCommand.mockImplementationOnce(() => new Promise((resolve) => {
+      releaseHang = () => resolve({ ok: true })
+    }))
+    void playbackSession.seekTo(1_000)
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot().busy).toBe(true)
+
+    setQueue([row('a'), row('c'), row('b')])
+    await vi.advanceTimersByTimeAsync(300 * 40)
+    releaseHang()
+    await vi.advanceTimersByTimeAsync(300 * 4 + PLAYBACK_LAG_MS * 2)
+
+    // The attempt was abandoned, not left pending: nothing fires once the session
+    // frees up.
+    expect(mocks.play).not.toHaveBeenCalled()
+
+    // The DEBT still stands, though — the member's next edit pays it.
+    setQueue([row('a'), row('c'), row('b'), row('d')])
+    await settleReissue()
+    expect(issuedUris()).toEqual([
+      'provider:track:track-a',
+      'provider:track:track-c',
+      'provider:track:track-b',
+      'provider:track:track-d',
+    ])
+    expectInvariant()
   })
 })
