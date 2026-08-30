@@ -11,7 +11,7 @@
 //   · a mirror tab's transport worked while the Global Player's identical buttons
 //     were correctly disabled, because this component never asked about ownership.
 import type { LyricsResponse } from './lyrics.api'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LyricsViewer } from './LyricsViewer'
 
@@ -93,6 +93,9 @@ function focusedText(): string | null {
 async function open() {
   render(<LyricsViewer spotifyTrackId="track-1" canRefresh onClose={() => {}} />)
   await screen.findByText('second line')
+  // Line taps use a stable handler whose latest closure is installed by a
+  // passive effect after the async lyric document render.
+  await act(async () => {})
 }
 
 beforeEach(() => {
@@ -183,6 +186,28 @@ describe('a mirror tab cannot bypass the ownership gate', () => {
     expect(mocks.seekTo).not.toHaveBeenCalled()
     // Browsing is still allowed — reading lyrics is not a playback mutation.
     await waitFor(() => expect(focusedText()).toBe('second line'))
+  })
+
+  it('returns from a tapped browse line to the unchanged live anchor', async () => {
+    render(<LyricsViewer spotifyTrackId="track-1" canRefresh initialProgressMs={10_000} onClose={() => {}} />)
+    await screen.findByText('second line')
+    expect(focusedText()).toBe('first line')
+
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByText('second line'))
+
+      expect(mocks.seekTo).not.toHaveBeenCalled()
+      expect(focusedText()).toBe('second line')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000)
+      })
+      expect(focusedText()).toBe('first line')
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })
 
