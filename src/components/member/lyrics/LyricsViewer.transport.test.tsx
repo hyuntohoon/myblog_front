@@ -320,8 +320,19 @@ describe('paused browse does not snap back on a timer', () => {
       // Four times the browse-idle window. Before Step 3 the timer fired at 3s and
       // yanked the reader back to line 1, over and over, for as long as the viewer
       // stayed open on a stopped player.
-      await vi.advanceTimersByTimeAsync(12_000)
+      //
+      // `act` around the advance is load-bearing, not decoration: without it the
+      // timer's `setFocus` has fired but React has not re-rendered, so the DOM
+      // still shows the browsed line and this assertion passes no matter what the
+      // timer did. Verified by mutation — restoring the timer left this test green
+      // until the wrapper went in.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000)
+      })
       expect(focusedText()).toBe('second line')
+      // And the browse is still ON, rather than silently ended with the focus
+      // happening to sit where it was.
+      expect(screen.getByLabelText('현재 줄로 돌아가기')).toBeTruthy()
     }
     finally {
       vi.useRealTimers()
@@ -336,12 +347,32 @@ describe('paused browse does not snap back on a timer', () => {
       fireEvent.keyDown(document.querySelector('.lyv-panel')!, { key: 'ArrowDown' })
       expect(focusedText()).toBe('second line')
 
-      await vi.advanceTimersByTimeAsync(4_000)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000)
+      })
       await waitFor(() => expect(focusedText()).toBe('first line'))
     }
     finally {
       vi.useRealTimers()
     }
+  })
+
+  it('survives a re-anchor while still paused', async () => {
+    // A visibility return or a `MYBLOG_PLAYBACK_CHANGED` reconcile re-anchors the
+    // held position. `applyAnchor` used to exit the browse unconditionally, so
+    // removing the idle timer alone would have moved the yank from a timer to
+    // whenever the session next spoke — the same failure, harder to see.
+    mocks.currentSpotifyTrackId.mockReturnValue('track-1')
+    setSession({ playing: false })
+    await openWithAnchor()
+
+    fireEvent.keyDown(document.querySelector('.lyv-panel')!, { key: 'ArrowDown' })
+    expect(focusedText()).toBe('second line')
+
+    setSession({ playing: false, anchor: { ms: 3_000, wallMs: performance.now() } })
+
+    expect(focusedText()).toBe('second line')
+    expect(screen.getByLabelText('현재 줄로 돌아가기')).toBeTruthy()
   })
 
   it('returns to follow when playback resumes', async () => {
@@ -355,10 +386,10 @@ describe('paused browse does not snap back on a timer', () => {
     fireEvent.keyDown(document.querySelector('.lyv-panel')!, { key: 'ArrowDown' })
     expect(focusedText()).toBe('second line')
 
-    // The resume arrives as a session update to the MOUNTED viewer. Without the
-    // false→true edge effect the lyrics stay parked on the browsed line while the
-    // song runs on — which is what a member sees after ▶ if only `armSuspend`'s
-    // timer had been removed and nothing replaced it.
+    // The resume arrives as a session update to the MOUNTED viewer: the play state
+    // and the fresh position land on one patch, and `applyAnchor` exits the browse
+    // because it landed with `isPlaying`. Without that branch's `isPlaying` arm the
+    // lyrics stay parked on the browsed line while the song runs on.
     setSession({ playing: true, anchor: { ms: 0, wallMs: performance.now() } })
     await waitFor(() => expect(focusedText()).toBe('first line'))
   })

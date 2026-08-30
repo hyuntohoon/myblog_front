@@ -547,18 +547,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 
   // PAUSED BROWSE, the other half (Step 3). `armSuspend` refuses to set a timer
   // while the music is stopped, so something has to end the browse when the music
-  // comes back — otherwise a member who browsed while paused and then pressed ▶
-  // would watch the lyrics stay parked on the line they had scrolled to.
-  // Deliberately keyed on the false→true EDGE: re-running on every render while
-  // playing would cancel an ordinary browse the instant it started.
-  const wasPlaying = useRef(playing)
-  useEffect(() => {
-    const resumed = playing && !wasPlaying.current
-    wasPlaying.current = playing
-    if (resumed && suspended)
-      returnToFollow()
-  }, [playing, suspended])
-
+  // comes back — and that something is `applyAnchor`, which already exits the
+  // browse whenever it lands with `isPlaying`. A resume IS a re-anchor: the play
+  // state and the fresh position arrive on the same session patch.
+  //
+  // A separate false→true edge effect was written here first and then REMOVED. It
+  // could not be reached except when a resume carried a null position, and on that
+  // path it would have snapped the reader to an anchor gone stale by the length of
+  // the pause — a worse answer than leaving the browse alone. Two mechanisms for
+  // one rule, one of them untestable and wrong where it applied.
   const armSuspend = () => {
     // With no trackable clock seed there is no live position to return to, so
     // navigation remains free and no suspend UI/timer is created.
@@ -595,19 +592,36 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // focus from it. Centralizes the "position → anchor + focus" step used by
   // same-track re-sync. `readAtMs` is the wall instant the
   // position was read (defaults to now for callers without one).
-  const applyAnchor = (progressMs: number | null, readAtMs?: number) => {
+  /**
+   * `isPlaying` is passed rather than read from the `playing` state because both
+   * call sites `setPlaying(...)` immediately before calling this, and the closure
+   * here would still hold the value from before that press.
+   */
+  const applyAnchor = (progressMs: number | null, readAtMs: number | undefined, isPlaying: boolean) => {
     if (progressMs == null)
       return
     const next: ClockAnchor = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
     setAnchor(next)
-    clearSuspendTimer()
-    setSuspended(false)
     // Re-arm end detection only when the fresh position sits meaningfully
     // before the end. A same-track read still pinned inside the grace window
     // (a player stuck reporting `playing` at ≈duration) keeps the auto
     // re-sync spent — one automatic read, never a hammer; manual ↻ remains.
     if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
       endSynced.current = false
+    // PAUSED BROWSE (ARCH-playback-authority-convergence Step 3). While the music
+    // is stopped a re-anchor updates WHERE the player is held and nothing more.
+    //
+    // This half is easy to miss and undoes the other one completely: dropping the
+    // 3s idle timer stops the browse ending on a timer, but every visibility
+    // return and every `MYBLOG_PLAYBACK_CHANGED` reconcile lands here, and this
+    // function exited the browse unconditionally. So the reader was still yanked
+    // off their line — just on someone else's schedule instead of a timer's.
+    // The RFC names exactly two triggers that resume follow: ↩, and playback
+    // resuming. A re-anchor is neither.
+    if (!isPlaying)
+      return
+    clearSuspendTimer()
+    setSuspended(false)
     if (n > 0)
       setFocus(focusIndexForMs(segs, estimateMs(next) + leadMs))
   }
@@ -725,7 +739,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
           // position, so the frozen line is exact rather than guessed, and a
           // later resume resumes from truth.
           logResidual(source, r.progressMs, r.readAtMs, r.state)
-          applyAnchor(r.progressMs, r.readAtMs)
+          applyAnchor(r.progressMs, r.readAtMs, r.state === 'playing')
         }
       }
       else if (r.state === 'idle') {
@@ -952,7 +966,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     logResidual('session', sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing ? 'playing' : 'paused')
     setDurationMs(sessionState.durationMs)
     setPlaying(sessionState.playing)
-    applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs)
+    applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing)
   }, [sessionState.anchor, sessionState.playing, sessionState.durationMs, sessionState.currentItemId, sessionState.external, trackId])
 
   const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
