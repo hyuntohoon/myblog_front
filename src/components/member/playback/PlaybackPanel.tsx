@@ -9,6 +9,8 @@ import { INITIAL_DOCK, useDockTear } from '@lib/dockTear'
 import { openAlbum } from '@lib/entityEvents'
 import { playbackQueue, withoutQueueItems, withReorderedQueueItems } from '@lib/playback/queue'
 import { playbackSession } from '@lib/playback/session'
+import { canControlPlayback } from '@lib/playback/ownership'
+import { PlaybackOwnerBanner } from './PlaybackOwnerBanner'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { resolveDbAlbumId } from '@lib/spotifyCatalog'
 import { useDismissable } from '@lib/useDismissable'
@@ -180,16 +182,15 @@ export function PlaybackIdentity({ row, external, compact = false }: {
 }
 
 /**
- * May this tab offer transport at all?
- *
- * False in exactly one case: this tab is a mirror whose owner is on rung 2, where
- * the audio is inside that other tab and moving it here means taking the lease.
- * On rung 1 the audio is on a Connect device in no tab at all, so every tab stays
- * a usable remote (T4) — the session forwards those presses to the owner.
+ * Re-exported, not defined here. The predicate moved to `lib/playback/ownership.ts`
+ * (ARCH-playback-authority-convergence Step 1) so surfaces that cannot import this
+ * panel — the lyrics viewer above all — can ask the same question instead of
+ * shipping transport that bypasses the gate. This binding stays because every
+ * existing importer takes it from here, and so does `PlaybackOwnerBanner`, which
+ * moved out for the same reason.
  */
-export function canControlPlayback(state: PlaybackSessionState): boolean {
-  return state.isOwner || !state.ownerPresent || state.ownerRung !== 'in-page'
-}
+export { canControlPlayback }
+export { PlaybackOwnerBanner }
 
 export function PlaybackTransport({ state, canControl }: { state: PlaybackSessionState, canControl: boolean }) {
   return (
@@ -199,19 +200,6 @@ export function PlaybackTransport({ state, canControl }: { state: PlaybackSessio
         {state.playing ? 'Ⅱ' : '▶'}
       </button>
       <button type="button" onClick={() => void playbackSession.next()} disabled={!canControl || state.busy || (!state.currentItemId && !state.external)} aria-label="다음 곡">›</button>
-    </div>
-  )
-}
-
-export function PlaybackOwnerBanner({ state }: { state: PlaybackSessionState }) {
-  // Exactly the inverse of `canControlPlayback` — the one case transport is
-  // withheld is the one case there is something to offer instead.
-  if (canControlPlayback(state))
-    return null
-  return (
-    <div className="pbp-owner-banner" role="status">
-      <span>다른 탭에서 재생 중이에요</span>
-      <button type="button" onClick={() => void playbackSession.takeOver()}>이 탭에서 재생하기</button>
     </div>
   )
 }

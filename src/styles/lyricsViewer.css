@@ -552,6 +552,34 @@
 	padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
 	background: linear-gradient(to top, rgba(0,0,0,0.55), transparent);
 }
+/* Mirror-tab takeover offer (ARCH-playback-authority-convergence Step 1). Spans
+   the whole grid so it reads as a statement about the bar rather than as a fourth
+   control sitting in column 1; the transport row keeps its own centring below. */
+.lyv-owner-banner {
+	grid-column: 1 / -1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 2px 4px 6px;
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	letter-spacing: 0.06em;
+	color: rgba(255,255,255,0.72);
+}
+.lyv-owner-banner button {
+	min-height: 32px;
+	padding: 0 10px;
+	border: 1px solid rgba(255,255,255,0.3);
+	border-radius: 999px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.lyv-owner-banner button:hover { border-color: rgba(255,255,255,0.6); color: #fff; }
+
 .lyv-transport-main {
 	grid-column: 2;
 	display: flex;

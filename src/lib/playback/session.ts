@@ -18,6 +18,10 @@
 // divergence to reconcile — T2, and the non-goal says it out loud so a later session
 // does not "simplify" it back.
 import type { BoardAlbum } from '@lib/buckets'
+import type { LivePlayback } from '@components/member/lyrics/playback.api'
+import type { QueueEntry } from '@components/member/lyrics/queue.api'
+import type { JumpContext, JumpOutcome } from '@components/member/lyrics/queueJump'
+import type { TailRow } from './uris'
 import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, SetTrackLikedOutcome, TransferOutcome } from '@lib/spotifyPlayback'
 import type { OwnershipMessage } from './ownership'
@@ -26,6 +30,8 @@ import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { getStreamingToken, getTrackLiked, IN_PAGE_MESSAGE, listDevices, MYBLOG_PLAYBACK_CHANGED, play, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
 import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { readLivePlayback } from '@components/member/lyrics/playback.api'
+import { jumpToQueueIndex } from '@components/member/lyrics/queueJump'
+import { confirmTransport } from './confirmTransport'
 import { playbackOwnership } from './ownership'
 import { playbackQueue, withoutQueueItems } from './queue'
 import { cachedUri, prefetchUris, resolveTail } from './uris'
@@ -113,12 +119,35 @@ export interface PlaybackSessionState {
   ownerRung: PlayRung | null
 }
 
+/**
+ * A mutation a mirror tab may ask the owner to perform on its behalf.
+ *
+ * ARCH-playback-authority-convergence Step 1 added `mode` and `transfer`. Before
+ * it, `setMode()` and `transferTo()` simply did not consult `gate()` at all — so a
+ * mirror tab whose Global Player transport was disabled could still change shuffle,
+ * repeat and volume, and could move the device. The worst shape was "이 브라우저":
+ * it raises an in-page SDK device in whichever tab runs it, so a mirror running it
+ * produced a SECOND SDK device while the lease stayed in the other tab — exactly
+ * the state ownership exists to make impossible.
+ *
+ * `transfer` deliberately carries no `raiseInPageFirst`. Raising THIS tab as the
+ * device is inherently local — forwarding it to the owner would raise the wrong
+ * tab — so that path takes the lease outright instead (see `transferTo`).
+ */
 type SessionCommand =
 	| { kind: 'play-at', itemId: string } |
 	{ kind: 'toggle-play' } |
 	{ kind: 'seek', positionMs: number } |
 	{ kind: 'next' } |
-	{ kind: 'previous' }
+	{ kind: 'previous' } |
+	{ kind: 'mode', cmd: PlaybackModeCommand } |
+	{ kind: 'transfer', deviceId: string } |
+	/**
+	 * A tap on a row of SPOTIFY's own queue (the lyrics viewer's 대기열 screen) —
+	 * not the Playback Bucket, which `play-at` covers. It carries its payload
+	 * because the target list is Spotify's and this session cannot reconstruct it.
+	 */
+	{ kind: 'queue-jump', items: QueueEntry[], index: number, context: JumpContext | null }
 
 interface BroadcastSessionState {
   currentItemId: string | null
@@ -237,7 +266,9 @@ let capabilityInflight: Promise<void> | null = null
 let likedTrackId: string | null = null
 let libraryBusy = false
 let modeBusy = false
-let playbackChangeAdoption: Promise<void> | null = null
+let playbackChangeAdoption: Promise<LivePlayback | null> | null = null
+/** Set when an event arrives while a reconcile is in flight — see `reconcileFromEvent`. */
+let adoptionDirty = false
 
 const RECONNECT_FLAG = 'np-spotify-reconnect'
 
@@ -354,6 +385,17 @@ function trackIdsFrom(rows: BoardAlbum[]): string[] {
   return rows.flatMap(r => (r.trackId ? [r.trackId] : []))
 }
 
+/**
+ * The same rows, but keeping each track id BOUND to the membership it came from.
+ *
+ * `trackIdsFrom` throws the correspondence away, which is fine for the prefetch
+ * (it only warms a cache) and was catastrophic for the play path — see
+ * `resolveTail`'s own header and `playFrom` below.
+ */
+function tailRowsFrom(rows: BoardAlbum[]): TailRow[] {
+  return rows.flatMap(r => (r.trackId ? [{ itemId: r.itemId, trackId: r.trackId }] : []))
+}
+
 function noticeForFailure(f: PlayFailure): SessionNotice {
   // `play()` already wrote one Korean sentence per reason. Re-wording them here
   // would fork the copy and is exactly what the RFC forbids ("none becomes a
@@ -389,13 +431,20 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   if (!head)
     return null
   patch({ busy: true })
-  const uris = await resolveTail(trackIdsFrom(rows.slice(index)))
-  if (uris.length === 0) {
+  // IDENTITY-ALIGNED (ARCH-playback-authority-convergence Step 1). `resolveTail`
+  // used to hand back a filtered `string[]`, so a head that could not resolve made
+  // Spotify start at row n+1 while this function went on to record row n as
+  // current — session identity and audio disagreeing from the very first note, with
+  // nothing anywhere able to notice. The tail now carries its item ids, and what is
+  // adopted below is the row that ACTUALLY started.
+  const tail = await resolveTail(tailRowsFrom(rows.slice(index)))
+  if (tail.resolved.length === 0) {
     const unresolvable: PlayFailure = { ok: false, reason: 'unresolvable', message: '이 곡을 재생할 수 없어요.' }
     authoritativePatch({ busy: false, notice: noticeForFailure(unresolvable) })
     return unresolvable
   }
-  const r = await play({ kind: 'uris', uris })
+  const started = tail.resolved[0]
+  const r = await play({ kind: 'uris', uris: tail.resolved.map(row => row.uri) })
   if (!r.ok) {
     // T2: a play failure PRESERVES the queue. Nothing is removed, nothing is
     // reordered — the rows stay exactly as they were and only the notice changes.
@@ -407,9 +456,13 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   // which may already have kicked off an `adoptLive()` read — bumping the seq
   // HERE, before that read can land, is what makes it discard itself instead of
   // overwriting this with a stale answer.
+  // The row the member pressed could not be resolved, so playback legitimately
+  // started somewhere else in their queue. Saying so is the difference between a
+  // skipped track and a mysterious one (principle: no silent failures).
+  const skippedHead = started.itemId !== head.itemId
   authoritativePatch({
     busy: false,
-    currentItemId: head.itemId,
+    currentItemId: started.itemId,
     playing: true,
     rung: r.rung,
     degraded: r.degraded,
@@ -417,7 +470,9 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
     durationMs: null,
     // Rung 2 MUST say it is degraded — the shipped ladder makes that the caller's
     // obligation and both forms are callers. `IN_PAGE_MESSAGE` is that sentence.
-    notice: r.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
+    notice: skippedHead ?
+      { tone: 'info', message: '이 곡은 재생할 수 없어 다음 곡부터 재생해요' } :
+      r.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
   })
   // A direct, index-based play is certain by construction — there is no guessing
   // involved, so any ambiguity carried over from a prior track-id match no longer
@@ -483,7 +538,7 @@ const BOUNDARY_BUFFER_MS = 1_500
  * believes is sounding, never the rows. A track playing from somewhere else does
  * not get appended, removed, or reordered into our list.
  */
-async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
+async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback | null> {
   // Adoption is a WRITE to the session, sourced from a Spotify read. Only the owner
   // performs it: if every tab adopted independently they would be two writers racing
   // over one state, each overwriting the other's broadcast with its own slightly
@@ -492,7 +547,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
   // broadcasts the adopted state — so the read is not merely redundant, it is
   // harmful. With no owner at all, this tab is the only reader and proceeds.
   if (!current.isOwner && current.ownerPresent)
-    return
+    return null
 
   // The row this tab believes is sounding, BEFORE the read — captured now so a
   // completion can be detected against what we knew, not against whatever a
@@ -510,13 +565,13 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
   // Discard rather than apply: the fresher local write is already correct, and an
   // adoption is a read, never the tie-breaker over an action. See `localWriteSeq`.
   if (localWriteSeq !== seqAtStart)
-    return
+    return null
 
   // `unavailable` is a token/network failure, NOT "nothing is playing". Treating it
   // as silence would make a transient blip wipe a perfectly good current track —
   // the same distinction `readLivePlayback`'s own docstring insists on.
   if (live.state === 'unavailable')
-    return
+    return live
 
   // The row we thought was playing is no longer live — natural completion (or a
   // skip away from it that did not go through this session, e.g. another surface).
@@ -571,7 +626,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
       liked: 'unknown',
     })
     anchorAmbiguous = false
-    return
+    return live
   }
 
   // `paused` carries the full track payload and MUST be adopted, not folded into
@@ -609,7 +664,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
     anchorAmbiguous = ambiguous
     loadLiked(live.trackId)
     scheduleBoundaryCheck()
-    return
+    return live
   }
   anchorAmbiguous = false
   patch({
@@ -632,6 +687,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<void> {
   })
   loadLiked(live.trackId)
   scheduleBoundaryCheck()
+  return live
 }
 
 // ── replacing the queue ──────────────────────────────────────────────────────
@@ -845,6 +901,12 @@ function loadLiked(trackId: string): void {
   })
 }
 
+/** `currentSpotifyTrackId()` as a URI, for comparing against a live read. */
+function currentSpotifyUri(): string | null {
+  const id = currentSpotifyTrackId()
+  return id ? `spotify:track:${id}` : null
+}
+
 function currentSpotifyTrackId(): string | null {
   if (current.external)
     return current.external.spotifyTrackId
@@ -887,6 +949,13 @@ async function toggleLiked(): Promise<SetTrackLikedOutcome | null> {
 }
 
 async function setMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome | null> {
+  // GATED (ARCH-playback-authority-convergence Step 1). Shuffle, repeat and volume
+  // are playback mutations exactly as much as ⏯ is, and they were the one family
+  // that never consulted ownership — so a mirror tab with a disabled transport
+  // could still reach across and change them. A mirror forwards to the owner, same
+  // as every other command; the owner acts locally.
+  if (!current.isOwner && !await gate({ kind: 'mode', cmd }))
+    return null
   if (modeBusy)
     return null
   modeBusy = true
@@ -939,6 +1008,25 @@ async function refreshDevices() {
 }
 
 async function transferTo(deviceId: string, opts?: { raiseInPageFirst?: boolean }): Promise<TransferOutcome> {
+  // GATED (ARCH-playback-authority-convergence Step 1), and the two halves are
+  // gated DIFFERENTLY on purpose.
+  //
+  // "이 브라우저" raises an in-page SDK device in whichever tab runs it. Forwarding
+  // that to the owner would raise the WRONG tab, and running it ungated in a mirror
+  // produced the exact state ownership exists to forbid: two SDK devices, with the
+  // lease on neither of the ones the member is looking at. It is also the most
+  // explicit "make sound HERE" there is — the same reasoning `replaceQueueAndPlay`
+  // uses — so it takes the lease outright rather than asking.
+  //
+  // A transfer to a real Connect device moves audio out of every tab, so it is an
+  // ordinary forwardable command.
+  if (opts?.raiseInPageFirst) {
+    if (!await playbackOwnership.ensureOwner())
+      return { ok: false, reason: 'transient' }
+  }
+  else if (!current.isOwner && !await gate({ kind: 'transfer', deviceId })) {
+    return { ok: false, reason: 'transient' }
+  }
   const r = await transferPlayback(deviceId, opts)
   if (!r.ok)
     return r
@@ -1018,6 +1106,101 @@ async function seekTo(ms: number, onReanchored?: () => void): Promise<PlayerComm
 async function syncFromLive(): Promise<void> {
   const prefetched = prefetchUris(trackIdsFrom(queueRows()))
   await adoptLive(prefetched)
+}
+
+/**
+ * The Spotify track id the session currently believes is sounding, whatever the
+ * anchor happens to be — external reads carry one directly, a queue-matched row
+ * goes through the cache-only reverse lookup.
+ */
+function liveUriOf(live: LivePlayback | null): string | null {
+  if (!live || live.state === 'idle' || live.state === 'unavailable' || !live.trackId)
+    return null
+  return `spotify:track:${live.trackId}`
+}
+
+export type QueueJumpResult =
+	| { ok: true } |
+	/** Handed to the owning tab; this tab does nothing more. */
+	{ ok: false, reason: 'forwarded' } |
+	{ ok: false, reason: 'nothing-to-send' | 'no-capability' | 'token' | 'transient' } |
+	/**
+	 * The command was accepted and Spotify never reported the target track. The
+	 * session has ALREADY reconciled itself to whatever is really playing; this
+	 * reason exists so the surface that asked can say so rather than sit on an
+	 * optimistic guess.
+	 */
+	{ ok: false, reason: 'unconfirmed' }
+
+const JUMP_CONFIRM_TRIES = 4
+const JUMP_CONFIRM_GAP_MS = 500
+
+/**
+ * Tap a row of Spotify's own queue.
+ *
+ * This lived inside `LyricsViewer` until ARCH-playback-authority-convergence Step 1,
+ * which is why the viewer needed `awaitingTrack`, `confirmJump` and an optimistic
+ * `trackId` of its own — and why the failure mode was permanent. `confirmJump`
+ * DISCARDED `confirmTransport`'s boolean, so exhausting the budget left the viewer
+ * showing B while Spotify played A, with nothing left to correct it.
+ *
+ * Here, every confirmation attempt is an `adoptLive()`, so the session is
+ * continuously reconciled to the truth whether or not the jump lands. Giving up is
+ * therefore not a divergence any more — it is a session that already believes the
+ * right thing, plus a caller that gets told the tap did not take.
+ */
+async function jumpToSpotifyQueue(items: QueueEntry[], index: number, context: JumpContext | null): Promise<QueueJumpResult> {
+  const target = items[index]
+  if (!target?.uri)
+    return { ok: false, reason: 'nothing-to-send' }
+  if (!current.isOwner && !await gate({ kind: 'queue-jump', items, index, context }))
+    return { ok: false, reason: 'forwarded' }
+
+  patch({ busy: true })
+  const r: JumpOutcome = await jumpToQueueIndex(items, index, context)
+  if (!r.ok) {
+    const reason = r.reason === 'nothing-to-send' ? 'nothing-to-send' : r.reason
+    authoritativePatch({
+      busy: false,
+      notice: reason === 'nothing-to-send' ?
+        null :
+        noticeForCommand({ ok: false, reason } as Exclude<PlayerCommandOutcome, { ok: true }>),
+    })
+    return { ok: false, reason }
+  }
+
+  // Optimistic, and authoritative for the same reason `togglePlay` is: the command
+  // we just issued is the most direct evidence there is, and `MYBLOG_PLAYBACK_CHANGED`
+  // has already fired into Spotify's ack→apply window.
+  //
+  // `rung`/`degraded` come from the ladder that just ran, exactly as in `playFrom`.
+  // Dropping them (the shape this had when the jump lived in `LyricsViewer`) meant a
+  // cold-start jump — rung 1 answers `NO_ACTIVE_DEVICE`, rung 2 raises this tab as
+  // the SDK device — left `rung: null` on the shared state: no 음질 제한 notice, and
+  // every mirror tab reading `ownerRung: null` decided it could still control
+  // playback. That is the ownership gate this step exists to close, half-open.
+  authoritativePatch({
+    busy: false,
+    playing: true,
+    rung: r.rung,
+    degraded: r.degraded,
+    notice: r.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
+  })
+  const wanted = `spotify:track:${target.id}`
+  let last: LivePlayback | null = null
+  const settled = await confirmTransport(
+    async () => {
+      last = await adoptLive()
+    },
+    () => liveUriOf(last) === wanted,
+    { tries: JUMP_CONFIRM_TRIES, gapMs: JUMP_CONFIRM_GAP_MS },
+  )
+  if (settled)
+    return { ok: true }
+  // The budget is spent. The reads above have already written whatever is really
+  // playing, so nothing is left dangling — say it plainly and stop.
+  patch({ notice: { tone: 'error', message: '그 곡으로 넘어가지 못했어요. 잠시 후 다시 시도해 주세요', reason: 'transient' } })
+  return { ok: false, reason: 'unconfirmed' }
 }
 
 export const playbackSession = {
@@ -1277,6 +1460,8 @@ export const playbackSession = {
 
   seekTo,
 
+  jumpToSpotifyQueue,
+
   refreshDevices,
 
   transferTo,
@@ -1306,6 +1491,7 @@ export const playbackSession = {
     libraryBusy = false
     modeBusy = false
     playbackChangeAdoption = null
+    adoptionDirty = false
     const ownership = playbackOwnership.getSnapshot()
     current = {
       ...EMPTY,
@@ -1358,11 +1544,66 @@ function scheduleBoundaryCheck(): void {
     return
   const remaining = duration - positionNow()
   const delay = Math.max(500, remaining + BOUNDARY_BUFFER_MS)
+  const endingUri = currentSpotifyUri()
   boundaryTimer = setTimeout(() => {
     boundaryTimer = null
     if (current.isOwner && current.rung === 'remote')
-      void adoptLive()
+      void confirmCompletion(endingUri)
   }, delay)
+}
+
+/**
+ * ARCH-playback-authority-convergence Step 1 — the natural boundary gets the same
+ * bounded burst every explicit transport already had.
+ *
+ * The single read this replaces lost exactly the race `confirmTransport` was
+ * written for, and lost it silently: Spotify answers `GET /me/player` with the
+ * PREVIOUS track for a beat after it has moved on, that stale read looks like an
+ * ordinary same-track read, and nothing asks again. An explicit ⏭ had a
+ * confirmation loop since 2026-08-02; the natural end of a track — the far more
+ * common transition — did not.
+ *
+ * "Settled" is three outcomes, not one, because a track can legitimately end into
+ * any of them:
+ *   · a DIFFERENT track is playing — ordinary advance;
+ *   · `idle` — the queue ran out, or playback stopped;
+ *   · the SAME track at a position near zero — repeat-one restarted it. That is a
+ *     new playback epoch even though the identity never changed, and treating it as
+ *     "not settled yet" would spin the whole budget on a correct answer.
+ *
+ * Still not polling (D28): it runs once per track boundary, behind a real end, and
+ * it stops the moment Spotify agrees.
+ */
+const COMPLETION_CONFIRM_TRIES = 4
+const COMPLETION_CONFIRM_GAP_MS = 500
+/**
+ * A same-track read below this position, after the track was expected to END, is a
+ * restart rather than a stale read — nothing else puts a playhead back near zero at
+ * a boundary. Generous on purpose: it only has to separate "≈0" from "≈duration".
+ */
+const EPOCH_RESTART_MS = 5_000
+
+async function confirmCompletion(endingUri: string | null): Promise<void> {
+  let last: LivePlayback | null = null
+  await confirmTransport(
+    async () => {
+      last = await adoptLive()
+    },
+    () => {
+      const live: LivePlayback | null = last
+      if (!live || live.state === 'unavailable')
+        return false
+      if (live.state === 'idle')
+        return true
+      const uri = liveUriOf(live)
+      if (endingUri == null || uri !== endingUri)
+        return true
+      // Same track. Only a rewound playhead means a new epoch (repeat-one);
+      // still sitting at the end means Spotify simply has not advanced yet.
+      return (live.progressMs ?? 0) < EPOCH_RESTART_MS
+    },
+    { tries: COMPLETION_CONFIRM_TRIES, gapMs: COMPLETION_CONFIRM_GAP_MS },
+  )
 }
 
 /**
@@ -1437,8 +1678,14 @@ async function executeCommand(command: SessionCommand): Promise<void> {
     await playbackSession.seekTo(command.positionMs)
   else if (command.kind === 'next')
     await playbackSession.next()
-  else
+  else if (command.kind === 'previous')
     await playbackSession.previous()
+  else if (command.kind === 'mode')
+    await playbackSession.setMode(command.cmd)
+  else if (command.kind === 'transfer')
+    await playbackSession.transferTo(command.deviceId)
+  else
+    await playbackSession.jumpToSpotifyQueue(command.items, command.index, command.context)
 }
 
 function syncOwnership(): void {
@@ -1485,23 +1732,44 @@ playbackOwnership.onMessage(handleOwnershipMessage)
 if (!current.isOwner)
   playbackOwnership.post({ type: 'sync-request' })
 
+/**
+ * LEADING + TRAILING coalescing of the transport echo
+ * (ARCH-playback-authority-convergence Step 1).
+ *
+ * The event says "something changed", not what — so ASK. What is new is that the
+ * LAST change can no longer be lost. Before this, every event fired its own
+ * `adoptLive()`, and `readLivePlayback()`'s single-flight dedupe then folded a
+ * burst onto whichever read happened to be in flight: A → ⏭ B → ⏭ C inside one
+ * round trip produced ONE read, started before B and C existed, and the session
+ * settled on A or B and never asked again. (The lyrics viewer had the same bug in
+ * its own shape — a 1.5s leading-edge floor with no trailing call.)
+ *
+ * So: the first event reconciles immediately; any event arriving while that
+ * reconcile is in flight only sets `dirty`; and when it lands, a dirty flag buys
+ * exactly ONE more read. Bounded by construction — a burst of any length costs two
+ * reads, and the second is guaranteed to have started after the last event.
+ */
+function reconcileFromEvent(): void {
+  if (playbackChangeAdoption) {
+    adoptionDirty = true
+    return
+  }
+  const adoption = adoptLive()
+  playbackChangeAdoption = adoption
+  void adoption.finally(() => {
+    if (playbackChangeAdoption === adoption)
+      playbackChangeAdoption = null
+    if (adoptionDirty) {
+      adoptionDirty = false
+      reconcileFromEvent()
+    }
+  })
+}
+
 // ── transport echo ───────────────────────────────────────────────────────────
 // `MYBLOG_PLAYBACK_CHANGED` fires for Connect plays AND (since front #342) for
 // transport commands, so another surface pausing the same account is reflected here
 // rather than leaving the panel claiming it is still playing. Registered once, at
 // module scope, because the session is a singleton and both forms share it.
-if (typeof window !== 'undefined') {
-  window.addEventListener(MYBLOG_PLAYBACK_CHANGED, () => {
-    // The event says "something changed", not what — so ASK. This used to only
-    // re-anchor the clock, which meant a play started anywhere else (an album page,
-    // the phone, a speaker) left the panel describing whatever it had started last,
-    // or nothing at all. One read, fired by an event that is already 1:1 with a real
-    // transition, so D28 (no polling) still holds.
-    const adoption = adoptLive()
-    playbackChangeAdoption = adoption
-    void adoption.finally(() => {
-      if (playbackChangeAdoption === adoption)
-        playbackChangeAdoption = null
-    })
-  })
-}
+if (typeof window !== 'undefined')
+  window.addEventListener(MYBLOG_PLAYBACK_CHANGED, reconcileFromEvent)

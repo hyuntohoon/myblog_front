@@ -10,6 +10,15 @@
 // and it is the same shape the queue-row jump had already solved privately.
 //
 // Both callers now share this loop, so the two can no longer drift apart.
+//
+// ARCH-playback-authority-convergence Step 1 moved this out of
+// `components/member/lyrics/` and into `lib/playback/`, because the natural
+// track boundary needs exactly the same loop and `session.ts` may not import
+// from a component directory. The reason it was written for an explicit ⏭ is
+// the reason it applies to a natural end too: on Connect (rung 1) there is no
+// push signal at all, so a single post-boundary read is the same race — and
+// losing it looks identical, a stale same-track read that nobody asks about
+// again. Nothing about the loop itself changed in the move.
 
 /** Injected only by tests; production uses a real timer. */
 export type Sleep = (ms: number) => Promise<void>

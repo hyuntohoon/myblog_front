@@ -159,6 +159,8 @@ async function mintOnce(): Promise<TokenResult> {
 interface SpotifyListenerPayload { device_id?: string, message?: string }
 interface SpotifyPlaybackState {
   paused: boolean
+  /** Playhead, in ms. Read since ARCH-playback-authority-convergence Step 1 — see the listener. */
+  position?: number
   track_window: { current_track: { id: string | null } }
 }
 interface SpotifyPlayerAddListener {
@@ -226,6 +228,17 @@ let deviceId: string | null = null
  */
 let lastSdkTrackId: string | null = null
 /**
+ * Last playhead this tab's own SDK device reported, so the listener can see a
+ * track RESTART — the one playback transition that changes nothing about identity.
+ */
+let lastSdkPositionMs = 0
+/**
+ * A backwards jump of at least this much, landing near the start, is a new playback
+ * epoch rather than a scrub. Sized to separate "restarted" from "the member nudged
+ * the playhead": ordinary seeks land anywhere, a repeat lands at ~0.
+ */
+const EPOCH_RESTART_MS = 5_000
+/**
  * Which rung last produced sound, or null before any play this session.
  *
  * Only meaningful as "where the last successful play went" — Spotify may move
@@ -290,7 +303,19 @@ async function ensureConnectedDevice(token: string): Promise<string> {
     // a push event, fired zero times when nothing changes.
     p.addListener('player_state_changed', (state) => {
       const trackId = state?.track_window?.current_track?.id ?? null
-      if (trackId === lastSdkTrackId)
+      const positionMs = typeof state?.position === 'number' ? state.position : lastSdkPositionMs
+      // REPEAT-ONE (ARCH-playback-authority-convergence Step 1). Identity alone
+      // cannot see A → A: with repeat set to `track`, the song ends and starts
+      // again with the same id, this listener returned early, no
+      // `MYBLOG_PLAYBACK_CHANGED` was dispatched, and every consumer's clock stayed
+      // parked on the last line for the whole second play. A playback EPOCH is
+      // `trackId` *plus* position continuity — so a same-track state whose playhead
+      // has jumped backwards to ~0 is a change, and is announced as one.
+      const sameTrack = trackId !== null && trackId === lastSdkTrackId
+      const rewound = lastSdkPositionMs - positionMs >= EPOCH_RESTART_MS
+      const restarted = sameTrack && rewound && positionMs < EPOCH_RESTART_MS
+      lastSdkPositionMs = positionMs
+      if (trackId === lastSdkTrackId && !restarted)
         return
       lastSdkTrackId = trackId
       notifyPlaybackChanged()
@@ -936,6 +961,7 @@ export async function setTrackLiked(trackId: string, liked: boolean): Promise<Se
 
 /** Tear down the connected player + clear the in-memory token/device caches. */
 export function __resetPlaybackState(): void {
+  lastSdkPositionMs = 0
   player?.disconnect()
   cachedToken = null
   player = null
