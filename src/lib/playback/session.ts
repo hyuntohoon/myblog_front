@@ -207,10 +207,33 @@ function emit(): void {
   for (const cb of listeners) cb()
 }
 
+/**
+ * ARCH-playback-authority-convergence Step 2 — the queue execution invariant's
+ * state. Declared here, ahead of `patch()` rather than beside the block that owns
+ * it further down, because `patch()` re-bases the signature on a row change.
+ *
+ * `issuedTail` is the tail signature Spotify is believed to be executing;
+ * `queueDirty` says a future-tail mutation is not represented in it yet. See the
+ * block header at `futureTailSignature` for what any of that means.
+ */
+let issuedTail: string | null = null
+let queueDirty = false
+let reissueTimer: ReturnType<typeof setTimeout> | null = null
+
 function patch(p: Partial<PlaybackSessionState>): void {
+  const previousItemId = current.currentItemId
   current = { ...current, ...p }
   if (current.isOwner)
     current = { ...current, ownerRung: current.rung }
+  // ARCH-playback-authority-convergence Step 2. Spotify's executing list advances
+  // in lockstep with ours at every natural boundary, so when the current row moves
+  // the tail it is executing is exactly the tail we can now see — re-base the
+  // signature or the very next store write (the completed row's own DELETE) would
+  // read as a member edit and reissue for nothing. Skipped while a reissue is still
+  // owed: that debt survives a track change, and clearing it here would drop a
+  // mutation the member made while paused.
+  if (current.currentItemId !== previousItemId && !queueDirty)
+    rebaseIssuedTail()
   emit()
   if (current.isOwner)
     broadcastState()
@@ -478,8 +501,222 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   // involved, so any ambiguity carried over from a prior track-id match no longer
   // applies.
   anchorAmbiguous = false
+  // What Spotify is executing is, by construction, the visible tail from `index`.
+  // Any reissue debt that built up before this play is settled by the play itself.
+  rebaseIssuedTail()
   scheduleBoundaryCheck()
   return r
+}
+
+// ── ARCH-playback-authority-convergence Step 2 — the queue execution invariant ──
+//
+// INVARIANT: *the order visible in the Playback Bucket is the order that plays next.*
+//
+// It did not hold before this. `playFrom` issues `play({kind:'uris', …})` once, and
+// from that instant Spotify owns a frozen copy of the list; every later reorder,
+// delete and append reached the tree, the store and the screen, and reached the
+// player never. A member could drag a track to the top, watch the row move, and hear
+// the old order play out to the end.
+//
+// The execution model is the RFC's option B: on a future-tail mutation, REISSUE
+// `[current, …newTail]` and seek the playhead back to where it was. It is the only
+// candidate that behaves identically on rung 1 (Connect remote — what the owner
+// actually uses, and where there is no push signal at all) and rung 2. The rejected
+// alternatives are recorded in the RFC: one-track-at-a-time app-controlled
+// continuation turns a missed boundary into silence and breaks Spotify-side
+// repeat/shuffle, and Spotify's native queue API has neither reorder nor delete so
+// it cannot represent this queue at all.
+//
+// The reissue costs a brief (~200–400ms) restart of the sounding track, because
+// Spotify's `play` has no "replace the tail, keep playing" form. That is OQ1, and
+// the owner answered it on 2026-08-30: accept the glitch, apply every mutation
+// live. The alternative — letting reorder and delete take effect only from the next
+// track — silently breaks the very invariant this step exists to establish.
+//
+// Two things keep the glitch off the common path: only the rows AFTER the current
+// one are in the signature (reordering already-played rows is free), and a reissue
+// while PAUSED is deferred to the next resume rather than performed, since starting
+// audio nobody asked for is worse than the wait.
+
+/**
+ * Coalescing window for queue mutations, not a protocol constant — nothing about
+ * Spotify or the network is being estimated here, so it is not the kind of number
+ * this RFC insists on measuring. It exists because one member gesture can land as
+ * several store writes (an optimistic reflow, then the refetch a rejected
+ * `PUT /reorder` forces; a held arrow key stepping a row down one position at a
+ * time), and each extra reissue is one extra audible restart. Its only cost is
+ * that much latency before the new order is live.
+ */
+const QUEUE_REISSUE_DEBOUNCE_MS = 300
+
+/**
+ * A reissue could not be delivered, so the visible order is — for now — NOT the
+ * order that will play. Saying so is the difference between a queue that lies and
+ * a queue that admits it (the RFC's own "no silent failures").
+ */
+const QUEUE_REISSUE_FAILED = '대기열 순서를 재생기에 반영하지 못했어요. 잠시 후 다시 시도해 주세요'
+
+/** A takeover that could not move the audio must not move the lease either. */
+const TAKEOVER_FAILED = '재생 제어를 가져오지 못했어요. 잠시 후 다시 시도해 주세요'
+
+/**
+ * The rows that will play AFTER the current one, as a comparable signature.
+ *
+ * Null when nothing is anchored to the queue — idle, or `external` playback that
+ * our list is not driving. There is no "plays next" for the queue to be
+ * authoritative about in either state, so there is nothing to reissue.
+ *
+ * Rows BEFORE the current one are deliberately excluded: moving or deleting a row
+ * the member has already heard cannot change what plays next, and charging them an
+ * audible restart for it would be a glitch with nothing bought.
+ */
+function futureTailSignature(): string | null {
+  const i = rowIndex(current.currentItemId)
+  if (i < 0)
+    return null
+  return queueRows().slice(i + 1).map(r => r.itemId).join('\n')
+}
+
+function clearReissue(): void {
+  if (reissueTimer !== null) {
+    clearTimeout(reissueTimer)
+    reissueTimer = null
+  }
+}
+
+/** Declare the visible tail and the executing tail to be the same list. */
+function rebaseIssuedTail(): void {
+  issuedTail = futureTailSignature()
+  queueDirty = false
+  clearReissue()
+}
+
+function armReissue(): void {
+  clearReissue()
+  reissueTimer = setTimeout(() => {
+    reissueTimer = null
+    // Paused between the mutation and the timer: the debt stays owed and comes due
+    // on the next resume (`togglePlay`), which is the deferral OQ1 kept. Ownership
+    // is re-checked HERE and not only where the timer was armed, because it can
+    // change inside the window — and a mirror that starts writing playback is the
+    // state Step 1 exists to forbid.
+    if (queueDirty && current.playing && current.isOwner)
+      void reissueFromCurrent()
+  }, QUEUE_REISSUE_DEBOUNCE_MS)
+}
+
+/**
+ * The queue changed under us. Called for EVERY write to the shared tree, which is
+ * the point: the queue is a projection over `bucketStore` (see `queue.ts`'s header),
+ * so subscribing to the store catches reorder, delete, drop-append, album expansion
+ * and the Pocket menu at once — where hooking each of the six call sites would leave
+ * the seventh, added later, silently outside the invariant.
+ */
+function onQueueChanged(): void {
+  const signature = futureTailSignature()
+  if (signature === null) {
+    // Nothing queue-anchored is sounding. Anything owed was owed for a row that is
+    // no longer current, so it is not owed any more.
+    issuedTail = null
+    queueDirty = false
+    clearReissue()
+    return
+  }
+  // A mirror never writes playback (Step 1's whole point). Keeping the baseline in
+  // step with what it can see means that if this tab later becomes the owner it
+  // starts level, rather than firing a reissue for edits the real owner already
+  // executed.
+  if (!current.isOwner) {
+    issuedTail = signature
+    queueDirty = false
+    return
+  }
+  if (signature === issuedTail)
+    return
+  queueDirty = true
+  if (current.playing)
+    armReissue()
+}
+
+/**
+ * Reissue `[current, …visible tail]` and put the playhead back.
+ *
+ * Used by the debounced mutation path, by the deferred resume, and by `takeOver()` —
+ * one mechanic, so "what Spotify is executing" can only ever be established one way.
+ *
+ * Deliberately NOT owner-gated itself: the two reactive callers check ownership
+ * before they call, while `takeOver()` runs this from a tab that is not the owner
+ * yet — issuing the tail from here IS the move the lease then follows.
+ */
+async function reissueFromCurrent(): Promise<boolean> {
+  if (current.busy) {
+    // A play or transport call owns the session right now. Reissuing across it
+    // would race two writes over one player; wait one window and look again.
+    armReissue()
+    return false
+  }
+  const rows = queueRows()
+  const i = rowIndex(current.currentItemId)
+  if (i < 0) {
+    issuedTail = null
+    queueDirty = false
+    return false
+  }
+  const signature = futureTailSignature()
+  patch({ busy: true })
+  const tail = await resolveTail(tailRowsFrom(rows.slice(i)))
+  const head = tail.resolved[0]
+  if (!head || head.itemId !== current.currentItemId) {
+    // The sounding row would not be the head of the reissue, so issuing it would
+    // move the member to a different track to fix an ORDER — a cure worse than the
+    // disease. Leave audio alone and leave `issuedTail` where it was, so the next
+    // genuine edit tries again; retrying this one on a timer would be the polling
+    // loop D28 forbids.
+    authoritativePatch({ busy: false, notice: { tone: 'error', message: QUEUE_REISSUE_FAILED, reason: 'unresolvable' } })
+    queueDirty = false
+    return false
+  }
+  // Read the playhead as LATE as possible — after the resolve, immediately before
+  // the write that stops it — and deliberately from before the round trip rather
+  // than after: the reissue lands a beat later, so this target is a hair early. A
+  // few hundred ms of rewind is a re-heard syllable; the same error the other way
+  // is a skipped one.
+  const resumeMs = Math.max(0, Math.round(positionNow()))
+  const r = await play({ kind: 'uris', uris: tail.resolved.map(row => row.uri) })
+  if (!r.ok) {
+    authoritativePatch({ busy: false, notice: noticeForFailure(r) })
+    queueDirty = false
+    return false
+  }
+  authoritativePatch({
+    busy: false,
+    playing: true,
+    rung: r.rung,
+    degraded: r.degraded,
+    anchor: { ms: 0, wallMs: performance.now() },
+    durationMs: null,
+    notice: r.degraded ? { tone: 'degraded', message: IN_PAGE_MESSAGE } : null,
+  })
+  anchorAmbiguous = false
+  issuedTail = signature
+  clearReissue()
+  // A mutation that landed WHILE the reissue was in flight is still unrepresented.
+  // `patch` above cannot have re-based it away (the row did not change), so compare
+  // against what we actually issued rather than trusting the flag.
+  queueDirty = futureTailSignature() !== signature
+  if (queueDirty)
+    armReissue()
+  if (resumeMs > 0) {
+    // The shipped seek — its own re-anchor, its `localWriteSeq` guard and its
+    // confirmation read are exactly what a restored position needs, and writing a
+    // second seek path here is the "a second play path by accident" risk in its
+    // other form.
+    await seekTo(resumeMs)
+  }
+  else {
+    scheduleBoundaryCheck()
+  }
+  return true
 }
 
 /**
@@ -1357,6 +1594,19 @@ export const playbackSession = {
       return
     if (!current.isOwner && !await gate({ kind: 'toggle-play' }))
       return
+    // ARCH-playback-authority-convergence Step 2. A future-tail mutation made while
+    // paused was DEFERRED, not dropped — reissuing then would have started audio the
+    // member did not ask for. Resuming is when that debt comes due, and paying it
+    // with the reissue IS the resume: `play({uris:[current, …tail]})` starts sound
+    // and `seekTo` puts the playhead back, so the first thing heard after ▶ already
+    // follows the order on screen. A plain resume here would play the stale order.
+    if (!current.playing && queueDirty && current.isOwner && rowIndex(current.currentItemId) >= 0) {
+      if (await reissueFromCurrent())
+        return
+      // The reissue could not be delivered and has said so. Fall through to the
+      // ordinary resume: refusing to start playback because an ORDER could not be
+      // applied would be a worse failure than the stale order it is protecting.
+    }
     patch({ busy: true })
     const r = await sendPlayerCommand({ kind: current.playing ? 'pause' : 'play' })
     if (!r.ok) {
@@ -1474,17 +1724,62 @@ export const playbackSession = {
     patch({ notice: null })
   },
 
+  /**
+   * Move playback authority to THIS tab.
+   *
+   * ARCH-playback-authority-convergence Step 2 reverses the order: the lease now
+   * FOLLOWS the move instead of preceding it. What shipped took the lease first and
+   * then looked for a row to play, which meant that during `external` playback —
+   * where `rowIndex` is -1 by construction — the lease moved and the audio did not.
+   * The member pressed 재생 제어 가져오기, the banner went away, and nothing they
+   * could see had changed hands. A takeover that fails now leaves the previous
+   * owner intact rather than orphaning the session between two tabs.
+   *
+   * What "move" means depends on where the sound actually IS, which `ownerRung`
+   * already records:
+   *   · queue-anchored → reissue our own tail from here, playhead preserved. This
+   *     tab becomes the issuer, which is what authority over a queue consists of.
+   *   · external on the in-page rung → the audio lives inside the OTHER TAB's SDK
+   *     device and dies with its lease, so it has to be transferred here first.
+   *   · external on a Connect device → the audio is on a speaker or a phone; it
+   *     belongs to the account, not to any tab. Nothing needs to move, and moving
+   *     it anyway would drag the member from their speaker into a quality-limited
+   *     browser device they never asked for, discarding the album context with it.
+   */
   async takeOver(): Promise<void> {
+    const i = rowIndex(current.currentItemId)
+    if (i >= 0) {
+      if (!await reissueFromCurrent())
+        return
+      await playbackOwnership.ensureOwner()
+      return
+    }
+    if (current.external && current.ownerRung === 'in-page') {
+      const r = await transferPlayback('', { raiseInPageFirst: true })
+      if (!r.ok) {
+        patch({ notice: { tone: 'error', message: TAKEOVER_FAILED, reason: r.reason } })
+        return
+      }
+      await playbackOwnership.ensureOwner()
+      await refreshDevices()
+      await syncFromLive()
+      return
+    }
+    // Nothing is sounding, or it is sounding somewhere no tab owns. The claim IS
+    // the whole action; adopting afterwards is what makes this tab's transport
+    // describe the same playback the old owner's did.
     if (!await playbackOwnership.ensureOwner())
       return
-    const i = rowIndex(current.currentItemId)
-    if (i >= 0)
-      await playFrom(i)
+    if (current.external)
+      await syncFromLive()
   },
 
   /** Test seam. */
   __reset(): void {
     clearBoundaryCheck()
+    clearReissue()
+    issuedTail = null
+    queueDirty = false
     anchorAmbiguous = false
     capabilityInflight = null
     likedTrackId = null
@@ -1729,6 +2024,10 @@ function handleOwnershipMessage(message: OwnershipMessage): void {
 
 playbackOwnership.subscribe(syncOwnership)
 playbackOwnership.onMessage(handleOwnershipMessage)
+// ARCH-playback-authority-convergence Step 2 — every queue mutation lands here.
+// Registered at module scope for the same reason the transport echo below is: the
+// session is a singleton and both player forms share it.
+bucketStore.subscribe(onQueueChanged)
 if (!current.isOwner)
   playbackOwnership.post({ type: 'sync-request' })
 
