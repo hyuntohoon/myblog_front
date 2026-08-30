@@ -24,18 +24,37 @@ export interface SpotifyLibrarySurface {
   runLibrarySync: () => Promise<void>
 }
 
-export function useSpotifyLibrary(onSynced: () => Promise<void>): SpotifyLibrarySurface {
+/**
+ * @param onSynced Repaints the board (bucketStore) after a real sync lands.
+ * @param isOwner SEC-member-listening-data-boundary Step 1. Every read this hook
+ * makes is owner-global: `GET /api/buckets/spotify-library/state` was already
+ * `require_owner`, and `GET /api/library/listened-albums` became so in this step.
+ * Both mount effects and the manual sync are refused for a non-owner.
+ *
+ * This is the surface the RFC's own table missed. The comment below used to
+ * reason "the board only ever mounts on the self-dashboard, so this is inherently
+ * own-view-only" — and that is precisely the assumption this RFC exists to
+ * disprove: `SelfDashboard` mounts for EVERY signed-in member, while the data
+ * behind it is the owner's. Before the server gate, a member opening My Buckit
+ * fetched the owner's 200 listened albums and stamped their OWN bucket covers
+ * "이미 들음" from the owner's history.
+ *
+ * Gating it here rather than leaning on the 403 is deliberate: the backend PR's
+ * rollback is "revert the PR", and a client that still asks would silently resume
+ * leaking the moment it were reverted.
+ */
+export function useSpotifyLibrary(onSynced: () => Promise<void>, isOwner: boolean): SpotifyLibrarySurface {
   // The special bucket's sync state (banners + per-album source/state map) and
   // whether a manual sync is in flight.
   const [libState, setLibState] = useState<SpotifyLibraryState | null>(null)
   const [syncing, setSyncing] = useState(false)
 
-  // FEAT-bucket-identity Direction B — the member's cumulative listened-album set
+  // FEAT-bucket-identity Direction B — the OWNER's cumulative listened-album set
   // (album_id → "이미 들음"), fetched ONCE on mount to quietly hint which
-  // not-yet-reviewed bucket covers are primed for a review. The board only ever
-  // mounts on the self-dashboard, so this is inherently own-view-only. Empty set
-  // on any error (401/404/network) — a transient failure simply leaves the covers
-  // un-hinted (never blocks the board).
+  // not-yet-reviewed bucket covers are primed for a review. Owner-only: the set is
+  // read from an owner-global table, so for anyone else it stays empty and the
+  // covers are simply un-hinted. Empty set on any error (401/403/404/network) too —
+  // a transient failure never blocks the board.
   const [listenedAlbumIds, setListenedAlbumIds] = useState<Set<string>>(() => new Set())
 
   // album_id → Spotify-library sync row, for the cover source/state badges.
@@ -50,6 +69,8 @@ export function useSpotifyLibrary(onSynced: () => Promise<void>): SpotifyLibrary
   // Worker-fed; the GET never calls Spotify (rule #9). A transient failure just
   // leaves the section unbadged — it never blocks the crate board.
   useEffect(() => {
+    if (!isOwner)
+      return
     let alive = true
     getSpotifyLibraryState()
       .then(s => alive && setLibState(s))
@@ -57,12 +78,14 @@ export function useSpotifyLibrary(onSynced: () => Promise<void>): SpotifyLibrary
     return () => {
       alive = false
     }
-  }, [])
+  }, [isOwner])
 
   // FEAT-bucket-identity Direction B — fetch the listened-album archive ONCE on
   // mount (no polling) for the "이미 들음 → 평론 가능" cover hint. Quiet no-op on
   // any error: 401/404/network just leaves the set empty (no hint, never blocks).
   useEffect(() => {
+    if (!isOwner)
+      return
     let alive = true
     listListenedAlbums()
       .then((items) => {
@@ -79,7 +102,7 @@ export function useSpotifyLibrary(onSynced: () => Promise<void>): SpotifyLibrary
     return () => {
       alive = false
     }
-  }, [])
+  }, [isOwner])
 
   // 동기화 — model on refreshRecent(): POST enqueues the worker reconcile (rule
   // #9, no synchronous Spotify call), then POLL /spotify-library/state until
@@ -88,7 +111,10 @@ export function useSpotifyLibrary(onSynced: () => Promise<void>): SpotifyLibrary
   // 'debounced' response (a sync ran <30s ago) skips the poll. Best-effort: any
   // failure just clears the spinner — the next mount/poll reconciles.
   async function runLibrarySync(): Promise<void> {
-    if (syncing)
+    // Owner-only action (`POST /api/buckets/spotify-library/sync` is require_owner).
+    // The button is not rendered for a member, but the callback is exported, so it
+    // refuses here rather than relying on nobody calling it.
+    if (!isOwner || syncing)
       return
     setSyncing(true)
     const before = libState?.last_synced_at ?? null

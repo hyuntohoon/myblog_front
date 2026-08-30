@@ -47,7 +47,7 @@ describe('useSpotifyLibrary — mount', () => {
     }))
     api.listListenedAlbums.mockResolvedValue(listened('a1', 'a2', null))
 
-    const { result } = renderHook(() => useSpotifyLibrary(vi.fn()))
+    const { result } = renderHook(() => useSpotifyLibrary(vi.fn(), true))
 
     await waitFor(() => expect(result.current.libState).not.toBeNull())
     expect(result.current.libAlbumMap.get('a1')?.source).toBe('myblog_added')
@@ -60,7 +60,7 @@ describe('useSpotifyLibrary — mount', () => {
     api.getSpotifyLibraryState.mockRejectedValue(new Error('401'))
     api.listListenedAlbums.mockRejectedValue(new Error('network'))
 
-    const { result } = renderHook(() => useSpotifyLibrary(vi.fn()))
+    const { result } = renderHook(() => useSpotifyLibrary(vi.fn(), true))
     // let the rejected promises settle
     await act(async () => {
       await Promise.resolve()
@@ -79,7 +79,7 @@ describe('useSpotifyLibrary — runLibrarySync', () => {
     api.syncSpotifyLibrary.mockResolvedValue({ status: 'debounced' })
     const onSynced = vi.fn().mockResolvedValue(undefined)
 
-    const { result } = renderHook(() => useSpotifyLibrary(onSynced))
+    const { result } = renderHook(() => useSpotifyLibrary(onSynced, true))
     await waitFor(() => expect(result.current.libState).not.toBeNull())
 
     await act(async () => {
@@ -100,7 +100,7 @@ describe('useSpotifyLibrary — runLibrarySync', () => {
       release = () => res({ status: 'ok' })
     }))
 
-    const { result } = renderHook(() => useSpotifyLibrary(vi.fn()))
+    const { result } = renderHook(() => useSpotifyLibrary(vi.fn(), true))
     await waitFor(() => expect(result.current.libState).not.toBeNull())
 
     act(() => {
@@ -113,5 +113,39 @@ describe('useSpotifyLibrary — runLibrarySync', () => {
 
     expect(api.syncSpotifyLibrary).toHaveBeenCalledTimes(1)
     act(() => release())
+  })
+})
+
+// SEC-member-listening-data-boundary Step 1 — the surface the RFC's own table
+// missed and review caught. `listListenedAlbums` is one of the nine owner-global
+// reads, and this hook called it on every board mount regardless of who was
+// looking; `getSpotifyLibraryState` was already owner-only, so a member was
+// eating a 403 here already, which is probably why the other read went unnoticed.
+//
+// These assert on the api mocks rather than on rendered output, because the leak
+// IS the request: the listened set only ever produced a subtle "이미 들음" cover
+// hint, so a render-level assertion would have missed it entirely.
+describe('useSpotifyLibrary — owner boundary', () => {
+  it('makes neither mount read for a non-owner', async () => {
+    api.getSpotifyLibraryState.mockResolvedValue(libState())
+    api.listListenedAlbums.mockResolvedValue(listened('a1'))
+
+    const { result } = renderHook(() => useSpotifyLibrary(vi.fn(), false))
+
+    await waitFor(() => expect(result.current.listenedAlbumIds.size).toBe(0))
+    expect(api.listListenedAlbums).not.toHaveBeenCalled()
+    expect(api.getSpotifyLibraryState).not.toHaveBeenCalled()
+    expect(result.current.libState).toBeNull()
+  })
+
+  it('refuses the manual sync for a non-owner even if the callback is invoked', async () => {
+    const { result } = renderHook(() => useSpotifyLibrary(vi.fn(), false))
+
+    await act(async () => {
+      await result.current.runLibrarySync()
+    })
+
+    expect(api.syncSpotifyLibrary).not.toHaveBeenCalled()
+    expect(result.current.syncing).toBe(false)
   })
 })

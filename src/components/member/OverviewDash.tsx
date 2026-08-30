@@ -39,6 +39,8 @@ function fmtWhen(iso: string): string {
 type ViewKey = 'list' | 'grid' | 'card'
 
 interface DashCtx {
+  /** See OWNER_ONLY_WIDGETS — gates the owner-global listening cards. */
+  isOwner: boolean
   views: Record<string, ViewKey>
   setView: (id: string, v: ViewKey) => void
   onOpen: (t: DetailTarget) => void
@@ -220,6 +222,32 @@ const WIDGET_TITLES: Record<string, string> = {
   'latest-reviews': '최근 평론',
 }
 const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
+
+/**
+ * SEC-member-listening-data-boundary Step 1 — widgets backed by an OWNER-GLOBAL
+ * listening read.
+ *
+ * `GET /api/library/{now-playing,recently-listened,recent-tracks,listened-albums}`
+ * read tables with no user column (`spotify_now_playing` is a CHECK-enforced
+ * singleton), so they return the owner's history to whoever asks. This dashboard
+ * mounts for ANY signed-in member on their own profile, so these four cards were
+ * showing a second member the owner's listening.
+ *
+ * A non-owner does not get an empty card — the widget is absent from the registry
+ * entirely, so it is not in the default layout, not restorable from a saved
+ * layout, and not offered by ＋ 컴포넌트 추가. Omitted silently: a non-owner has no
+ * reason to be told what they are not seeing (owner decision on the RFC's OQ1).
+ *
+ * The backend's `require_owner` is the real gate; this keeps the UI honest and
+ * stops the request being made at all. Step 2 gives members their OWN
+ * now-playing / recent-tracks over the V45 `spotify_member_*` tables, at which
+ * point those two come back for everyone from a member-scoped source.
+ */
+const OWNER_ONLY_WIDGETS = new Set(['nowplaying', 'recent-albums', 'recent-tracks', 'listened-albums'])
+
+function widgetsFor(isOwner: boolean): string[] {
+  return isOwner ? ALL_WIDGETS : ALL_WIDGETS.filter(w => !OWNER_ONLY_WIDGETS.has(w))
+}
 
 function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
   return (
@@ -503,6 +531,12 @@ function ListenedAlbumsWidget({ view, onOpen }: { view: ViewKey, onOpen: (t: Det
 }
 
 function WidgetBody({ id, ctx }: { id: string, ctx: DashCtx }) {
+  // Defence in depth. `rows` is filtered on restore, on default and in the add
+  // menu, so an owner-only id should never arrive here — but this is the single
+  // place every card body is mounted, and a card that renders is a card that
+  // fetches. Refusing here means no future path into `rows` can re-open the read.
+  if (!allowed(id, ctx.isOwner))
+    return null
   switch (id) {
     case 'nowplaying': return <NowPlaying variant={ctx.npStyle} onOpenLyrics={ctx.onOpenLyrics} />
     case 'lastfm-nowplaying': return <LastfmNowPlaying />
@@ -705,17 +739,31 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
 }
 
 /* ── dashboard ───────────────────────────────────────────── */
-const DEFAULT_ROWS = (): string[][] => [['nowplaying'], ['recent-albums', 'recent-tracks'], ['listened-albums'], ['bucket']]
+function DEFAULT_ROWS(isOwner: boolean): string[][] {
+  return [['nowplaying'], ['recent-albums', 'recent-tracks'], ['listened-albums'], ['bucket']]
+    .map(row => row.filter(id => allowed(id, isOwner)))
+    .filter(row => row.length)
+}
 
-export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, onOpenLyrics, onOpenTrackLyrics }: { npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[], onOpenLyrics?: OnOpenLyrics, onOpenTrackLyrics?: (spotifyTrackId: string) => void }) {
+function allowed(id: string, isOwner: boolean): boolean {
+  return isOwner || !OWNER_ONLY_WIDGETS.has(id)
+}
+
+export function OverviewDash({ isOwner, npStyle, setNpStyle, onOpen, goBucket, reviews, onOpenLyrics, onOpenTrackLyrics }: { isOwner: boolean, npStyle: NpStyle, setNpStyle: (s: NpStyle) => void, onOpen: (t: DetailTarget) => void, goBucket: () => void, reviews: MemberReview[], onOpenLyrics?: OnOpenLyrics, onOpenTrackLyrics?: (spotifyTrackId: string) => void }) {
   const [rows, setRows] = useState<string[][]>(() => {
     try {
       const s = JSON.parse(localStorage.getItem(OV_ROWS_KEY) || 'null')
-      if (Array.isArray(s) && s.length)
-        return s.map((r: string[]) => r.filter(x => ALL_WIDGETS.includes(x))).filter((r: string[]) => r.length)
+      if (Array.isArray(s) && s.length) {
+        // A layout saved BEFORE this gate can name an owner-only widget. Filtering
+        // the restore (not just the default) is what stops a returning non-owner
+        // painting the owner's cards from their own saved layout.
+        const restored = s.map((r: string[]) => r.filter(x => ALL_WIDGETS.includes(x) && allowed(x, isOwner))).filter((r: string[]) => r.length)
+        if (restored.length)
+          return restored
+      }
     }
     catch { /* ignore */ }
-    return DEFAULT_ROWS()
+    return DEFAULT_ROWS(isOwner)
   })
   const [views, setViews] = useState<Record<string, ViewKey>>(() => {
     try {
@@ -758,14 +806,14 @@ export function OverviewDash({ npStyle, setNpStyle, onOpen, goBucket, reviews, o
     document.addEventListener('pointerdown', onDown, true)
     return () => document.removeEventListener('pointerdown', onDown, true)
   }, [addOpen])
-  const ctx: DashCtx = { views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, goBucket, reviews, onOpenLyrics, onOpenTrackLyrics }
+  const ctx: DashCtx = { isOwner, views, setView: (id, v) => setViews(p => ({ ...p, [id]: v })), onOpen, npStyle, setNpStyle, goBucket, reviews, onOpenLyrics, onOpenTrackLyrics }
   const flat = rows.flat()
   const remove = (id: string) => setRows(prev => prev.map(r => r.filter(x => x !== id)).filter(r => r.length))
   const add = (id: string) => {
     setRows(prev => [...prev, [id]])
     setAddOpen(false)
   }
-  const available = ALL_WIDGETS.filter(w => !flat.includes(w))
+  const available = widgetsFor(isOwner).filter(w => !flat.includes(w))
 
   return (
     <div>

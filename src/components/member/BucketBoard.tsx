@@ -1959,7 +1959,7 @@ export function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { t
 // hidden so the hook clears its map + stops polling without thrashing the memo.
 const NO_RESEARCH_IDS: string[] = []
 
-export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: DetailTarget) => void, reviews: MemberReview[], active?: boolean }) {
+export function BucketBoard({ isOwner, onOpen, reviews, active = true }: { isOwner: boolean, onOpen: (t: DetailTarget) => void, reviews: MemberReview[], active?: boolean }) {
   // Seed both from localStorage so the board paints immediately on mount and
   // only the (background) revalidation is async — no "불러오는 중…" flash, no
   // disappear-then-reappear when returning to the tab. Stale by design; the
@@ -1976,7 +1976,14 @@ export function BucketBoard({ onOpen, reviews, active = true }: { onOpen: (t: De
     if (next)
       bucketStore.setTree(next)
   }, [])
-  const [recent, setRecent] = useState<BoardAlbum[] | null>(() => readSeed<BoardAlbum[]>(RECENT_KEY))
+  // SEC-member-listening-data-boundary Step 1. The 최근 들은 앨범 strip reads
+  // `GET /api/library/recently-listened`, an owner-global table with no user
+  // column, so for a non-owner it was the OWNER's albums. Gating the FETCH alone
+  // would not have been enough: this strip seeds from a localStorage cache, so a
+  // member who had already loaded the board would keep painting the owner's
+  // albums from their own browser indefinitely after the server closed. The seed
+  // is therefore refused AND the stale cache is dropped below.
+  const [recent, setRecent] = useState<BoardAlbum[] | null>(() => (isOwner ? readSeed<BoardAlbum[]>(RECENT_KEY) : []))
   // FEAT-rating-smart-collections Step 4 — 평가전 tile contents. Not part of
   // `tree`/bucketStore on purpose: planned_ratings is its own table (Option B),
   // never a review_buckets row.
@@ -2451,6 +2458,15 @@ ids.push(a.albumId)
   // Load the pinned 최근 들은 앨범 strip — same worker-fed cache the overview uses
   // (GET /api/library/recently-listened, no synchronous Spotify call, rule #9).
   useEffect(() => {
+    if (!isOwner) {
+      // Evict the pre-gate cache written while this read was ungated.
+      try {
+        localStorage.removeItem(RECENT_KEY)
+      }
+      catch { /* ignore */ }
+      setRecent([])
+      return
+    }
     let alive = true
     listRecentlyListened()
       .then((r) => {
@@ -2483,7 +2499,7 @@ ids.push(a.albumId)
     return () => {
       alive = false
     }
-  }, [])
+  }, [isOwner])
 
   useEffect(() => {
     let alive = true
@@ -2520,7 +2536,7 @@ ids.push(a.albumId)
   // per-album badge map, listened-album hint, manual-sync poll) lives in a
   // dedicated hook (REFACTOR Step 4b). It repaints the board via `refresh` once a
   // real sync advances last_synced_at.
-  const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh)
+  const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh, isOwner)
 
   // FEAT-album-review-authoring Step 1 — my private "평론 쓸 것" marks.
   //
