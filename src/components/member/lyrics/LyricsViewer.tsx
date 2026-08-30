@@ -967,13 +967,20 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       setFocus(next)
       return
     }
-    // Nothing to seek on: no live playback binding (the static/debug entry), or a
-    // mirror tab that may not mutate playback. Browse-style focus is still the
-    // right answer there — it is what those entries have always done.
-    if (!canRefresh || !canControl) {
+    // Static/debug entries have no live playback binding, so their historical
+    // local-navigation behavior remains appropriate.
+    if (!canRefresh) {
       setAnchor({ ms: start, wallMs: performance.now() })
       clearSuspendTimer()
       setSuspended(false)
+      setFocus(next)
+      return
+    }
+    // A mirror may browse the lyric document but must not rewrite the local
+    // playback anchor: the unchanged live position is what browse return uses
+    // to restore following after its idle timeout.
+    if (!canControl) {
+      armSuspend()
       setFocus(next)
       return
     }
