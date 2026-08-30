@@ -1374,7 +1374,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Spotify 후보 검색(읽기 전용 + 앨범 동기화 enqueue; deprecated side effect) */
+        /** Spotify 후보 검색(읽기 전용) */
         get: operations["search_candidates_api_music_search_candidates_get"];
         put?: never;
         post?: never;

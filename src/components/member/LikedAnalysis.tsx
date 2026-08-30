@@ -243,13 +243,26 @@ function UnclassifiedPanel({ dist }: { dist: Distribution | null }) {
  * server 좋아요 distributions (whole-set accurate). The sibling 임포트 source renders
  * its own (lifetime + live) view.
  */
-export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loadedCount: number }) {
+export function LikedAnalysis({ rows, loadedCount, likedSourceAvailable = true }: { rows: LikedRowVM[], loadedCount: number, likedSourceAvailable?: boolean }) {
+	// SEC-member-listening-data-boundary Step 1. The 좋아요 source reads
+	// `GET /api/library/saved-tracks{,/genre-distribution,/artist-distribution}` —
+	// owner-global tables with no user column, so for a non-owner it was the OWNER's
+	// 좋아요 library. The sibling 임포트 source is member-scoped
+	// (`/api/library/stream-history/*`, strict `user_id` equality) and is genuinely
+	// theirs, so this panel is NOT hidden wholesale for a member: only the 좋아요
+	// lens goes away, leaving the toggle with a single option (hidden) and 임포트
+	// as the view. `source` is forced rather than merely defaulted, so no stored or
+	// future state can select an unavailable source.
 	const [source, setSource] = useState<Source>('import')
 	const [chartStyle, setChartStyle] = useState<ChartStyle>('bar')
 	const [dists, setDists] = useState<Record<string, Distribution>>({})
 	const [error, setError] = useState(false)
 
 	useEffect(() => {
+		// Not merely unrendered — never requested. A non-owner's browser makes no
+		// call to the owner-global distributions at all.
+		if (!likedSourceAvailable)
+			return
 		let on = true
 		Promise.all([
 			getSavedGenreDistribution(),
@@ -263,11 +276,15 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 		return () => {
 			on = false
 		}
-	}, [])
+	}, [likedSourceAvailable])
 
 	const loaded = Object.keys(dists).length > 0
-	const genreDist = dists[`${source}:genre`] ?? null
-	const artistDist = dists[`${source}:artist`] ?? null
+	// The single source of truth for which lens renders. `source` state still
+	// exists (the toggle drives it for the owner) but cannot select 좋아요 when
+	// that source is not available to this account.
+	const activeSource: Source = likedSourceAvailable ? source : 'import'
+	const genreDist = dists[`${activeSource}:genre`] ?? null
+	const artistDist = dists[`${activeSource}:artist`] ?? null
 	const genreItems = toChartItems(genreDist)
 	// Artist tail is long (hundreds), so cap the chart — but say how many of how
 	// many are shown so it doesn't read as "that's all there is".
@@ -289,12 +306,12 @@ export function LikedAnalysis({ rows, loadedCount }: { rows: LikedRowVM[], loade
 	return (
 		<div style={{ marginBottom: 26 }}>
 			<div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, justifyContent: 'space-between' }}>
-				<Seg value={source} onChange={v => setSource(v as Source)} options={SOURCES} />
+				{likedSourceAvailable && <Seg value={source} onChange={v => setSource(v as Source)} options={SOURCES} />}
 				<Seg value={chartStyle} onChange={v => setChartStyle(v as ChartStyle)} options={STYLES} />
 			</div>
 
-			{source === 'import' && <ImportAnalysis chartStyle={chartStyle} />}
-			{source !== 'import' && (
+			{activeSource === 'import' && <ImportAnalysis chartStyle={chartStyle} />}
+			{activeSource !== 'import' && (
 				<>
 					<SourceNote dist={genreDist} />
 
