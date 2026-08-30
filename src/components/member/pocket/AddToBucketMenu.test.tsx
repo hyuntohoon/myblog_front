@@ -104,11 +104,21 @@ describe('addToBucketMenu dismissable stack', () => {
 
 		fireEvent.click(screen.getByRole('button', { name: '버킷에 담기' }))
 		await screen.findByRole('dialog', { name: '버킷 선택' })
-		expect(document.body.style.overflow).toBe('hidden')
+		// `waitFor`, not a bare assert. `useScrollLock` applies the lock in a
+		// PASSIVE EFFECT, and `findByRole` resolves as soon as the node exists —
+		// so "the dialog is in the DOM" and "its effect has run" are two different
+		// instants, and asserting the second at the first is timing-dependent by
+		// construction. It happened to pass until this file grew; it then failed a
+		// deploy on `main` with `expected '' to be 'hidden'`.
+		//
+		// Same defect and same fix as the focus assertion two steps up in this file
+		// (ARCH Step 2). Structural, not a retry: the mutation check below proves it
+		// still fails when the lock is actually gone.
+		await waitFor(() => expect(document.body.style.overflow).toBe('hidden'))
 
 		fireEvent.keyDown(document, { key: 'Escape' })
 		await waitFor(() => expect(screen.queryByRole('dialog', { name: '버킷 선택' })).not.toBeInTheDocument())
-		expect(document.body.style.overflow).toBe('')
+		await waitFor(() => expect(document.body.style.overflow).toBe(''))
 	})
 })
 
