@@ -109,12 +109,30 @@ function focusedText(): string | null {
   return document.querySelector('.lyv-line.is-focus')?.textContent ?? null
 }
 
+/**
+ * The mount is NOT finished when the lyric text appears.
+ *
+ * `findByText` resolves off a DOM mutation, which React fires at commit — before
+ * the commit's passive effects run. Interacting in that window makes the test
+ * race the component's own setup, and it loses in two ways: line taps go through
+ * a stable handler whose latest closure is installed by a passive effect, and
+ * the follow scheduler's effect is still pending, so it runs AFTER the
+ * interaction with the pre-interaction `suspended` (false) and pulls the focus
+ * straight back to the anchor's line.
+ *
+ * That second one is why this exists as a named helper rather than a line in
+ * `open()`. It was a real ~1-in-10 flake on the full suite, measured on
+ * `origin/main` as well as here, and it presents as "the browse step did
+ * nothing" — indistinguishable from a genuine browse regression.
+ */
+async function settle() {
+  await act(async () => {})
+}
+
 async function open() {
   render(<LyricsViewer spotifyTrackId="track-1" canRefresh onClose={() => {}} />)
   await screen.findByText('second line')
-  // Line taps use a stable handler whose latest closure is installed by a
-  // passive effect after the async lyric document render.
-  await act(async () => {})
+  await settle()
 }
 
 /** Replace the snapshot (new reference) and, if a viewer is mounted, notify it. */
@@ -220,6 +238,7 @@ describe('a mirror tab cannot bypass the ownership gate', () => {
   it('returns from a tapped browse line to the unchanged live anchor', async () => {
     render(<LyricsViewer spotifyTrackId="track-1" canRefresh initialProgressMs={10_000} onClose={() => {}} />)
     await screen.findByText('second line')
+    await settle()
     expect(focusedText()).toBe('first line')
 
     vi.useFakeTimers()
@@ -310,6 +329,7 @@ describe('paused browse does not snap back on a timer', () => {
       />,
     )
     await screen.findByText('second line')
+    await settle()
   }
 
   it('keeps the browsed line while the music is stopped, past the idle window', async () => {
@@ -517,6 +537,7 @@ describe('a paused re-anchor still moves the line when nobody is browsing', () =
       />,
     )
     await screen.findByText('second line')
+    await settle()
     expect(focusedText()).toBe('first line')
 
     // The member scrubbed to 1:00 on their phone; ↻ / a reconcile re-anchors.
@@ -552,6 +573,7 @@ describe('the handoff to the full reading sheet (G5)', () => {
       />,
     )
     await screen.findByText('second line')
+    await settle()
 
     fireEvent.click(screen.getByText('전체 가사'))
 
@@ -567,6 +589,7 @@ describe('the handoff to the full reading sheet (G5)', () => {
       <LyricsViewer spotifyTrackId="track-1" canRefresh onOpenFullLyrics={() => {}} onClose={() => {}} />,
     )
     await screen.findByText('second line')
+    await settle()
     expect(screen.getByText('전체 가사')).toBeTruthy()
 
     fireEvent.click(screen.getByLabelText('대기열'))
