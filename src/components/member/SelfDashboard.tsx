@@ -208,7 +208,7 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 					null
 			))}
 			{detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} onOpenLyrics={openStaticLyrics} />}
-			{lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} initialArtists={lyrics.artists} canRefresh onClose={closeLyrics} />}
+			{lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} initialArtists={lyrics.artists} canRefresh onOpenFullLyrics={(trackId, m) => openStaticLyrics(trackId, { track: m.track, artist: m.artist, cover: m.cover })} onClose={closeLyrics} />}
 			{lyrics?.kind === 'static' && <LyricsSheet key={lyrics.trackId} spotifyTrackId={lyrics.trackId} meta={lyrics.meta} onClose={closeLyrics} />}
 		</div>
 	)

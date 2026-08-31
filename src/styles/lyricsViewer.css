@@ -205,6 +205,11 @@
 .lyv-btn:disabled:hover { color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.16); }
 .lyv-head-actions { display: flex; align-items: center; gap: 8px; }
 .lyv-btn.is-refreshing { animation: lyv-spin 0.9s linear infinite; }
+/* G5 (ARCH-playback-authority-convergence Step 4) — the 전체 가사 handoff to the
+   static reading sheet. `.lyv-btn` is a 30×30 icon plate; this one carries a
+   word, so it keeps the plate's colours and takes its width from the label.
+   Equal specificity to `.lyv-btn`, so it must stay below it. */
+.lyv-full-btn { width: auto; padding: 0 10px; font-size: 10px; letter-spacing: 0.1em; }
 @keyframes lyv-spin { to { transform: rotate(360deg); } }
 
 /* Translation controls keep every lifecycle state in one compact head group;
@@ -231,15 +236,6 @@
 .lyv-tr-btn:disabled { opacity: 0.3; cursor: default; }
 .lyv-tr-btn:disabled:hover { color: var(--color-subtle); border-color: var(--color-border); }
 .lyv-tr-btn.is-on { color: var(--color-accent); border-color: var(--color-accent); }
-.lyv-tr-state {
-	display: inline-flex;
-	align-items: center;
-	height: 30px;
-	font-size: 10px;
-	letter-spacing: 0.1em;
-	color: var(--color-faded);
-	padding: 0 4px;
-}
 .lyv-tr-origin {
 	font-size: 10px;
 	letter-spacing: 0.14em;

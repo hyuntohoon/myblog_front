@@ -28,7 +28,15 @@ export type PlaybackEntryHandler = (row: BoardAlbum | null, state: PlaybackSessi
 
 export interface PlaybackEntryProps {
   onOpenLyrics: PlaybackEntryHandler
-  onOpenTrackInfo: PlaybackEntryHandler
+  /**
+   * G2 (ARCH-playback-authority-convergence Step 4) — OPTIONAL, and the button
+   * renders only when it is passed. It was wired to `NOOP_PLAYBACK_ENTRY` at
+   * both of its call sites, so `트랙 정보` was a button that did nothing, on two
+   * surfaces, for as long as it has existed. The product has no canonical
+   * track-detail destination yet; when it gets one, pass a handler here and the
+   * entry comes back on both surfaces at once.
+   */
+  onOpenTrackInfo?: PlaybackEntryHandler
 }
 
 interface PlaybackViewModel {
@@ -225,7 +233,7 @@ export function PlaybackEntries({ current, state, onOpenLyrics, onOpenTrackInfo 
   return (
     <div className="pbp-entries" role="group" aria-label="현재 곡 정보">
       <button type="button" onClick={() => onOpenLyrics(current, state)}>가사</button>
-      <button type="button" onClick={() => onOpenTrackInfo(current, state)}>트랙 정보</button>
+      {onOpenTrackInfo && <button type="button" onClick={() => onOpenTrackInfo(current, state)}>트랙 정보</button>}
       <button type="button" onClick={() => openPlaybackAlbum(current, state.external)}>앨범 정보</button>
     </div>
   )
@@ -536,7 +544,7 @@ function MobilePlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { onC
       <div className="pbp-mobile-tabs" role="group" aria-label="플레이어 진입">
         <span className="pbp-mobile-tab-current" aria-current="true">대기열</span>
         <button type="button" onClick={() => entries.onOpenLyrics(model.current, model.state)}>가사</button>
-        <button type="button" onClick={() => entries.onOpenTrackInfo(model.current, model.state)}>트랙 정보</button>
+        {entries.onOpenTrackInfo && <button type="button" onClick={() => entries.onOpenTrackInfo!(model.current, model.state)}>트랙 정보</button>}
         <button type="button" onClick={() => openPlaybackAlbum(model.current, model.state.external)}>앨범 정보</button>
       </div>
       <div className="pbp-body">

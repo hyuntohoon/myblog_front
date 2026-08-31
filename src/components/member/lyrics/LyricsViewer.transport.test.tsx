@@ -14,6 +14,7 @@ import type { LyricsResponse } from './lyrics.api'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LyricsViewer } from './LyricsViewer'
+import { TRANSLATION_RETRY_MS } from './useLyricsDocument'
 
 const mocks = vi.hoisted(() => ({
   seekTo: vi.fn(),
@@ -522,5 +523,84 @@ describe('a paused re-anchor still moves the line when nobody is browsing', () =
     setSession({ playing: false, anchor: { ms: 60_000, wallMs: performance.now() } })
 
     await waitFor(() => expect(focusedText()).toBe('second line'))
+  })
+})
+
+// ── ARCH-playback-authority-convergence Step 4 ──────────────────────────────
+
+describe('the handoff to the full reading sheet (G5)', () => {
+  it('offers 전체 가사 only when the host can actually mount the sheet', async () => {
+    await open()
+    // The site-wide viewer host passes no handler in this render, and the button
+    // is therefore absent rather than present-and-dead. That distinction is the
+    // point of the step: `트랙 정보` shipped as a button wired to a no-op on two
+    // surfaces, and a second one would be the same defect with a new label.
+    expect(screen.queryByText('전체 가사')).toBeNull()
+  })
+
+  it('hands the sheet this track and what the head knows about it', async () => {
+    const onOpenFullLyrics = vi.fn()
+    render(
+      <LyricsViewer
+	spotifyTrackId="track-1"
+	canRefresh
+	initialTrack="So What"
+	initialArtist="Miles Davis"
+	initialAlbumCoverUrl="https://cover.test/a.jpg"
+	onOpenFullLyrics={onOpenFullLyrics}
+	onClose={() => {}}
+      />,
+    )
+    await screen.findByText('second line')
+
+    fireEvent.click(screen.getByText('전체 가사'))
+
+    expect(onOpenFullLyrics).toHaveBeenCalledWith('track-1', {
+      track: 'So What',
+      artist: 'Miles Davis',
+      cover: 'https://cover.test/a.jpg',
+    })
+  })
+
+  it('does not offer it on the queue screen, where there are no lyrics to read', async () => {
+    render(
+      <LyricsViewer spotifyTrackId="track-1" canRefresh onOpenFullLyrics={() => {}} onClose={() => {}} />,
+    )
+    await screen.findByText('second line')
+    expect(screen.getByText('전체 가사')).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('대기열'))
+
+    await waitFor(() => expect(screen.queryByText('전체 가사')).toBeNull())
+  })
+})
+
+describe('the viewer reads the same document lifecycle as the sheet (G3/G4)', () => {
+  // The sibling of lyricsDocument.test.tsx's burst case, on the OTHER surface.
+  // Both screens call `useLyricsDocument`, so this is the assertion that the
+  // extraction actually bought something: one fix, two screens.
+  it('shows a translation that finishes while the viewer is open', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const pending = { ...LYRICS, translation: { status: 'requested', lang: 'ko', origin: 'poller' } }
+      const done = {
+        ...LYRICS,
+        translation: { status: 'done', lang: 'ko', origin: 'poller' },
+        segments: LYRICS.segments!.map(s => ({ ...s, text_ko: `${s.text} (ko)` })),
+      }
+      mocks.getLyrics.mockResolvedValueOnce(pending).mockResolvedValue(done)
+      await open()
+      expect(screen.getByText('요청됨 · 확인')).toBeTruthy()
+      expect(screen.queryByText('first line (ko)')).toBeNull()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TRANSLATION_RETRY_MS[0] + 100)
+      })
+
+      await waitFor(() => expect(screen.getByText('first line (ko)')).toBeTruthy())
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })
