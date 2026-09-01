@@ -584,6 +584,41 @@ describe('the handoff to the full reading sheet (G5)', () => {
     })
   })
 
+  // Review finding. It was gated on `settingsReady` — "this track has synced
+  // lyrics" — which hid the handoff on precisely the tracks whose sheet is worth
+  // opening for its own sake: `useLyricsDocument` keeps annotations for a track
+  // whose `availability` is not `ok`, because a track can carry commentary and no
+  // lyric at all.
+  it('offers it for a track that has commentary but no lyric', async () => {
+    mocks.getLyrics.mockResolvedValue({
+      availability: 'unavailable',
+      normalizer_version: 1,
+      trackable: false,
+      annotations: [{ id: 1, fragment: 'a line', body_ko: '해설', votes_total: 2, status: 'ok', occurrences: 1, disputed: false, translation_status: 'done' }],
+    } as unknown as LyricsResponse)
+    render(<LyricsViewer spotifyTrackId="track-1" canRefresh onOpenFullLyrics={() => {}} onClose={() => {}} />)
+    await screen.findByText('아직 연결된 가사가 없어요')
+    await settle()
+
+    expect(screen.getByText('전체 가사')).toBeTruthy()
+  })
+
+  it('does not offer it when there is nothing at all to read', async () => {
+    // The control for the test above: no lyric AND no commentary is a sheet with
+    // nothing in it, and the handoff stays hidden.
+    mocks.getLyrics.mockResolvedValue({
+      availability: 'unavailable',
+      normalizer_version: 1,
+      trackable: false,
+      annotations: [],
+    } as unknown as LyricsResponse)
+    render(<LyricsViewer spotifyTrackId="track-1" canRefresh onOpenFullLyrics={() => {}} onClose={() => {}} />)
+    await screen.findByText('아직 연결된 가사가 없어요')
+    await settle()
+
+    expect(screen.queryByText('전체 가사')).toBeNull()
+  })
+
   it('does not offer it on the queue screen, where there are no lyrics to read', async () => {
     render(
       <LyricsViewer spotifyTrackId="track-1" canRefresh onOpenFullLyrics={() => {}} onClose={() => {}} />,
@@ -621,6 +656,43 @@ describe('the viewer reads the same document lifecycle as the sheet (G3/G4)', ()
       })
 
       await waitFor(() => expect(screen.getByText('first line (ko)')).toBeTruthy())
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // A live region only announces a change to a region that was ALREADY in the
+  // tree. This started as three sibling `div.lyv-tr-cluster` branches with
+  // `aria-live` on only one of them: React reused the node, so the region looked
+  // right in the DOM, but the ATTRIBUTE went with the branch and vanished at the
+  // exact moment there was something to announce. A real browser is what caught
+  // it — `getAttribute('aria-live')` came back `null` on the same node — so the
+  // assertion here has to be about the attribute surviving, not about the node.
+  it('keeps one node with aria-live across 요청됨 → 번역', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const pending = { ...LYRICS, translation: { status: 'requested', lang: 'ko', origin: 'poller' } }
+      const done = {
+        ...LYRICS,
+        translation: { status: 'done', lang: 'ko', origin: 'poller' },
+        segments: LYRICS.segments!.map(s => ({ ...s, text_ko: `${s.text} (ko)` })),
+      }
+      mocks.getLyrics.mockResolvedValueOnce(pending).mockResolvedValue(done)
+      await open()
+
+      const region = document.querySelector('.lyv-tr-cluster')
+      expect(region?.getAttribute('aria-live')).toBe('polite')
+      expect(region?.textContent).toContain('요청됨')
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TRANSLATION_RETRY_MS[0] + 100)
+      })
+      await waitFor(() => expect(screen.getByText('first line (ko)')).toBeTruthy())
+
+      expect(document.querySelector('.lyv-tr-cluster')).toBe(region)
+      expect(region?.getAttribute('aria-live')).toBe('polite')
+      expect(region?.textContent).toContain('번역')
     }
     finally {
       vi.useRealTimers()

@@ -1355,82 +1355,77 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               honest about what the current screen can do; ✕ stays because
               closing the viewer is always available.
             */}
-            {view === 'lyrics' && phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
-              translation?.status === 'done' ?
-                (
-                  <div className="lyv-tr-cluster">
-                    {translation.origin === 'manual' && <span className="lyv-tr-origin mono">manual</span>}
-                    <button
+            {/*
+              ONE live region around every translation state, so 요청됨 → 번역 is
+              announced. It has to be a single wrapper outside the branches, and
+              a real browser is what proved it: React does reuse the node when
+              each branch renders its own `div.lyv-tr-cluster`, but the ATTRIBUTE
+              goes with the branch — the `done` branch did not set `aria-live`,
+              so the region silently stopped being one at the exact moment it had
+              something to announce. Verified live: the node was the same and
+              `getAttribute('aria-live')` came back `null`.
+
+              Rendered only when there IS a lifecycle to narrate: a
+              Korean-dominant track is offered no request at all, and an empty
+              cluster would still cost a gap in the head.
+            */}
+            {view === 'lyrics' && phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (translation?.status === 'done' || !koreanDominant) && (
+              <div className="lyv-tr-cluster" aria-live="polite">
+                {translation?.status === 'done' ?
+                  (
+                    <>
+                      {translation.origin === 'manual' && <span className="lyv-tr-origin mono">manual</span>}
+                      <button
 	type="button"
 	className={showKo ? 'lyv-tr-btn is-on mono' : 'lyv-tr-btn mono'}
 	aria-pressed={showKo}
 	onClick={() => setShowKo(v => !v)}
-                    >
-                      번역
-                    </button>
-                  </div>
-                ) :
-                koreanDominant ?
-                  null :
+                      >
+                        번역
+                      </button>
+                    </>
+                  ) :
                   translation?.status === 'requested' ?
                     (
-                      <div className="lyv-tr-cluster" aria-live="polite">
-                        {/*
-                          G3 — 요청됨 was a dead chip: `requestTr` wrote it and
-                          nothing ever re-read the row, so a translation that
-                          finished while the viewer was open arrived only if the
-                          member happened to change tracks. It is the explicit
-                          re-check now; `useLyricsDocument` covers the member who
-                          never presses it with a visibility return and a bounded
-                          burst.
+                      /*
+                        G3 — 요청됨 was a dead chip: `requestTr` wrote it and
+                        nothing ever re-read the row, so a translation that
+                        finished while the viewer was open arrived only if the
+                        member happened to change tracks. It is the explicit
+                        re-check now; `useLyricsDocument` covers the member who
+                        never presses it with a visibility return and a bounded
+                        burst.
 
-                          `aria-live` sits on the CLUSTER, not on this button:
-                          every branch of this expression renders a
-                          `div.lyv-tr-cluster` at the same position, so React
-                          reuses the node and the region is already in the tree
-                          when its contents change 요청됨 → 번역. A live region
-                          mounted together with the news it carries announces
-                          nothing.
-
-                          `aria-busy`, not `disabled`: disabling the focused
-                          control drops focus to `<body>`, and this is the one
-                          control a member presses precisely because they are
-                          waiting. Re-entrancy is already refused inside
-                          `recheck`, so the guard does not need the DOM's help.
-                        */}
-                        <button
+                        `aria-busy`, not `disabled`: disabling the focused control
+                        drops focus to `<body>`, and this is the one control a
+                        member presses precisely because they are waiting.
+                        Re-entrancy is already refused inside `recheck`, so the
+                        guard does not need the DOM's help.
+                      */
+                      <button
 	type="button"
 	className="lyv-tr-btn mono"
 	aria-busy={checkingTr}
 	title="번역이 끝났는지 다시 확인"
 	onClick={doc.recheckTr}
-                        >
-                          {checkingTr ? '확인 중…' : '요청됨 · 확인'}
-                        </button>
-                      </div>
+                      >
+                        {checkingTr ? '확인 중…' : '요청됨 · 확인'}
+                      </button>
                     ) :
                     (
-                      <div className="lyv-tr-cluster">
-                        <button
+                      <button
 	type="button"
 	className="lyv-tr-btn mono"
 	disabled={requesting}
 	onClick={() => {
                           void requestTr()
                         }}
-                        >
-                          {translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
-                        </button>
-                      </div>
-                    )
+                      >
+                        {translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
+                      </button>
+                    )}
+              </div>
             )}
-            {/*
-              G5 — the handoff to the static reading sheet. It renders only when
-              the host passed one, because the sheet is a mount the host owns;
-              a button that cannot reach its destination is exactly the G2 defect
-              this step is removing. Hidden on the queue screen with the rest of
-              the lyrics-surface controls, and while there is nothing to read.
-            */}
             {/*
               Gated on "the sheet has something to show", not on `settingsReady`
               (which means synced lyrics exist). `useLyricsDocument` keeps

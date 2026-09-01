@@ -328,7 +328,8 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 					<button type="button" className={annoStyle === 'm3' ? 'on' : ''} aria-pressed={annoStyle === 'm3'} onClick={() => pickAnnoStyle('m3')} title="열었을 때만 — 강조를 희소하게">열림</button>
 				</span>
 			)}
-			{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
+			{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 &&
+				(translation?.status === 'done' || !koreanDominant) && (
 				/*
 				  One STABLE live region wrapping every translation state, so the
 				  arrival 요청됨 → 번역 is announced. It has to be the wrapper: the
@@ -340,9 +341,7 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 						(
 							<button type="button" className={showKo ? 'lys-btn is-on mono' : 'lys-btn mono'} aria-pressed={showKo} onClick={() => setShowKo(v => !v)}>번역</button>
 						) :
-						koreanDominant ?
-							null :
-							translation?.status === 'requested' ?
+						translation?.status === 'requested' ?
 								(
 									// G3 — 요청됨 used to be a dead chip: nothing re-read the row, so a
 									// translation that finished while this was open never arrived. It is
@@ -361,12 +360,12 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 									>
 										{checkingTr ? '확인 중…' : '요청됨 · 확인'}
 									</button>
-								) :
-								(
-									<button type="button" className="lys-btn mono" disabled={requesting} onClick={() => void requestTr()}>
-										{translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
-									</button>
-								)}
+							) :
+							(
+								<button type="button" className="lys-btn mono" disabled={requesting} onClick={() => void requestTr()}>
+									{translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
+								</button>
+							)}
 				</span>
 			)}
 			{n > 0 && (
