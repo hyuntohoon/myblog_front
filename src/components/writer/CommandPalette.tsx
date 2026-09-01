@@ -490,6 +490,11 @@ export default function CommandPalette({ currentSubjectId, onPick, onClose }: Pr
 
               <div className="wr-palette-body wr-scroll" ref={bodyRef}>
                 {(pickStatus || search.status) && <div className="wr-palette-status mono">{pickStatus || search.status}</div>}
+                {search.syncRequested && (
+                  <button type="button" className="wr-palette-refresh mono" onClick={() => void search.runDbSearch()} disabled={search.loading}>
+                    {search.loading ? '불러오는 중…' : '카탈로그 새로고침'}
+                  </button>
+                )}
                 {!search.loading && visibleResults.length === 0 && !(pickStatus || search.status) && (
                   <div className="wr-palette-empty mono">
                     {search.query.trim() ? '결과 없음' : '작품 검색'}

@@ -475,6 +475,11 @@ export default function TodaySongPicker({ onPick, onPromoted, onClose }: Props) 
 				)}
 
 				{statusText && <p className="qb-modal-status">{statusText}</p>}
+				{search.syncRequested && (
+					<button type="button" className="qb-modal-refresh mono" onClick={() => void search.runDbSearch()} disabled={search.loading}>
+						{search.loading ? '불러오는 중…' : '카탈로그 새로고침'}
+					</button>
+				)}
 
 				{tab === 'search' && (
 					<div className="qb-modal-results">
