@@ -70,13 +70,34 @@ export default function CollectionView() {
 	title={c.name}
 	right={(
 	// Attribution: any member can publish a bucket (multi-user P2) — every
-	// shelf says whose it is. Plain text (no /members link) until member
-	// pages are runtime-reachable; owner==null only during backend rollout.
+	// shelf says whose it is. owner==null only during backend rollout.
 	// The name goes through publicMemberLabel because a member who never set
 	// one gets a handle derived from their Cognito sub, and this page is
 	// unauthenticated — it used to read `@user-0468fd3c` (audit E-2).
+	//
+	// FIX-user-flow-state-consistency leg 4: the attribution is a link now.
+	// It was plain text under a comment saying "until member pages are
+	// runtime-reachable" — which stopped being true without the comment
+	// noticing. /members/?u=<handle> is live and already linked from the
+	// members hub and from every rating byline, so this shelf was the one
+	// place naming a member and then dead-ending on them. The form matches
+	// what the rest of the app links to; the canonical-member-URL question
+	// stays the owner's, and answering it moves every caller at once.
 	<span className="mono" style={{ fontSize: 12, color: 'var(--color-faded)' }}>
-		{c.owner ? `${publicMemberLabel(c.owner.displayName, c.owner.handle)} · ${c.albums.length}장` : `${c.albums.length}장`}
+		{c.owner?.handle ?
+			(
+				<>
+					<a
+						href={`/members/?u=${encodeURIComponent(c.owner.handle)}`}
+						className="lf-collection-owner"
+						style={{ color: 'inherit' }}
+					>
+						{publicMemberLabel(c.owner.displayName, c.owner.handle)}
+					</a>
+					{` · ${c.albums.length}장`}
+				</>
+			) :
+			(c.owner ? `${publicMemberLabel(c.owner.displayName, c.owner.handle)} · ${c.albums.length}장` : `${c.albums.length}장`)}
 	</span>
 	)}
           />

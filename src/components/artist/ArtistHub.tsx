@@ -12,6 +12,7 @@ import { fetchArtistAlbums, fetchArtistHero, fetchArtistTopTracks } from '../../
 import { openAlbum, openTrackAlbum, reviewHref } from '@lib/entityLinks'
 import { genreMapHref } from '@lib/genres'
 import { Cover, SectionTitle, Stars } from '../home/ui'
+import TrackArtistButton from './TrackArtistButton'
 
 interface Props {
 	artistId: string
@@ -50,7 +51,8 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 	const [hero, setHero] = useState<ArtistHero | null>(null)
 	const [albums, setAlbums] = useState<AlbumListItem[]>([])
 	const [topTracks, setTopTracks] = useState<TopTrackItem[]>([])
-	const [status, setStatus] = useState<'loading' | 'ready' | 'notfound'>('loading')
+	const [status, setStatus] = useState<'loading' | 'ready' | 'notfound' | 'error'>('loading')
+	const [reloadTick, setReloadTick] = useState(0)
 	const [catalogSort, setCatalogSort] = useState<CatalogSort>('popular')
 
 	useEffect(() => {
@@ -64,7 +66,13 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 			if (!alive)
 				return
 			if (!heroRes.ok) {
-				setStatus('notfound')
+				// FIX-user-flow-state-consistency leg 4 — `getHero` has always
+				// reported *why* it failed (404, an HTTP status, or 0 for a
+				// transport error) and this threw it away, so a 5xx or a dead
+				// network told the reader the artist does not exist. Same shape as
+				// the /search defect leg 3 fixed: the distinction was computed and
+				// then dropped on the floor.
+				setStatus(heroRes.status === 404 ? 'notfound' : 'error')
 				return
 			}
 			setHero(heroRes.hero)
@@ -75,13 +83,23 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 		return () => {
 			alive = false
 		}
-	}, [artistId])
+	}, [artistId, reloadTick])
 
 	if (status === 'notfound') {
 		return (
 			<div className="art-pending">
 				<p className="art-cov-empty-lead">아티스트를 찾을 수 없습니다.</p>
 				<p className="art-cov-empty-sub">{name}</p>
+			</div>
+		)
+	}
+
+	if (status === 'error') {
+		return (
+			<div className="art-pending">
+				<p className="art-cov-empty-lead">아티스트 정보를 불러오지 못했습니다.</p>
+				<p className="art-cov-empty-sub">서버 또는 네트워크 문제입니다. 이 아티스트가 없는 것은 아닙니다.</p>
+				<button type="button" className="art-track mono" onClick={() => setReloadTick(t => t + 1)}>다시 시도</button>
 			</div>
 		)
 	}
@@ -153,6 +171,12 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 							</span>
 						</div>
 					)}
+					{/* FIX-user-flow-state-consistency leg 4 — the artist hub is where a
+					    reader decides an artist matters, and until now the Release Radar
+					    could only be filled from inside /releases. */}
+					<div className="art-id-actions">
+						<TrackArtistButton artistId={artistId} name={displayName} />
+					</div>
 					<div className="art-id-foot">
 						{hero?.spotify_url && (
 							<a className="art-id-spotify" href={hero.spotify_url} target="_blank" rel="noreferrer">

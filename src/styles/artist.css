@@ -74,6 +74,30 @@ a.art-id-gchip:hover { color: var(--color-accent); border-color: var(--color-acc
 	margin-top: 15px;
 }
 .art-id-counts > span { white-space: nowrap; }
+/* FIX-user-flow-state-consistency leg 4 — track this artist into the Release
+   Radar, from the page where the reader decides they care. */
+.art-id-actions { margin: 12px 0 4px; }
+.art-track-wrap { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.art-track {
+	padding: 8px 16px;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	background: var(--color-bg);
+	color: var(--color-text);
+	font-size: var(--text-2xs);
+	letter-spacing: .04em;
+	cursor: pointer;
+	transition: border-color .16s, background .16s, color .16s;
+}
+.art-track:hover:not(:disabled) { border-color: var(--color-text); }
+.art-track.is-on { background: var(--color-text); color: var(--color-bg); border-color: var(--color-text); }
+.art-track:disabled { opacity: .55; cursor: default; }
+.art-track-note { font-size: var(--text-3xs); color: var(--color-subtle); }
+
+@media (pointer: coarse) {
+	.art-track { min-height: 42px; }
+}
+
 .art-id-foot {
 	display: flex;
 	align-items: center;

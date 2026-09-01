@@ -51,6 +51,7 @@ function baseState(over: Partial<UseMusicSearch> = {}): UseMusicSearch {
 		status: '',
 		searchFailed: false,
 		moreFailed: null,
+		syncRequested: false,
 		source: 'db',
 		setSource: vi.fn(),
 		spotifyCooldown: false,

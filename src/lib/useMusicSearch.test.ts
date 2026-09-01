@@ -219,3 +219,138 @@ describe('useMusicSearch failure signalling', () => {
     expect(result.current.albums).toHaveLength(1)
   })
 })
+
+// FIX-user-flow-state-consistency leg 4 — 더 보기 must survive its own first
+// page. Found by clicking the button leg 3 had just wired up, against
+// production: the rows appended, and then the button vanished.
+//
+// `loadMore` set `didAppend` inside the `setBuckets` updater and read it on the
+// next line. React runs an updater during render, not at the call site — and it
+// only ever evaluates one eagerly when the fiber has no pending lanes, which
+// `setLoadingMore(kind)` a few lines earlier guarantees it does. So `didAppend`
+// was always false: every successful page took the "the API repeated itself"
+// branch, zeroing `lastReturned` (which hides 더 보기) and returning before
+// `offsets` advanced. One page was all you could ever load.
+describe('useMusicSearch pagination continuity', () => {
+  function page(n: number, offset: number) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        albums: Array.from({ length: n }, (_, i) => ({ id: `album-${offset + i}`, title: `A${offset + i}` })),
+        artists: [],
+        tracks: [],
+      }),
+    } as unknown as Response
+  }
+
+  it('keeps offering 더 보기 and advances the offset across pages', async () => {
+    const urls: string[] = []
+    const f = vi.fn(async (url: string) => {
+      urls.push(url)
+      const off = Number(new URL(url, 'https://x.test').searchParams.get('album_offset') || 0)
+      return page(1, off)
+    })
+    vi.stubGlobal('fetch', f)
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album'], pageLimit: 1 }))
+    act(() => result.current.setQuery('bts'))
+    await act(async () => {
+      await result.current.runDbSearch()
+    })
+    expect(result.current.albums).toHaveLength(1)
+    expect(result.current.hasMore.album).toBe(1)
+
+    await act(async () => {
+      await result.current.loadMore('album')
+    })
+    expect(result.current.albums.map(a => a.id)).toEqual(['album-0', 'album-1'])
+    // the page was full, so there may well be another one — keep offering it
+    expect(result.current.hasMore.album).toBe(1)
+
+    await act(async () => {
+      await result.current.loadMore('album')
+    })
+    expect(result.current.albums.map(a => a.id)).toEqual(['album-0', 'album-1', 'album-2'])
+    // and the offset actually moved, rather than re-asking for the same page
+    expect(urls.at(-1)).toContain('album_offset=2')
+  })
+
+  it('stops offering 더 보기 when the API repeats a page it already gave', async () => {
+    const f = vi.fn(async () => page(1, 0))
+    vi.stubGlobal('fetch', f)
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album'], pageLimit: 1 }))
+    act(() => result.current.setQuery('bts'))
+    await act(async () => {
+      await result.current.runDbSearch()
+    })
+    await act(async () => {
+      await result.current.loadMore('album')
+    })
+
+    expect(result.current.albums).toHaveLength(1)
+    expect(result.current.hasMore.album).toBe(0)
+  })
+})
+
+// FIX-user-flow-state-consistency leg 4 — after a sync request is accepted the
+// reader is left holding Spotify rows they cannot add, and the only way to see
+// the newly-synced catalog is to guess that pressing 검색 again is the move.
+// There is no job-status contract to wait on (that design is tracked
+// separately), so this flag does not claim the worker finished — it just lets a
+// surface offer the catalog re-read.
+describe('useMusicSearch sync-request follow-up', () => {
+  const candidateBody = { albums: [{ spotify_id: 'album-1', title: 'Candidate album' }], tracks: [] }
+
+  async function acceptedSync() {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(candidateBody), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'accepted' }), { status: 202 }))
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album'] }))
+    act(() => result.current.setQuery('candidate'))
+    await act(async () => {
+      await result.current.runSpotifySync()
+    })
+    return result
+  }
+
+  it('offers the follow-up read once a sync request is accepted', async () => {
+    const result = await acceptedSync()
+    expect(result.current.syncRequested).toBe(true)
+  })
+
+  it('does not offer it when the sync request was rejected', async () => {
+    vi.mocked(apiFetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(candidateBody), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'failed' }), { status: 503 }))
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album'] }))
+    act(() => result.current.setQuery('candidate'))
+    await act(async () => {
+      await result.current.runSpotifySync()
+    })
+
+    expect(result.current.syncRequested).toBe(false)
+  })
+
+  it('retires the offer once the catalog has actually been re-read', async () => {
+    const result = await acceptedSync()
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ albums: [], artists: [], tracks: [] }),
+    } as unknown as Response)))
+
+    await act(async () => {
+      await result.current.runDbSearch()
+    })
+
+    expect(result.current.syncRequested).toBe(false)
+  })
+
+  it('retires the offer when the reader moves to a different query', async () => {
+    const result = await acceptedSync()
+    act(() => result.current.setQuery('something else'))
+    expect(result.current.syncRequested).toBe(false)
+  })
+})

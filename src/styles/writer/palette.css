@@ -98,6 +98,22 @@
   padding: 12px 16px;
   letter-spacing: 0.01em;
 }
+
+/* FIX-user-flow-state-consistency leg 4 — catalog re-read after an accepted
+   Spotify sync request. */
+.wr-palette-refresh {
+  margin: 6px 0 0;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--text-3xs);
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+.wr-palette-refresh:hover:not(:disabled) { border-color: var(--color-text); }
+.wr-palette-refresh:disabled { opacity: .5; cursor: default; }
 .wr-palette-empty {
   font-family: var(--mono);
   font-size: var(--text-sm);

@@ -181,6 +181,17 @@ export interface UseMusicSearch {
   searchFailed: boolean
   /** Same, for a "더 보기" page that failed — scoped to the bucket that asked. */
   moreFailed: SearchKind | null
+  /**
+   * FIX-user-flow-state-consistency leg 4 — a Spotify sync request has been
+   * accepted for the current query and the worker has not been heard from
+   * since. There is no job-status contract to wait on (that design is tracked
+   * separately and deliberately not smuggled in here), so this does not claim
+   * the sync finished. It exists so a surface can offer the catalog re-read
+   * the reader currently has to improvise by pressing 검색 again — without it,
+   * an accepted sync leaves them holding Spotify rows they cannot add and no
+   * indication that trying again is the move.
+   */
+  syncRequested: boolean
   source: HitSource
   /** Flip the source label without running a search (e.g. empty-query toggle). */
   setSource: (s: HitSource) => void
@@ -210,6 +221,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
   const [status, setStatus] = useState('')
   const [searchFailed, setSearchFailed] = useState(false)
   const [moreFailed, setMoreFailed] = useState<SearchKind | null>(null)
+  const [syncRequested, setSyncRequested] = useState(false)
   const [source, setSource] = useState<HitSource>('db')
   const [spotifyCooldown, setSpotifyCooldown] = useState(false)
   // next offset to ask for, per bucket
@@ -237,6 +249,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     setStatus('')
     setSearchFailed(false)
     setMoreFailed(null)
+    setSyncRequested(false)
   }, [invalidateRequests])
   const nextSignal = useCallback(() => {
     abortRef.current?.abort()
@@ -256,6 +269,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     setStatus('')
     setSearchFailed(false)
     setMoreFailed(null)
+    setSyncRequested(false)
     setOffsets(ZERO)
     setLastReturned(ZERO)
   }, [invalidateRequests])
@@ -271,6 +285,9 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     setStatus('')
     setSearchFailed(false)
     setMoreFailed(null)
+    // a DB re-read IS the refresh, so it retires the offer rather than leaving
+    // it on screen next to results that already reflect the sync
+    setSyncRequested(false)
     setBuckets(EMPTY)
     setOffsets(ZERO)
     setLastReturned(ZERO)
@@ -369,6 +386,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
       if (seq !== seqRef.current)
         return
       setStatus('Spotify 결과 · 동기화 요청됨')
+      setSyncRequested(true)
     }
     catch {
       // apiFetch swallows an abort into a null return (→ HTTP undefined throw
@@ -417,16 +435,25 @@ mapAlbums(data.albums, 'db') :
 mapArtists(data.artists, 'db') :
             mapTracks(data.tracks, 'db')
       const returned = appended.length
-      let didAppend = false
-      setBuckets((prev) => {
-        const existing = new Set(prev[kind].map((row: { id: string | null, spotifyId: string | null }) => row.id ?? row.spotifyId))
-        const fresh = appended.filter(row => !existing.has(row.id ?? row.spotifyId))
-        if (fresh.length === 0)
-          return prev
-        didAppend = true
-        return { ...prev, [kind]: [...prev[kind], ...fresh] }
-      })
-      if (!didAppend && returned > 0) {
+      // FIX-user-flow-state-consistency leg 4 — dedupe against the CURRENT
+      // buckets, not from inside the setBuckets updater.
+      //
+      // This used to set a `didAppend` flag inside that updater and read it on
+      // the next line. React runs an updater during render, not at the call
+      // site; the one case where it evaluates one eagerly needs the fiber to
+      // have no pending lanes, and `setLoadingMore(kind)` a few lines up
+      // guarantees it does. So the flag was always false, every successful page
+      // took the "the API repeated itself" branch below, and 더 보기 zeroed
+      // itself out while `offsets` never advanced — one page was all you could
+      // load. Reading `buckets` directly is honest and synchronous; the
+      // callback already re-creates on every result via its `offsets` dep.
+      const existing = new Set(
+        buckets[kind].map((row: { id: string | null, spotifyId: string | null }) => row.id ?? row.spotifyId),
+      )
+      const fresh = appended.filter(row => !existing.has(row.id ?? row.spotifyId))
+      if (fresh.length > 0)
+        setBuckets(prev => ({ ...prev, [kind]: [...prev[kind], ...fresh] }))
+      if (fresh.length === 0 && returned > 0) {
         setLastReturned(prev => ({ ...prev, [kind]: 0 }))
         return
       }
@@ -442,7 +469,7 @@ mapArtists(data.artists, 'db') :
     finally {
       setLoadingMore(null)
     }
-  }, [query, typeParam, pageLimit, offsets, loadingMore, source, nextSignal])
+  }, [query, typeParam, pageLimit, offsets, buckets, loadingMore, source, nextSignal])
 
   const hasMore: Counts = {
     album: source === 'db' && lastReturned.album >= pageLimit ? 1 : 0,
@@ -461,6 +488,7 @@ mapArtists(data.artists, 'db') :
     status,
     searchFailed,
     moreFailed,
+    syncRequested,
     source,
     setSource,
     spotifyCooldown,
