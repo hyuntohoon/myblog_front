@@ -205,6 +205,12 @@ describe('the load callback runs IN the load, not after the commit', () => {
 
     render(<Probe />)
     await screen.findByText('ready')
+    // `phaseWhenLoadedRan` is decided by then; the ORDER assertion is not, because
+    // `findByText` resolves at commit and `phaseEffect` is pushed from a passive
+    // effect that has not run yet. Without this the order check reads
+    // `['onLoaded']` about one run in twelve — a flake in a test whose whole
+    // subject is ordering.
+    await act(async () => {})
 
     expect(phaseWhenLoadedRan).toBe('loading')
     expect(order).toEqual(['onLoaded', 'phaseEffect'])
