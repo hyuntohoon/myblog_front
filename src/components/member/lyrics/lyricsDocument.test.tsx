@@ -48,6 +48,13 @@ function doc(status: LyricsTranslationInfo['status'], ko: boolean): LyricsRespon
 async function openSheet() {
   render(<LyricsSheet spotifyTrackId="track-1" onClose={() => {}} />)
   await screen.findByText('first line')
+  // The mount is not finished when the lyric text appears: `findByText` resolves
+  // off a DOM mutation, which React fires at commit, before that commit's passive
+  // effects run — and the visibility listener these tests dispatch at is
+  // registered by one of them. Without this, the dispatch lands before the
+  // listener exists and the test reads as "it did not ask again". Caught by
+  // repetition, at 1 full-suite run in 20, not by a single green run.
+  await act(async () => {})
 }
 
 /** The burst's total span, plus a beat — every armed attempt has fired by then. */
