@@ -546,6 +546,12 @@
    dashboard too). What is left here is the host side: the memo modal's dock
    layout and the resize-handle geometry it shares with the floating panel, both
    of which exist on the dashboard alone.
+
+   Note the `:is(.ctx-panel.is-float, …) > .surface-resize-handle` rules below do
+   name `.ctx-panel`, but their SUBJECT is `.surface-resize-handle` — they style
+   the handle, not the panel. They stay here because `ContextPanel`'s only host,
+   `AlbumDetail`, is mounted from `SelfDashboard` alone. The day that stops being
+   true, these handles are the one piece of its chrome that goes unstyled.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── memo window as a dock host — a full-height parking column ──────────────

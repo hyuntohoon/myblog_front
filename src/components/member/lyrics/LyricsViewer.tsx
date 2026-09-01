@@ -80,6 +80,12 @@
 // (none/failed/stale → request → 요청됨). Korean-dominant tracks get no
 // request button — nothing to translate.
 //
+// ARCH-playback-authority-convergence Step 4 continues that lifecycle past
+// 요청됨, which used to be where it stopped: the chip is a 확인 button, and
+// `useLyricsDocument` — shared with `LyricsSheet` — re-reads the row on a
+// visibility return and on a bounded burst, so a translation that finishes
+// while this screen is open actually reaches it.
+//
 // FEAT-lyrics-auto-progression Step 2 is visual-only (album-blur backdrop +
 // always-dark + large sans-serif typography); it lives in the `.lyv-*` CSS.
 import type { ClockAnchor } from '@lib/clockEstimate'
@@ -299,7 +305,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // hook can call it while everything it touches is still declared further down.
   const seedFromLoad = useRef<(data: LyricsResponse) => void>(() => {})
   const doc = useLyricsDocument(trackId, { onLoaded: data => seedFromLoad.current(data) })
-  const { phase, segs, n, translation, koreanDominant, showKo, setShowKo, requesting, checkingTr, emptyText } = doc
+  const { phase, segs, n, annotations, translation, koreanDominant, showKo, setShowKo, requesting, checkingTr, emptyText } = doc
   const [focus, setFocus] = useState(0)
   // Album cover for the blur backdrop (FEAT-lyrics-auto-progression Step 2).
   // Visual-only state: seeded from the entry prop, refreshed alongside each
@@ -961,7 +967,14 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   }, [sessionState.anchor, sessionState.playing, sessionState.durationMs, sessionState.currentItemId, sessionState.external, trackId])
 
   const requestTr = async () => {
-    setNotice(await doc.requestTr() ? null : TR_REQUEST_FAILED)
+    const r = await doc.requestTr()
+    // `dropped` touches nothing: the press was never sent, so it has no news —
+    // and clearing the notice here used to wipe an unrelated one (a 재생 중인 곡
+    // 없음, say) on nothing more than a double-tap.
+    if (r === 'ok')
+      setNotice(null)
+    else if (r === 'failed')
+      setNotice(TR_REQUEST_FAILED)
   }
 
   /**
@@ -1361,7 +1374,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                   null :
                   translation?.status === 'requested' ?
                     (
-                      <div className="lyv-tr-cluster">
+                      <div className="lyv-tr-cluster" aria-live="polite">
                         {/*
                           G3 — 요청됨 was a dead chip: `requestTr` wrote it and
                           nothing ever re-read the row, so a translation that
@@ -1370,11 +1383,25 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                           re-check now; `useLyricsDocument` covers the member who
                           never presses it with a visibility return and a bounded
                           burst.
+
+                          `aria-live` sits on the CLUSTER, not on this button:
+                          every branch of this expression renders a
+                          `div.lyv-tr-cluster` at the same position, so React
+                          reuses the node and the region is already in the tree
+                          when its contents change 요청됨 → 번역. A live region
+                          mounted together with the news it carries announces
+                          nothing.
+
+                          `aria-busy`, not `disabled`: disabling the focused
+                          control drops focus to `<body>`, and this is the one
+                          control a member presses precisely because they are
+                          waiting. Re-entrancy is already refused inside
+                          `recheck`, so the guard does not need the DOM's help.
                         */}
                         <button
 	type="button"
 	className="lyv-tr-btn mono"
-	disabled={checkingTr}
+	aria-busy={checkingTr}
 	title="번역이 끝났는지 다시 확인"
 	onClick={doc.recheckTr}
                         >
@@ -1404,7 +1431,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               this step is removing. Hidden on the queue screen with the rest of
               the lyrics-surface controls, and while there is nothing to read.
             */}
-            {view === 'lyrics' && onOpenFullLyrics && settingsReady && (
+            {/*
+              Gated on "the sheet has something to show", not on `settingsReady`
+              (which means synced lyrics exist). `useLyricsDocument` keeps
+              annotations for a track whose `availability` is not `ok` — a track
+              can carry commentary and no lyric at all — and that sheet is worth
+              reading. Gating on the viewer's own readiness would have hidden the
+              handoff on exactly those tracks.
+            */}
+            {view === 'lyrics' && onOpenFullLyrics && phase.k === 'ready' && (n > 0 || annotations.length > 0) && (
               <button
 	type="button"
 	className="lyv-btn lyv-full-btn mono"

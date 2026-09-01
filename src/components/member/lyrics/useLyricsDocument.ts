@@ -96,9 +96,20 @@ export interface LyricsDocument {
   showKo: boolean
   setShowKo: Dispatch<SetStateAction<boolean>>
   requesting: boolean
-  /** Resolves `false` when the POST failed, so each screen owns its own notice. */
-  requestTr: () => Promise<boolean>
-  /** A translation-status re-read is in flight. */
+  /**
+   * Each screen owns its own notice, so this reports what happened instead of
+   * setting one. `dropped` is a press that was not sent — a double-press while
+   * one is in flight, or an answer that came back for a track the screen has
+   * since left. It is NOT a success: reporting it as one made the caller clear
+   * whatever unrelated notice was on screen (`지금 재생 중인 곡이 없어요`, say).
+   */
+  requestTr: () => Promise<'ok' | 'failed' | 'dropped'>
+  /**
+   * An EXPLICIT status re-read is in flight. The bounded burst deliberately does
+   * not set this: it fires at +8s, +33s and +93s with no input, and a control
+   * that greys itself out three times while someone is reading is the opposite
+   * of the "invisible, not a poll" property the burst exists to have.
+   */
   checkingTr: boolean
   /** Explicit "is it done yet?" — re-reads the document and re-arms the burst. */
   recheckTr: () => void
@@ -180,16 +191,26 @@ export function useLyricsDocument(spotifyTrackId: string, options: LyricsDocumen
   const annotations = (phase.k === 'ready' ? phase.data.annotations : null) ?? []
   const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
 
-  const requestTr = useCallback(async (): Promise<boolean> => {
+  const requestTr = useCallback(async (): Promise<'ok' | 'failed' | 'dropped'> => {
     if (requesting)
-      return true
+      return 'dropped'
+    // The same epoch guard every other async write in this file uses, and the
+    // one place it was missing. Without it: the member presses 번역 요청 on A,
+    // the track turns over (naturally, or because the session adopted a skip)
+    // while the POST is in flight, and A's answer lands on B — B shows
+    // 요청됨 · 확인 for a translation nobody asked for, and `pending` then arms a
+    // three-attempt burst and a visibility listener against that wrong state.
+    const mine = epoch.current
     setRequesting(true)
     try {
-      setTrOverride(await requestTranslation(trackIdRef.current))
-      return true
+      const info = await requestTranslation(trackIdRef.current)
+      if (epoch.current !== mine)
+        return 'dropped'
+      setTrOverride(info)
+      return 'ok'
     }
     catch {
-      return false
+      return epoch.current === mine ? 'failed' : 'dropped'
     }
     finally {
       setRequesting(false)
@@ -201,12 +222,13 @@ export function useLyricsDocument(spotifyTrackId: string, options: LyricsDocumen
   // actual status change keeps a "still pending" answer from replacing `segs`
   // with an equal-but-different array under the viewer's focus scheduler.
   const checking = useRef(false)
-  const recheck = useCallback(async () => {
+  const recheck = useCallback(async (explicit = false) => {
     if (checking.current)
       return
     const mine = epoch.current
     checking.current = true
-    setCheckingTr(true)
+    if (explicit)
+      setCheckingTr(true)
     try {
       const data = await getLyrics(trackIdRef.current)
       if (epoch.current !== mine)
@@ -227,7 +249,8 @@ export function useLyricsDocument(spotifyTrackId: string, options: LyricsDocumen
     }
     finally {
       checking.current = false
-      setCheckingTr(false)
+      if (explicit)
+        setCheckingTr(false)
     }
   }, [translationStatus])
 
@@ -287,7 +310,7 @@ export function useLyricsDocument(spotifyTrackId: string, options: LyricsDocumen
     checkingTr,
     recheckTr: () => {
       setBurstSeq(s => s + 1)
-      void recheckRef.current()
+      void recheckRef.current(true)
     },
     reload: () => setReloadSeq(s => s + 1),
   }

@@ -222,7 +222,14 @@ export function useLyricsSheetState(spotifyTrackId: string) {
 	}
 
 	const requestTr = async () => {
-		setNotice(await doc.requestTr() ? null : TR_REQUEST_FAILED)
+		// A `dropped` press was never sent, so it carries no news — treating it as
+		// success used to clear an unrelated notice (복사에 실패했어요, say) on a
+		// double-tap alone.
+		const r = await doc.requestTr()
+		if (r === 'ok')
+			setNotice(null)
+		else if (r === 'failed')
+			setNotice(TR_REQUEST_FAILED)
 	}
 
 	// Copy the whole lyric as plain text (review material). Follows the 번역
@@ -322,33 +329,45 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 				</span>
 			)}
 			{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
-				translation?.status === 'done' ?
-					(
-						<button type="button" className={showKo ? 'lys-btn is-on mono' : 'lys-btn mono'} aria-pressed={showKo} onClick={() => setShowKo(v => !v)}>번역</button>
-					) :
-					koreanDominant ?
-						null :
-						translation?.status === 'requested' ?
-							(
-								// G3 — 요청됨 used to be a dead chip: nothing re-read the row, so a
-								// translation that finished while this was open never arrived. It is
-								// the explicit re-check now, and the bounded burst + a visibility
-								// return in `useLyricsDocument` cover the case nobody presses it.
-								<button
-									type="button"
-									className="lys-btn mono"
-									disabled={checkingTr}
-									title="번역이 끝났는지 다시 확인"
-									onClick={recheckTr}
-								>
-									{checkingTr ? '확인 중…' : '요청됨 · 확인'}
-								</button>
-							) :
-							(
-								<button type="button" className="lys-btn mono" disabled={requesting} onClick={() => void requestTr()}>
-									{translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
-								</button>
-							)
+				/*
+				  One STABLE live region wrapping every translation state, so the
+				  arrival 요청됨 → 번역 is announced. It has to be the wrapper: the
+				  three branches render different element types, and a live region
+				  that mounts together with its own news announces nothing.
+				*/
+				<span className="lys-tr-live" aria-live="polite">
+					{translation?.status === 'done' ?
+						(
+							<button type="button" className={showKo ? 'lys-btn is-on mono' : 'lys-btn mono'} aria-pressed={showKo} onClick={() => setShowKo(v => !v)}>번역</button>
+						) :
+						koreanDominant ?
+							null :
+							translation?.status === 'requested' ?
+								(
+									// G3 — 요청됨 used to be a dead chip: nothing re-read the row, so a
+									// translation that finished while this was open never arrived. It is
+									// the explicit re-check now, and the bounded burst + a visibility
+									// return in `useLyricsDocument` cover the case nobody presses it.
+									//
+									// `aria-busy`, not `disabled`: disabling the focused control drops
+									// focus to `<body>`, and this is the one control a member presses
+									// because they are waiting. `recheck` refuses re-entry itself.
+									<button
+										type="button"
+										className="lys-btn mono"
+										aria-busy={checkingTr}
+										title="번역이 끝났는지 다시 확인"
+										onClick={recheckTr}
+									>
+										{checkingTr ? '확인 중…' : '요청됨 · 확인'}
+									</button>
+								) :
+								(
+									<button type="button" className="lys-btn mono" disabled={requesting} onClick={() => void requestTr()}>
+										{translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
+									</button>
+								)}
+				</span>
 			)}
 			{n > 0 && (
 				<button type="button" className="lys-btn mono" onClick={() => void copyAll()}>{copied ? '복사됨' : '전문 복사'}</button>

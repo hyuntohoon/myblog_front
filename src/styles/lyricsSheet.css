@@ -14,12 +14,19 @@
    float sheet, ContextPanel's lyrics pane, the memo dock — gets it wherever it
    mounts.
 
-   ORDER-SAFE BY CONSTRUCTION. `.lys-*` and `.ctx-*` appear in no other
-   stylesheet, so nothing outside this file targets these elements and the
-   cascade is decided entirely within it. Relative order is preserved exactly as
-   it stood in layout.css, which matters: `.lys-note` and `.lys-line` are each
-   declared twice (the notice bar vs the annotation note; the doc line's margin
-   vs its positioning) and the later declaration is load-bearing.
+   ORDER-SAFE BY CONSTRUCTION — stated precisely, because the next move will
+   lean on it. NOT "these prefixes appear nowhere else": `.ctx-` still appears in
+   layout.css, in the `:is(.ctx-panel.is-float, .memo-modal-lg.is-surface-mounted)
+   > .surface-resize-handle…` rules. The true claim is that **no rule outside this
+   file targets an element these rules target** — those resize-handle rules have
+   `.surface-resize-handle` as their subject, and this file contains no `surface-`
+   selector at all. So the cascade for everything here is decided entirely within
+   this file, and load order against layout.css cannot change a thing.
+
+   Relative order is preserved exactly as it stood in layout.css, which matters:
+   `.lys-note` and `.lys-line` are each declared twice (the notice bar vs the
+   annotation note; the doc line's margin vs its positioning) and the later
+   declaration is load-bearing.
 
    What stayed behind in member/layout.css is the memo-window dock HOST — the
    `.memo-*` rules and the shared `.surface-resize-handle` geometry. Those are
@@ -85,6 +92,10 @@
 	white-space: nowrap;
 }
 .lys-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+/* The translation control's stable live region (ARCH-playback-authority-convergence
+   Step 4, G3). Layout-neutral: it wraps exactly one control and passes the flex
+   context through, so the toolbar reads as it did before the region existed. */
+.lys-tr-live { display: inline-flex; align-items: center; }
 
 /* segmented 조판 toggle */
 .lys-seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--radius-pill); overflow: hidden; }

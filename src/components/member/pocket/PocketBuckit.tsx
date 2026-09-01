@@ -30,8 +30,11 @@ function PocketBuckitInner() {
   // ARCH-global-playback-experience Step 2 — the live lyrics host, relocated
   // here from SelfDashboard (dashboard-scoped) so 가사 opens from any route.
   // PocketTray dispatches ENT_OPEN_LIVE_LYRICS (openPlaybackLyrics); this is
-  // now its only listener. LyricsViewer's own component/data hooks/sync logic
-  // are untouched — only the mount trigger moved.
+  // now its only listener. That relocation moved the mount trigger and nothing
+  // else — but do not read the rest of that sentence as still true of the code:
+  // ARCH-playback-authority-convergence Step 1 rebuilt the viewer's sync logic
+  // onto `playbackSession`, and Step 4 moved its data lifecycle into
+  // `useLyricsDocument`.
   const [liveLyrics, setLiveLyrics] = useState<OpenLiveLyricsDetail | null>(null)
   // ARCH-playback-authority-convergence Step 4 (G5) — the 전체 가사 handoff.
   // The live viewer is a listening screen; reading the lyric in full is the
