@@ -169,6 +169,18 @@ export interface UseMusicSearch {
   loading: boolean
   loadingMore: SearchKind | null
   status: string
+  /**
+   * FIX-user-flow-state-consistency leg 3 — the last primary search failed on
+   * the wire or with a non-2xx. `status` already carried a Korean sentence for
+   * this, but it is a display string that also carries "DB에 결과 없음" and the
+   * Spotify messages, so a consumer could not tell a dead backend from a real
+   * zero-result answer without matching on prose. This is the machine-readable
+   * half; surfaces render an explicit error state off it instead of the
+   * no-results copy.
+   */
+  searchFailed: boolean
+  /** Same, for a "더 보기" page that failed — scoped to the bucket that asked. */
+  moreFailed: SearchKind | null
   source: HitSource
   /** Flip the source label without running a search (e.g. empty-query toggle). */
   setSource: (s: HitSource) => void
@@ -196,6 +208,8 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState<SearchKind | null>(null)
   const [status, setStatus] = useState('')
+  const [searchFailed, setSearchFailed] = useState(false)
+  const [moreFailed, setMoreFailed] = useState<SearchKind | null>(null)
   const [source, setSource] = useState<HitSource>('db')
   const [spotifyCooldown, setSpotifyCooldown] = useState(false)
   // next offset to ask for, per bucket
@@ -221,6 +235,8 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     setLoading(false)
     setLoadingMore(null)
     setStatus('')
+    setSearchFailed(false)
+    setMoreFailed(null)
   }, [invalidateRequests])
   const nextSignal = useCallback(() => {
     abortRef.current?.abort()
@@ -238,6 +254,8 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     setLoadingMore(null)
     setBuckets(EMPTY)
     setStatus('')
+    setSearchFailed(false)
+    setMoreFailed(null)
     setOffsets(ZERO)
     setLastReturned(ZERO)
   }, [invalidateRequests])
@@ -251,6 +269,8 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     setSource('db')
     setLoading(true)
     setStatus('')
+    setSearchFailed(false)
+    setMoreFailed(null)
     setBuckets(EMPTY)
     setOffsets(ZERO)
     setLastReturned(ZERO)
@@ -277,8 +297,10 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     catch {
       // An abort (superseded by a newer search) is not a failure — the seqRef
       // guard already suppresses stale results; don't flash 검색 실패.
-      if (seq === seqRef.current && !signal.aborted)
+      if (seq === seqRef.current && !signal.aborted) {
         setStatus('검색 실패')
+        setSearchFailed(true)
+      }
     }
     finally {
       if (seq === seqRef.current)
@@ -373,6 +395,7 @@ export function useMusicSearch({ recallTypes, pageLimit = 20 }: UseMusicSearchOp
     const seq = seqRef.current
     const signal = nextSignal()
     setLoadingMore(kind)
+    setMoreFailed(null)
     try {
       const params = new URLSearchParams({
         q,
@@ -411,8 +434,10 @@ mapArtists(data.artists, 'db') :
       setLastReturned(prev => ({ ...prev, [kind]: returned }))
     }
     catch {
-      if (seq === seqRef.current && query.trim() === q && !signal.aborted)
+      if (seq === seqRef.current && query.trim() === q && !signal.aborted) {
         setStatus('추가 로드 실패')
+        setMoreFailed(kind)
+      }
     }
     finally {
       setLoadingMore(null)
@@ -434,6 +459,8 @@ mapArtists(data.artists, 'db') :
     loading,
     loadingMore,
     status,
+    searchFailed,
+    moreFailed,
     source,
     setSource,
     spotifyCooldown,

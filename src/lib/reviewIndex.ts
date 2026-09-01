@@ -21,20 +21,45 @@ export interface ReviewHit {
 let cache: ReviewHit[] | null = null
 let inflight: Promise<ReviewHit[]> | null = null
 
-/** Fetch the review index once (memoized for the page lifetime). Empty on error. */
+/**
+ * Fetch the review index once (memoized for the page lifetime).
+ *
+ * FIX-user-flow-state-consistency leg 3 — this used to resolve `[]` on any
+ * transport or non-2xx response. Two things were wrong with that. The failure
+ * was indistinguishable from "no reviews match", so both search surfaces
+ * rendered a dead backend as 검색 결과 없음; and because the rejected fetch
+ * stayed parked in `inflight` while `cache` was never filled, the very first
+ * failure pinned the 평론 facet empty for the rest of the page's life — every
+ * later query reused the resolved-empty promise and never went back to the
+ * network. It now rejects and drops the memo, so the caller can say what
+ * happened and the next query reconnects.
+ */
 export function loadReviews(): Promise<ReviewHit[]> {
 	if (cache)
 		return Promise.resolve(cache)
 	if (!inflight) {
 		inflight = fetch('/search-index.json')
-			.then(r => (r.ok ? (r.json() as Promise<ReviewHit[]>) : []))
+			.then((r) => {
+				if (!r.ok)
+					throw new Error(`HTTP ${r.status}`)
+				return r.json() as Promise<ReviewHit[]>
+			})
 			.then((d) => {
 				cache = d
 				return d
 			})
-			.catch(() => [])
+			.catch((err) => {
+				inflight = null
+				throw err
+			})
 	}
 	return inflight
+}
+
+/** Test seam — drop the memoized index so a case starts from a cold fetch. */
+export function resetReviewIndex(): void {
+	cache = null
+	inflight = null
 }
 
 /** Substring match over album / artist / genres / excerpt / body. */

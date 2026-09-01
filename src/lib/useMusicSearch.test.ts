@@ -139,3 +139,83 @@ describe('useMusicSearch Spotify sync split', () => {
     expect(result.current.status).toBe('')
   })
 })
+
+// FIX-user-flow-state-consistency leg 3 — `status` is a display string that
+// carries 검색 실패, DB에 결과 없음 and the Spotify messages all at once, so a
+// consumer could not tell a dead backend from a genuine zero-result answer
+// without matching on Korean prose. These pin the machine-readable half that
+// the /search page and the header dropdown now branch on.
+describe('useMusicSearch failure signalling', () => {
+  function jsonOnce(body: unknown) {
+    return { ok: true, status: 200, json: async () => body } as unknown as Response
+  }
+
+  it('raises searchFailed on a non-2xx search and clears it on the next good one', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 } as unknown as Response)
+      .mockResolvedValueOnce(jsonOnce({ albums: [], artists: [], tracks: [] }))
+    vi.stubGlobal('fetch', f)
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album'] }))
+    act(() => result.current.setQuery('bts'))
+    await act(async () => {
+      await result.current.runDbSearch()
+    })
+    expect(result.current.searchFailed).toBe(true)
+
+    await act(async () => {
+      await result.current.runDbSearch()
+    })
+    expect(result.current.searchFailed).toBe(false)
+    // a real empty answer must NOT read as a failure
+    expect(result.current.status).toBe('DB에 결과 없음')
+  })
+
+  it('leaves searchFailed down when a search is merely superseded', async () => {
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      })))
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album'] }))
+    act(() => result.current.setQuery('bts'))
+    let first: Promise<void> = Promise.resolve()
+    act(() => {
+      first = result.current.runDbSearch()
+    })
+    act(() => {
+      void result.current.runDbSearch()
+    })
+    await act(async () => {
+      await first
+    })
+
+    expect(result.current.searchFailed).toBe(false)
+  })
+
+  it('scopes a failed 더 보기 page to the bucket that asked for it', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(jsonOnce({
+        albums: [{ id: 'a1', title: 'One' }],
+        artists: [],
+        tracks: [],
+      }))
+      .mockResolvedValueOnce({ ok: false, status: 502 } as unknown as Response)
+    vi.stubGlobal('fetch', f)
+
+    const { result } = renderHook(() => useMusicSearch({ recallTypes: ['album'], pageLimit: 1 }))
+    act(() => result.current.setQuery('bts'))
+    await act(async () => {
+      await result.current.runDbSearch()
+    })
+    expect(result.current.hasMore.album).toBe(1)
+
+    await act(async () => {
+      await result.current.loadMore('album')
+    })
+
+    expect(result.current.moreFailed).toBe('album')
+    // the rows already on screen survive a failed next page
+    expect(result.current.albums).toHaveLength(1)
+  })
+})

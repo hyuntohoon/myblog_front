@@ -78,6 +78,8 @@ const searchState: UseMusicSearch = {
 	loading: false,
 	loadingMore: null,
 	status: '',
+	searchFailed: false,
+	moreFailed: null,
 	source: 'db',
 	setSource: vi.fn(),
 	spotifyCooldown: false,

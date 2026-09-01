@@ -20,6 +20,16 @@ function submitAll(q: string) {
 	window.location.href = v ? `/search?q=${encodeURIComponent(v)}` : '/search'
 }
 
+/** The dropdown's non-result body: one lead line and an optional explanation. */
+function DropNote({ lead, sub }: { lead: string, sub?: string }) {
+	return (
+		<div className="gs-drop-empty">
+			<span className="serif italic gs-empty-lead">{lead}</span>
+			{sub && <span className="mono gs-empty-sub">{sub}</span>}
+		</div>
+	)
+}
+
 function Group({ label, count, children }: { label: string, count: number, children: React.ReactNode }) {
 	return (
 		<section className="gs-group">
@@ -110,7 +120,12 @@ export default function HeaderSearch() {
 		}
 		debounceRef.current = setTimeout(() => {
 			setCoreQuery(v)
-			loadReviews().then(idx => setReviews(filterReviews(idx, v).slice(0, DROPDOWN_LIMIT)))
+			loadReviews()
+				.then(idx => setReviews(filterReviews(idx, v).slice(0, DROPDOWN_LIMIT)))
+				// FIX-user-flow-state-consistency leg 3 — the index rejects on failure
+				// now (and drops its memo, so the next keystroke reconnects). Keep the
+				// dropdown alive on the DB facets and drop only the 평론 rows.
+				.catch(() => setReviews([]))
 		}, 180)
 		return () => clearTimeout(debounceRef.current)
 	}, [q, setCoreQuery])
@@ -125,6 +140,24 @@ export default function HeaderSearch() {
 	const albums = s.albums.slice(0, DROPDOWN_LIMIT)
 	const tracks = s.tracks.slice(0, DROPDOWN_LIMIT)
 	const total = reviews.length + artists.length + albums.length + tracks.length
+
+	// FIX-user-flow-state-consistency leg 3 — the dropdown branched on
+	// `total === 0` alone, and so told the reader ‘q’ 검색 결과 없음 — 철자를
+	// 확인하거나… in three different situations: while the request was still in
+	// flight (a false negative on every search, for the length of its round
+	// trip), after it failed outright, and when the answer really was empty.
+	// `s.loading` and `s.searchFailed` were both on the hook and neither was
+	// read. Naming the state keeps the branch below one level deep.
+	const dropState =
+		!q.trim() ?
+			'idle' :
+			s.loading && total === 0 ?
+				'loading' :
+				s.searchFailed ?
+					'failed' :
+					total === 0 ?
+						'empty' :
+						'results'
 
 	// ARCH-entity-interaction-unify Step 3: album/track rows open the app-wide
 	// overlay (no page) instead of navigating; close the dropdown on open.
@@ -282,25 +315,11 @@ export default function HeaderSearch() {
 			{open && !onSearchPage && (
 				<div className="gs-drop" id="gs-drop" role="listbox">
 					<div className="gs-drop-scroll">
-						{!q.trim() ?
-							(
-								<div className="gs-drop-empty">
-									<span className="serif italic gs-empty-lead">무엇을 찾으시나요?</span>
-									<span className="mono gs-empty-sub">아티스트 · 앨범 · 트랙 · 평론을 한 곳에서</span>
-								</div>
-							) :
-							total === 0 ?
-								(
-									<div className="gs-drop-empty">
-										<span className="serif italic gs-empty-lead">
-‘
-{q.trim()}
-’ 검색 결과 없음
-          </span>
-										<span className="mono gs-empty-sub">철자를 확인하거나 다른 키워드로 시도해 보세요</span>
-									</div>
-								) :
-								(
+						{dropState === 'idle' && <DropNote lead="무엇을 찾으시나요?" sub="아티스트 · 앨범 · 트랙 · 평론을 한 곳에서" />}
+						{dropState === 'loading' && <DropNote lead="검색 중…" />}
+						{dropState === 'failed' && <DropNote lead="검색을 불러오지 못했습니다" sub="서버 또는 네트워크 문제입니다. 잠시 후 다시 시도해 주세요" />}
+						{dropState === 'empty' && <DropNote lead={`‘${q.trim()}’ 검색 결과 없음`} sub="철자를 확인하거나 다른 키워드로 시도해 보세요" />}
+						{dropState === 'results' && (
 									<div className="gs-drop-body">
 										{reviews.length > 0 && (
 											<Group label="평론" count={reviews.length}>
@@ -388,7 +407,7 @@ export default function HeaderSearch() {
 											</Group>
 										)}
 									</div>
-								)}
+						)}
 					</div>
 					<button
 						type="button"
