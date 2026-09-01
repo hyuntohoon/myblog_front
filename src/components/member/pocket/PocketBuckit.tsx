@@ -3,15 +3,17 @@
 // is per-user since multi-user P2 — each member sees their OWN buckets here);
 // anonymous visitors get nothing. Streaming ▶ inside the tray stays owner-only.
 import type { OpenLiveLyricsDetail } from '@lib/entityEvents'
+import type { LyricsSheetMeta } from '../lyrics/LyricsSheet'
 import type { PbOpenStateDetail } from '@lib/pocketBuckit/events'
 import { useEffect, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { ENT_OPEN_LIVE_LYRICS } from '@lib/entityEvents'
 import { PB_CLOSED_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
+import { LyricsSheet } from '../lyrics/LyricsSheet'
 import { LyricsViewer } from '../lyrics/LyricsViewer'
 import { GlobalPlaybackBar } from '../playback/GlobalPlaybackBar'
 import { PlaybackPanel } from '../playback/PlaybackPanel'
-import { NOOP_PLAYBACK_ENTRY, openPlaybackLyrics } from '../playback/playbackEntryActions'
+import { openPlaybackLyrics } from '../playback/playbackEntryActions'
 import { PocketBuckitProvider, usePocket } from './PocketBuckitProvider'
 import { PocketDesignSettings } from './PocketDesignSettings'
 import { PocketTray } from './PocketTray'
@@ -28,9 +30,22 @@ function PocketBuckitInner() {
   // ARCH-global-playback-experience Step 2 — the live lyrics host, relocated
   // here from SelfDashboard (dashboard-scoped) so 가사 opens from any route.
   // PocketTray dispatches ENT_OPEN_LIVE_LYRICS (openPlaybackLyrics); this is
-  // now its only listener. LyricsViewer's own component/data hooks/sync logic
-  // are untouched — only the mount trigger moved.
+  // now its only listener. That relocation moved the mount trigger and nothing
+  // else — but do not read the rest of that sentence as still true of the code:
+  // ARCH-playback-authority-convergence Step 1 rebuilt the viewer's sync logic
+  // onto `playbackSession`, and Step 4 moved its data lifecycle into
+  // `useLyricsDocument`.
   const [liveLyrics, setLiveLyrics] = useState<OpenLiveLyricsDetail | null>(null)
+  // ARCH-playback-authority-convergence Step 4 (G5) — the 전체 가사 handoff.
+  // The live viewer is a listening screen; reading the lyric in full is the
+  // static sheet's job, and until now there was no way to get from one to the
+  // other. The sheet mounts HERE rather than in the viewer because it is a
+  // sibling surface, not a child: the two are mutually exclusive, and this is
+  // the site-wide host, so the handoff works on every route the viewer opens on
+  // — which is all of them (`SelfDashboard` wires its own dashboard-internal
+  // pair the same way). `LyricsSheet` self-supplies its CSS since Step 4, which
+  // is what makes mounting it outside the dashboard legal at all.
+  const [fullLyrics, setFullLyrics] = useState<{ trackId: string, meta: LyricsSheetMeta } | null>(null)
   useEffect(() => {
     const onOpen = (e: Event) => setLiveLyrics((e as CustomEvent<OpenLiveLyricsDetail>).detail)
     window.addEventListener(ENT_OPEN_LIVE_LYRICS, onOpen)
@@ -72,7 +87,6 @@ function PocketBuckitInner() {
         <PlaybackPanel
 	onClose={() => setPlaybackPanelOpen(false)}
 	onOpenLyrics={openPlaybackLyrics}
-	onOpenTrackInfo={NOOP_PLAYBACK_ENTRY}
         />
       )}
       <button
@@ -116,7 +130,19 @@ function PocketBuckitInner() {
 	initialArtist={liveLyrics.artist}
 	initialArtists={liveLyrics.artists}
 	canRefresh
+	onOpenFullLyrics={(trackId, meta) => {
+          setLiveLyrics(null)
+          setFullLyrics({ trackId, meta: { track: meta.track, artist: meta.artist, cover: meta.cover } })
+        }}
 	onClose={() => setLiveLyrics(null)}
+        />
+      )}
+      {fullLyrics && (
+        <LyricsSheet
+	key={fullLyrics.trackId}
+	spotifyTrackId={fullLyrics.trackId}
+	meta={fullLyrics.meta}
+	onClose={() => setFullLyrics(null)}
         />
       )}
     </div>

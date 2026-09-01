@@ -26,7 +26,7 @@ import { boardDragAccepts, externalAlbumCopy, getBoardDnd, useBoardDnd } from '@
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { play } from '@lib/spotifyPlayback'
-import { NOOP_PLAYBACK_ENTRY, openPlaybackLyrics } from '../playback/playbackEntryActions'
+import { openPlaybackLyrics } from '../playback/playbackEntryActions'
 import { PlaybackMini } from '../playback/PlaybackMini'
 import { usePocket } from './PocketBuckitProvider'
 
@@ -516,7 +516,6 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
 	onHeadPointerMove={onHeadMove}
 	onHeadPointerUp={onHeadUp}
 	onOpenLyrics={openPlaybackLyrics}
-	onOpenTrackInfo={NOOP_PLAYBACK_ENTRY}
         />
       </div>
     )

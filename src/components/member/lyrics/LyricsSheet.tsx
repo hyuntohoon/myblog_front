@@ -21,8 +21,8 @@
 // /api/lyrics/{id} + translation-request) — no backend change.
 import type { CSSProperties, PointerEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import type { AnnoStyle, LineMark } from './annotations'
-import type { LyricsAnnotation, LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import type { LyricsAnnotation, LyricsSegment } from './lyrics.api'
+import { useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import {
@@ -34,7 +34,14 @@ import {
   spanLength,
   writeAnnoStyle,
 } from './annotations'
-import { getLyrics, requestTranslation } from './lyrics.api'
+import { TR_REQUEST_FAILED, useLyricsDocument } from './useLyricsDocument'
+// The `.lys-*` rules travel with the component that emits them, not with the
+// dashboard (ARCH-playback-authority-convergence Step 4). They used to live in
+// `member/layout.css`, which loads on the member routes only — and Step 4's G5
+// handoff mounts this sheet from `PocketBuckit`, the site-wide island, where
+// that stylesheet is absent. Same posture as `lyricsViewer.css`; the member.css
+// trap has recurred four times in this codebase and this is how it stops.
+import '@styles/lyricsSheet.css'
 
 /** Header pointer handlers — the sheet's grab handle (move / tear). */
 export interface HeadHandlers {
@@ -63,11 +70,6 @@ function readMode(): Mode {
 		return 'doc'
 	}
 }
-
-type Phase =
-	| { k: 'loading' } |
-	{ k: 'error' } |
-	{ k: 'ready', data: LyricsResponse }
 
 /** Screen-reader label for a marked line — announces the range, per the design record. */
 function markLabel(mark: LineMark): string {
@@ -146,29 +148,6 @@ function AnnoNote({ anno, paired }: { anno: LyricsAnnotation, paired: boolean })
 	)
 }
 
-/**
- * Korean-dominant source detection (mirror of LyricsViewer OQ3): ≥50% Hangul
- * share of the letter-like characters → already Korean, so offer no request.
- */
-function isKoreanDominant(segs: LyricsSegment[]): boolean {
-	let hangul = 0
-	let letters = 0
-	const isHangul = /[\uAC00-\uD7A3\u3131-\u318E]/
-	const isLetter = /[a-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/i
-	for (const s of segs) {
-		for (const ch of s.text) {
-			if (isHangul.test(ch)) {
-				hangul++
-				letters++
-			}
-			else if (isLetter.test(ch)) {
-				letters++
-			}
-		}
-	}
-	return letters > 0 && hangul / letters >= 0.5
-}
-
 /** Split segments into stanzas on gap (empty-text) rows, for the liner layout. */
 function toStanzas(segs: LyricsSegment[]): LyricsSegment[][] {
 	const out: LyricsSegment[][] = []
@@ -198,45 +177,25 @@ function stanzaKo(st: LyricsSegment[]): string {
 }
 
 /**
- * Lyrics data + reading state shared by the standalone sheet and the memo
- * context panel. Keeping this state above the presentational pieces means a tab
- * switch can hide lyrics without discarding scroll-adjacent UI state such as an
- * opened annotation or translation preference.
+ * The sheet's READING state, on top of the shared document lifecycle.
+ *
+ * `useLyricsDocument` owns the read, the phase, the translation row and the
+ * 번역 default — the five things this file used to implement a second time
+ * (ARCH-playback-authority-convergence Step 4, G4). What stays here is what is
+ * this screen's alone: the two typography modes, the annotation highlight
+ * treatment, which annotations are open, and 전문 복사. Keeping it above the
+ * presentational pieces means a context-panel tab switch can hide lyrics
+ * without discarding an opened annotation.
  */
 export function useLyricsSheetState(spotifyTrackId: string) {
-	const [phase, setPhase] = useState<Phase>({ k: 'loading' })
+	const doc = useLyricsDocument(spotifyTrackId)
 	const [mode, setMode] = useState<Mode>(readMode)
 	const [annoStyle, setAnnoStyle] = useState<AnnoStyle>(readAnnoStyle)
 	const [openIds, setOpenIds] = useState<number[]>([])
-	const [showKo, setShowKo] = useState(false)
-	const [trOverride, setTrOverride] = useState<LyricsTranslationInfo | null>(null)
-	const [requesting, setRequesting] = useState(false)
 	const [copied, setCopied] = useState(false)
 	const [notice, setNotice] = useState<string | null>(null)
-	const [loadSeq, setLoadSeq] = useState(0)
 
-	// Load (and reload on retry). Guard a stale response landing after unmount.
-	useEffect(() => {
-		let stale = false
-		setPhase({ k: 'loading' })
-		setTrOverride(null)
-		getLyrics(spotifyTrackId)
-			.then((data) => {
-				if (stale)
-					return
-				setPhase({ k: 'ready', data })
-				// A finished translation shows by default (matches LyricsViewer).
-				setShowKo(data.availability === 'ok' && data.translation?.status === 'done')
-			})
-			.catch(() => {
-				if (stale)
-					return
-				setPhase({ k: 'error' })
-			})
-		return () => {
-			stale = true
-		}
-	}, [spotifyTrackId, loadSeq])
+	const { segs, showKo, annotations } = doc
 
 	const pickMode = (m: Mode) => {
 		setMode(m)
@@ -246,17 +205,7 @@ export function useLyricsSheetState(spotifyTrackId: string) {
 		catch { /* private mode — the choice just doesn't persist */ }
 	}
 
-	const segs = phase.k === 'ready' && phase.data.availability === 'ok' ?
-		(phase.data.segments ?? []) :
-		[]
-	const n = segs.length
-	const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
-	const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
 	const stanzas = useMemo(() => toStanzas(segs), [segs])
-
-	// Annotations ride the same payload. They are present even when availability is
-	// not "ok" — a track can carry commentary and no synced lyrics at all.
-	const annotations = (phase.k === 'ready' ? phase.data.annotations : null) ?? []
 	const lineMarks = useMemo(() => buildLineMarks(annotations), [annotations])
 	const drawer = useMemo(() => drawerItems(annotations), [annotations])
 
@@ -273,19 +222,14 @@ export function useLyricsSheetState(spotifyTrackId: string) {
 	}
 
 	const requestTr = async () => {
-		if (requesting)
-			return
-		setRequesting(true)
-		try {
-			setTrOverride(await requestTranslation(spotifyTrackId))
+		// A `dropped` press was never sent, so it carries no news — treating it as
+		// success used to clear an unrelated notice (복사에 실패했어요, say) on a
+		// double-tap alone.
+		const r = await doc.requestTr()
+		if (r === 'ok')
 			setNotice(null)
-		}
-		catch {
-			setNotice('번역 요청에 실패했어요')
-		}
-		finally {
-			setRequesting(false)
-		}
+		else if (r === 'failed')
+			setNotice(TR_REQUEST_FAILED)
 	}
 
 	// Copy the whole lyric as plain text (review material). Follows the 번역
@@ -310,38 +254,35 @@ export function useLyricsSheetState(spotifyTrackId: string) {
 		}
 	}
 
-	const emptyText = phase.k === 'ready' && phase.data.availability === 'no_lyrics' ?
-		'가사 없음 (연주곡)' :
-		'아직 연결된 가사가 없어요'
-	const sourceKind = phase.k === 'ready' && phase.data.availability === 'ok' ? phase.data.source_kind : null
-
 	return {
-		phase,
+		phase: doc.phase,
 		mode,
 		annoStyle,
 		openIds,
 		showKo,
-		requesting,
+		requesting: doc.requesting,
+		checkingTr: doc.checkingTr,
 		copied,
 		notice,
 		segs,
-		n,
-		translation,
-		koreanDominant,
+		n: doc.n,
+		translation: doc.translation,
+		koreanDominant: doc.koreanDominant,
 		stanzas,
 		annotations,
 		lineMarks,
 		drawer,
-		emptyText,
-		sourceKind,
+		emptyText: doc.emptyText,
+		sourceKind: doc.sourceKind,
 		pickMode,
 		pickAnnoStyle,
 		toggleAnno,
 		requestTr,
+		recheckTr: doc.recheckTr,
 		copyAll,
-		setShowKo,
+		setShowKo: doc.setShowKo,
 		setOpenIds,
-		retry: () => setLoadSeq(s => s + 1),
+		retry: doc.reload,
 	}
 }
 
@@ -360,10 +301,12 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 		koreanDominant,
 		requesting,
 		copied,
+		checkingTr,
 		pickMode,
 		pickAnnoStyle,
 		setShowKo,
 		requestTr,
+		recheckTr,
 		copyAll,
 	} = state
 
@@ -385,20 +328,45 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 					<button type="button" className={annoStyle === 'm3' ? 'on' : ''} aria-pressed={annoStyle === 'm3'} onClick={() => pickAnnoStyle('m3')} title="열었을 때만 — 강조를 희소하게">열림</button>
 				</span>
 			)}
-			{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
-				translation?.status === 'done' ?
-					(
-						<button type="button" className={showKo ? 'lys-btn is-on mono' : 'lys-btn mono'} aria-pressed={showKo} onClick={() => setShowKo(v => !v)}>번역</button>
-					) :
-					koreanDominant ?
-						null :
+			{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 &&
+				(translation?.status === 'done' || !koreanDominant) && (
+				/*
+				  One STABLE live region wrapping every translation state, so the
+				  arrival 요청됨 → 번역 is announced. It has to be the wrapper: the
+				  three branches render different element types, and a live region
+				  that mounts together with its own news announces nothing.
+				*/
+				<span className="lys-tr-live" aria-live="polite">
+					{translation?.status === 'done' ?
+						(
+							<button type="button" className={showKo ? 'lys-btn is-on mono' : 'lys-btn mono'} aria-pressed={showKo} onClick={() => setShowKo(v => !v)}>번역</button>
+						) :
 						translation?.status === 'requested' ?
-							<span className="lys-tr-state mono" role="status">요청됨</span> :
+								(
+									// G3 — 요청됨 used to be a dead chip: nothing re-read the row, so a
+									// translation that finished while this was open never arrived. It is
+									// the explicit re-check now, and the bounded burst + a visibility
+									// return in `useLyricsDocument` cover the case nobody presses it.
+									//
+									// `aria-busy`, not `disabled`: disabling the focused control drops
+									// focus to `<body>`, and this is the one control a member presses
+									// because they are waiting. `recheck` refuses re-entry itself.
+									<button
+										type="button"
+										className="lys-btn mono"
+										aria-busy={checkingTr}
+										title="번역이 끝났는지 다시 확인"
+										onClick={recheckTr}
+									>
+										{checkingTr ? '확인 중…' : '요청됨 · 확인'}
+									</button>
+							) :
 							(
 								<button type="button" className="lys-btn mono" disabled={requesting} onClick={() => void requestTr()}>
 									{translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
 								</button>
-							)
+							)}
+				</span>
 			)}
 			{n > 0 && (
 				<button type="button" className="lys-btn mono" onClick={() => void copyAll()}>{copied ? '복사됨' : '전문 복사'}</button>

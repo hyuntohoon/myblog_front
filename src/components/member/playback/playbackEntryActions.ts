@@ -3,10 +3,6 @@ import { openLiveLyrics } from '@lib/entityEvents'
 import { playbackSession } from '@lib/playback/session'
 import { cachedUri, resolveUri } from '@lib/playback/uris'
 
-// The product has no canonical track-detail destination yet. Keep this explicit
-// rather than inventing a route from the playback surfaces.
-export const NOOP_PLAYBACK_ENTRY: PlaybackEntryHandler = () => {}
-
 /**
  * Open the one app-wide live-lyrics host from any playback surface.
  *
@@ -27,7 +23,10 @@ export const openPlaybackLyrics: PlaybackEntryHandler = (row, state) => {
       // `cachedUri` returns `undefined` for "never asked" and `null` for "asked and
       // it does not resolve". Only the first is worth a request; `resolveUri`
       // memoises the second, so re-asking would spend a round trip to be told the
-      // same thing. (`uris.ts` F1 — the memoised null — is Step 4's, not this one's.)
+      // same thing. That memoised `null` is now DURABLE-ONLY — F1 shipped in Step
+      // 1, not Step 4 as this comment used to claim: a 500 or a dropped
+      // connection is no longer remembered at all, so re-asking is not skipped
+      // for a track whose resolve merely failed once.
       const cached = cachedUri(row.trackId)
       const uri = cached === undefined ? await resolveUri(row.trackId) : cached
       spotifyTrackId = uri?.startsWith('spotify:track:') ? uri.slice('spotify:track:'.length) : null

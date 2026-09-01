@@ -80,14 +80,20 @@
 // (none/failed/stale → request → 요청됨). Korean-dominant tracks get no
 // request button — nothing to translate.
 //
+// ARCH-playback-authority-convergence Step 4 continues that lifecycle past
+// 요청됨, which used to be where it stopped: the chip is a 확인 button, and
+// `useLyricsDocument` — shared with `LyricsSheet` — re-reads the row on a
+// visibility return and on a bounded burst, so a translation that finishes
+// while this screen is open actually reaches it.
+//
 // FEAT-lyrics-auto-progression Step 2 is visual-only (album-blur backdrop +
 // always-dark + large sans-serif typography); it lives in the `.lyv-*` CSS.
 import type { ClockAnchor } from '@lib/clockEstimate'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
-import type { LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
+import type { LyricsResponse, LyricsSegment } from './lyrics.api'
 import type { QueueEntry, QueueResult } from './queue.api'
 import type { JumpContext } from './queueJump'
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
 import { nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
 import { canControlPlayback } from '@lib/playback/ownership'
@@ -96,9 +102,9 @@ import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ArtistNames } from '../NowPlaying'
-import { getLyrics, requestTranslation } from './lyrics.api'
 import { readLivePlayback } from './playback.api'
 import { readQueue } from './queue.api'
+import { TR_REQUEST_FAILED, useLyricsDocument } from './useLyricsDocument'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
 const DRAG_STEP = 56
@@ -183,11 +189,6 @@ const EVENT_RESYNC_FLOOR_MS = 1500
  */
 type ResyncSource = 'manual' | 'command' | 'visibility' | 'end' | 'session'
 
-type Phase =
-	| { k: 'loading' } |
-	{ k: 'error' } |
-	{ k: 'ready', data: LyricsResponse }
-
 /**
  * The segment a playback moment maps to: the last segment whose `start_ms` is
  * at or before `ms` (synced rows only — plain rows carry no timestamps and are
@@ -216,33 +217,6 @@ export function nextBoundaryMs(segs: LyricsSegment[], ms: number): number | null
       return start
   }
   return null
-}
-
-/**
- * Korean-dominant source detection (FEAT-lyrics-translation OQ3): Hangul share
- * of the letter-like characters across the non-gap segment text ≥ 50% means
- * the track is already Korean — the viewer offers no translation request.
- * Mirrors the poller's belt-and-suspenders `korean_source` guard.
- */
-function isKoreanDominant(segs: LyricsSegment[]): boolean {
-  let hangul = 0
-  let letters = 0
-  // Hangul syllables + compatibility jamo / Latin (+ extended), Greek,
-  // Cyrillic, kana, CJK ideographs — the letter scripts the corpus carries.
-  const isHangul = /[\uAC00-\uD7A3\u3131-\u318E]/
-  const isLetter = /[a-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u3040-\u30FF\u4E00-\u9FFF]/i
-  for (const s of segs) {
-    for (const ch of s.text) {
-      if (isHangul.test(ch)) {
-        hangul++
-        letters++
-      }
-      else if (isLetter.test(ch)) {
-        letters++
-      }
-    }
-  }
-  return letters > 0 && hangul / letters >= 0.5
 }
 
 /**
@@ -294,7 +268,7 @@ function readStoredStyle(): LyvStyle {
   }
 }
 
-export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, initialArtists = [], canRefresh = false, onClose }: {
+export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, initialArtists = [], canRefresh = false, onOpenFullLyrics, onClose }: {
   spotifyTrackId: string
   /** One-shot playback position from the dynamic entry; seeds the initial focus and continuous clock anchor. */
   initialProgressMs?: number | null
@@ -311,12 +285,27 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   initialArtists?: Array<{ id: string, name: string }>
   /** Show the manual-refresh control (dynamic entry only — the debug entry has no playback binding). */
   canRefresh?: boolean
+  /**
+   * G5 (ARCH-playback-authority-convergence Step 4) — hand off to the static
+   * reading sheet for the SAME track. Optional on purpose: the control renders
+   * only where the host can actually mount a `LyricsSheet`, so this never
+   * becomes a second `트랙 정보` (G2 — a button wired to a no-op).
+   */
+  onOpenFullLyrics?: (spotifyTrackId: string, meta: { track: string | null, artist: string | null, cover: string | null }) => void
   onClose: () => void
 }) {
   // Track id is internal state (seeded from the prop) so a manual refresh can
   // swap tracks in place; the caller's key still remounts on a fresh open.
   const [trackId, setTrackId] = useState(spotifyTrackId)
-  const [phase, setPhase] = useState<Phase>({ k: 'loading' })
+  // ARCH-playback-authority-convergence Step 4 (G4) — the read, the phase, the
+  // translation row and the 번역 default are the SHARED document lifecycle now;
+  // this component owns only what is its own (focus, the clock anchor, browse,
+  // display style, the queue view). `LyricsSheet` reads the same hook.
+  // Per-load seeding, held in a latest-ref (same pattern as `refreshRef`) so the
+  // hook can call it while everything it touches is still declared further down.
+  const seedFromLoad = useRef<(data: LyricsResponse) => void>(() => {})
+  const doc = useLyricsDocument(trackId, { onLoaded: data => seedFromLoad.current(data) })
+  const { phase, segs, n, annotations, translation, koreanDominant, showKo, setShowKo, requesting, checkingTr, emptyText } = doc
   const [focus, setFocus] = useState(0)
   // Album cover for the blur backdrop (FEAT-lyrics-auto-progression Step 2).
   // Visual-only state: seeded from the entry prop, refreshed alongside each
@@ -353,10 +342,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // Freeze the page behind the viewer (it can open over the album-detail modal).
   useScrollLock()
 
-  const segs = phase.k === 'ready' && phase.data.availability === 'ok' ?
-    (phase.data.segments ?? []) :
-    []
-  const n = segs.length
   // Whether the row carries timestamps auto-advance can consume. Computed from
   // the loaded phase; plain-only rows (trackable === false) are manual-only.
   const trackable = phase.k === 'ready' && phase.data.availability === 'ok' && phase.data.trackable
@@ -645,54 +630,47 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     initialProgressMs != null ? { ms: initialProgressMs, wallMs: initialProgressAtMs ?? performance.now() } : null,
   )
 
-  // Translation lifecycle (FEAT-lyrics-translation Step 4). The read carries
-  // the row state; a successful POST overrides it locally (→ 요청됨) until the
-  // next load re-reads the truth. Toggle interleaves text_ko under each line —
-  // the focus/nav unit stays the original segment, so nav logic is untouched.
-  const [trOverride, setTrOverride] = useState<LyricsTranslationInfo | null>(null)
-  const [showKo, setShowKo] = useState(false)
-  const [requesting, setRequesting] = useState(false)
-
-  // Load (and reload on retry / refresh track swap). Guard against a stale
-  // response landing after unmount or after the track changed again.
-  const [loadSeq, setLoadSeq] = useState(0)
+  // The seed is consumed by the load it was read for, IN THE SAME BATCH as the
+  // `ready` phase — exactly where this ran while the fetch lived in this
+  // component. Seeding from an effect on `phase` instead puts the anchor one
+  // commit behind the lyrics: the list paints focused on line 1 with no anchor,
+  // and anything the member does in that window is overwritten by the seed
+  // landing behind it. An existing browse regression stepped the focus in that
+  // window and caught it.
+  //
+  // Seeds BOTH the initial focus and the continuous clock anchor, from the
+  // position and the wall instant it was READ at — so the lyrics load that just
+  // finished does not eat into sync. Without timestamps (plain rows) there is
+  // nothing to anchor and follow simply won't advance.
   useEffect(() => {
-    let stale = false
+    seedFromLoad.current = (data) => {
+      const seed = pendingSeed.current
+      pendingSeed.current = null
+      if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
+        setAnchor(seed)
+        endSynced.current = false
+        setFocus(focusIndexForMs(data.segments, seed.ms + leadMs + (performance.now() - seed.wallMs)))
+      }
+    }
+  })
+
+  // Translation lifecycle (FEAT-lyrics-translation Step 4). The read carries
+  // the row state, and `useLyricsDocument` owns it from Step 4 on — including
+  // the 요청됨 override and the 번역 default, which `LyricsSheet` used to
+  // reimplement line for line. The toggle interleaves text_ko under each line;
+  // the focus/nav unit stays the original segment, so nav logic is untouched.
+
+  // What is left of the old load effect: this SCREEN's per-load reset. It is
+  // keyed on exactly what the hook loads on, so the reset and the `loading`
+  // phase still land in one commit — the hook's effect is declared first (it is
+  // the `doc` call at the top of this component), so the order is unchanged.
+  useEffect(() => {
     clearSuspendTimer()
     setSuspended(false)
-    setPhase({ k: 'loading' })
     setFocus(0)
     anchor.current = null
     segRefs.current = []
-    setTrOverride(null)
-    getLyrics(trackId)
-      .then((data) => {
-        if (stale)
-          return
-        setPhase({ k: 'ready', data })
-        // A finished translation shows by default (owner decision 2026-07-06);
-        // the 번역 toggle can still hide it. Re-derived per loaded track.
-        setShowKo(data.availability === 'ok' && data.translation?.status === 'done')
-        const seed = pendingSeed.current
-        pendingSeed.current = null
-        // Seed BOTH the initial focus and the continuous clock anchor from the
-        // one-shot position, anchored at the instant it was READ — the lyrics
-        // load that just finished no longer eats into sync. Without timestamps
-        // (plain) there is nothing to anchor — follow simply won't advance.
-        if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
-          setAnchor(seed)
-          endSynced.current = false
-          setFocus(focusIndexForMs(data.segments, seed.ms + leadMs + (performance.now() - seed.wallMs)))
-        }
-      })
-      .catch(() => {
-        if (!stale)
-          setPhase({ k: 'error' })
-      })
-    return () => {
-      stale = true
-    }
-  }, [trackId, loadSeq])
+  }, [trackId, doc.reloadSeq])
 
   // The suspend timer is the only delayed work added by Step 1; never leave it
   // alive after the full-screen viewer unmounts.
@@ -988,22 +966,15 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing)
   }, [sessionState.anchor, sessionState.playing, sessionState.durationMs, sessionState.currentItemId, sessionState.external, trackId])
 
-  const translation = trOverride ?? (phase.k === 'ready' ? phase.data.translation : null) ?? null
-  const koreanDominant = useMemo(() => isKoreanDominant(segs.filter(s => s.text !== '')), [segs])
   const requestTr = async () => {
-    if (requesting)
-      return
-    setRequesting(true)
-    try {
-      setTrOverride(await requestTranslation(trackId))
+    const r = await doc.requestTr()
+    // `dropped` touches nothing: the press was never sent, so it has no news —
+    // and clearing the notice here used to wipe an unrelated one (a 재생 중인 곡
+    // 없음, say) on nothing more than a double-tap.
+    if (r === 'ok')
       setNotice(null)
-    }
-    catch {
-      setNotice('번역 요청에 실패했어요')
-    }
-    finally {
-      setRequesting(false)
-    }
+    else if (r === 'failed')
+      setNotice(TR_REQUEST_FAILED)
   }
 
   /**
@@ -1325,10 +1296,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     segRefs.current[i] = el
   }, [])
 
-  const emptyText = phase.k === 'ready' && phase.data.availability === 'no_lyrics' ?
-    '가사 없음 (연주곡)' :
-    '아직 연결된 가사가 없어요'
-
   return (
     <div className="scrim lyv-scrim" role="dialog" aria-modal="true" aria-label="가사 뷰어">
       <div
@@ -1388,43 +1355,93 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               honest about what the current screen can do; ✕ stays because
               closing the viewer is always available.
             */}
-            {view === 'lyrics' && phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (
-              translation?.status === 'done' ?
-                (
-                  <div className="lyv-tr-cluster">
-                    {translation.origin === 'manual' && <span className="lyv-tr-origin mono">manual</span>}
-                    <button
+            {/*
+              ONE live region around every translation state, so 요청됨 → 번역 is
+              announced. It has to be a single wrapper outside the branches, and
+              a real browser is what proved it: React does reuse the node when
+              each branch renders its own `div.lyv-tr-cluster`, but the ATTRIBUTE
+              goes with the branch — the `done` branch did not set `aria-live`,
+              so the region silently stopped being one at the exact moment it had
+              something to announce. Verified live: the node was the same and
+              `getAttribute('aria-live')` came back `null`.
+
+              Rendered only when there IS a lifecycle to narrate: a
+              Korean-dominant track is offered no request at all, and an empty
+              cluster would still cost a gap in the head.
+            */}
+            {view === 'lyrics' && phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (translation?.status === 'done' || !koreanDominant) && (
+              <div className="lyv-tr-cluster" aria-live="polite">
+                {translation?.status === 'done' ?
+                  (
+                    <>
+                      {translation.origin === 'manual' && <span className="lyv-tr-origin mono">manual</span>}
+                      <button
 	type="button"
 	className={showKo ? 'lyv-tr-btn is-on mono' : 'lyv-tr-btn mono'}
 	aria-pressed={showKo}
 	onClick={() => setShowKo(v => !v)}
-                    >
-                      번역
-                    </button>
-                  </div>
-                ) :
-                koreanDominant ?
-                  null :
+                      >
+                        번역
+                      </button>
+                    </>
+                  ) :
                   translation?.status === 'requested' ?
                     (
-                      <div className="lyv-tr-cluster">
-                        <span className="lyv-tr-state mono" role="status">요청됨</span>
-                      </div>
+                      /*
+                        G3 — 요청됨 was a dead chip: `requestTr` wrote it and
+                        nothing ever re-read the row, so a translation that
+                        finished while the viewer was open arrived only if the
+                        member happened to change tracks. It is the explicit
+                        re-check now; `useLyricsDocument` covers the member who
+                        never presses it with a visibility return and a bounded
+                        burst.
+
+                        `aria-busy`, not `disabled`: disabling the focused control
+                        drops focus to `<body>`, and this is the one control a
+                        member presses precisely because they are waiting.
+                        Re-entrancy is already refused inside `recheck`, so the
+                        guard does not need the DOM's help.
+                      */
+                      <button
+	type="button"
+	className="lyv-tr-btn mono"
+	aria-busy={checkingTr}
+	title="번역이 끝났는지 다시 확인"
+	onClick={doc.recheckTr}
+                      >
+                        {checkingTr ? '확인 중…' : '요청됨 · 확인'}
+                      </button>
                     ) :
                     (
-                      <div className="lyv-tr-cluster">
-                        <button
+                      <button
 	type="button"
 	className="lyv-tr-btn mono"
 	disabled={requesting}
 	onClick={() => {
                           void requestTr()
                         }}
-                        >
-                          {translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
-                        </button>
-                      </div>
-                    )
+                      >
+                        {translation?.status === 'failed' ? '실패 · 재요청' : translation?.status === 'stale' ? '번역 갱신' : '번역 요청'}
+                      </button>
+                    )}
+              </div>
+            )}
+            {/*
+              Gated on "the sheet has something to show", not on `settingsReady`
+              (which means synced lyrics exist). `useLyricsDocument` keeps
+              annotations for a track whose `availability` is not `ok` — a track
+              can carry commentary and no lyric at all — and that sheet is worth
+              reading. Gating on the viewer's own readiness would have hidden the
+              handoff on exactly those tracks.
+            */}
+            {view === 'lyrics' && onOpenFullLyrics && phase.k === 'ready' && (n > 0 || annotations.length > 0) && (
+              <button
+	type="button"
+	className="lyv-btn lyv-full-btn mono"
+	onClick={() => onOpenFullLyrics(trackId, { track: meta.track, artist: meta.artist, cover: coverUrl })}
+              >
+                전체 가사
+              </button>
             )}
             {view === 'lyrics' && settingsReady && !trackable && <span className="lyv-manual-note mono">동기화 없음 — 수동</span>}
             {view === 'lyrics' && canRefresh && (
@@ -1433,6 +1450,10 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	className={refreshing ? 'lyv-btn is-refreshing' : 'lyv-btn'}
 	onClick={() => {
                   void refresh()
+                  // The one explicit "bring this screen up to date" control the
+                  // viewer has. A pending translation is part of "up to date".
+                  if (translation?.status === 'requested')
+                    doc.recheckTr()
                 }}
 	disabled={refreshing || phase.k === 'loading'}
 	aria-label="현재 재생 새로고침"
@@ -1512,7 +1533,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
         {view === 'lyrics' && phase.k === 'error' && (
           <div className="lyv-status">
             <p>가사를 불러오지 못했어요</p>
-            <button type="button" className="lyv-retry mono" onClick={() => setLoadSeq(s => s + 1)}>다시 시도</button>
+            <button type="button" className="lyv-retry mono" onClick={doc.reload}>다시 시도</button>
           </div>
         )}
 
