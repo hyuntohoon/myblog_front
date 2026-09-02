@@ -30,6 +30,7 @@ import { INITIAL_DOCK } from '@lib/dockTear'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { memberRef } from '@lib/entityDrag'
 import { notifyAlbumStateChanged } from '@lib/entityEvents'
+import { isOwnerUser } from '@lib/owner'
 import { reviewHref } from '@lib/entityLinks'
 import { playbackSession } from '@lib/playback/session'
 import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
@@ -696,6 +697,17 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   // The memo window owns one shared lyrics/research context panel. It opens in
   // the dock on desktop and floats on mobile; tab changes never remount panes.
   const mobile = useIsMobileHost()
+  // Owner-only affordance inside this window (the 전체 에디터 hand-off below).
+  // Fail-closed and resolved separately from "am I signed in?", because after
+  // FEAT-multi-user-accounts every member passes that check.
+  const [isOwner, setIsOwner] = useState(false)
+  useEffect(() => {
+    let alive = true
+    void isOwnerUser().then(v => alive && setIsOwner(v))
+    return () => {
+      alive = false
+    }
+  }, [])
   const [panelOpen, setPanelOpen] = useState(album.focusResearch ?? false)
   const [tab, setTab] = useState<ContextPanelTab>(album.focusResearch ? 'research' : 'lyrics')
   const [track, setTrack] = useState<ContextPanelTrack | null>(null)
@@ -881,9 +893,16 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
               <GrowToggle on={grow} onToggle={onToggle} />
               <SaveStateDot phase={save} />
             </div>
-            <div className="memo-write-link">
-              <a href={`/write?album=${album.albumId}`}>전체 에디터에서 작성 →</a>
-            </div>
+            {/* FEAT-album-review-authoring Step 4 — owner-only. The memo window
+                opens for ANY member's own bucket album (the branch above needs
+                only writable + a bucket-item handle), so this link offered the
+                평론 editor to people 하드 룰 1 forbids from writing one. The memo
+                itself stays theirs; only the editor hand-off is gated. */}
+            {isOwner && (
+              <div className="memo-write-link">
+                <a href={`/write?album=${album.albumId}`}>전체 에디터에서 작성 →</a>
+              </div>
+            )}
             {album.albumId && (
               <button type="button" className="memo-context-open mono" onClick={openResearch}>리서치 노트 열기</button>
             )}

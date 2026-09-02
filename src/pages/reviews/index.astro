@@ -22,11 +22,19 @@ const reviews = buildReviewCards(await getCollection('blog'))
         <h1 class="rev-title">Reviews</h1>
       </header>
 
+      <!--
+        FEAT-album-review-authoring 충돌 #1. Two things were wrong in the empty
+        state below. The word: 리뷰 is banned for both concepts (평론 = review,
+        평가 = rating). And the CTA: this is a PUBLIC page and 평론 is editors-only
+        (하드 룰 1), so "첫 리뷰를 작성해 보세요" invited every visitor to do the one
+        thing they cannot do. The replacement matches EditorialHome's own empty
+        state, which already says this correctly.
+      -->
       {reviews.length === 0 ?
 (
         <div class="rev-empty">
-          <p class="rev-empty-title">아직 리뷰가 없습니다</p>
-          <p class="rev-empty-sub">첫 리뷰를 작성해 보세요.</p>
+          <p class="rev-empty-title">아직 발행된 평론이 없습니다</p>
+          <p class="rev-empty-sub">첫 평론이 이 자리에 실립니다.</p>
         </div>
       ) :
 (

@@ -53,7 +53,10 @@ const NO_REVIEWS: MemberReview[] = []
 function toMemberReview(r: PublicMemberReview): MemberReview {
 	return {
 		slug: '',
-		type: '앨범 리뷰',
+		// FEAT-album-review-authoring Step 4 — this row is a 평가, and its readers
+		// print the type verbatim. Stamping '앨범 리뷰' here is what put the word
+		// 리뷰 on a member's own rating in the overview's 최근 평가 card.
+		type: '평가',
 		album: r.album_title,
 		artist: '',
 		genre: '',
@@ -194,7 +197,13 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 		// BucketBoard's 최근 들은 앨범 strip). The backend's `require_owner` is the
 		// real boundary; this stops a member's browser making the request at all.
 		{ id: 'overview', node: <OverviewDash isOwner={isOwner} npStyle={npStyle} setNpStyle={setNpStyle} onOpen={openDetail} goBucket={() => onSelectTab('bucket')} reviews={reviews} onOpenLyrics={openLyrics} onOpenTrackLyrics={openStaticLyrics} /> },
-		{ id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> },
+		// FEAT-album-review-authoring Step 4 — 평론 is owner-only (충돌 #2 + C1).
+		// MemberProfile already drops the tab from the nav and refuses to activate
+		// the id; this drops the PANEL, so a member's browser never mounts
+		// ReviewCandidates (an authed /api/me/review-candidates read) or the draft
+		// cards' /write?id= links. Two layers on purpose: the nav is what a member
+		// sees, this is what their bundle runs.
+		...(isOwner ? [{ id: 'reviews', node: <ReviewsTab reviews={reviews} onOpen={openDetail} /> }] : []),
 		{ id: 'bucket', node: <BucketBoard isOwner={isOwner} onOpen={openDetail} reviews={reviews} active={tab === 'bucket'} /> },
 		{ id: 'stats', node: <StatsTab isOwner={isOwner} onOpen={openDetail} onOpenLyrics={openStaticLyrics} /> },
 		{ id: 'integration', node: <SpotifyIntegrationTab /> },

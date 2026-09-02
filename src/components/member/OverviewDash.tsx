@@ -224,6 +224,24 @@ const WIDGET_TITLES: Record<string, string> = {
 const ALL_WIDGETS = Object.keys(WIDGET_TITLES)
 
 /**
+ * Widget titles that name a KIND OF WRITING, and so depend on who is looking.
+ *
+ * FEAT-album-review-authoring Step 4 (충돌 #2's class). `latest-reviews` renders
+ * `ctx.reviews`, and for a non-owner that list is their own 평가 feed — so the
+ * card announced a member's ratings under the heading 최근 평론, a word 하드 룰 1
+ * reserves for editors. The widget itself stays: unlike the four owner-global
+ * listening cards below, its content genuinely belongs to the viewer. Only the
+ * name was wrong.
+ */
+const MEMBER_WIDGET_TITLES: Record<string, string> = {
+  'latest-reviews': '최근 평가',
+}
+
+function widgetTitle(id: string, isOwner: boolean): string {
+  return (isOwner ? undefined : MEMBER_WIDGET_TITLES[id]) ?? WIDGET_TITLES[id]
+}
+
+/**
  * SEC-member-listening-data-boundary Step 1 — widgets backed by an OWNER-GLOBAL
  * listening read.
  *
@@ -726,7 +744,7 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
     >
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, rowGap: 8, marginBottom: 16, borderBottom: '1px solid var(--color-text)', paddingBottom: 10 }}>
         <span {...handleProps} className="lf-drag-handle mono" style={{ ...handleProps.style, color: dragging ? 'var(--color-accent)' : 'var(--color-faded)', fontSize: 15, lineHeight: 1, userSelect: 'none' }} title="드래그하여 순서 변경">⠿</span>
-        <span className="mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{WIDGET_TITLES[id]}</span>
+        <span className="mono" style={{ fontSize: 11.5, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{widgetTitle(id, ctx.isOwner)}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {id === 'nowplaying' && <Seg value={ctx.npStyle} onChange={v => ctx.setNpStyle(v as NpStyle)} options={[{ v: 'banner', label: '배너' }, { v: 'full', label: '플레이어' }, { v: 'list', label: '리스트' }]} />}
           {hasView && <ViewToggle value={ctx.views[id]} onChange={v => ctx.setView(id, v)} />}
@@ -828,7 +846,7 @@ export function OverviewDash({ isOwner, npStyle, setNpStyle, onOpen, goBucket, r
                 {available.map(w => (
                   <button key={w} type="button" role="menuitem" onClick={() => add(w)} className="mono" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', background: 'none', border: 'none', color: 'var(--color-text)', cursor: 'pointer', borderRadius: 3 }}>
 ＋
-{WIDGET_TITLES[w]}
+{widgetTitle(w, isOwner)}
                   </button>
                 ))}
               </div>

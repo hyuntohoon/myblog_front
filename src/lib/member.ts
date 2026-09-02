@@ -15,7 +15,22 @@ import * as sample from './member.sample'
 
 export type { BucketNode, DistItem, LibraryStatus, NowPlaying, SampleAlbum, SampleTrack } from './member.sample'
 
-export type MemberReviewType = '앨범 리뷰' | '칼럼' | '트랙 리뷰'
+/**
+ * What one dashboard row IS.
+ *
+ * The first three are the OWNER's 평론 posts, read from the build-time blog
+ * collection (lib/reviewCollection) — their names are the legacy content-schema
+ * labels and 충돌 #4 says not to promote them to a user-facing choice.
+ *
+ * `'평가'` (FEAT-album-review-authoring Step 4) is the non-editor row: a member's
+ * own public rating, mapped by SelfDashboard's toMemberReview. It exists because
+ * the row's TYPE is what the surfaces render — a member's rating used to arrive
+ * stamped '앨범 리뷰', so their overview announced their own 평가 as a 리뷰, in a
+ * word the terminology decision (평론 = review, 평가 = rating; 한국어 "리뷰" 금지)
+ * bans for both concepts. Naming the data fixes every reader at once, which is
+ * why this is a type value and not a per-surface label branch.
+ */
+export type MemberReviewType = '앨범 리뷰' | '칼럼' | '트랙 리뷰' | '평가'
 
 /** JSON-safe review shape consumed by the member dashboard. */
 export interface MemberReview {

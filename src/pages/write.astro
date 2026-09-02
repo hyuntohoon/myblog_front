@@ -15,5 +15,9 @@ import WriterApp from '@components/writer/WriterApp'
   — but ANY attribute makes Astro treat a script as `is:inline`, which drops
   bundling, and this one imports from `@lib/auth`. The gate would ship as a raw
   `.ts` src and 404. So the re-arming lives inside the module instead.
+
+  FEAT-album-review-authoring Step 4 (audit E-5): the gate now checks the OWNER,
+  not just a login. It is shared with /drafts — same module, same `src` — because
+  the two had drifted into a login-only copy each.
 */}
-<script src="../scripts/write.guard.ts"></script>
+<script src="../scripts/ownerOnly.guard.ts"></script>

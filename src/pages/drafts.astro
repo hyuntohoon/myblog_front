@@ -324,8 +324,17 @@ import Seo from '@components/seo.astro'
   }
 </style>
 
+{/*
+  FEAT-album-review-authoring Step 4 (audit E-5). /drafts lists and archives the
+  editorial posts behind `require_owner`, and until now it checked only that
+  SOMEONE was signed in — the same hole /write had, in its own copy. The shared
+  module below is the single owner gate for both pages; the `isLoggedIn()` check
+  further down stays as the fetch's own guard, not as the page's.
+*/}
+<script src="../scripts/ownerOnly.guard.ts"></script>
+
 <script>
-  import { goLogin, isLoggedIn } from '../lib/auth'
+  import { isLoggedIn } from '../lib/auth'
   import { apiFetch } from '../lib/api'
 
   const API = import.meta.env.PUBLIC_BACKEND_API_URL as string
@@ -532,10 +541,13 @@ return
     show($loading)
     $tbody.replaceChildren()
 
-    if (!isLoggedIn()) {
-      goLogin(false)
+    // The page-level guard (scripts/ownerOnly.guard.ts) owns the redirect for
+    // both the logged-out and the non-owner case. This only STOPS the fetch —
+    // it must not start a second login, because two goLogin() calls each write
+    // their own pkce_verifier/oauth_state before their own location.assign, and
+    // a mismatched interleaving fails the callback's state check.
+    if (!isLoggedIn())
       return
-    }
     try {
       const url = currentView === 'draft' ?
       `${API}/api/posts?status=draft` :
