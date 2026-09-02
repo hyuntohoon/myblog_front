@@ -3,7 +3,6 @@ import type { components } from '@lib/api.gen'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import EditorialHome from '@components/home/EditorialHome'
 import { NRL_LIMIT, NRL_WINDOW_DAYS } from '@components/home/NewReleasesCard'
-import PocketResume from '@components/member/pocket/PocketResume'
 import Seo from '@components/seo.astro'
 import Layout from '@layouts/layout.astro'
 import { allGenres, buildReviewCards } from '@lib/reviews'
@@ -92,7 +91,4 @@ catch (err) {
   <SkipNavContent>
     <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} newReleases={newReleases} />
   </SkipNavContent>
-  {/* FEAT-pocket-buckit Step 5 — completes a logged-out "add to bucket" after the
-      Cognito callback redirects here. Renders nothing unless a fresh intent exists. */}
-  <PocketResume client:only="react" />
 </Layout>

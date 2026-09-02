@@ -9,6 +9,7 @@ import ThemeProvider from '@components/theme-provider.astro'
 import IosInstallHint from '@components/ios-install-hint.astro'
 import PocketBuckit from '@components/member/pocket/PocketBuckit'
 import AlbumOverlay from '@components/album/AlbumOverlay'
+import PostLoginResume from '@components/auth/PostLoginResume'
 import { pwaInfo } from 'virtual:pwa-info'
 
 import '../styles/global.css'
@@ -85,6 +86,16 @@ import '../styles/search.css';
 			`ent:open-album` event any surface dispatches via openAlbum().
 		-->
 		<AlbumOverlay client:only="react" transition:persist="album-overlay" />
+		<!--
+			FIX-auth-identity-lifecycle Step 2 — the single consumer of a post-login
+			intent. Mounted here, not on one page: the Cognito callback returns to
+			the page the visitor was on, so an action they started while logged out
+			has to be able to resume anywhere. Renders nothing without one.
+
+			transition:persist so an SPA navigation cannot re-run the drain against
+			a resume already on screen.
+		-->
+		<PostLoginResume client:only="react" transition:persist="post-login-resume" />
 		<IosInstallHint />
 	</body>
 </html>

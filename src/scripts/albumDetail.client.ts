@@ -167,7 +167,7 @@ function onRootClick(e: Event): void {
     return
   }
   // FEAT-pocket-buckit Step 6 — per-track "담기" → hand off to the ReviewTrackAdder
-  // island, which owns the AddToBucketMenu (picker + the logged-out pb:resume → Cognito
+  // island, which owns the AddToBucketMenu (picker + the logged-out post-login-intent → Cognito
   // handoff). Vanilla DOM here can't mount React, so this is an event bridge (same
   // shape as `album:detail`).
   const addBtn = target?.closest<HTMLButtonElement>('.lfq-tt-add')
