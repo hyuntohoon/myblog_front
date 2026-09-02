@@ -25,6 +25,7 @@ import type { TailRow } from './uris'
 import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, SetTrackLikedOutcome, TransferOutcome } from '@lib/spotifyPlayback'
 import type { OwnershipMessage } from './ownership'
+import { subscribeAuthIdentity } from '@lib/authIdentity'
 import { addBucketPlayback, deleteBucketItem, expandAlbumTracks } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { getStreamingToken, getTrackLiked, IN_PAGE_MESSAGE, listDevices, MYBLOG_PLAYBACK_CHANGED, play, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
@@ -2136,7 +2137,13 @@ export const playbackSession = {
     await syncFromLive()
   },
 
-  /** Test seam. */
+  /**
+   * Reset every piece of in-memory session state.
+   *
+   * Used as a test seam, and — since FIX-auth-identity-lifecycle Step 1 — as the
+   * account boundary (see `resetForAccountChange` below). Both want the same thing:
+   * nothing about what account A was playing may survive into account B's session.
+   */
   __reset(): void {
     clearBoundaryCheck()
     clearReissue()
@@ -2159,6 +2166,27 @@ export const playbackSession = {
     emit()
   },
 }
+
+/**
+ * FIX-auth-identity-lifecycle Step 1 — the account boundary for the playback session.
+ *
+ * The session is a module singleton on a `transition:persist`ed layout, so an account
+ * change in another tab reaches it as a `storage` event and nothing else: without this
+ * it would keep showing — and keep letting the user command — the previous account's
+ * playback. `ownership.ts` drops the lease and rejects the old account's bus messages;
+ * this drops the state those messages used to populate.
+ *
+ * The Spotify reconnect hint goes with it. It is a per-account answer to "should we
+ * try to resume the in-page player?", and carrying account A's yes into account B
+ * makes B's first page load attempt a device handoff it never asked for.
+ */
+function resetForAccountChange(): void {
+  writeReconnectFlag(false)
+  playbackSession.__reset()
+}
+
+if (typeof window !== 'undefined')
+  subscribeAuthIdentity(resetForAccountChange)
 
 /** Current estimated position, in ms, from the anchor. */
 function positionNow(): number {

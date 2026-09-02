@@ -4,6 +4,8 @@
 // PUBLIC_COGNITO_CLIENT_ID=68ccmcanfbvla9qbovnb9b18bt
 // PUBLIC_COGNITO_REDIRECT_URI=http://localhost:4321/admin/callback   // trailingSlash: 'never' 기준 (슬래시 없음)
 
+import { captureAuthEpoch, invalidateAuthGeneration, isAuthEpochCurrent, syncAuthIdentity } from './authIdentity'
+
 const COGNITO_DOMAIN = import.meta.env.PUBLIC_COGNITO_DOMAIN as string
 const CLIENT_ID = import.meta.env.PUBLIC_COGNITO_CLIENT_ID as string
 const REDIRECT_URI = import.meta.env.PUBLIC_COGNITO_REDIRECT_URI as string // 콜백 URL (콘솔 등록값과 100% 동일)
@@ -172,6 +174,10 @@ export async function handleCallback() {
 		code_verifier: verifier,
 	})
 
+	// FIX-auth-identity-lifecycle Step 1: the exchange is a network round trip, and
+	// another tab can log out while it is in flight. Capture the boundary before it.
+	const epoch = captureAuthEpoch()
+
 	const tokenEndpoint = `https://${COGNITO_DOMAIN}/oauth2/token`
 	const resp = await fetch(tokenEndpoint, {
 		method: 'POST',
@@ -186,15 +192,27 @@ export async function handleCallback() {
 	}
 	const json = await resp.json()
 
+	// The PKCE material is single-use and must go regardless of whether we commit —
+	// leaving it behind would let a later callback replay this exchange's state.
+	sessionStorage.removeItem(SS_VERIFIER)
+	sessionStorage.removeItem(SS_STATE)
+
+	if (!isAuthEpochCurrent(epoch)) {
+		// Signed out (or signed in as someone else) while the exchange was in flight.
+		// Committing here would silently resurrect a session the user already ended.
+		// Surfaced verbatim by `callback.client.ts`, which shows it next to a retry
+		// button — so it is written for the person reading it, not for a log.
+		throw new Error('로그인 처리 중 다른 탭에서 로그아웃되었습니다. 다시 로그인해 주세요.')
+	}
+
 	localStorage.setItem(LS_ACCESS, json.access_token || '')
 	if (json.id_token)
 localStorage.setItem(LS_ID, json.id_token)
 	if (json.refresh_token)
 localStorage.setItem(LS_REFRESH, json.refresh_token)
 
-	// cleanup
-	sessionStorage.removeItem(SS_VERIFIER)
-	sessionStorage.removeItem(SS_STATE)
+	// Publish the new identity to this tab (other tabs get the `storage` event).
+	syncAuthIdentity()
 }
 
 /**
@@ -213,16 +231,51 @@ localStorage.setItem(LS_REFRESH, json.refresh_token)
  */
 let inflightRefresh: Promise<string | null> | null = null
 
-export async function refreshAccessToken(): Promise<string | null> {
-	if (inflightRefresh)
-		return inflightRefresh
+/**
+ * `signal` is the CALLER's deadline, not the refresh's. When it fires this call
+ * rejects with the abort reason and stops waiting, but the shared refresh keeps
+ * running for every other waiter — one widget's 15-second ceiling must not cancel a
+ * refresh three siblings are still depending on.
+ *
+ * Rejecting rather than returning null is deliberate: `apiFetch` must be able to tell
+ * "the deadline passed" from "Cognito said no", because only the second one may send
+ * the user to the login page (FIX-auth-identity-lifecycle invariant 3).
+ *
+ * @throws the abort reason when `signal` aborts before the refresh settles.
+ */
+export async function refreshAccessToken(signal?: AbortSignal): Promise<string | null> {
+	if (!inflightRefresh) {
+		const shared = refreshAccessTokenOnce()
+		inflightRefresh = shared
+		// Cleared on the shared promise itself, not in a caller's `finally`: an
+		// aborted caller stops awaiting, and clearing there would leave the next
+		// caller to start a second refresh while this one is still open.
+		// `.catch` before `.finally` so a rejection is observed here rather than
+		// surfacing as an unhandled rejection: `refreshAccessTokenOnce` returns null
+		// for every network failure, but its first `localStorage.getItem` sits outside
+		// that try and does throw in a browser with storage disabled. Callers still
+		// see the rejection through `pending` below.
+		void shared.catch(() => null).finally(() => {
+			if (inflightRefresh === shared)
+				inflightRefresh = null
+		})
+	}
+	const pending = inflightRefresh
+	if (!signal)
+		return pending
+	if (signal.aborted)
+		throw signal.reason ?? new DOMException('Aborted', 'AbortError')
 
-	inflightRefresh = refreshAccessTokenOnce()
+	let onAbort!: () => void
 	try {
-		return await inflightRefresh
+		return await new Promise<string | null>((resolve, reject) => {
+			onAbort = () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+			signal.addEventListener('abort', onAbort, { once: true })
+			pending.then(resolve, reject)
+		})
 	}
 	finally {
-		inflightRefresh = null
+		signal.removeEventListener('abort', onAbort)
 	}
 }
 
@@ -230,6 +283,11 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
 	const refresh = localStorage.getItem(LS_REFRESH)
 	if (!refresh)
 		return null
+
+	// Captured BEFORE the request so the commit below can prove nothing moved while
+	// it was in flight — including a logout in another tab, which reaches this one
+	// only as an asynchronously-delivered `storage` event.
+	const epoch = captureAuthEpoch()
 
 	const body = new URLSearchParams({
 		grant_type: 'refresh_token',
@@ -248,10 +306,17 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
 		const json = await resp.json() as { access_token?: string, id_token?: string }
 		if (!json.access_token)
 			return null
+		if (!isAuthEpochCurrent(epoch)) {
+			// Logged out, or switched accounts, while this refresh was in flight.
+			// Writing the token now is how a signed-out session came back to life.
+			return null
+		}
 		localStorage.setItem(LS_ACCESS, json.access_token)
 		if (json.id_token)
 			localStorage.setItem(LS_ID, json.id_token)
 		// Cognito does not rotate the refresh_token by default; keep the stored one.
+		// The id_token may carry a new `sub` only in the account-switch case, which
+		// the epoch check above has already rejected — so identity cannot move here.
 		return json.access_token
 	}
 	catch {
@@ -260,9 +325,18 @@ async function refreshAccessTokenOnce(): Promise<string | null> {
 }
 
 export function logout() {
+	// FIX-auth-identity-lifecycle Step 1 — invalidate FIRST, clear second. Anything
+	// already in flight (this tab's refresh, a sibling tab's) loses its right to
+	// commit at this line, before the tokens it would have overwritten are gone, and
+	// before the navigation below starts tearing this document down.
+	invalidateAuthGeneration()
+
 	localStorage.removeItem(LS_ACCESS)
 	localStorage.removeItem(LS_ID)
 	localStorage.removeItem(LS_REFRESH)
+	// Republish now that the tokens are actually gone, so same-tab subscribers
+	// (Pocket, playback) see `anon` rather than the identity they had a line ago.
+	syncAuthIdentity()
 
 	// 로그인 UI를 통한 완전 로그아웃
 	const logoutUri = new URL(REDIRECT_URI).origin // 로그아웃 후 보여줄 페이지

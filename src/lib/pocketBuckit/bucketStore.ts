@@ -9,11 +9,15 @@
 //     in one is seen by the others instantly, no refetch);
 //   - sessionStorage-backed → the tree survives a same-tab navigation, so moving between
 //     pages reuses the cache instead of refetching (SWR: revalidate only when stale);
-//   - user-scoped keys (Cognito `sub`) + other-scope pruning on init → a logout / account
-//     switch can never repaint the previous user's tree.
+//   - user-scoped keys (Cognito `sub`) + other-scope pruning → a logout / account
+//     switch can never repaint the previous user's tree. FIX-auth-identity-lifecycle
+//     Step 1: this used to be pruning "on init" only, which made the guarantee true of
+//     a fresh page load and false of the tab that was already open when the account
+//     changed. The scope is now live — see `rescope()`.
 // React consumers subscribe via `useBucketStore()` (useSyncExternalStore).
 import type { BoardBucket } from '@lib/buckets'
 import { useSyncExternalStore } from 'react'
+import { getAuthIdentity, subscribeAuthIdentity } from '@lib/authIdentity'
 import { listBuckets } from '@lib/buckets'
 
 const KEY_PREFIX = 'pb:cache:buckets:'
@@ -35,27 +39,13 @@ export interface BucketStoreSnapshot {
 }
 
 // ── user scope (Cognito sub) ─────────────────────────────────────────────────
-// localhost dev → a fixed scope; prod → the id_token `sub`; logged-out → 'anon'.
-function userScope(): string {
-  if (typeof window === 'undefined')
-    return 'anon'
-  const host = location.hostname
-  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local'))
-    return 'local-dev'
-  try {
-    const idToken = localStorage.getItem('id_token')
-    if (idToken) {
-      const payload = JSON.parse(atob(idToken.split('.')[1])) as { sub?: string }
-      if (payload.sub)
-        return payload.sub
-    }
-  }
-  catch { /* malformed token → anon */ }
-  return 'anon'
-}
-
-const scope = userScope()
-const cacheKey = KEY_PREFIX + scope
+// Delegated to `@lib/authIdentity`, which is also what publishes the CHANGES this
+// store now reacts to. It used to parse the id_token here and freeze the result in a
+// module constant — correct on the load that computed it, and wrong forever after,
+// because a second tab whose account changed never re-ran module init. It went on
+// painting account A's tree, and wrote account B's fetch results under A's key.
+let scope = getAuthIdentity()
+let cacheKey = KEY_PREFIX + scope
 
 const EMPTY: BucketStoreSnapshot = { tree: null, fetchedAt: 0, loading: false, error: null }
 let current: BucketStoreSnapshot = EMPTY
@@ -133,6 +123,46 @@ function writeCache(): void {
   }
   catch { /* quota → in-memory only */ }
 }
+
+/**
+ * FIX-auth-identity-lifecycle Step 1 — move the store to a new account.
+ *
+ * Three things have to happen together, and the order matters:
+ *   1. `fetchSeq` is bumped, which is what CANCELS account A's in-flight reads. They
+ *      still resolve, but `seq !== fetchSeq` makes them drop their result instead of
+ *      writing it — the store already has that guard for superseded refreshes, and an
+ *      account switch is the same shape of staleness.
+ *   2. Every optimistic structural intent is dropped. Those describe moves inside A's
+ *      tree; replaying them against B's would corrupt it.
+ *   3. The key is repointed and re-seeded, so what paints next is B's cache or
+ *      nothing — never A's tree.
+ *
+ * `pruneOtherScopes` then deletes A's blob outright: it is the isolation guarantee the
+ * module was always documented to make, and until now it only held for a fresh load.
+ */
+function rescope(next: string): void {
+  if (next === scope)
+    return
+  scope = next
+  cacheKey = KEY_PREFIX + scope
+  fetchSeq += 1
+  inflight = null
+  structuralReplayTree = null
+  pendingStructuralProjections = []
+  current = { tree: null, fetchedAt: 0, loading: false, error: null }
+  seeded = false
+  ensureSeeded()
+  emit()
+}
+// `structuralMutations` is deliberately NOT reset here. Zeroing the counter without
+// resolving `structuralWaiters` strands them, and resolving them races the real
+// completion callback into a negative count — while leaving it alone costs only that
+// the new account's first read waits for account A's in-flight write to settle, which
+// `apiFetch`'s own ceiling bounds. The write itself can no longer touch the tree: its
+// projections were dropped above and `fetchSeq` has moved past it.
+
+if (typeof window !== 'undefined')
+  subscribeAuthIdentity(identity => rescope(identity))
 
 async function waitForStructuralMutations(): Promise<void> {
   if (structuralMutations === 0)

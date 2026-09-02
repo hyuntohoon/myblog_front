@@ -1,3 +1,5 @@
+import { getAuthIdentity, subscribeAuthIdentity } from '@lib/authIdentity'
+
 export const HEARTBEAT_MS = 5_000
 export const STALE_MS = 15_000
 export const CHALLENGE_MS = 1_000
@@ -38,18 +40,45 @@ export function canControlPlayback(state: {
   return state.isOwner || !state.ownerPresent || state.ownerRung !== 'in-page'
 }
 
+/**
+ * Every message carries the account that sent it (FIX-auth-identity-lifecycle Step 1).
+ *
+ * The bus is a BroadcastChannel / localStorage bus shared by every tab on this origin,
+ * and tabs on the same origin need not be the same account: a switch in one tab leaves
+ * the others running under the old one until they notice. Without `acct`, tab A's
+ * `command` and `state` messages are indistinguishable from tab B's, so account A could
+ * drive — and read the now-playing state of — account B's session. The stamp makes that
+ * a droppable message rather than a trusted one.
+ */
+export interface OwnershipEnvelope {
+	from: string
+	/** Cognito `sub` (or sentinel) of the tab that sent this. */
+	acct: string
+}
+
 export type OwnershipMessage =
-	| { type: 'claimed', from: string } |
-	{ type: 'released', from: string } |
-	{ type: 'challenge', from: string, nonce: string } |
-	{ type: 'alive', from: string, nonce: string } |
-	{ type: 'state', from: string, state: unknown } |
-	{ type: 'command', from: string, cmd: unknown } |
-	{ type: 'sync-request', from: string }
+	| ({ type: 'claimed' } & OwnershipEnvelope) |
+	({ type: 'released' } & OwnershipEnvelope) |
+	({ type: 'challenge', nonce: string } & OwnershipEnvelope) |
+	({ type: 'alive', nonce: string } & OwnershipEnvelope) |
+	({ type: 'state', state: unknown } & OwnershipEnvelope) |
+	({ type: 'command', cmd: unknown } & OwnershipEnvelope) |
+	({ type: 'sync-request' } & OwnershipEnvelope)
 
 type OutboundMessage = OwnershipMessage extends infer Message ?
   Message extends OwnershipMessage ?
-    Omit<Message, 'from'> :
+    Omit<Message, 'from' | 'acct'> :
+    never :
+  never
+
+/**
+ * An envelope before `post()` stamps the sending account onto it. Distributes over the
+ * union — a plain `Omit<OwnershipMessage, 'acct'>` collapses the variants into their
+ * common fields and loses `cmd` / `state` / `nonce`.
+ */
+export type UnstampedOwnershipMessage = OwnershipMessage extends infer Message ?
+  Message extends OwnershipMessage ?
+    Omit<Message, 'acct'> :
     never :
   never
 
@@ -127,8 +156,15 @@ function removeOwnLease(): void {
 function isOwnershipMessage(value: unknown): value is OwnershipMessage {
   if (!value || typeof value !== 'object')
     return false
-  const message = value as { type?: unknown, from?: unknown }
+  const message = value as { type?: unknown, from?: unknown, acct?: unknown }
   if (typeof message.from !== 'string')
+    return false
+  // Keeps this predicate honest rather than doing the filtering: everything downstream
+  // reads `message.acct` as a `string`, so an envelope without one must not be narrowed
+  // to `OwnershipMessage`. Dropping the UNSTAMPED message is `handleMessage`'s doing —
+  // `undefined` matches no account — and a mutation that deletes this line changes no
+  // observable behaviour today. It is here so that stays true of the next reader too.
+  if (typeof message.acct !== 'string')
     return false
   return ['claimed', 'released', 'challenge', 'alive', 'state', 'command', 'sync-request'].includes(String(message.type))
 }
@@ -269,7 +305,7 @@ function startHeartbeat(): void {
 function post(message: OutboundMessage): void {
   if (!inBrowser)
     return
-  postBus({ ...message, from: tabId } as OwnershipMessage)
+  postBus({ ...message, from: tabId, acct: getAuthIdentity() } as OwnershipMessage)
 }
 
 function claim(): void {
@@ -294,6 +330,11 @@ function release(): void {
 
 function handleMessage(message: OwnershipMessage): void {
   if (message.from === tabId)
+    return
+  // A message from another ACCOUNT is not ours to act on, at any layer: it must not
+  // move this tab's lease, and it must not reach the session listeners below either
+  // (a `state` message from the old account would repaint the new one's now-playing).
+  if (message.acct !== getAuthIdentity())
     return
 
   if (message.type === 'claimed') {
@@ -359,9 +400,37 @@ function replaceTransport(next: OwnershipTransport | null): void {
   stopBus = onBus(handleMessage)
 }
 
+/**
+ * FIX-auth-identity-lifecycle Step 1 — the account boundary for playback ownership.
+ *
+ * Releasing is the whole action here. If this tab held the lease it drops it (and tells
+ * the others), and either way the local ownership view resets so nothing carries the
+ * previous account's owner across. Transport and queue correctness are NOT touched:
+ * they belong to ARCH-playback-authority-convergence, and this step deliberately stops
+ * at the boundary rather than absorbing them.
+ *
+ * The lease key itself stays origin-scoped for the same reason — re-keying it per
+ * account is an ownership-model change, and one owner per origin remains the right
+ * rule: two accounts in one browser still share one pair of speakers.
+ */
+function resetForAccountChange(): void {
+  release()
+  clearChallenge()
+  stopHeartbeat()
+  const lease = readLease()
+  current = {
+    tabId,
+    isOwner: false,
+    ownerTabId: lease?.tabId ?? null,
+    ownerPresent: lease !== null,
+  }
+  emit()
+}
+
 if (inBrowser) {
   stopBus = onBus(handleMessage)
   startWatchdog()
+  subscribeAuthIdentity(resetForAccountChange)
   // `pagehide` only, deliberately not `beforeunload`: it fires on every path that
   // `beforeunload` does, and a registered `beforeunload` listener makes the page
   // ineligible for the back/forward cache in some browsers. Adding one here would
