@@ -1002,7 +1002,14 @@ interface Ops {
   // FEAT-album-review-authoring Step 1: flip the private editorial mark from the
   // board. The same state the album window writes — RFC C6 requires BOTH
   // surfaces to be able to fix it, or the owner goes back to hand-moving albums.
-  toggleMark: (albumId: string) => void
+  /**
+   * FEAT-album-review-authoring Step 4 — OPTIONAL, and absent for a non-owner.
+   * 평론 belongs to editors (하드 룰 1), so "평론 쓸 것" is not a state a member can
+   * mean; C1 says do not render what they cannot act on. Absence rather than a
+   * disabled control, matching how the album panel drops the same affordance —
+   * the tile pill simply is not there.
+   */
+  toggleMark?: (albumId: string) => void
 }
 
 // Props shared by every independently expandable inline bucket node.
@@ -1212,7 +1219,7 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
 	libRow={isLib ? (libState.get(a.albumId ?? '') ?? null) : null}
 	listened={a.albumId != null && listenedAlbumIds.has(a.albumId) && !a.alreadyReviewed}
 	marked={a.albumId != null && markedAlbumIds.has(a.albumId)}
-	onToggleMark={(a.itemType === 'album' && a.albumId && !isLib) ? () => ops.toggleMark(a.albumId!) : undefined}
+	onToggleMark={(a.itemType === 'album' && a.albumId != null && !isLib && ops.toggleMark != null) ? () => ops.toggleMark?.(a.albumId as string) : undefined}
 	fromLib={isLib}
 	isNew={newItemIds.has(a.itemId)}
 	onOpen={onOpen}
@@ -2664,7 +2671,8 @@ ids.push(a.albumId)
 
   const ops: Ops = {
     tree: tree ?? [],
-    toggleMark,
+    // Owner-only (Step 4): a member gets no mark pill on their tiles.
+    toggleMark: isOwner ? toggleMark : undefined,
     // Copy a 최근 들은 앨범 tile into a real bucket. Optimistic: splice a temp
     // tile in on drop so it appears instantly, then reconcile with the server —
     // swap temp → canonical item on success, drop temp on 409 (already there) /
@@ -3440,7 +3448,9 @@ ids.push(a.albumId)
             // FEAT-album-review-authoring Step 1 — the mark, spelled out. The
             // cover pill is a 26px glyph; on touch the sheet is where an action
             // gets a name, and this one needs its privacy said out loud.
-            if (s.album.albumId && s.album.itemType === 'album' && !s.fromLib) {
+            // Owner-only (Step 4), same rule as the cover pill. Touch is the other
+            // way into this action and would otherwise keep it reachable.
+            if (isOwner && s.album.albumId && s.album.itemType === 'album' && !s.fromLib) {
               const markId = s.album.albumId
               const isMarked = markedAlbumIds.has(markId)
               list.push({

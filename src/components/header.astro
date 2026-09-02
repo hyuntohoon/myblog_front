@@ -70,10 +70,16 @@ const navLinks = [
     <!-- Persistent utilities (always visible + interactive, top-right in both states) -->
     <div class="hdr-utils">
       <HeaderSearch client:load />
-      <a id="write-link" href="/write" class="hdr-write hidden" aria-label="글쓰기">
+      <!-- FEAT-album-review-authoring Step 4 (C1 / OQ9): the ONE write entry.
+           A button, not an <a href="/write">, because /write is only one of the
+           two destinations behind it now — the sheet asks what and which album,
+           and a member (who may write a 평가 but never a 평론) gets an entry here
+           for the first time. Shown to anyone signed in; what it offers is what
+           header.client.ts's owner signal decides INSIDE the sheet. -->
+      <button type="button" id="write-link" class="hdr-write hidden" aria-label="쓰기" aria-haspopup="dialog">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9" stroke-linecap="round"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke-linejoin="round"></path></svg>
-        <span>글쓰기</span>
-      </a>
+        <span>쓰기</span>
+      </button>
       <a id="profile-link" href="/members/?me" class="hdr-avatar hidden" aria-label="회원 페이지">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.4"></circle><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6" stroke-linecap="round"></path></svg>
       </a>

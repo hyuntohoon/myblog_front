@@ -1,0 +1,282 @@
+/* ── 쓰기 sheet (FEAT-album-review-authoring Step 4 — C1 / OQ9) ──────────────
+   The unified write entry's own styles.
+
+   NOT written with the `qb-*` modal classes the 담기 modal uses: those live in
+   styles/member.css, which only loads on the member dashboard, and this sheet
+   opens from the header on EVERY page. A dashboard-only stylesheet is how a
+   component ships to a public page with no styles at all — the trap recorded
+   after the qb-/bps-/lf- prefixes escaped their surface once already.
+
+   Imported by the component instead of layout.astro, so it rides the island's
+   own bundle — the same way AlbumDetailView carries album-modal.css. */
+
+.ws-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(16px, 8vh, 96px) 16px 24px;
+  overflow-y: auto;
+  background: rgb(10 9 8 / 50%);
+  backdrop-filter: blur(2px);
+}
+
+.ws-sheet {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 22px 18px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 26px 70px -20px rgb(0 0 0 / 45%);
+}
+
+.ws-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ws-kicker {
+  margin: 0 0 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.ws-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--color-text);
+}
+
+.ws-close {
+  margin-left: auto;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-subtle);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.ws-close:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* ── kind step (owner only) ── */
+
+.ws-kinds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 479px) {
+  .ws-kinds { grid-template-columns: minmax(0, 1fr); }
+}
+
+.ws-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 15px;
+  text-align: left;
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.ws-kind:hover,
+.ws-kind:focus-visible {
+  border-color: var(--color-accent);
+  background: var(--color-bg);
+}
+
+.ws-kind-name {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.ws-kind-desc {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--color-subtle);
+}
+
+/* ── album step ── */
+
+.ws-back {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  background: none;
+  border: none;
+  color: var(--color-faded);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.ws-back:hover { color: var(--color-accent); }
+
+.ws-searchrow {
+  display: flex;
+  gap: 8px;
+}
+
+.ws-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.ws-search-icon {
+  position: absolute;
+  left: 11px;
+  font-size: 14px;
+  color: var(--color-faded);
+  pointer-events: none;
+}
+
+.ws-search-input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px 10px 30px;
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.ws-search-input:focus-visible {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.ws-btn {
+  flex: none;
+  padding: 0 12px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-subtle);
+  background: var(--color-paper);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.ws-btn:hover:not(:disabled) {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.ws-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ws-status {
+  margin: 0;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--color-faded);
+}
+
+.ws-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-hit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 6px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border-soft, var(--color-border));
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.ws-hit:hover:not(:disabled),
+.ws-hit:focus-visible { background: var(--color-paper); }
+
+.ws-hit:disabled { cursor: default; }
+
+.ws-hit-cover {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--color-paper);
+}
+
+.ws-hit-cover--blank { border: 1px solid var(--color-border); }
+
+/* min-width:0 so a long album title ellipsises instead of pushing the row wide
+   — the grid/flex overflow default that has bitten this codebase before. */
+.ws-hit-text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ws-hit-title {
+  font-size: 15px;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-hit-meta {
+  font-size: 12px;
+  color: var(--color-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-hit-pending {
+  flex: none;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}

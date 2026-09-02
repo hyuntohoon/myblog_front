@@ -65,6 +65,15 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 	const [draftComment, setDraftComment] = useState('')
 	const [saving, setSaving] = useState(false)
 	const [marking, setMarking] = useState(false)
+	/**
+	 * The editor's copy of the 평론 후보 mark. `null` means UNTOUCHED in this
+	 * editing session, and that is the whole point of the tri-state: `marked`
+	 * comes from an authed read that may not have landed yet, so seeding a
+	 * boolean here and posting it back would let a fast 저장 clear a real mark
+	 * with a default. Untouched ⇒ the key is omitted from the PUT entirely,
+	 * preserving the partial-write property this panel has always relied on.
+	 */
+	const [markDraft, setMarkDraft] = useState<boolean | null>(null)
 	const [err, setErr] = useState<string | null>(null)
 	// Owner-only affordance (isOwnerUser is fail-closed — a member never sees
 	// this even briefly). Resolved separately from `authed` since any signed-in
@@ -119,6 +128,7 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 	function startEdit() {
 		setDraftRating(myReview ? Number(myReview.rating) : 4)
 		setDraftComment(myReview?.comment ?? '')
+		setMarkDraft(null)
 		setErr(null)
 		setEditing(true)
 	}
@@ -146,11 +156,18 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 		setSaving(true)
 		setErr(null)
 		try {
-			// Partial by design: no `review_candidate` key, so saving a rating
-			// cannot disturb the mark this panel may not have loaded yet.
+			// Partial by design: the `review_candidate` key appears ONLY when the
+			// author actually moved the checkbox in this session (markDraft !== null),
+			// so saving a rating still cannot disturb a mark this panel may not have
+			// loaded yet. FEAT-album-review-authoring Step 4 / OQ14 — the mark now
+			// rides the same write as the 평가 because that is what "put it in the
+			// entry" means: the RFC added C6 to connect 평가 to 평론 후보, and with the
+			// two on separate controls the connection was never made once (1 mark
+			// ever, 0 of 38 rated rows marked, prod 2026-09-03).
 			const res = await putMyAlbumState(albumId, {
 				rating: draftRating,
 				comment: draftComment.trim() || null,
+				...(markDraft === null ? {} : { review_candidate: markDraft }),
 			})
 			if (!res) {
 				setErr('저장에 실패했습니다. 다시 시도해 주세요.')
@@ -357,6 +374,25 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 										/
 										{RATING_COMMENT_MAX}
 									</div>
+									{/* OQ9/OQ14 — the 평론 후보 mark, inside the write flow.
+									    Owner-only: 평론 belongs to editors (하드 룰 1), so
+									    "나중에 평론으로 쓴다" is not a thing a member can mean.
+									    It saves with the 평가 in one PUT; the standalone
+									    toggle below covers the other half of C6 (mark it
+									    before listening, with no star), and the two never
+									    show at once. */}
+									{isOwner && (
+										<label className="sans album-rating__mark-check">
+											<input
+												type="checkbox"
+												checked={markDraft ?? marked}
+												onChange={e => setMarkDraft(e.target.checked)}
+												disabled={saving}
+											/>
+											<span>나중에 평론으로 쓴다</span>
+											<span className="mono album-rating__private-note">나만 봅니다</span>
+										</label>
+									)}
 									{err && <div className="sans album-rating__error">{err}</div>}
 									<div className="album-rating__editor-actions">
 										<button type="button" onClick={save} disabled={saving} className="album-modal__button album-modal__button--primary">{saving ? '저장 중…' : '저장'}</button>
@@ -395,7 +431,16 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 					{/* The private editorial mark. Outside the rating editor on purpose:
 					    it must be reachable without opening one and without a star,
 					    because it can be set before listening (RFC C6). Never shown to
-					    anyone but its author — this whole panel is authed-only. */}
+					    anyone but its author — this whole panel is authed-only.
+
+					    FEAT-album-review-authoring Step 4 adds two conditions.
+					    OWNER-ONLY: this was rendered for every signed-in member, and
+					    marking an album "평론 쓸 것" is meaningless for someone 하드 룰 1
+					    forbids from writing one — exactly the "쓸 수 없는 평론 항목을
+					    보여주지 않는다" rule C1 states. And hidden WHILE EDITING, because
+					    the editor now carries the same state as a checkbox; two live
+					    controls for one boolean on one screen is how they disagree. */}
+					{isOwner && !editing && (
 					<div className="album-rating__mark">
 						<button
 							type="button"
@@ -408,6 +453,7 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 						</button>
 						<span className="mono album-rating__private-note">나만 봅니다</span>
 					</div>
+					)}
 
 					{/* Owner-only. BEST NEW is an album-wide property (same column the
 					    writer's "BEST NEW MUSIC" button sets), not a personal pick — so

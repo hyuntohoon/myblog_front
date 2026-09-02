@@ -122,7 +122,8 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose, existingAlbu
       }
       const outcome = await onAdd({ id: albumId, title: hit.title })
       if (outcome.status === 'added')
-        setNotice(outcome.alreadyReviewed ? `“${hit.title}” 담음 · 이미 리뷰한 앨범이에요` : `“${hit.title}” 담았습니다`)
+        // 충돌 #1's class: `alreadyReviewed` is an album this member has RATED.
+        setNotice(outcome.alreadyReviewed ? `“${hit.title}” 담음 · 이미 평가한 앨범이에요` : `“${hit.title}” 담았습니다`)
       else if (outcome.status === 'conflict')
         setNotice(`“${hit.title}” 은 이미 이 버킷에 있어요`)
       else
@@ -152,7 +153,7 @@ export default function AddAlbumModal({ bucketName, onAdd, onClose, existingAlbu
             <input
 	ref={inputRef}
 	className="qb-modal-search-input"
-	placeholder="리뷰할 앨범을 검색…"
+	placeholder="앨범을 검색…"
 	value={search.query}
 	onChange={onQueryChange}
 	onKeyDown={onKeyDown}

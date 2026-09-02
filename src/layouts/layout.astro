@@ -10,6 +10,7 @@ import IosInstallHint from '@components/ios-install-hint.astro'
 import PocketBuckit from '@components/member/pocket/PocketBuckit'
 import AlbumOverlay from '@components/album/AlbumOverlay'
 import PostLoginResume from '@components/auth/PostLoginResume'
+import WriteSheet from '@components/write/WriteSheet'
 import { pwaInfo } from 'virtual:pwa-info'
 
 import '../styles/global.css'
@@ -96,6 +97,14 @@ import '../styles/search.css';
 			a resume already on screen.
 		-->
 		<PostLoginResume client:only="react" transition:persist="post-login-resume" />
+		<!--
+			FEAT-album-review-authoring Step 4 — the unified write entry (C1).
+			Mounted here for the same reason AlbumOverlay is: the header's 쓰기
+			button exists on every page, so its sheet has to. Renders nothing until
+			`ent:open-write`. transition:persist so an SPA navigation cannot remount
+			it under an open sheet.
+		-->
+		<WriteSheet client:only="react" transition:persist="write-sheet" />
 		<IosInstallHint />
 	</body>
 </html>

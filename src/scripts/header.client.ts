@@ -1,27 +1,58 @@
 // src/scripts/header.client.ts
 import { goLogin, isLoggedIn, logout } from '../lib/auth.ts'
-import { isOwnerUser } from '../lib/owner.ts'
+import { openWrite } from '../lib/entityEvents.ts'
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement | null
-const loginBtn = $('#login-btn')
-const logoutBtn = $('#logout-btn')
-const writeLink = $('#write-link')
-const profileLink = $('#profile-link')
+
+// Every lookup below is LAZY, and the click handling is delegated. Both are the
+// same fix for one defect (found in a real browser during Step 4, present in
+// production before it).
+//
+// The header roots carry transition:persist, so a Layout→Layout swap keeps the
+// same DOM nodes and a cached reference stays valid — which is what the comment
+// in layout.astro says and why this file used to cache them at module scope.
+// But `/write` and `/drafts` use write-layout.astro, which mounts NO header. A
+// ClientRouter swap into one of those documents therefore does not persist
+// `#hdr-bar`; it drops it. Coming back builds FRESH header nodes, while this
+// module — which only runs once per document — still held the detached ones.
+//
+// The result was not subtle: after one SPA round trip through the editor, a
+// signed-in visitor's header reverted to **Login**, with the write entry, the
+// logout button and the avatar all left carrying their server-rendered
+// `hidden`, and no click handler on any of them. It never recovered, because
+// every later swap re-ran syncAuthUI() against the same dead references.
+//
+// Verified by driving the round trip in a browser, not by reading:
+//   fresh load             write visible · logout visible · avatar visible
+//   after /write/ + Back   write hidden  · logout hidden  · avatar hidden · Login shown
+
+function authEls() {
+	return {
+		loginBtn: $('#login-btn'),
+		logoutBtn: $('#logout-btn'),
+		writeLink: $('#write-link'),
+		profileLink: $('#profile-link'),
+		loginMenu: $('#login-menu'),
+	}
+}
 
 function syncAuthUI() {
+	const { loginBtn, logoutBtn, writeLink, profileLink } = authEls()
 	const logged = isLoggedIn()
 	if (logged) {
 		loginBtn?.classList.add('hidden')
 		logoutBtn?.classList.remove('hidden')
 		profileLink?.classList.remove('hidden')
 		profileLink?.setAttribute('href', '/members/?me')
-		// Owner-only affordances (audit 2026-07-14): post multi-user any member
-		// is "logged in", so the write entry gates on the owner signal (cached
-		// getMe → OWNER_HANDLE; fail-closed → members never see it). Every
-		// avatar targets the unified member self-dashboard.
-		void isOwnerUser().then((owner) => {
-			writeLink?.classList.toggle('hidden', !owner)
-		})
+		// FEAT-album-review-authoring Step 4 (C1): the write entry is now shown to
+		// EVERY signed-in account, because every account may write a 평가. It used
+		// to be owner-gated here (audit 2026-07-14) for the right reason at the
+		// time — it went straight to /write, which is 평론, which members cannot
+		// write. That reason moved rather than disappeared: the owner signal now
+		// lives INSIDE the sheet (which offers 평론 only to the owner) and on
+		// /write and /drafts themselves (scripts/ownerOnly.guard.ts, audit E-5).
+		// Hiding it here as well would leave a member with no write entry at all.
+		writeLink?.classList.remove('hidden')
 	}
 	else {
 		loginBtn?.classList.remove('hidden')
@@ -40,39 +71,60 @@ syncAuthUI()
 // the empty one falls through to the hosted UI (email + enabled IdPs). Login
 // returns to the pre-login page via the shared /admin/callback (goLogin
 // captures returnTo; no capture → home).
-const loginMenu = $('#login-menu')
-
 function setLoginMenu(open: boolean) {
+	const { loginBtn, loginMenu } = authEls()
 	if (!loginMenu || !loginBtn)
 		return
 	loginMenu.hidden = !open
 	loginBtn.setAttribute('aria-expanded', String(open))
 }
 
-loginBtn?.addEventListener('click', (e) => {
-	e.stopPropagation()
-	setLoginMenu(loginMenu?.hidden ?? true)
-})
-
-// Clicks on the menu chrome (padding between options) must not dismiss it.
-loginMenu?.addEventListener('click', e => e.stopPropagation())
-
-loginMenu?.querySelectorAll<HTMLButtonElement>('.hdr-login-opt').forEach((opt) => {
-	opt.addEventListener('click', () => {
+// ONE delegated handler for the whole utilities cluster. Delegation is what
+// makes it survive the header being rebuilt; it also folds in the old
+// outside-click dismissal, which previously relied on each element listener
+// calling stopPropagation to keep the menu open — a trick that does not work
+// once the listeners live on `document` themselves.
+document.addEventListener('click', (e) => {
+	const target = e.target instanceof Element ? e.target : null
+	if (!target) {
+		setLoginMenu(false)
+		return
+	}
+	if (target.closest('#write-link')) {
+		e.preventDefault()
+		setLoginMenu(false)
+		// The trigger and the sheet are different worlds (an Astro page script vs.
+		// a React island in layout.astro), so this dispatches rather than calls.
+		openWrite()
+		return
+	}
+	if (target.closest('#logout-btn')) {
+		setLoginMenu(false)
+		logout()
+		return
+	}
+	if (target.closest('#login-btn')) {
+		setLoginMenu($('#login-menu')?.hidden ?? true)
+		return
+	}
+	const opt = target.closest<HTMLElement>('.hdr-login-opt')
+	if (opt) {
 		const idp = opt.dataset.idp
 		setLoginMenu(false)
 		void goLogin(false, idp === 'Google' || idp === 'Kakao' ? idp : undefined)
-	})
-})
-
-// Dismiss on outside-click and Esc (the menu itself stops propagation above).
-document.addEventListener('click', () => setLoginMenu(false))
-window.addEventListener('keydown', (e) => {
-	if (e.key === 'Escape' && loginMenu && !loginMenu.hidden)
+		return
+	}
+	// A click on the menu's own chrome (the padding between options) keeps it
+	// open; anything else outside dismisses it.
+	if (!target.closest('#login-menu'))
 		setLoginMenu(false)
 })
 
-logoutBtn?.addEventListener('click', () => logout())
+window.addEventListener('keydown', (e) => {
+	const menu = $('#login-menu') as HTMLElement & { hidden: boolean } | null
+	if (e.key === 'Escape' && menu && !menu.hidden)
+		setLoginMenu(false)
+})
 
 window.addEventListener('popstate', syncAuthUI)
 
@@ -112,8 +164,6 @@ function setupHeaderCollapse() {
 	io.observe(masthead)
 }
 
-setupHeaderCollapse()
-
 // ── Mobile nav drawer (FEAT-mobile-web-app Step 1, pattern B) ──
 // Closed-state focusability is handled by the drawer's visibility:hidden, so
 // this only drives the open/close classes + scroll lock.
@@ -144,7 +194,27 @@ function setupDrawer() {
 	})
 }
 
-setupDrawer()
+/**
+ * Bind the element-holding setups, once per header INSTANCE.
+ *
+ * Same defect as the auth cluster above, different shape: these two capture
+ * their elements in a closure, so after `/write` drops the header they observe
+ * and listen on detached nodes. Keyed on `#hdr-bar` identity rather than run
+ * unconditionally — on a normal Layout→Layout swap the node is persisted and
+ * unchanged, and re-running would stack a second IntersectionObserver and a
+ * second set of drawer listeners on every navigation.
+ */
+let boundBar: Element | null = null
+function bindHeaderInstance() {
+	const bar = document.querySelector('#hdr-bar')
+	if (!bar || bar === boundBar)
+		return
+	boundBar = bar
+	setupHeaderCollapse()
+	setupDrawer()
+}
+
+bindHeaderInstance()
 
 // ── ClientRouter fixups (FEAT-mobile-web-app Step 3) ──
 // The header roots are transition:persist-ed, so everything above binds once
@@ -178,6 +248,10 @@ document.addEventListener('astro:after-swap', () => {
 	setLoginMenu(false)
 })
 document.addEventListener('astro:page-load', () => {
+	// bindHeaderInstance FIRST: syncAuthUI is lazy now, but the collapse/drawer
+	// setups are not, and a header rebuilt by the previous swap has to be
+	// adopted before anything else reads it.
+	bindHeaderInstance()
 	syncAuthUI()
 	syncActiveNav()
 })

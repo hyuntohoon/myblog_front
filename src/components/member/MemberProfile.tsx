@@ -19,7 +19,7 @@ import { isLoggedIn } from '@lib/auth'
 import { ENT_ALBUM_STATE_CHANGED, notifyAlbumStateChanged, openAlbum } from '@lib/entityEvents'
 import type { AlbumStateChangedDetail } from '@lib/entityEvents'
 import { artistHref } from '@lib/entityLinks'
-import { isPlaceholderIdentity } from '@lib/member'
+import { isPlaceholderIdentity, OWNER_HANDLE } from '@lib/member'
 import { RATING_SORTS, sortRatings } from '@lib/ratingStats'
 import HalfStarInput from '../album/HalfStarInput'
 import { cancelRerating, fetchMyReratings, startRerating } from '../album/reratings.api'
@@ -40,23 +40,42 @@ const SelfDashboard = lazy(() => import('./SelfDashboard'))
 // Build these hrefs with boardTabHref/dashboardTabHref, never by hand. 평론 hosts the runtime
 // review feed since merge PR2; 'ratings' is the public 평가한 앨범 list every
 // viewer gets.
+//
+// FEAT-album-review-authoring Step 4 (충돌 #2 + C1's permission rule): 평론 is
+// OWNER-ONLY. For a member it was a tab named 평론 that showed their 평가 — the
+// vocabulary collision the RFC's terminology table exists to remove — and it
+// carried live authoring affordances (ReviewCandidates' 평론 쓰기 →, the draft
+// cards' /write?id=) that only the owner can act on. 하드 룰 1 says 평론 belongs
+// to editors, so a member has nothing to write there and nothing to read there
+// that the public 평가 tab does not already give them.
 const DASH_TABS = [
 	{ id: 'overview', label: '개요' },
-	{ id: 'reviews', label: '평론' },
+	{ id: 'reviews', label: '평론', ownerOnly: true },
 	{ id: 'bucket', label: 'My Buckit' },
 	{ id: 'stats', label: '분석 버킷' },
 	{ id: 'integration', label: '연동' },
-]
-const DASH_TAB_IDS = DASH_TABS.map(t => t.id)
+] as const
 const RATINGS_TAB = 'ratings'
 
-/** Initial tab from `?tab=<id>` — dashboard ids only; anything else → public list. */
+/** The dashboard tabs this viewer may actually use. */
+function dashTabsFor(isOwner: boolean) {
+	return DASH_TABS.filter(t => isOwner || !('ownerOnly' in t && t.ownerOnly))
+}
+
+/**
+ * Initial tab from `?tab=<id>` — dashboard ids only; anything else → public list.
+ *
+ * Deliberately NOT owner-aware: this runs at mount, before `handle` is compared
+ * to OWNER_HANDLE. A member deep-linking `?tab=reviews` therefore holds that id
+ * in state, and `dashActive` below is what refuses to activate it — they land on
+ * the public 평가 list with 평가 highlighted, rather than on a blank dashboard.
+ */
 function initialTab(): string {
 	if (typeof window === 'undefined')
 		return RATINGS_TAB
 	try {
 		const q = new URLSearchParams(window.location.search).get('tab')
-		if (q && DASH_TAB_IDS.includes(q))
+		if (q && DASH_TABS.some(t => t.id === q))
 			return q
 	}
 	catch { /* ignore */ }
@@ -582,7 +601,11 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 		return () => window.removeEventListener(ENT_ALBUM_STATE_CHANGED, onAlbumStateChanged)
 	}, [handle, isSelf])
 
-	const dashActive = isSelf && DASH_TAB_IDS.includes(tab)
+	// The profile being viewed is the owner's. Same page-vs-OWNER_HANDLE comparison
+	// SelfDashboard already branches its 평론 source on — one signal, one spelling.
+	const isOwner = handle === OWNER_HANDLE
+	const visibleDashTabs = dashTabsFor(isOwner)
+	const dashActive = isSelf && visibleDashTabs.some(t => t.id === tab)
 	useEffect(() => {
 		if (dashActive)
 			setDashSeen(true)
@@ -667,7 +690,7 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 			{/* Self-only dashboard tab nav. */}
 			{isSelf && (
 				<nav className="mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginTop: 26, overflowX: 'auto' }} aria-label="내 대시보드">
-					{[{ id: RATINGS_TAB, label: '평가' }, ...DASH_TABS].map(tb => (
+					{[{ id: RATINGS_TAB, label: '평가' }, ...visibleDashTabs].map(tb => (
 						<button
 							key={tb.id}
 							type="button"

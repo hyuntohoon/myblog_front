@@ -872,12 +872,27 @@ const recordLabel = post.musicReview?.label ?? null
   // FEAT-post-edit-delete-ui Step 2: reveal the author 편집 link only when a
   // valid session token is present. Rendered hidden server-side so logged-out
   // / crawler views never expose it (and the static HTML stays cache-safe).
-  import { isLoggedIn } from '../../lib/auth'
+  //
+  // FEAT-album-review-authoring Step 4 (audit E-5's class, found by the security
+  // review of that step): "a valid session token" stopped meaning "the author"
+  // when FEAT-multi-user-accounts enabled self-signup. This was the THIRD copy of
+  // the isLoggedIn()-as-owner-proxy — and the most public one, sitting on every
+  // published 평론 rather than behind the dashboard — so a member saw 편집 next to
+  // the owner's byline and landed on a page that bounces them. 평론 belongs to
+  // editors (하드 룰 1); the server's require_owner was always the boundary.
+  import { isOwnerUser } from '../../lib/owner'
 
   document.addEventListener('astro:page-load', () => {
     const editLink = document.getElementById('lfqEditLink')
-    if (editLink && isLoggedIn())
-      editLink.hidden = false
+    if (!editLink)
+      return
+    // Fail-closed and async: isOwnerUser() resolves false when logged out, on a
+    // transport error, or for any non-owner, so the link stays hidden unless the
+    // answer is a positive yes.
+    void isOwnerUser().then((owner) => {
+      if (owner)
+        editLink.hidden = false
+    })
   })
 </script>
 

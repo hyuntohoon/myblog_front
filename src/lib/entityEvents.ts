@@ -100,6 +100,28 @@ export function consumeLatchedOpenAlbum(): OpenAlbumDetail | null {
 // stay reserved). The read stack resolves only the DB album id, so a track with
 // no `albumId` (Spotify-only hit) is non-navigable → no-op (RFC OQ4). Display
 // identity (album title / artist / cover) seeds the overlay header immediately.
+/* ── the unified write entry (FEAT-album-review-authoring Step 4 / C1) ────── */
+
+export const ENT_OPEN_WRITE = 'ent:open-write'
+
+/**
+ * Open the app-wide 쓰기 sheet.
+ *
+ * An event rather than a direct call because the trigger and the sheet are in
+ * different worlds: the trigger is the header, a plain Astro component with a
+ * module script, and the sheet is a React island mounted once in layout.astro —
+ * the same island-boundary shape `openAlbum` above already solves.
+ *
+ * No payload today. The sheet asks what to write and which album; a future
+ * caller wanting to preselect an album should add a field here rather than a
+ * second event, for the reason `openRating` rides `OpenAlbumDetail`.
+ */
+export function openWrite(): void {
+  if (typeof window === 'undefined')
+    return
+  window.dispatchEvent(new CustomEvent(ENT_OPEN_WRITE))
+}
+
 export interface OpenTrackAlbumDetail {
   /** DB album id of the track's album; null/absent ⇒ non-navigable (no-op). */
   albumId?: string | null

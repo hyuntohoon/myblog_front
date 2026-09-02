@@ -300,6 +300,32 @@
   flex-wrap: wrap;
 }
 
+/* FEAT-album-review-authoring Step 4 (OQ14) — the 평론 후보 mark as part of the
+   평가 write, inside the editor. Owner-only; the standalone .album-rating__mark
+   pill above is the same state for the no-star case and the two never co-exist. */
+.album-rating__mark-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--color-subtle);
+  cursor: pointer;
+}
+
+.album-rating__mark-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.album-rating__mark-check:has(input:checked) {
+  color: var(--color-text);
+}
+
 .album-rating__reviews {
   display: flex;
   order: 3;
