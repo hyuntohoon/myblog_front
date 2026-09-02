@@ -20,8 +20,8 @@ vi.mock('@components/member/pocket/AddToBucketMenu', () => ({
 
 const KEY = 'pb:post-login-intent'
 
-function park(intent: unknown, capturedIdentity = 'anon') {
-	localStorage.setItem(KEY, JSON.stringify({ ts: Date.now(), capturedIdentity, intent }))
+function park(intent: unknown, capturedIdentity = 'anon', tabId: string | null = null) {
+	localStorage.setItem(KEY, JSON.stringify({ ts: Date.now(), capturedIdentity, tabId, intent }))
 }
 
 function idToken(sub: string): string {
@@ -43,6 +43,7 @@ async function load() {
 
 beforeEach(() => {
 	localStorage.clear()
+	sessionStorage.clear()
 	auth.loggedIn = false
 })
 
@@ -153,5 +154,68 @@ describe('auth lifecycle', () => {
 		})
 
 		await waitFor(() => expect(screen.queryByTestId('picker')).toBeNull())
+	})
+})
+
+// FIX-auth-identity-lifecycle Step 3. This consumer lives in the layout, so it
+// runs in EVERY open tab and re-attempts on every account change. Production
+// showed what that costs: an already-open tab drained the intent a beat before
+// the tab returning from Cognito finished loading, so the picker appeared on a
+// page the visitor was not looking at and their own tab came back empty.
+describe('owning tab', () => {
+	it('ignores an intent another tab parked, and leaves it for that tab', async () => {
+		park({ kind: 'bucket-add', itemType: 'album', albumId: 'album-1', trackId: null, reviewTargetId: null, title: 'Kid A' }, 'anon', 'another-tab')
+		auth.loggedIn = true
+		const { PostLoginResume } = await load()
+
+		render(<PostLoginResume />)
+
+		expect(screen.queryByTestId('picker')).toBeNull()
+		expect(localStorage.getItem(KEY)).not.toBeNull()
+	})
+
+	it('does not steal it on an account change either', async () => {
+		park({ kind: 'bucket-add', itemType: 'album', albumId: 'album-1', trackId: null, reviewTargetId: null, title: 'Kid A' }, 'anon', 'another-tab')
+		const { PostLoginResume, syncAuthIdentity } = await load()
+		render(<PostLoginResume />)
+
+		// The sign-in this tab hears about is the other tab's, not its own.
+		auth.loggedIn = true
+		localStorage.setItem('id_token', idToken('user-a'))
+		act(() => {
+			syncAuthIdentity()
+		})
+
+		await waitFor(() => expect(localStorage.getItem(KEY)).not.toBeNull())
+		expect(screen.queryByTestId('picker')).toBeNull()
+	})
+
+	// Deliberately not just "the picker appears": that passes even if the write
+	// path stamps nothing at all, because an unstamped record is resumable by
+	// anyone. What has to hold is that the record the CTA parks belongs to the
+	// tab that parked it, so the assertion is the round trip through a sibling.
+	it('claims what it parks, so the next tab to look does not get it', async () => {
+		const { PostLoginResume } = await load()
+		const { writePostLoginIntent } = await import('@lib/postLoginIntent')
+		writePostLoginIntent({ kind: 'bucket-add', itemType: 'album', albumId: 'album-1', title: 'Kid A' })
+		auth.loggedIn = true
+		const owner = sessionStorage.getItem('pb:intent-tab')
+		expect(owner).not.toBeNull()
+
+		// A sibling tab mounts the same consumer first.
+		sessionStorage.setItem('pb:intent-tab', 'sibling-tab')
+		const sibling = render(<PostLoginResume />)
+		expect(screen.queryByTestId('picker')).toBeNull()
+		expect(localStorage.getItem(KEY)).not.toBeNull()
+		sibling.unmount()
+
+		// The owning tab returns from Cognito and completes the action.
+		sessionStorage.setItem('pb:intent-tab', owner!)
+		const { PostLoginResume: Fresh } = await load()
+		auth.loggedIn = true
+		render(<Fresh />)
+		const picker = await screen.findByTestId('picker')
+		expect(picker).toHaveAttribute('data-id', 'album-1')
+		expect(localStorage.getItem(KEY)).toBeNull()
 	})
 })
