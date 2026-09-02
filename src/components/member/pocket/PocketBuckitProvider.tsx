@@ -14,6 +14,7 @@ import type { PocketBuckitDesign } from '@lib/pocketBuckit/design'
 import type { PocketLeaf } from '@lib/pocketBuckit/leaf'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
+import { getAuthIdentity, subscribeAuthIdentity } from '@lib/authIdentity'
 import { addBucketItem, deleteBucket as apiDeleteBucket, deleteBucketItem, expandAlbumTracks, expandSourceArtists, findBucket, isManualAddTarget, moveBucket } from '@lib/buckets'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { normalizeDesign, POCKET_DESIGN_DEFAULTS, readDesign, writeDesign } from '@lib/pocketBuckit/design'
@@ -102,15 +103,38 @@ interface PocketContextValue {
 
 // Per-bucket drawer positions: { [bucketId]: {x,y} }. Replaces the single-drawer
 // `pb:drawer` key — now several drawers each remember where they were left.
-const DRAWERS_KEY = 'pb:drawers'
+//
+// FIX-auth-identity-lifecycle Step 1 (RFC open question 1, resolved account-private):
+// the map is keyed BY ACCOUNT, because its keys are bucket ids and its values are the
+// shape of a private tree — how many buckets someone keeps open, and where. A shared
+// `pb:drawers` handed the next account on the same device a readable list of the
+// previous one's bucket ids. The unscoped key is migrated on first read and removed.
+const DRAWERS_KEY_PREFIX = 'pb:drawers:'
+const LEGACY_DRAWERS_KEY = 'pb:drawers'
 
-function readDrawerMap(): Record<string, DrawerPos> {
+function drawersKey(identity: string): string {
+  return DRAWERS_KEY_PREFIX + identity
+}
+
+/** Drop every other account's persisted drawer positions from this device. */
+function pruneOtherDrawerScopes(identity: string): void {
   if (typeof window === 'undefined')
+    return
+  try {
+    const keep = drawersKey(identity)
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(DRAWERS_KEY_PREFIX) && k !== keep)
+        localStorage.removeItem(k)
+    }
+  }
+  catch { /* storage disabled */ }
+}
+
+function parseDrawerMap(raw: string | null): Record<string, DrawerPos> {
+  if (!raw)
     return {}
   try {
-    const raw = localStorage.getItem(DRAWERS_KEY)
-    if (!raw)
-      return {}
     const v = JSON.parse(raw) as Record<string, Partial<DrawerPos>>
     const out: Record<string, DrawerPos> = {}
     for (const [id, p] of Object.entries(v ?? {})) {
@@ -120,6 +144,30 @@ function readDrawerMap(): Record<string, DrawerPos> {
     return out
   }
   catch { /* corrupt → empty */ }
+  return {}
+}
+
+function readDrawerMap(identity: string): Record<string, DrawerPos> {
+  if (typeof window === 'undefined')
+    return {}
+  try {
+    const scoped = localStorage.getItem(drawersKey(identity))
+    if (scoped !== null) {
+      pruneOtherDrawerScopes(identity)
+      return parseDrawerMap(scoped)
+    }
+    // One-time migration off the pre-Step-1 shared key. It is adopted by whoever is
+    // signed in on this device first and then deleted, so it cannot leak twice.
+    const legacy = localStorage.getItem(LEGACY_DRAWERS_KEY)
+    if (legacy !== null) {
+      localStorage.setItem(drawersKey(identity), legacy)
+      localStorage.removeItem(LEGACY_DRAWERS_KEY)
+      pruneOtherDrawerScopes(identity)
+      return parseDrawerMap(legacy)
+    }
+    pruneOtherDrawerScopes(identity)
+  }
+  catch { /* storage disabled → in-memory only */ }
   return {}
 }
 
@@ -179,8 +227,42 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
   // when its drawer opens (so a stale off-screen coord is corrected).
   useEffect(() => {
     setDesignState(readDesign())
-    setDrawerMap(readDrawerMap())
+    setDrawerMap(readDrawerMap(getAuthIdentity()))
   }, [])
+
+  // FIX-auth-identity-lifecycle Step 1 — the account boundary for private Pocket UI.
+  //
+  // The provider is layout-mounted and `transition:persist`ed, so it is exactly the
+  // thing that does NOT get torn down when the account changes in another tab. Its
+  // runtime state is all account-private: which drawers are open names the user's
+  // bucket ids, the undo toast holds a re-add closure that would run against the new
+  // account's tree, and edit mode is a destructive affordance nobody asked for.
+  // Everything here is closed rather than migrated — the tree behind it belongs to
+  // someone else now, so there is nothing to carry over.
+  //
+  // `bucketStore` handles its own rescoping (it has a separate subscription); this
+  // effect owns only the UI the provider itself holds.
+  useEffect(() => subscribeAuthIdentity((identity) => {
+    setOpenDrawers([])
+    setEditMode(false)
+    setOpen(false)
+    if (undoTimer.current) {
+      clearTimeout(undoTimer.current)
+      undoTimer.current = null
+    }
+    setUndo(null)
+    topZ.current = 0
+    setDrawerMap(readDrawerMap(identity))
+    // …and then load the NEW account's tree.
+    //
+    // Without this the boundary is safe but visibly broken: `bucketStore` rescopes to
+    // an empty tree, the mount effect below has already run and will not run again, and
+    // the tray sits empty for the rest of the tab's life. A real two-tab clickthrough
+    // is what surfaced it — every unit test asserted the clearing half and was happy.
+    // Skipped when logged out, exactly as the mount effect is: the tray is hidden then.
+    if (isLoggedIn())
+      void bucketStore.ensureFresh(true)
+  }), [])
 
   const refresh = useCallback(() => {
     if (isLoggedIn())
@@ -238,7 +320,10 @@ export function PocketBuckitProvider({ children }: { children: ReactNode }) {
     setDrawerMap((prev) => {
       const next = { ...prev, [bucketId]: pos }
       try {
-        localStorage.setItem(DRAWERS_KEY, JSON.stringify(next))
+        // Read the identity HERE, not from a closure: the drag that produced this
+        // position may have started before an account change landed, and the write
+        // must go to whoever is current at the moment it happens.
+        localStorage.setItem(drawersKey(getAuthIdentity()), JSON.stringify(next))
       }
       catch { /* quota / SSR — in-memory only */ }
       return next

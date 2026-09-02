@@ -56,8 +56,8 @@ function buildHeaders(options: RequestInit, token: string | null): HeadersInit {
 
 export interface ApiFetchOptions extends RequestInit {
 	/**
-	 * Abort the request — and its post-refresh retry — after this many ms.
-	 * Default {@link DEFAULT_TIMEOUT_MS}. A caller `signal` (e.g. search
+	 * Abort the request — its 401 refresh AND its post-refresh retry — after this
+	 * many ms. Default {@link DEFAULT_TIMEOUT_MS}. A caller `signal` (e.g. search
 	 * cancellation) composes WITH this: whichever fires first aborts the fetch.
 	 */
 	timeoutMs?: number
@@ -103,7 +103,15 @@ export async function apiFetch(path: string, options: ApiFetchOptions = {}): Pro
 		let res = await fetch(path, { ...init, headers: buildHeaders(init, token), signal: controller.signal })
 
 		if (res.status === 401) {
-			const refreshed = await refreshAccessToken()
+			// The refresh is awaited UNDER this call's deadline (FIX-auth-identity-lifecycle
+			// Step 1). It used to be awaited bare: `refreshAccessToken()` issued its own
+			// unsignalled fetch, so a Cognito token endpoint that simply never answered
+			// held the caller well past the ceiling this function advertises. Passing the
+			// composed signal makes it reject on timeout or caller abort — which the outer
+			// catch turns into `null`, deliberately WITHOUT `goLogin`: a missed deadline is
+			// not evidence that the session is invalid, and redirecting on it would throw
+			// the user out of a still-good session over a slow network.
+			const refreshed = await refreshAccessToken(controller.signal)
 			if (refreshed) {
 				res = await fetch(path, { ...init, headers: buildHeaders(init, refreshed), signal: controller.signal })
 				if (res.status !== 401)

@@ -1,6 +1,7 @@
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
-import type { OwnershipMessage, PlaybackOwnershipState } from '@lib/playback/ownership'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { OwnershipMessage, PlaybackOwnershipState, UnstampedOwnershipMessage } from '@lib/playback/ownership'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getAuthIdentity } from '@lib/authIdentity'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { playbackQueue } from './queue'
@@ -204,8 +205,18 @@ function setOwnership(patch: Partial<PlaybackOwnershipState>): void {
   for (const cb of mocks.ownershipListeners) cb()
 }
 
-function receiveOwnership(message: OwnershipMessage): void {
-  for (const cb of mocks.ownershipMessageListeners) cb(message)
+/**
+ * Deliver a bus message to the session's ownership listener.
+ *
+ * `acct` is stamped here rather than at each call site: since
+ * FIX-auth-identity-lifecycle Step 1 every envelope carries the sending account, and
+ * `ownership.handleMessage` drops any whose account is not current — so a message that
+ * reaches this listener at all has already been proven same-account. These tests mock
+ * ownership away, so they supply the stamp the real transport would have applied.
+ */
+function receiveOwnership(message: UnstampedOwnershipMessage): void {
+  const stamped = { ...message, acct: getAuthIdentity() } as OwnershipMessage
+  for (const cb of mocks.ownershipMessageListeners) cb(stamped)
 }
 
 function queueIds(): string[] {
@@ -2430,5 +2441,72 @@ describe('step 3 defects review found in the first commit', () => {
     expect(mocks.ownershipPost).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'command', cmd: { kind: 'refresh-devices' } }),
     )
+  })
+})
+
+describe('the account boundary (FIX-auth-identity-lifecycle Step 1)', () => {
+  /** What another tab's account change looks like from inside this one. */
+  function accountChangedTo(sub: string | null): void {
+    const key = 'id_token'
+    const oldValue = localStorage.getItem(key)
+    const newValue = sub === null ? null : `header.${btoa(JSON.stringify({ sub }))}.signature`
+    if (newValue === null)
+      localStorage.removeItem(key)
+    else localStorage.setItem(key, newValue)
+    window.dispatchEvent(new StorageEvent('storage', { key, oldValue, newValue }))
+  }
+
+  afterEach(() => {
+    localStorage.removeItem('id_token')
+    sessionStorage.removeItem('np-spotify-reconnect')
+  })
+
+  it('drops what the previous account was playing when the account changes in another tab', async () => {
+    // The session is a module singleton behind a `transition:persist`ed layout, so an
+    // account change reaches it as a storage event and nothing else. Without this it
+    // keeps showing — and keeps letting the new account command — A's playback.
+    setQueue([row('a')])
+    await startAt('a')
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+
+    accountChangedTo('user-b')
+
+    expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+  })
+
+  it('resets on logout as well as on a switch', async () => {
+    setQueue([row('a')])
+    await startAt('a')
+    accountChangedTo('user-b')
+    setQueue([row('a')])
+    await startAt('a')
+
+    accountChangedTo(null)
+
+    expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+  })
+
+  it('clears the Spotify reconnect hint, which is a per-account answer', async () => {
+    // Carrying account A's "yes, resume the in-page player" into account B makes B's
+    // first page load attempt a device handoff it never asked for.
+    sessionStorage.setItem('np-spotify-reconnect', '1')
+
+    accountChangedTo('user-b')
+
+    expect(sessionStorage.getItem('np-spotify-reconnect')).toBeNull()
+  })
+
+  it('leaves the session alone when the account has not changed', async () => {
+    // The control: a session that reset on any storage event would stop playback
+    // every time an unrelated preference was written in another tab.
+    setQueue([row('a')])
+    await startAt('a')
+
+    const key = 'pb:design'
+    localStorage.setItem(key, '{"order":"name"}')
+    window.dispatchEvent(new StorageEvent('storage', { key, newValue: '{"order":"name"}' }))
+
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
   })
 })
