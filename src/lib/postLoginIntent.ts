@@ -22,6 +22,10 @@
 //   - the tag — an unknown `kind` (an older or newer bundle, a hand-edited blob)
 //     is dropped rather than guessed at.
 //
+// And a fourth thing, which is ownership rather than a gate: a record names the
+// TAB that parked it, and only that tab drains it. See `tabId` on StoredIntent —
+// Step 3's production clickthrough is what put it here.
+//
 // Browser-only module (`localStorage` + `Date.now()`); every entry point is
 // SSR-guarded and every storage access is wrapped, so a disabled-storage browser
 // degrades to "the handoff just doesn't resume" instead of throwing.
@@ -35,6 +39,36 @@ export const POST_LOGIN_INTENT_KEY = 'pb:post-login-intent'
  * (a 30-minute window) and cannot linger in storage afterwards.
  */
 export const LEGACY_POCKET_INTENT_KEY = 'pb:resume'
+
+/**
+ * Per-tab id, in sessionStorage so it is scoped to one tab and survives the
+ * Cognito round trip — the same property `pkce_verifier` and the return path
+ * already rely on, since leaving for the hosted UI and coming back is a
+ * navigation within this tab, not a new one.
+ */
+const INTENT_TAB_KEY = 'pb:intent-tab'
+
+/**
+ * This tab's id. `create` is false for reads so a page that never parked
+ * anything does not write to storage just by loading.
+ * Returns null when sessionStorage is unavailable — the ownership check then
+ * degrades to "anyone may resume", which is where this started.
+ */
+function thisTabId(create = false): string | null {
+	if (typeof sessionStorage === 'undefined')
+		return null
+	try {
+		const existing = sessionStorage.getItem(INTENT_TAB_KEY)
+		if (existing || !create)
+			return existing
+		const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+		sessionStorage.setItem(INTENT_TAB_KEY, id)
+		return id
+	}
+	catch {
+		return null
+	}
+}
 
 /** A parked intent is silently dropped after this. */
 const TTL_MS = 30 * 60 * 1000 // 30 min
@@ -98,6 +132,23 @@ interface StoredIntent {
    * a real account therefore resumes only for that account.
    */
   capturedIdentity: string
+  /**
+   * The tab that parked this, or null for a capture that could not name one
+   * (a legacy blob, or sessionStorage unavailable) — those stay resumable by
+   * any tab, which is the old behaviour, kept as the degraded path.
+   *
+   * WHY. The consumer is mounted in `layout.astro`, so it runs in EVERY open
+   * tab, and each one re-attempts the drain when the account changes. The
+   * intent lives in localStorage, which every tab shares. Signing in therefore
+   * raced: the tab that had been sitting open, already hydrated and listening
+   * for `storage`, drained it a beat before the tab returning from Cognito had
+   * even parsed its new document. Production, 2026-09-02: with no other tab
+   * open the picker came back on the page the visitor left; with one other tab
+   * open on `/canon/` the picker opened THERE and the tab they were actually
+   * looking at showed nothing. Naming the owner is what makes the resume land
+   * where the action was started.
+   */
+  tabId: string | null
   intent: PostLoginIntent
 }
 
@@ -129,6 +180,7 @@ export function writePostLoginIntent(input: PostLoginIntentInput): void {
   const stored: StoredIntent = {
     ts: Date.now(),
     capturedIdentity: getAuthIdentity(),
+    tabId: thisTabId(true),
     intent: normalize(input),
   }
   try {
@@ -137,21 +189,22 @@ export function writePostLoginIntent(input: PostLoginIntentInput): void {
   catch { /* quota / disabled storage — the handoff just won't resume */ }
 }
 
-/** Read a key and remove it, whatever it holds. Never throws. */
-function takeRaw(key: string): string | null {
-  let raw: string | null = null
+/** Read a key without touching it. Never throws. */
+function peekRaw(key: string): string | null {
   try {
-    raw = localStorage.getItem(key)
+    return localStorage.getItem(key)
   }
   catch {
     return null
   }
-  // Remove BEFORE parsing so a corrupt blob cannot wedge the slot forever.
+}
+
+/** Remove a key. Never throws. */
+function dropRaw(key: string): void {
   try {
     localStorage.removeItem(key)
   }
   catch { /* ignore */ }
-  return raw
 }
 
 function str(v: unknown): string | null {
@@ -198,7 +251,7 @@ function parseStored(raw: string): StoredIntent | null {
     const intent = parseIntent(v.intent as Record<string, unknown>)
     if (!intent)
       return null
-    return { ts: v.ts, capturedIdentity: str(v.capturedIdentity) ?? ANONYMOUS_IDENTITY, intent }
+    return { ts: v.ts, capturedIdentity: str(v.capturedIdentity) ?? ANONYMOUS_IDENTITY, tabId: str(v.tabId), intent }
   }
   catch {
     return null
@@ -220,7 +273,7 @@ function parseLegacy(raw: string): StoredIntent | null {
       return null
     const itemType = v.itemType === 'track' || v.itemType === 'review' ? v.itemType : 'album'
     const intent = parseIntent({ ...v, kind: 'bucket-add', itemType })
-    return intent ? { ts: v.ts, capturedIdentity: ANONYMOUS_IDENTITY, intent } : null
+    return intent ? { ts: v.ts, capturedIdentity: ANONYMOUS_IDENTITY, tabId: null, intent } : null
   }
   catch {
     return null
@@ -239,21 +292,38 @@ function identityMayResume(captured: string): boolean {
   return captured === getAuthIdentity()
 }
 
+/** Is this record ours to drain? An unowned one is anyone's — see `tabId`. */
+function ownedByThisTab(tabId: string | null): boolean {
+  return tabId === null || tabId === thisTabId()
+}
+
 /**
- * Single-drain read: fetch + REMOVE atomically, so a double mount (React
- * StrictMode), a reload, or a second visit never replays the action twice.
- * Returns null when absent, malformed, past its TTL, or captured under a
- * different account.
+ * Single-drain read: fetch + REMOVE, so a double mount (React StrictMode), a
+ * reload, or a second visit never replays the action twice. Returns null when
+ * absent, malformed, past its TTL, captured under a different account, or
+ * parked by a different tab.
  *
- * Both keys are cleared on every call — a legacy blob that fails a gate must not
- * survive to ambush a later visit.
+ * Removal is conditional, which is the one thing to be careful about here.
+ * Every outcome clears what it read EXCEPT a live record belonging to another
+ * tab: clearing that is precisely the bug this guards, since the non-owner
+ * would consume the intent and the owner would find an empty slot. A corrupt
+ * blob is still removed before it is parsed, so it cannot wedge the slot; an
+ * expired one is removed by whoever notices, owner or not, so a tab that never
+ * comes back cannot leave a record behind past its TTL.
  */
 export function drainPostLoginIntent(): PostLoginIntent | null {
   if (typeof localStorage === 'undefined')
     return null
-  const raw = takeRaw(POST_LOGIN_INTENT_KEY)
-  const legacyRaw = takeRaw(LEGACY_POCKET_INTENT_KEY)
+  const raw = peekRaw(POST_LOGIN_INTENT_KEY)
+  const legacyRaw = peekRaw(LEGACY_POCKET_INTENT_KEY)
   const stored = raw ? parseStored(raw) : legacyRaw ? parseLegacy(legacyRaw) : null
+
+  // Leave a live record that belongs to another tab exactly where it is.
+  if (stored && Date.now() - stored.ts <= TTL_MS && !ownedByThisTab(stored.tabId))
+    return null
+
+  dropRaw(POST_LOGIN_INTENT_KEY)
+  dropRaw(LEGACY_POCKET_INTENT_KEY)
   if (!stored)
     return null
   if (Date.now() - stored.ts > TTL_MS)

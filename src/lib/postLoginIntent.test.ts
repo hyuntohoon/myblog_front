@@ -42,9 +42,17 @@ const BUCKET_ADD = {
 
 beforeEach(() => {
 	localStorage.clear()
+	// The owning-tab id lives here; clearing it makes each test its own tab.
+	sessionStorage.clear()
 	signOut()
 	vi.useRealTimers()
 })
+
+/** Read the id this "tab" stamped onto the record it just parked. */
+function parkedTabId(): string | null {
+	const raw = localStorage.getItem(POST_LOGIN_INTENT_KEY)
+	return raw ? (JSON.parse(raw) as { tabId: string | null }).tabId : null
+}
 
 describe('round trip', () => {
 	it('parks and resumes a bucket add, emptying the slot as it reads', () => {
@@ -183,5 +191,60 @@ describe('legacy pb:resume blob', () => {
 		plant({ ts: Date.now(), albumId: 'stale-album', title: 'stale' }, LEGACY_POCKET_INTENT_KEY)
 		expect(drainPostLoginIntent()).toEqual(BUCKET_ADD)
 		expect(localStorage.getItem(LEGACY_POCKET_INTENT_KEY)).toBeNull()
+	})
+})
+
+// FIX-auth-identity-lifecycle Step 3 — found in production, not in a unit test.
+// The consumer is mounted in the layout, so it runs in every open tab, and the
+// intent lives in localStorage, which every tab shares. Signing in raced: the
+// already-hydrated tab drained the intent before the tab returning from Cognito
+// had parsed its new document, so the picker opened on a page the visitor was
+// not looking at and the page they WERE looking at showed nothing.
+describe('owning tab', () => {
+	it('stamps the parking tab onto the record', () => {
+		writePostLoginIntent({ kind: 'bucket-add', itemType: 'album', albumId: 'album-1', title: 'Kid A' })
+		expect(parkedTabId()).toEqual(expect.any(String))
+	})
+
+	it('leaves another tab\'s live intent parked instead of consuming it', () => {
+		plant({ ts: Date.now(), capturedIdentity: 'anon', tabId: 'some-other-tab', intent: BUCKET_ADD })
+		expect(drainPostLoginIntent()).toBeNull()
+		// The point of the whole gate: the owner must still find it.
+		expect(localStorage.getItem(POST_LOGIN_INTENT_KEY)).not.toBeNull()
+	})
+
+	it('hands it back to the tab that parked it', () => {
+		writePostLoginIntent({ kind: 'bucket-add', itemType: 'album', albumId: 'album-1', title: 'Kid A' })
+		const mine = parkedTabId()
+		expect(mine).not.toBeNull()
+		// A sibling tab looks first and must not take it.
+		const sibling = sessionStorage.getItem('pb:intent-tab')
+		sessionStorage.setItem('pb:intent-tab', 'sibling-tab')
+		expect(drainPostLoginIntent()).toBeNull()
+		// Back in the owning tab, the round trip completes.
+		sessionStorage.setItem('pb:intent-tab', sibling!)
+		expect(drainPostLoginIntent()).toEqual(BUCKET_ADD)
+		expect(localStorage.getItem(POST_LOGIN_INTENT_KEY)).toBeNull()
+	})
+
+	it('clears another tab\'s record once it is past the TTL, so it cannot linger', () => {
+		plant({ ts: Date.now() - 31 * 60 * 1000, capturedIdentity: 'anon', tabId: 'some-other-tab', intent: BUCKET_ADD })
+		expect(drainPostLoginIntent()).toBeNull()
+		expect(localStorage.getItem(POST_LOGIN_INTENT_KEY)).toBeNull()
+	})
+
+	it('still resumes a record that names no tab, in any tab', () => {
+		// Both the legacy blob and a capture made with sessionStorage unavailable
+		// land here. Degrading to the previous behaviour beats dropping the resume.
+		plant({ ts: Date.now(), capturedIdentity: 'anon', tabId: null, intent: BUCKET_ADD })
+		sessionStorage.setItem('pb:intent-tab', 'a-tab-that-did-not-park-it')
+		expect(drainPostLoginIntent()).toEqual(BUCKET_ADD)
+	})
+
+	it('leaves the legacy blob alone while another tab\'s live record is waiting', () => {
+		plant({ ts: Date.now(), capturedIdentity: 'anon', tabId: 'some-other-tab', intent: BUCKET_ADD })
+		plant({ ts: Date.now(), albumId: 'album-1', title: 'Kid A' }, LEGACY_POCKET_INTENT_KEY)
+		expect(drainPostLoginIntent()).toBeNull()
+		expect(localStorage.getItem(LEGACY_POCKET_INTENT_KEY)).not.toBeNull()
 	})
 })

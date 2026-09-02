@@ -8,6 +8,16 @@
 // on a later home visit. Layout-mounted, the resume happens wherever the
 // callback lands.
 //
+// Layout-mounted also means EVERY open tab runs this, and every one of them
+// re-attempts on the account change below — while the intent itself lives in
+// localStorage, which all of them share. Step 3's production clickthrough
+// caught the consequence: a second tab that was merely open drained the intent
+// while the tab returning from Cognito was still loading, so the picker opened
+// on a page the visitor was not looking at. `drainPostLoginIntent` answers that
+// by handing a record only to the tab that parked it; nothing here needs to
+// know which tab that is, but the reason this component is safe to mount
+// everywhere lives there, not here.
+//
 // It renders nothing of its own. `bucket-add` mounts the shared picker with
 // `autoOpen` (its «title» 담기 header IS the confirmation); `rate-album` asks the
 // app-wide album overlay to reopen with its rating editor and renders null.
