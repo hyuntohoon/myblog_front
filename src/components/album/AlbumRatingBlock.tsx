@@ -4,11 +4,12 @@
 // panel appears only when signed in. Everything here is public-bundle-safe.
 import type { MyRerating } from './reratings.api'
 import type { AlbumRatingAggregate, MyAlbumState } from './reviews.api'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { goLogin, isLoggedIn } from '@lib/auth'
 import { isPlaceholderIdentity } from '@lib/member'
 import { notifyAlbumStateChanged } from '@lib/entityEvents'
 import { isOwnerUser } from '@lib/owner'
+import { writePostLoginIntent } from '@lib/postLoginIntent'
 import { Stars } from '../member/ui'
 import HalfStarInput from './HalfStarInput'
 import { cancelRerating, fetchMyReratings, startRerating } from './reratings.api'
@@ -30,7 +31,27 @@ function fmtDate(iso: string): string {
 	return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
 }
 
-export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
+/**
+ * Thin display identity, forwarded into a parked `rate-album` intent so the
+ * resumed overlay paints its header immediately instead of flashing blank.
+ */
+export interface RatingAlbumDisplay {
+	title?: string
+	artist?: string
+	cover?: string | null
+	year?: number | null
+}
+
+export default function AlbumRatingBlock({ albumId, openRating = false, display }: {
+	albumId: string
+	/**
+	 * FIX-auth-identity-lifecycle Step 2 — open the editor once my current 평가
+	 * has loaded. Set only by the post-login resume, completing a "로그인하고 평가
+	 * 남기기" the visitor started while logged out.
+	 */
+	openRating?: boolean
+	display?: RatingAlbumDisplay
+}) {
 	const [agg, setAgg] = useState<AlbumRatingAggregate | null>(null)
 	// Handle-keyed "my rating" match (audit 2026-07-14) — the public contract's
 	// author.id is the Cognito sub and is slated for removal; handle is the
@@ -54,6 +75,10 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 	// author-only list because it carries the withdrawn score — the public album
 	// payload has no idea a 재평가 exists, by design.
 	const [rerating, setRerating] = useState<MyRerating | null>(null)
+	// The resume must not open the editor before `myReview` exists, or startEdit()
+	// seeds the 4-star default over a 평가 the member already has. Flipped once the
+	// authed reads for THIS album have settled.
+	const [mineLoaded, setMineLoaded] = useState(false)
 
 	const authed = isLoggedIn()
 
@@ -67,12 +92,19 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 		let alive = true
 		setMyState(null)
 		setRerating(null)
+		setMineLoaded(false)
 		load().then(() => {
 			if (alive && authed) {
-				fetchMyHandle().then(h => alive && setMyHandle(h))
-				fetchMyAlbumStates(albumId).then(s => alive && setMyState(s[0] ?? null))
+				// `mineLoaded` waits on the two reads startEdit() seeds from — the
+				// handle (which decides `myReview`) and the stored state. The owner
+				// and 재평가 reads only paint extra affordances.
+				const handle = fetchMyHandle().then(h => alive && setMyHandle(h))
+				const state = fetchMyAlbumStates(albumId).then(s => alive && setMyState(s[0] ?? null))
 				fetchMyReratings().then(rs => alive && setRerating(rs.find(r => r.album_id === albumId) ?? null))
 				isOwnerUser().then(v => alive && setIsOwner(v))
+				// A failed read still settles: the resume opening an empty editor is a
+				// far better outcome than the visitor's click vanishing a second time.
+				Promise.allSettled([handle, state]).then(() => alive && setMineLoaded(true))
 			}
 		})
 		return () => {
@@ -90,6 +122,25 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 		setErr(null)
 		setEditing(true)
 	}
+
+	// The resume's auto-open. A ref, not state: it must fire exactly once per
+	// album, and it is deliberately gated on `mineLoaded` rather than on mount —
+	// `startEdit` seeds the draft from `myReview`, which does not exist yet when
+	// the block first paints. Reset per album so reopening the overlay on a
+	// different one during the same page life re-arms it.
+	const autoOpened = useRef(false)
+	useEffect(() => {
+		autoOpened.current = false
+	}, [albumId])
+	useEffect(() => {
+		if (!openRating || !authed || !mineLoaded || autoOpened.current)
+			return
+		autoOpened.current = true
+		startEdit()
+		// Deps are deliberately the three gates and nothing else: `startEdit` reads
+		// render-time state, and re-running on its identity would reopen an editor
+		// the member had just closed.
+	}, [openRating, authed, mineLoaded])
 
 	async function save() {
 		setSaving(true)
@@ -379,10 +430,31 @@ export default function AlbumRatingBlock({ albumId }: { albumId: string }) {
 			)}
 
 			{/* login CTA — anonymous visitors used to get NO write affordance at all
-			    (audit 2026-07-14); goLogin captures this page as the returnTo. */}
+			    (audit 2026-07-14); goLogin captures this page as the returnTo.
+			    FIX-auth-identity-lifecycle Step 2: returning to the page was never
+			    enough on its own — the overlay this panel lives in is client state
+			    and is gone after the round trip, so the click still ended nowhere.
+			    Parking a `rate-album` intent is what makes the return land back on
+			    this editor. */}
 			{!authed && (
 				<div className="album-rating__login">
-					<button type="button" onClick={() => void goLogin(true)} className="album-modal__button album-modal__button--quiet">로그인하고 평가 남기기</button>
+					<button
+						type="button"
+						onClick={() => {
+							writePostLoginIntent({
+								kind: 'rate-album',
+								albumId,
+								title: display?.title || '앨범',
+								artist: display?.artist ?? null,
+								cover: display?.cover ?? null,
+								year: display?.year ?? null,
+							})
+							void goLogin(true)
+						}}
+						className="album-modal__button album-modal__button--quiet"
+					>
+						로그인하고 평가 남기기
+					</button>
 				</div>
 			)}
 

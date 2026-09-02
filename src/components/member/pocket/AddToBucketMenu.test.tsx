@@ -32,8 +32,8 @@ vi.mock('@lib/playback/session', () => ({
 	playbackSession: { onDropped: vi.fn() },
 }))
 
-vi.mock('@lib/pocketBuckit/intent', () => ({
-	writePocketIntent: vi.fn(),
+vi.mock('@lib/postLoginIntent', () => ({
+	writePostLoginIntent: vi.fn(),
 }))
 
 const originalOffsetParent = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetParent')

@@ -28,6 +28,16 @@ export interface OpenAlbumDetail {
    * `dbId ?? spotify_album_id` fallback passing a foreign-namespace id).
    */
   unresolved?: boolean
+  /**
+   * FIX-auth-identity-lifecycle Step 2 — open the album's rating editor as well
+   * as the overlay. Set only by the post-login resume, which is completing a
+   * "로그인하고 평가 남기기" the visitor started while logged out.
+   *
+   * It rides the open event rather than being a second event because the editor
+   * lives INSIDE the overlay this event creates: a separate signal would have to
+   * win a race against a component that does not exist yet.
+   */
+  openRating?: boolean
 }
 
 /** Display fields allowed on a Spotify-only album fallback. */
@@ -57,6 +67,32 @@ export function openAlbum(detail: OpenAlbumDetail): void {
   if (typeof window === 'undefined')
     return
   window.dispatchEvent(new CustomEvent<OpenAlbumDetail>(ENT_OPEN_ALBUM, { detail }))
+}
+
+// FIX-auth-identity-lifecycle Step 2 — the latch below exists for exactly one
+// caller: another island that fires `openAlbum` from its own mount effect.
+//
+// `AlbumOverlay` and the post-login resume are two `client:only` islands in the
+// same layout, and Astro hydrates each as its own React root. Neither one's
+// effects are ordered against the other's, so a plain dispatch from a mounting
+// island can land before the overlay has added its listener — and the event is
+// then gone, along with the drained intent that produced it. Latching the last
+// such open lets the overlay pick it up on ITS mount, whichever order they run
+// in. Every ordinary caller (a click handler, long after both are hydrated)
+// keeps using `openAlbum` and needs none of this.
+let latchedOpen: OpenAlbumDetail | null = null
+
+/** Open the album overlay from a mount effect, surviving island hydration order. */
+export function openAlbumLatched(detail: OpenAlbumDetail): void {
+  latchedOpen = detail
+  openAlbum(detail)
+}
+
+/** Read + clear the latch. Called by the overlay on mount and on every open. */
+export function consumeLatchedOpenAlbum(): OpenAlbumDetail | null {
+  const v = latchedOpen
+  latchedOpen = null
+  return v
 }
 
 // ARCH-entity-interaction-unify Step 3 — a track opens the album window for its

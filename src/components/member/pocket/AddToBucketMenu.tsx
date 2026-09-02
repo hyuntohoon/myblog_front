@@ -11,8 +11,11 @@
 // the member pages.
 //
 // Auth split: when logged out there are no buckets and every write is 401/403, so
-// it stashes a thin pending-intent (album or track) and hands off to Cognito PKCE;
-// the home resume completes the add after sign-in (see lib/pocketBuckit/intent.ts).
+// it parks a thin pending-intent (album, track or review) and hands off to Cognito
+// PKCE; the layout-mounted `PostLoginResume` completes the add wherever the
+// callback lands (see lib/postLoginIntent.ts). It used to say "the home resume",
+// which had not been true since the callback started returning to the page the
+// visitor was on — FIX-auth-identity-lifecycle Step 2.
 import type { BoardBucket, SnapshotCapture } from '@lib/buckets'
 import type { CSSProperties, ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -21,7 +24,7 @@ import { goLogin, isLoggedIn } from '@lib/auth'
 import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, expandAlbumTracks, isManualAddTarget, listBuckets, PLAYBACK_TYPE } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { playbackSession } from '@lib/playback/session'
-import { writePocketIntent } from '@lib/pocketBuckit/intent'
+import { writePostLoginIntent } from '@lib/postLoginIntent'
 import { useDismissable } from '@lib/useDismissable'
 
 // What to add: an album (default, back-compat), a track (FEAT-pocket-buckit
@@ -108,17 +111,17 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
   }, [])
 
   const open = useCallback(() => {
-    // Anonymous: capture intent + hand off to Cognito PKCE. Never attempts a write
-    // that would 401/403; the home resume finishes the add after sign-in. A snapshot
-    // has no intent path (logged-in-only surface + a frozen payload is not a thin
-    // descriptor) — it just routes to login.
+    // Anonymous: park the intent + hand off to Cognito PKCE. Never attempts a write
+    // that would 401/403; `PostLoginResume` finishes the add after sign-in. A
+    // snapshot has no intent path (logged-in-only surface + a frozen payload is not
+    // a thin descriptor) — it just routes to login.
     if (!isLoggedIn()) {
       if (trackId)
-        writePocketIntent({ itemType: 'track', trackId, title, bucketId: null })
+        writePostLoginIntent({ kind: 'bucket-add', itemType: 'track', trackId, title })
       else if (reviewTargetId)
-        writePocketIntent({ itemType: 'review', reviewTargetId, title, bucketId: null })
+        writePostLoginIntent({ kind: 'bucket-add', itemType: 'review', reviewTargetId, title })
       else if (albumId)
-        writePocketIntent({ itemType: 'album', albumId, title, bucketId: null })
+        writePostLoginIntent({ kind: 'bucket-add', itemType: 'album', albumId, title })
       void goLogin()
       return
     }

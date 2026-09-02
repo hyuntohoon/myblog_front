@@ -92,7 +92,9 @@ const artistLinks = resolveArtistLinks(post.artistIds, await getArtistNameMap())
 const albumTitle = post.musicReview?.title ?? null
 // FEAT-pocket-buckit Step 5b — the hero album is a PUBLIC bucket drop source.
 // This page is prerendered + public, so an anonymous "담기" routes through the
-// AddToBucketMenu logged-out handoff (pb:resume → Cognito → home PocketResume).
+// AddToBucketMenu logged-out handoff (post-login intent → Cognito → the
+// layout-mounted PostLoginResume, which lands the picker back on THIS page —
+// FIX-auth-identity-lifecycle Step 2; it used to only ever fire on home).
 const heroAlbumId = post.albumIds?.[0] ?? null
 const cover = post.albumCover || post.image || post.musicReview?.cover?.src
 const genres = post.musicReview?.genres ?? []
@@ -239,7 +241,7 @@ const recordLabel = post.musicReview?.label ?? null
                   )}
                   {/* Member-authoring follow-on — the review ITSELF as a bucket member
                       (item_type='review', review_target_id = the DB post id from
-                      frontmatter). Public page: logged-out routes through pb:resume. */}
+                      frontmatter). Public page: logged-out parks a post-login intent. */}
                   {post.postId && (
                     <AddToBucketMenu client:only="react" item={{ itemType: 'review', reviewTargetId: post.postId, title: post.title }} label="평론 담기" />
                   )}

@@ -5,8 +5,9 @@
 // dispatches a `pb:add-track` window event and THIS island (mounted once on the
 // review page, client:only) opens the shared AddToBucketMenu for that track —
 // exactly the album hero's AddToBucketMenu path, just for a track. Logged-out adds
-// route through the menu's pb:resume → Cognito → home PocketResume handoff, so a
-// public reader can file a track too. Mirrors the existing `album:detail` bridge.
+// route through the menu's post-login-intent → Cognito → `PostLoginResume` handoff
+// (layout-mounted, so the resume happens right back on this page), so a public
+// reader can file a track too. Mirrors the existing `album:detail` bridge.
 //
 // PB_ADD_TRACK_EVENT lives in `lib/pocketBuckit/events.ts`, not here — that lets
 // the vanilla albumDetail.client.ts import the constant too without pulling React

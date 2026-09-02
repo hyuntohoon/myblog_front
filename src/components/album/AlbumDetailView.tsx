@@ -177,11 +177,17 @@ export interface AlbumDetailViewProps {
    * Defaults to true (every other caller passes a genuine DB id).
    */
   interactive?: boolean
+  /**
+   * FIX-auth-identity-lifecycle Step 2 — open the rating editor as soon as the
+   * block has loaded my current 평가. Set only by the post-login resume; ignored
+   * when `interactive` is false (there is no write panel to open).
+   */
+  openRating?: boolean
 }
 
 // Fetch DB metadata (cover/tracklist/artists) then render header + artists +
 // tracklist. On fetch failure it degrades to header + a release-year line.
-export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, onAddTrack, onPlayTrack, enableDrag, hideArtists, topSlot, headerActions, interactive = true }: AlbumDetailViewProps) {
+export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyrics, onAddTrack, onPlayTrack, enableDrag, hideArtists, topSlot, headerActions, interactive = true, openRating = false }: AlbumDetailViewProps) {
   const seed = getCachedAlbumDetail(albumId)
   const [data, setData] = useState<AlbumDetailResp | null>(seed)
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(seed ? 'ok' : 'loading')
@@ -237,7 +243,7 @@ export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyr
         {/* FEAT-multi-user Phase 1: public community rating + signed-in write panel.
             Renders on every album surface (public overlay + member modal) EXCEPT
             when albumId is a display-only fallback (interactive=false). */}
-        {interactive && <AlbumRatingBlock albumId={albumId} />}
+        {interactive && <AlbumRatingBlock albumId={albumId} openRating={openRating} display={{ title: displayTitle, artist, cover: a?.cover_url ?? cover, year }} />}
       </div>
       <div className="album-modal__body">
       {state === 'loading' ?

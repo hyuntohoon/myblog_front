@@ -11,7 +11,7 @@ import type { OpenAlbumDetail } from '@lib/entityEvents'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { isLoggedIn } from '@lib/auth'
-import { ENT_OPEN_ALBUM } from '@lib/entityEvents'
+import { consumeLatchedOpenAlbum, ENT_OPEN_ALBUM } from '@lib/entityEvents'
 import { playbackSession } from '@lib/playback/session'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { useDismissable } from '@lib/useDismissable'
@@ -24,11 +24,20 @@ export default function AlbumOverlay() {
   useEffect(() => {
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<OpenAlbumDetail>).detail
+      // The latch is for an open dispatched before this listener existed; an
+      // event we actually received has served its purpose, so clear it here too
+      // rather than leave a stale one for a later remount to replay.
+      consumeLatchedOpenAlbum()
       if (detail?.albumId)
         setTarget(detail)
     }
     const onNav = () => setTarget(null)
     window.addEventListener(ENT_OPEN_ALBUM, onOpen)
+    // A sibling island (the post-login resume) may have fired its open from its
+    // own mount effect, before this one ran — see openAlbumLatched.
+    const latched = consumeLatchedOpenAlbum()
+    if (latched?.albumId)
+      setTarget(latched)
     // Close across ClientRouter view transitions (the overlay is not per-page state).
     document.addEventListener('astro:before-swap', onNav)
     return () => {
@@ -155,6 +164,7 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
 	cover={target.cover}
 	year={target.year}
 	interactive={!target.unresolved}
+	openRating={target.openRating && !target.unresolved}
 	onPlayTrack={isLoggedIn() && !target.unresolved ? playTrack : undefined}
 	headerActions={isLoggedIn() && !target.unresolved ?
           (
