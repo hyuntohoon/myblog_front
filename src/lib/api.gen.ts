@@ -1427,12 +1427,25 @@ export interface paths {
         };
         /**
          * Resolve Playback Uri
-         * @description Map a catalog DB id → a Spotify URI (spotify:album|track:<spotify_id>) for the Web
-         *     Playback SDK (FEAT-spotify-streaming-playback Step 2). Unlike /spotify-token this is
-         *     edge_guard-only — NO Cognito JWT, NO dedicated infra/apigateway.tf route: spotify_id is
-         *     a public identifier and the catalog is otherwise edge_guard-only (unified search, bucket
-         *     reads), so there is nothing to JWT-gate. rule #9 holds: a direct catalog DB read, never a
-         *     synchronous Spotify content call. Bad type → 422 (Literal); unknown/empty id → 404.
+         * @description Map a catalog DB id → a playback URI for the requested provider.
+         *
+         *     Default and historical behaviour: a Spotify URI (spotify:album|track:<spotify_id>) for
+         *     the Web Playback SDK (FEAT-spotify-streaming-playback Step 2). `provider` is OPTIONAL
+         *     and defaults to 'spotify', so every caller that predates
+         *     FEAT-youtube-playback-provider Step A1 is unaffected — the parameter is additive, which
+         *     is why this needs no contract-breaking change and no frontend change to keep working.
+         *
+         *     `provider=youtube` reads the Step-A1 `track_provider_refs` mapping and returns
+         *     youtube:video:<videoId>. Track-only (YouTube has no album-context equivalent), and only
+         *     while the mapping is still playable — see PlaybackService.resolve_uri.
+         *
+         *     Unlike /spotify-token this is edge_guard-only — NO Cognito JWT, NO dedicated
+         *     infra/apigateway.tf route: spotify_id is a public identifier and the catalog is
+         *     otherwise edge_guard-only (unified search, bucket reads), so there is nothing to
+         *     JWT-gate. A YouTube videoId is public in the same sense, and the mapping table holds no
+         *     per-member data, so the gating does not change here either. rule #9 holds: a direct
+         *     catalog DB read, never a synchronous provider content call. Bad type or bad provider →
+         *     422 (Literal); unknown/empty id, or a track with no usable mapping → 404.
          */
         get: operations["resolve_playback_uri_api_playback_resolve_get"];
         put?: never;
@@ -6846,6 +6859,7 @@ export interface operations {
             query: {
                 type: "album" | "track";
                 id: string;
+                provider?: "spotify" | "youtube";
             };
             header?: never;
             path?: never;

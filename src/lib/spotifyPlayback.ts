@@ -33,9 +33,21 @@ const LIBRARY_TRACKS = 'https://api.spotify.com/v1/me/tracks'
 /** Cross-island signal emitted after a Connect target starts successfully. */
 export const MYBLOG_PLAYBACK_CHANGED = 'myblog:playback-changed'
 
-// ── provider-neutral identity ────────────────────────────────────────────────
-// Membership stores ISRC / artist+title, resolved to a provider id at play time
-// (so the provider stays switchable — YouTube fallback deferred, not built).
+// ── playback target identity ─────────────────────────────────────────────────
+// CORRECTED 2026-09-05 (FEAT-youtube-playback-provider Step A1). This block used
+// to read "Membership stores ISRC / artist+title, resolved to a provider id at
+// play time", repeating a FEAT-pocket-buckit D3 claim that never shipped.
+//
+// What membership actually stores is `review_bucket_items.track_id`, a foreign
+// key to the catalog `tracks.id` — on all 29 production playback rows. The type
+// below says so itself: `trackId` is required and `isrc`/`artist` are optional
+// display hints, not the identity. There is no ISRC-or-artist+title resolution
+// step here and there never was.
+//
+// That is false IN OUR FAVOUR: adding a second provider needs nothing unwound.
+// The provider is a property of the PLAY ATTEMPT, not of the track — the same
+// queue row plays either way, and `GET /api/playback/resolve` takes an optional
+// `provider` param (defaulting to spotify) to say which one is being asked for.
 export type PlaybackTarget =
 	| { kind: 'album', albumId: string, title?: string } |
 	{ kind: 'track', trackId: string, title?: string, isrc?: string, artist?: string }
