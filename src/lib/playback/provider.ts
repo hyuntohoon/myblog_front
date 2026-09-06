@@ -143,6 +143,50 @@ async function waitForHost(attempt: number): Promise<boolean> {
 }
 
 /**
+ * A rejected pause can mean Spotify was already paused. Verify silence fresh.
+ * The lyrics reader collapses playing podcasts/ads into idle and deduplicates
+ * in-flight reads, so it cannot prove that Spotify is silent after this pause.
+ */
+async function verifySpotifySilent(): Promise<boolean> {
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<boolean>((resolve) => {
+    timeout = setTimeout(() => {
+      controller.abort()
+      resolve(false)
+    }, 5000)
+  })
+  const read = async (): Promise<boolean> => {
+    try {
+      const token = await spotify.getStreamingToken()
+      if (!token.ok || controller.signal.aborted)
+        return false
+      const response = await fetch('https://api.spotify.com/v1/me/player', {
+        headers: { Authorization: `Bearer ${token.token}` },
+        signal: controller.signal,
+      })
+      if (response.status === 204)
+        return true
+      if (!response.ok)
+        return false
+      const body: unknown = await response.json()
+      return body !== null && typeof body === 'object' && 'is_playing' in body && body.is_playing === false
+    }
+    catch {
+      return false
+    }
+  }
+  try {
+    // Token minting and body parsing can also stall; aborting fetch alone does
+    // not settle either wait. A late token must not start a read after expiry.
+    return await Promise.race([read(), deadline])
+  }
+  finally {
+    clearTimeout(timeout)
+  }
+}
+
+/**
  * Only explicit catalog-track presses can select YouTube. A null result means
  * the caller must execute its existing Spotify path, including its queue rules.
  */
@@ -185,8 +229,13 @@ export async function tryPlayYouTubeTrack(intent: Extract<PlayIntent, { kind: 't
     const absentDevice = !paused.ok && paused.reason === 'no-active-device'
     const absentAccount = !paused.ok && paused.reason === 'token' && ['disconnected', 'dormant', 'unauthorized'].includes(paused.status)
     const absent = absentDevice || absentAccount
-    if (!paused.ok && !absent)
-      return { ok: false, reason: 'transient', message: 'Spotify 재생을 멈추지 못했어요. 잠시 후 다시 눌러주세요' }
+    if (!paused.ok && !absent) {
+      const silent = await verifySpotifySilent()
+      if (attempt !== generation)
+        return CANCELLED
+      if (!silent)
+        return { ok: false, reason: 'transient', message: 'Spotify 재생을 멈추지 못했어요. 잠시 후 다시 눌러주세요' }
+    }
   }
   patch({ provider: 'youtube', trackId: intent.trackId, title: intent.title ?? null, videoId,    needsMapping: false, mappingTrackId: null, mappingTitle: null })
   if (!await waitForHost(attempt)) {

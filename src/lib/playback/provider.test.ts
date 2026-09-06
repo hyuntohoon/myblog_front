@@ -20,6 +20,8 @@ import {
 } from './provider'
 
 const mocks = vi.hoisted(() => ({
+  token: vi.fn(),
+  fetch: vi.fn(),
   resolve: vi.fn(),
   ensureOwner: vi.fn(),
   play: vi.fn(),
@@ -33,6 +35,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./uris', () => ({ resolveUriDetailed: mocks.resolve }))
 vi.mock('./ownership', () => ({ playbackOwnership: { ensureOwner: mocks.ensureOwner } }))
 vi.mock('@lib/spotifyPlayback', () => ({
+  getStreamingToken: mocks.token,
   play: mocks.play,
   sendPlayerCommand: mocks.command,
   sendPlaybackMode: mocks.mode,
@@ -55,6 +58,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   __resetProviderState()
   __resetYouTubePlayback()
+  mocks.token.mockResolvedValue({ ok: true, token: 'test' })
+  mocks.fetch.mockRejectedValue(new Error('offline'))
+  vi.stubGlobal('fetch', mocks.fetch)
   mocks.resolve.mockResolvedValue(URI)
   mocks.ensureOwner.mockResolvedValue(true)
   mocks.play.mockResolvedValue(SPOTIFY_OK)
@@ -111,6 +117,7 @@ afterEach(async () => {
   await lag()
   __resetYouTubePlayback()
   __resetProviderState()
+  vi.unstubAllGlobals()
   delete (window as Window & { YT?: unknown }).YT
 })
 
@@ -182,6 +189,130 @@ describe('track-only provider dispatch', () => {
     expect(getActiveProvider()).toBe('spotify')
     expect(players).toHaveLength(0)
     expect(mocks.play).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { status: 200, body: { is_playing: false } },
+    { status: 204, body: null },
+  ])('accepts a rejected pause only after a delayed silent Spotify response ($status)', async ({ status, body }) => {
+    mocks.command.mockResolvedValue({ ok: false, reason: 'forbidden' })
+    let finish!: (response: Response) => void
+    mocks.fetch.mockReturnValue(new Promise<Response>((resolve) => {
+      finish = resolve
+    }))
+    const pending = play(TRACK)
+    await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledOnce())
+    expect(players).toHaveLength(0)
+    expect(getActiveProvider()).toBe('spotify')
+    expect(mocks.fetch).toHaveBeenCalledWith('https://api.spotify.com/v1/me/player', {
+      headers: { Authorization: 'Bearer test' },
+      signal: expect.any(AbortSignal),
+    })
+    finish(new Response(status === 204 ? null : JSON.stringify(body), { status }))
+    expect(await pending).toMatchObject({ ok: true })
+    expect(players).toHaveLength(1)
+  })
+
+  it.each([
+    { status: 200, body: { is_playing: true, item: { type: 'episode' } } },
+    { status: 200, body: {} },
+    { status: 200, body: { is_playing: 0 } },
+    { status: 200, body: null },
+    { status: 200, body: false },
+    { status: 503, body: { is_playing: false } },
+  ])('blocks a second player when silence is unverified ($status, $body)', async ({ status, body }) => {
+    mocks.command.mockResolvedValue({ ok: false, reason: 'forbidden' })
+    mocks.fetch.mockImplementation(async () => {
+      await lag()
+      return new Response(JSON.stringify(body), { status })
+    })
+    expect(await play(TRACK)).toMatchObject({ ok: false, reason: 'transient' })
+    expect(players).toHaveLength(0)
+    expect(getActiveProvider()).toBe('spotify')
+    expect(mocks.play).not.toHaveBeenCalled()
+  })
+
+  it('blocks when a silence check cannot obtain a token or parse the response', async () => {
+    mocks.command.mockResolvedValue({ ok: false, reason: 'forbidden' })
+    mocks.token.mockResolvedValueOnce({ ok: false, status: 'error' })
+    expect(await play(TRACK)).toMatchObject({ ok: false })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    mocks.fetch.mockResolvedValueOnce(new Response('not JSON', { status: 200 }))
+    expect(await play(TRACK)).toMatchObject({ ok: false })
+    expect(players).toHaveLength(0)
+  })
+
+  it('aborts a delayed silence check after five seconds and leaves Spotify selected', async () => {
+    vi.useFakeTimers()
+    mocks.command.mockResolvedValue({ ok: false, reason: 'forbidden' })
+    let signal!: AbortSignal
+    mocks.fetch.mockImplementation((_url: string, init: RequestInit) => {
+      signal = init.signal as AbortSignal
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      })
+    })
+    const pending = play(TRACK)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(signal.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(await pending).toMatchObject({ ok: false, reason: 'transient' })
+    expect(signal.aborted).toBe(true)
+    expect(players).toHaveLength(0)
+    expect(getActiveProvider()).toBe('spotify')
+  })
+
+  it('settles a silence check even when token minting never resolves', async () => {
+    vi.useFakeTimers()
+    mocks.command.mockResolvedValue({ ok: false, reason: 'forbidden' })
+    mocks.token.mockReturnValue(new Promise(() => {}))
+    const settled = vi.fn()
+    const pending = play(TRACK).then(settled)
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(settled).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false, reason: 'transient' }))
+    await pending
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(players).toHaveLength(0)
+    expect(getActiveProvider()).toBe('spotify')
+  })
+
+  it('does not fetch or switch when a token arrives after the silence deadline', async () => {
+    vi.useFakeTimers()
+    mocks.command.mockResolvedValue({ ok: false, reason: 'forbidden' })
+    let finish!: (token: { ok: true, token: string }) => void
+    mocks.token.mockReturnValue(new Promise((resolve) => {
+      finish = resolve
+    }))
+    const settled = vi.fn()
+    const pending = play(TRACK).then(settled)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(settled).toHaveBeenCalledWith(expect.objectContaining({ ok: false }))
+    await pending
+    finish({ ok: true, token: 'late' })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(players).toHaveLength(0)
+    expect(getActiveProvider()).toBe('spotify')
+  })
+
+  it.each(['close', 'Spotify tail'] as const)('ignores a delayed paused response after %s supersedes the request', async (action) => {
+    mocks.command.mockResolvedValue({ ok: false, reason: 'forbidden' })
+    let finish!: (response: Response) => void
+    mocks.fetch.mockReturnValue(new Promise<Response>((resolve) => {
+      finish = resolve
+    }))
+    const pending = play(TRACK)
+    await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledOnce())
+    if (action === 'close')
+      closeYouTubePlayer()
+    else
+      await play({ kind: 'uris', uris: ['spotify:track:next'] })
+    finish(new Response(JSON.stringify({ is_playing: false }), { status: 200 }))
+    expect(await pending).toMatchObject({ ok: false, reason: 'transient' })
+    expect(players).toHaveLength(0)
+    expect(getActiveProvider()).toBe('spotify')
   })
 
   it('allows YouTube when Spotify has no active device', async () => {

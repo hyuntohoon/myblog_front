@@ -29,6 +29,10 @@ export function YouTubeSurfaces() {
     window.addEventListener(OPEN_YOUTUBE_MAPPING, open)
     return () => window.removeEventListener(OPEN_YOUTUBE_MAPPING, open)
   }, [])
+  useEffect(() => {
+    if (provider.provider === 'youtube')
+      setNotice(null)
+  }, [provider.provider])
   return (
     <>
       {provider.provider === 'youtube' && <YouTubePlayerDock onChooseVideo={() => choose(provider.trackId!, provider.title ?? '이 곡')} />}

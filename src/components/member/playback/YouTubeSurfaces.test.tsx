@@ -64,7 +64,7 @@ describe('youTubeSurfaces mapping lifecycle', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('hides saved confirmation feedback when the video player becomes active', async () => {
+  it('clears saved confirmation feedback after playback so closing does not resurrect it', async () => {
     const { rerender } = render(<YouTubeSurfaces />)
     await openPicker()
     fireEvent.click(screen.getByRole('radio', { name: /Official audio/ }))
@@ -73,6 +73,9 @@ describe('youTubeSurfaces mapping lifecycle', () => {
     mocks.provider = { ...mocks.provider, provider: 'youtube' }
     rerender(<YouTubeSurfaces />)
     expect(screen.queryByText(/YouTube 영상을 연결했어요/)).not.toBeInTheDocument()
+    mocks.provider = { ...mocks.provider, provider: 'spotify' }
+    rerender(<YouTubeSurfaces />)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('keeps failed deletion in the picker with the API error and no success notice', async () => {

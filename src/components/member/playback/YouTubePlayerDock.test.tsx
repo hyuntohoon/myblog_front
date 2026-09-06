@@ -104,6 +104,34 @@ describe('youTubePlayerDock visibility lifecycle', () => {
     expect(mocks.stop).toHaveBeenCalledOnce()
   })
 
+  it('fits a 500px viewport with 485px of layout width after its scrollbar', () => {
+    vi.stubGlobal('innerWidth', 500)
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(485)
+    render(<YouTubePlayerDock onChooseVideo={vi.fn()} />)
+    expect(mocks.setHost).toHaveBeenCalledOnce()
+    expect(mocks.stop).not.toHaveBeenCalled()
+  })
+
+  it('stops before mounting when a 480px viewport has only 465px of layout width', () => {
+    vi.stubGlobal('innerWidth', 480)
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(465)
+    render(<YouTubePlayerDock onChooseVideo={vi.fn()} />)
+    expect(mocks.stop).toHaveBeenCalledOnce()
+    expect(mocks.setHost).not.toHaveBeenCalled()
+  })
+
+  it('stops on resize when scrollbar-adjusted layout width falls below 480px', () => {
+    vi.stubGlobal('innerWidth', 500)
+    const clientWidth = vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(485)
+    render(<YouTubePlayerDock onChooseVideo={vi.fn()} />)
+    window.dispatchEvent(new Event('resize'))
+    expect(mocks.stop).not.toHaveBeenCalled()
+    vi.stubGlobal('innerWidth', 480)
+    clientWidth.mockReturnValue(465)
+    window.dispatchEvent(new Event('resize'))
+    expect(mocks.stop).toHaveBeenCalledOnce()
+  })
+
   it.each([[479, 768], [1024, 409]])('does not mount an invisible player in a %i by %i viewport', (width, height) => {
     vi.stubGlobal('innerWidth', width)
     vi.stubGlobal('innerHeight', height)

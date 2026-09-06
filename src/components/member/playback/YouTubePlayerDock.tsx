@@ -4,18 +4,30 @@ import { providerStore } from '@lib/playback/provider'
 import { getLastErrorCode, setYouTubeHost } from '@lib/youtubePlayback'
 import '@styles/youtube-player.css'
 
+function viewportFits(): boolean {
+  if (typeof window === 'undefined')
+    return false
+  // Scrollbars consume layout width even when innerWidth still includes them.
+  const availableWidth = document.documentElement.clientWidth || window.innerWidth
+  return availableWidth >= 480 && window.innerHeight >= 410
+}
+
 /** No overlays: attribution and app controls are outside the 16:9 frame. */
 export function YouTubePlayerDock({ onChooseVideo }: { onChooseVideo: () => void }) {
   const host = useRef<HTMLDivElement>(null)
   const provider = useSyncExternalStore(providerStore.subscribe, providerStore.getSnapshot, providerStore.getServerSnapshot)
   const state = useSyncExternalStore(playbackSession.subscribe, playbackSession.getSnapshot, playbackSession.getServerSnapshot)
-  const fits = typeof window !== 'undefined' && window.innerWidth >= 480 && window.innerHeight >= 410
+  const fits = viewportFits()
   useEffect(() => {
     if (document.visibilityState === 'hidden') {
       playbackSession.stopYouTube()
       return
     }
-    if (!fits || !host.current)
+    if (!fits) {
+      playbackSession.stopYouTube()
+      return
+    }
+    if (!host.current)
       return
     // The API replaces this child with an iframe; React owns its wrapper only.
     const mount = document.createElement('div')
@@ -27,7 +39,7 @@ export function YouTubePlayerDock({ onChooseVideo }: { onChooseVideo: () => void
         stop()
     }
     const onResize = () => {
-      if (window.innerWidth < 480 || window.innerHeight < 410)
+      if (!viewportFits())
         stop()
     }
     document.addEventListener('visibilitychange', onVisibility)
