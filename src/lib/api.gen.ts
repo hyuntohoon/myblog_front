@@ -1401,6 +1401,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/music/search/youtube-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** YouTube 후보 검색(읽기 전용) */
+        get: operations["search_youtube_candidates_api_music_search_youtube_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/music/sync-requests": {
         parameters: {
             query?: never;
@@ -1444,8 +1461,12 @@ export interface paths {
          *     otherwise edge_guard-only (unified search, bucket reads), so there is nothing to
          *     JWT-gate. A YouTube videoId is public in the same sense, and the mapping table holds no
          *     per-member data, so the gating does not change here either. rule #9 holds: a direct
-         *     catalog DB read, never a synchronous provider content call. Bad type or bad provider →
-         *     422 (Literal); unknown/empty id, or a track with no usable mapping → 404.
+         *     catalog DB read, never a synchronous provider content call.
+         *
+         *     Status codes: bad type or bad provider → 422 (Literal); unknown/empty id, or a
+         *     provider mapping that was NEVER MADE → 404; a mapping that EXISTS but is dead,
+         *     expired or unplayable → 410 (OQ8). The 404/410 split is not cosmetic — the front
+         *     caches a 404 durably for the tab and must not cache the 410.
          */
         get: operations["resolve_playback_uri_api_playback_resolve_get"];
         put?: never;
@@ -1468,6 +1489,35 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/playback/track/{track_id}/youtube-mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Youtube Mapping
+         * @description Confirm a videoId for a track. Verified server-side before it is written.
+         *
+         *     The four status fields are read from `videos.list` here, never taken from
+         *     the request body: the row is GLOBAL, so a client-supplied `embeddable` would
+         *     let one member write a mapping every other member resolves and fails to
+         *     play.
+         */
+        put: operations["put_youtube_mapping_api_playback_track__track_id__youtube_mapping_put"];
+        post?: never;
+        /**
+         * Delete Youtube Mapping
+         * @description The "wrong video" action. Idempotent — deleting nothing is still a 204.
+         */
+        delete: operations["delete_youtube_mapping_api_playback_track__track_id__youtube_mapping_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3889,6 +3939,27 @@ export interface components {
             /** Slug */
             slug: string;
         };
+        /** YouTubeMappingRequest */
+        Backend_YouTubeMappingRequest: {
+            /** Video Id */
+            video_id: string;
+        };
+        /** YouTubeMappingResponse */
+        Backend_YouTubeMappingResponse: {
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Provider */
+            provider: string;
+            /** Track Id */
+            track_id: string;
+            /**
+             * Verified At
+             * Format: date-time
+             */
+            verified_at: string;
+            /** Video Id */
+            video_id: string;
+        };
         /** AlbumDetail */
         Music_AlbumDetail: {
             album: components["schemas"]["Music_AlbumOut"];
@@ -4391,6 +4462,40 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** YouTubeCandidateItem */
+        Music_YouTubeCandidateItem: {
+            /** Channel Title */
+            channel_title?: string | null;
+            /** Duration Delta Sec */
+            duration_delta_sec?: number | null;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Embeddable */
+            embeddable: boolean;
+            /** Made For Kids */
+            made_for_kids?: boolean | null;
+            /** Privacy Status */
+            privacy_status?: string | null;
+            /** Search Rank */
+            search_rank: number;
+            /** Thumbnail Url */
+            thumbnail_url?: string | null;
+            /** Title */
+            title?: string | null;
+            /** Video Id */
+            video_id: string;
+        };
+        /** YouTubeCandidateSearchResult */
+        Music_YouTubeCandidateSearchResult: {
+            /** Candidates */
+            candidates?: components["schemas"]["Music_YouTubeCandidateItem"][];
+            /** Query */
+            query: string;
+            /** Track Duration Sec */
+            track_duration_sec?: number | null;
+            /** Track Id */
+            track_id: string;
         };
     };
     responses: never;
@@ -6812,6 +6917,40 @@ export interface operations {
             };
         };
     };
+    search_youtube_candidates_api_music_search_youtube_candidates_get: {
+        parameters: {
+            query: {
+                /** @description 카탈로그 트랙 UUID */
+                track_id: string;
+                /** @description 후보 수 (기본: 설정값) */
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_YouTubeCandidateSearchResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Music_HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_sync_request_api_music_sync_requests_post: {
         parameters: {
             query?: never;
@@ -6876,6 +7015,20 @@ export interface operations {
                     "application/json": components["schemas"]["Backend_PlaybackResolveResponse"];
                 };
             };
+            /** @description No such item, or no provider mapping was ever made. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The provider mapping EXISTS but is dead, past the 30-day retention window, or no longer embeddable. Distinct from 404 on purpose: a 404 may be cached durably for the tab, this may not. */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -6903,6 +7056,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_SpotifyStreamingTokenResponse"];
+                };
+            };
+        };
+    };
+    put_youtube_mapping_api_playback_track__track_id__youtube_mapping_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_YouTubeMappingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_YouTubeMappingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_youtube_mapping_api_playback_track__track_id__youtube_mapping_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };
