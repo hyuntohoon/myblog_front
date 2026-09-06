@@ -21,14 +21,16 @@ import type { BoardAlbum } from '@lib/buckets'
 import type { LivePlayback } from '@components/member/lyrics/playback.api'
 import type { QueueEntry } from '@components/member/lyrics/queue.api'
 import type { JumpContext, JumpOutcome } from '@components/member/lyrics/queueJump'
+import type { SetTrackLikedOutcome } from './provider'
 import type { TailRow } from './uris'
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, SetTrackLikedOutcome, TransferOutcome } from '@lib/spotifyPlayback'
+import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, TransferOutcome } from '@lib/spotifyPlayback'
 import type { OwnershipMessage } from './ownership'
 import { subscribeAuthIdentity } from '@lib/authIdentity'
 import { addBucketPlayback, deleteBucketItem, expandAlbumTracks } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
-import { getStreamingToken, getTrackLiked, IN_PAGE_MESSAGE, listDevices, MYBLOG_PLAYBACK_CHANGED, play, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback } from '@lib/spotifyPlayback'
+import { getStreamingToken, IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
+import { closeYouTubePlayer, getActiveProvider, getTrackLiked, getYouTubeNowPlaying, listDevices, play, providerStore, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback, tryPlayYouTubeTrack } from './provider'
 import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { readLivePlayback } from '@components/member/lyrics/playback.api'
 import { jumpToQueueIndex } from '@components/member/lyrics/queueJump'
@@ -1022,7 +1024,47 @@ const BOUNDARY_BUFFER_MS = 1_500
  * believes is sounding, never the rows. A track playing from somewhere else does
  * not get appended, removed, or reordered into our list.
  */
+/** A single video has no Spotify queue identity or remote device. */
+function adoptYouTube(): void {
+  if (!current.isOwner)
+    return
+  const provider = providerStore.getSnapshot()
+  const live = getYouTubeNowPlaying()
+  if (provider.provider !== 'youtube' || !live)
+    return
+  const uri = provider.trackId ? cachedUri(provider.trackId) : null
+  patch({
+    currentItemId: null,
+    external: {
+      title: provider.title,
+      artist: null,
+      albumCoverUrl: null,
+      spotifyTrackId: uri?.startsWith('spotify:track:') ? uri.slice(14) : null,
+      spotifyAlbumId: null,
+      deviceName: 'YouTube',
+    },
+    playing: live.playing,
+    anchor: { ms: live.positionMs, wallMs: performance.now() },
+    durationMs: live.durationMs,
+    rung: 'in-page',
+    degraded: false,
+    capabilityTier: 'full',
+    noActiveDevice: false,
+    device: null,
+    devices: null,
+    activeDeviceId: null,
+    shuffle: null,
+    repeat: null,
+    volumePercent: null,
+    liked: 'unknown',
+  })
+}
+
 async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback | null> {
+  if (getActiveProvider() === 'youtube') {
+    adoptYouTube()
+    return null
+  }
   // Adoption is a WRITE to the session, sourced from a Spotify read. Only the owner
   // performs it: if every tab adopted independently they would be two writers racing
   // over one state, each overwriting the other's broadcast with its own slightly
@@ -1048,7 +1090,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
   // and the read lands inside Spotify's ack→apply window with the PREVIOUS state.
   // Discard rather than apply: the fresher local write is already correct, and an
   // adoption is a read, never the tie-breaker over an action. See `localWriteSeq`.
-  if (localWriteSeq !== seqAtStart)
+  if (localWriteSeq !== seqAtStart || getActiveProvider() === 'youtube')
     return null
 
   // `unavailable` is a token/network failure, NOT "nothing is playing". Treating it
@@ -1333,10 +1375,14 @@ async function undoReplace(bucketId: string, trackIds: string[]): Promise<UndoOu
 }
 
 async function resolveCapability(): Promise<void> {
+  if (getActiveProvider() === 'youtube')
+    return
   if (capabilityInflight)
     return capabilityInflight
   capabilityInflight = (async () => {
     const r = await getStreamingToken()
+    if (getActiveProvider() === 'youtube')
+      return
     if (r.ok) {
       patch({ capabilityTier: 'full', reconnect: false })
       writeReconnectFlag(false)
@@ -1374,12 +1420,14 @@ function recordControlFailure(r: Exclude<PlayerCommandOutcome, { ok: true }>): v
 }
 
 function loadLiked(trackId: string): void {
+  if (getActiveProvider() === 'youtube')
+    return
   if (likedTrackId === trackId)
     return
   likedTrackId = trackId
   patch({ liked: 'loading' })
   void getTrackLiked(trackId).then((r) => {
-    if (likedTrackId !== trackId)
+    if (likedTrackId !== trackId || getActiveProvider() === 'youtube')
       return
     if (r.ok) {
       patch({ liked: r.liked ? 'liked' : 'unliked' })
@@ -1443,6 +1491,8 @@ async function toggleLiked(): Promise<SetTrackLikedOutcome | null> {
 }
 
 async function setMode(cmd: PlaybackModeCommand): Promise<PlaybackModeOutcome | null> {
+  if (getActiveProvider() === 'youtube')
+    return { ok: false, reason: 'no-capability' }
   // GATED (ARCH-playback-authority-convergence Step 1). Shuffle, repeat and volume
   // are playback mutations exactly as much as ⏯ is, and they were the one family
   // that never consulted ownership — so a mirror tab with a disabled transport
@@ -1650,6 +1700,10 @@ async function runSeek(target: number, onReanchored?: () => void): Promise<Playe
  * misreported as external on the very first read.
  */
 async function syncFromLive(): Promise<void> {
+  if (getActiveProvider() === 'youtube') {
+    adoptYouTube()
+    return
+  }
   const prefetched = prefetchUris(trackIdsFrom(queueRows()))
   await adoptLive(prefetched)
 }
@@ -1702,6 +1756,8 @@ async function jumpToSpotifyQueue(items: QueueEntry[], index: number, context: J
   if (!current.isOwner && !await gate({ kind: 'queue-jump', items, index, context }))
     return { ok: false, reason: 'forwarded' }
 
+  if (getActiveProvider() === 'youtube')
+    closeYouTubePlayer()
   patch({ busy: true })
   const r: JumpOutcome = await jumpToQueueIndex(items, index, context)
   if (!r.ok) {
@@ -1802,6 +1858,8 @@ async function runTogglePlay(): Promise<void> {
 }
 
 async function runNext(): Promise<void> {
+  if (getActiveProvider() === 'youtube')
+    return
   if (!current.currentItemId && current.external)
     return externalAdvance('next')
   if (current.isOwner || await gate({ kind: 'next' }))
@@ -1809,6 +1867,8 @@ async function runNext(): Promise<void> {
 }
 
 async function runPrevious(): Promise<void> {
+  if (getActiveProvider() === 'youtube')
+    return
   if (!current.currentItemId && current.external)
     return externalAdvance('previous')
   const i = rowIndex(current.currentItemId)
@@ -1920,6 +1980,21 @@ export const playbackSession = {
       await playbackOwnership.ensureOwner()
       patch({ busy: true, notice: null })
       try {
+        if (intent.kind === 'track') {
+          const mapped = await tryPlayYouTubeTrack(intent)
+          if (mapped) {
+            clearBoundaryCheck()
+            clearReissue()
+            issuedTail = null
+            queueDirty = false
+            authoritativePatch({ busy: false, notice: mapped.ok ? null : noticeForFailure(mapped) })
+            if (mapped.ok) {
+              adoptYouTube()
+              void prefetchUris([intent.trackId])
+            }
+            return { ok: mapped.ok, message: mapped.message, undo: null, play: mapped }
+          }
+        }
         await bucketStore.ensureFresh()
         const { bucket } = playbackQueue()
         if (!bucket) {
@@ -2034,6 +2109,15 @@ export const playbackSession = {
   /** Adopt whatever is actually playing — call when a player surface becomes visible. */
   syncFromLive,
 
+  /** Closing or hiding the video must stop its audio immediately. */
+  stopYouTube(): void {
+    if (getActiveProvider() !== 'youtube')
+      return
+    closeYouTubePlayer()
+    clearBoundaryCheck()
+    authoritativePatch({ currentItemId: null, external: null, playing: false, anchor: null, durationMs: null, busy: false, rung: null, notice: null })
+  },
+
   resolveCapability,
 
   recordControlFailure,
@@ -2145,6 +2229,7 @@ export const playbackSession = {
    * nothing about what account A was playing may survive into account B's session.
    */
   __reset(): void {
+    closeYouTubePlayer()
     clearBoundaryCheck()
     clearReissue()
     issuedTail = null
@@ -2383,6 +2468,8 @@ async function executeCommand(command: SessionCommand): Promise<void> {
 function syncOwnership(): void {
   const ownership = playbackOwnership.getSnapshot()
   const wasOwner = current.isOwner
+  if (wasOwner && !ownership.isOwner)
+    playbackSession.stopYouTube()
   const ownerArrived = !current.ownerPresent && ownership.ownerPresent
   const ownerRung = ownership.isOwner ?
     current.rung :

@@ -1,6 +1,8 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type { PlaybackSessionState } from '@lib/playback/session'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { providerStore } from '@lib/playback/provider'
+import { openYouTubeMapping } from '@lib/playback/youtubeEvents'
 import { playbackSession } from '@lib/playback/session'
 import { useDismissable } from '@lib/useDismissable'
 import {
@@ -112,6 +114,9 @@ export interface GlobalPlaybackBarProps {
 
 export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: GlobalPlaybackBarProps) {
   const model = usePlaybackViewModel()
+  const provider = useSyncExternalStore(providerStore.subscribe, providerStore.getSnapshot, providerStore.getServerSnapshot)
+  const youtube = provider.provider === 'youtube'
+  const mappingTrackId = youtube ? provider.trackId : model.current?.trackId
   const compactUtilities = useMediaQuery('(max-width: 1179px)')
   const mobile = useMediaQuery('(max-width: 767px)')
   const visible = isGlobalPlaybackBarVisible(model.state)
@@ -151,12 +156,12 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   }, [mobile, visible, collapsed])
 
   useEffect(() => {
-    if (!visible)
+    if (!visible || youtube)
       return
     const trackId = playbackSession.currentSpotifyTrackId()
     if (trackId)
       playbackSession.loadLiked(trackId)
-  }, [model.state.currentItemId, model.state.external?.spotifyTrackId, visible])
+  }, [model.state.currentItemId, model.state.external?.spotifyTrackId, visible, youtube])
 
   const requestSeek = (ms: number) => {
     void seekPlayback(ms, setNotice)
@@ -252,13 +257,15 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
       <div className="global-playback-main">
         <div className="deck-identity-zone">
           <PlaybackIdentity row={model.current} external={model.state.external} compact />
-          <span className="deck-hit-target deck-like">
+          {!youtube && (
+<span className="deck-hit-target deck-like">
             <PlaybackLikeControl
 	state={model.state.liked}
 	onToggle={() => { void togglePlaybackLiked(setNotice) }}
 	size={32}
             />
-          </span>
+</span>
+)}
         </div>
 
         <div className="deck-transport-zone">
@@ -295,7 +302,8 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
           >
             <QueueGlyph />
           </button>
-          <div className="deck-device-picker">
+          {!youtube && (
+<div className="deck-device-picker">
             <PlaybackDevicePicker
 	name={deviceName}
 	devices={model.state.devices}
@@ -304,7 +312,9 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
 	onTransfer={playbackSession.transferTo}
 	onSwitched={() => setNotice(null)}
             />
-          </div>
+</div>
+)}
+          {mappingTrackId && <button type="button" className="deck-icon-button" aria-label="YouTube 영상 고르기" onClick={() => openYouTubeMapping(mappingTrackId, provider.title ?? model.current?.title ?? '이 곡')}>YouTube</button>}
           {compactUtilities && <NarrowVolume percent={model.state.volumePercent} onSet={setMode} />}
           <button
 	type="button"

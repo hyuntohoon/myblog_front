@@ -11,6 +11,7 @@ import { ENT_OPEN_LIVE_LYRICS } from '@lib/entityEvents'
 import { PB_CLOSED_EVENT, PB_OPEN_STATE_EVENT, PB_TOGGLE_EVENT } from '@lib/pocketBuckit/events'
 import { LyricsSheet } from '../lyrics/LyricsSheet'
 import { LyricsViewer } from '../lyrics/LyricsViewer'
+import { YouTubeSurfaces } from '../playback/YouTubeSurfaces'
 import { GlobalPlaybackBar } from '../playback/GlobalPlaybackBar'
 import { PlaybackPanel } from '../playback/PlaybackPanel'
 import { openPlaybackLyrics } from '../playback/playbackEntryActions'
@@ -81,6 +82,7 @@ function PocketBuckitInner() {
   }, [open])
   return (
     <div className="pb-scope">
+      <YouTubeSurfaces />
       <GlobalPlaybackBar playbackPanelOpen={playbackPanelOpen} onOpenPlaybackPanel={() => setPlaybackPanelOpen(true)} />
       <PocketTray onOpenPlaybackPanel={() => setPlaybackPanelOpen(true)} />
       {playbackPanelOpen && (
