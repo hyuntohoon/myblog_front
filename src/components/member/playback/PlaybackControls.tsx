@@ -1,5 +1,6 @@
 import type { CSSProperties, KeyboardEvent, MouseEvent } from 'react'
-import type { DeviceListOutcome, PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, RepeatMode, SetTrackLikedOutcome, TransferOutcome } from '@lib/spotifyPlayback'
+import type { DeviceListOutcome, PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, RepeatMode, TransferOutcome } from '@lib/spotifyPlayback'
+import type { SetTrackLikedOutcome } from '@lib/playback/provider'
 import type { LikedState, PlaybackModeCommand } from '@lib/playback/session'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'

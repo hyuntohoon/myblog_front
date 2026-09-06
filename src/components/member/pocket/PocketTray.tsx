@@ -25,7 +25,8 @@ import { memberRef } from '@lib/entityDrag'
 import { boardDragAccepts, externalAlbumCopy, getBoardDnd, useBoardDnd } from '@lib/pocketBuckit/boardDnd'
 import { engineFamily, isLightDesign } from '@lib/pocketBuckit/design'
 import { PB_BOARD_DROP_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
-import { play } from '@lib/spotifyPlayback'
+import { play } from '@lib/playback/provider'
+import { openYouTubeMapping } from '@lib/playback/youtubeEvents'
 import { openPlaybackLyrics } from '../playback/playbackEntryActions'
 import { PlaybackMini } from '../playback/PlaybackMini'
 import { usePocket } from './PocketBuckitProvider'
@@ -666,7 +667,10 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
               <button type="button" className="serif" onClick={() => openAlbum({ albumId, title: a.title, artist: a.artist ?? undefined, cover: a.cover ?? null })} style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}>{a.title}</button> :
               <span className="serif" style={{ fontSize: sc(12.5), flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.title}</span>}
             <span className="tgt-meta">{a.itemType === 'album' ? a.artist : (ITEM_TYPE_LABEL[a.itemType] ?? a.itemType)}</span>
-            {isOwner && (
+            {a.trackId && (
+              <button type="button" className="pb-play" aria-label={`${a.title} YouTube 영상 고르기`} onClick={() => openYouTubeMapping(a.trackId!, a.title)}>YouTube</button>
+            )}
+            {(isOwner || a.trackId) && (
               <button type="button" className="pb-play" title="재생 (Spotify Premium)" aria-label={`${a.title} 재생`} onClick={() => onPlay(a)}>
                 <svg width={sc(9)} height={sc(9)} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
               </button>

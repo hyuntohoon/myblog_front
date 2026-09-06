@@ -13,6 +13,7 @@ import { canControlPlayback } from '@lib/playback/ownership'
 import { PlaybackOwnerBanner } from './PlaybackOwnerBanner'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { resolveDbAlbumId } from '@lib/spotifyCatalog'
+import { providerStore } from '@lib/playback/provider'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 
@@ -217,14 +218,16 @@ export { PlaybackOwnerBanner }
  * exactly why it is a separate field from `capabilityTier`, the durable one.
  */
 export function PlaybackTransport({ state, canControl }: { state: PlaybackSessionState, canControl: boolean }) {
+  const provider = useSyncExternalStore(providerStore.subscribe, providerStore.getSnapshot, providerStore.getServerSnapshot)
+  const youtube = provider.provider === 'youtube'
   const disabled = !canControl || state.noActiveDevice || (!state.currentItemId && !state.external)
   return (
     <div className="pbp-transport" role="group" aria-label="재생 제어" aria-busy={state.busy || undefined}>
-      <button type="button" onClick={() => void playbackSession.previous()} disabled={disabled} aria-label="이전 곡">‹</button>
+      <button type="button" onClick={() => void playbackSession.previous()} disabled={disabled || youtube} aria-label="이전 곡">‹</button>
       <button type="button" className="pbp-play-toggle" onClick={() => void playbackSession.togglePlay()} disabled={disabled} aria-label={state.playing ? '일시정지' : '재생'}>
         {state.playing ? 'Ⅱ' : '▶'}
       </button>
-      <button type="button" onClick={() => void playbackSession.next()} disabled={disabled} aria-label="다음 곡">›</button>
+      <button type="button" onClick={() => void playbackSession.next()} disabled={disabled || youtube} aria-label="다음 곡">›</button>
     </div>
   )
 }
