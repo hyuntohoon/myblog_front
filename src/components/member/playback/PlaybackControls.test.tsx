@@ -133,6 +133,30 @@ describe('playbackDevicePicker', () => {
     expect(onRefresh).toHaveBeenCalledOnce()
   })
 
+  it('keeps a narrow anchor menu usable and refreshes its theme while open', async () => {
+    let accent = '#c8332b'
+    const computed = vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({
+      getPropertyValue: (name: string) => name === '--color-accent' ? accent : '',
+    } as CSSStyleDeclaration))
+    const { container } = render(
+      <PlaybackDevicePicker name="Phone" devices={devices} activeDeviceId="phone" onRefresh={vi.fn().mockResolvedValue({ ok: true, devices })} onTransfer={vi.fn()} onSwitched={vi.fn()} />,
+    )
+    const anchor = container.firstElementChild as HTMLElement
+    vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({ left: window.innerWidth - 48, width: 44, top: 400 } as DOMRect)
+    fireEvent.click(screen.getByRole('button', { name: '재생 기기 바꾸기' }))
+    const menu = await screen.findByRole('listbox', { name: '재생 기기' })
+    expect(menu.style.width).toBe('280px')
+    expect(Number.parseFloat(menu.style.left) + Number.parseFloat(menu.style.width)).toBeLessThanOrEqual(window.innerWidth - 12)
+    expect(menu.style.getPropertyValue('--color-accent')).toBe('#c8332b')
+    accent = '#df524a'
+    document.documentElement.setAttribute('data-theme', 'dark')
+    await waitFor(() => expect(menu.style.getPropertyValue('--color-accent')).toBe('#df524a'))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    computed.mockRestore()
+    document.documentElement.removeAttribute('data-theme')
+  })
+
   it('shows transfer progress, updates through the callback, and closes on success', async () => {
     let resolveTransfer!: (value: { ok: true }) => void
     const onTransfer = vi.fn(() => new Promise<{ ok: true }>((resolve) => {

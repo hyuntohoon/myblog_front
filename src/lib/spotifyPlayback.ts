@@ -19,6 +19,8 @@
 //     `resolveProviderUri` seam. No `owner_id` / singleton assumption is baked in.
 import type { components } from '@lib/api.gen'
 import { getAuthHeader, isLoggedIn, refreshAccessToken } from '@lib/auth'
+import type { AuthEpoch } from '@lib/authIdentity'
+import { captureAuthEpoch, isAuthEpochCurrent } from '@lib/authIdentity'
 
 type SpotifyStreamingTokenResponse = components['schemas']['Backend_SpotifyStreamingTokenResponse']
 type PlaybackResolveResponse = components['schemas']['Backend_PlaybackResolveResponse']
@@ -74,8 +76,9 @@ type TokenResult =
 	{ ok: false, status: Exclude<StreamingStatus, 'ready'>, httpStatus?: number }
 
 // ── token seam (the single swappable source) ──────────────────────────────────
-let cachedToken: { token: string, expiresAt: number } | null = null
-let inflightMint: Promise<TokenResult> | null = null
+let cachedToken: { token: string, expiresAt: number, epoch: AuthEpoch } | null = null
+let inflightMint: { request: Promise<TokenResult>, epoch: AuthEpoch } | null = null
+const TOKEN_TIMEOUT_MS = 8_000
 
 /**
  * Acquire a short-lived Spotify streaming access token.
@@ -93,29 +96,38 @@ export async function getStreamingToken(): Promise<TokenResult> {
   if (!isLoggedIn())
     return { ok: false, status: 'unauthorized' }
 
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 5000)
+  if (cachedToken && isAuthEpochCurrent(cachedToken.epoch) && cachedToken.expiresAt > Date.now() + 5000)
     return { ok: true, token: cachedToken.token, expiresAt: cachedToken.expiresAt }
 
   if (!BASE)
     return { ok: false, status: 'error' }
 
-  if (inflightMint)
-    return inflightMint
+  if (inflightMint && isAuthEpochCurrent(inflightMint.epoch))
+    return inflightMint.request
 
-  inflightMint = mintOnce()
-  try {
-    return await inflightMint
-  }
-  finally {
-    inflightMint = null
-  }
+  const epoch = captureAuthEpoch()
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<TokenResult>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      resolve({ ok: false, status: 'error' })
+    }, TOKEN_TIMEOUT_MS)
+  })
+  const request = Promise.race([mintOnce(epoch, controller.signal), timeout]).finally(() => {
+    clearTimeout(timer)
+    if (inflightMint?.request === request)
+      inflightMint = null
+  })
+  inflightMint = { request, epoch }
+  return request
 }
 
-async function mintOnce(): Promise<TokenResult> {
+async function mintOnce(epoch: AuthEpoch, signal: AbortSignal): Promise<TokenResult> {
   const initialHeaders = getAuthHeader()
   let res: Response
   try {
-    res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...initialHeaders } })
+    res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...initialHeaders }, signal })
   }
   catch {
     return { ok: false, status: 'error' }
@@ -126,6 +138,8 @@ async function mintOnce(): Promise<TokenResult> {
   // needs the same one-time expired-access-token recovery. If another request
   // refreshed storage while this mint was in flight, retry with that token
   // instead of starting a redundant refresh.
+  if (!isAuthEpochCurrent(epoch) || signal.aborted)
+    return { ok: false, status: 'unauthorized' }
   if (res.status === 401) {
     let retryHeaders = getAuthHeader()
     if (retryHeaders.Authorization === initialHeaders.Authorization) {
@@ -134,8 +148,10 @@ async function mintOnce(): Promise<TokenResult> {
         return { ok: false, status: 'unauthorized', httpStatus: 401 }
       retryHeaders = getAuthHeader()
     }
+    if (!isAuthEpochCurrent(epoch) || signal.aborted)
+      return { ok: false, status: 'unauthorized' }
     try {
-      res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...retryHeaders } })
+      res = await fetch(`${BASE}${TOKEN_PATH}`, { headers: { ...retryHeaders }, signal })
     }
     catch {
       return { ok: false, status: 'error' }
@@ -163,7 +179,9 @@ async function mintOnce(): Promise<TokenResult> {
   if (!body?.access_token)
     return { ok: false, status: 'error' }
 
-  cachedToken = { token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 0) * 1000 }
+  if (!isAuthEpochCurrent(epoch) || signal.aborted)
+    return { ok: false, status: 'unauthorized' }
+  cachedToken = { epoch, token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 0) * 1000 }
   return { ok: true, token: cachedToken.token, expiresAt: cachedToken.expiresAt }
 }
 

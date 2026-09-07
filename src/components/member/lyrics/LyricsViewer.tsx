@@ -92,10 +92,13 @@ import type { ClockAnchor } from '@lib/clockEstimate'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, WheelEvent } from 'react'
 import type { LyricsResponse, LyricsSegment } from './lyrics.api'
 import type { QueueEntry, QueueResult } from './queue.api'
+import type { LivePlayback } from './playback.api'
 import type { JumpContext } from './queueJump'
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
 import { nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
+import { providerStore } from '@lib/playback/provider'
+import { cachedUri, resolveUri } from '@lib/playback/uris'
 import { canControlPlayback } from '@lib/playback/ownership'
 import { PlaybackOwnerBanner } from '../playback/PlaybackOwnerBanner'
 import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
@@ -265,6 +268,42 @@ function readStoredStyle(): LyvStyle {
   }
   catch {
     return 'blur'
+  }
+}
+
+/** Reuse the session's local provider observation; a lyrics refresh never selects a device. */
+async function readYouTubeLyricsPlayback(): Promise<LivePlayback> {
+  const provider = providerStore.getSnapshot()
+  if (!provider.trackId)
+    return { state: 'idle' }
+  const cached = cachedUri(provider.trackId)
+  const uri = cached === undefined ? await resolveUri(provider.trackId) : cached
+  const latest = providerStore.getSnapshot()
+  if (latest !== provider)
+    return { state: 'unavailable' }
+  await playbackSession.syncFromLive()
+  const live = playbackSession.getSnapshot()
+  if (!uri?.startsWith('spotify:track:'))
+    return { state: 'unavailable' }
+  return {
+    state: live.playing ? 'playing' : 'paused',
+    trackId: uri.slice('spotify:track:'.length),
+    progressMs: live.anchor?.ms ?? null,
+    readAtMs: live.anchor?.wallMs ?? performance.now(),
+    durationMs: live.durationMs,
+    track: live.external?.title ?? provider.title,
+    artist: live.external?.artist ?? null,
+    artists: [],
+    album: null,
+    albumSpotifyId: null,
+    albumCoverUrl: live.external?.albumCoverUrl ?? null,
+    deviceName: 'YouTube',
+    deviceId: null,
+    shuffle: null,
+    repeat: null,
+    volumePercent: null,
+    contextUri: null,
+    contextType: null,
   }
 }
 
@@ -439,6 +478,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // ever name), so the subscription is harmless dead weight for them rather
   // than something worth gating behind `canRefresh`.
   const sessionState = useSyncExternalStore(playbackSession.subscribe, playbackSession.getSnapshot, playbackSession.getServerSnapshot)
+  const providerState = useSyncExternalStore(providerStore.subscribe, providerStore.getSnapshot, providerStore.getServerSnapshot)
 
   // Clock-estimate anchor (shared idiom in @lib/clockEstimate since
   // member-player Step 3): position `ms` captured at wall instant `wallMs`.
@@ -700,7 +740,12 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     refreshingRef.current = true
     setRefreshing(true)
     try {
-      const r = await readLivePlayback()
+      const provider = providerStore.getSnapshot()
+      const r = await (provider.provider === 'youtube' ? readYouTubeLyricsPlayback() : readLivePlayback())
+      const latest = providerStore.getSnapshot()
+      // An old provider response must not replace the song selected meanwhile.
+      if (latest !== provider)
+        return
       if (r.state === 'playing' || r.state === 'paused') {
         // No ack→apply guards here any more. This component no longer issues
         // transport, so there is no in-flight command of its own for a read to
@@ -760,6 +805,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   useEffect(() => {
     refreshRef.current = refresh
   })
+
+  // An uncached YouTube identity has no Spotify id for the ordinary adoption
+  // effect yet. Resolve only on identity changes, through the same refresh path.
+  useEffect(() => {
+    if (canRefresh && providerState.provider === 'youtube' && playbackSession.currentSpotifyTrackId() == null)
+      void refreshRef.current('session')
+  }, [canRefresh, providerState.provider, providerState.trackId, providerState.videoId, sessionState.currentItemId, sessionState.external?.spotifyTrackId])
 
   // ARCH-playback-authority-convergence Step 1 — transport is the SESSION's.
   //

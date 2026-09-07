@@ -17,6 +17,11 @@ import { LyricsViewer } from './LyricsViewer'
 import { TRANSLATION_RETRY_MS } from './useLyricsDocument'
 
 const mocks = vi.hoisted(() => ({
+  provider: { provider: 'spotify', trackId: null, videoId: null, title: null } as { provider: string, trackId: string | null, videoId: string | null, title: string | null },
+  providerSubscribers: new Set<() => void>(),
+  syncFromLive: vi.fn(),
+  cachedUri: vi.fn(),
+  resolveUri: vi.fn(),
   seekTo: vi.fn(),
   togglePlay: vi.fn(),
   next: vi.fn(),
@@ -66,6 +71,7 @@ vi.mock('@lib/playback/session', () => ({
     },
     getSnapshot: () => mocks.snapshot.v,
     getServerSnapshot: () => mocks.snapshot.v,
+    syncFromLive: mocks.syncFromLive,
     seekTo: mocks.seekTo,
     togglePlay: mocks.togglePlay,
     next: mocks.next,
@@ -76,6 +82,18 @@ vi.mock('@lib/playback/session', () => ({
     currentRow: mocks.currentRow,
   },
 }))
+
+vi.mock('@lib/playback/provider', () => ({
+  providerStore: {
+    subscribe: (cb: () => void) => {
+      mocks.providerSubscribers.add(cb)
+      return () => mocks.providerSubscribers.delete(cb)
+    },
+    getSnapshot: () => mocks.provider,
+    getServerSnapshot: () => mocks.provider,
+  },
+}))
+vi.mock('@lib/playback/uris', () => ({ cachedUri: mocks.cachedUri, resolveUri: mocks.resolveUri }))
 
 // The real predicate, not a stub — a test that stubbed it could not tell a mirror
 // from an owner, which is the whole question below.
@@ -146,6 +164,10 @@ function setSession(patch: Record<string, unknown>): void {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.provider = { provider: 'spotify', trackId: null, videoId: null, title: null }
+  mocks.providerSubscribers.clear()
+  mocks.syncFromLive.mockResolvedValue(undefined)
+  mocks.cachedUri.mockReturnValue('spotify:track:track-1')
   mocks.canControl = true
   mocks.subscribers.clear()
   mocks.snapshot.v = { ...mocks.sessionState, playing: true, anchor: null, durationMs: null, notice: null, busy: false, transportBusy: false, noActiveDevice: false }
@@ -697,5 +719,50 @@ describe('the viewer reads the same document lifecycle as the sheet (G3/G4)', ()
     finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('provider-safe live lyrics refresh', () => {
+  it('refreshes YouTube through the session without reading the paused Spotify song', async () => {
+    mocks.provider = { provider: 'youtube', trackId: 'catalog-1', videoId: 'video-1', title: 'YouTube song' }
+    mocks.currentSpotifyTrackId.mockReturnValue('track-1')
+    setSession({ playing: false, anchor: { ms: 55_000, wallMs: performance.now() }, durationMs: 180_000 })
+    await open()
+    fireEvent.click(screen.getByLabelText('현재 재생 새로고침'))
+    await waitFor(() => expect(mocks.syncFromLive).toHaveBeenCalledOnce())
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+    await waitFor(() => expect(focusedText()).toBe('second line'))
+    expect(screen.queryByText('지금 재생 중인 곡이 없어요')).not.toBeInTheDocument()
+  })
+
+  it('resolves an uncached YouTube transition after the session drops the old Spotify identity', async () => {
+    mocks.currentSpotifyTrackId.mockReturnValue('track-1')
+    await open()
+    mocks.cachedUri.mockReturnValue(undefined)
+    mocks.resolveUri.mockResolvedValue('spotify:track:youtube-next')
+    act(() => {
+      mocks.provider = { provider: 'youtube', trackId: 'catalog-next', videoId: 'video-next', title: 'Next YouTube song' }
+      for (const cb of mocks.providerSubscribers)
+        cb()
+    })
+    mocks.currentSpotifyTrackId.mockReturnValue(null)
+    setSession({ external: { title: 'Next YouTube song', spotifyTrackId: null }, anchor: { ms: 0, wallMs: performance.now() } })
+    await waitFor(() => expect(mocks.getLyrics).toHaveBeenCalledWith('youtube-next'))
+    expect(mocks.resolveUri).toHaveBeenCalledWith('catalog-next')
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+  })
+
+  it('ignores a Spotify read that finishes after selecting YouTube', async () => {
+    let finish!: (value: unknown) => void
+    mocks.readLivePlayback.mockReturnValue(new Promise((resolve) => {
+      finish = resolve
+    }))
+    await open()
+    fireEvent.click(screen.getByLabelText('현재 재생 새로고침'))
+    mocks.provider = { provider: 'youtube', trackId: 'catalog-1', videoId: 'video-1', title: 'YouTube song' }
+    await act(async () => {
+      finish({ state: 'paused', trackId: 'old-spotify-song', progressMs: 0, readAtMs: 0, durationMs: 180_000, artists: [] })
+    })
+    expect(mocks.getLyrics).not.toHaveBeenCalledWith('old-spotify-song')
   })
 })

@@ -8,6 +8,7 @@
 // itself; the consumers' handling is pinned by their own branches.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as playbackLib from '@lib/spotifyPlayback'
+import { syncAuthIdentity } from '@lib/authIdentity'
 import { readLivePlayback } from './playback.api'
 
 vi.mock('@lib/spotifyPlayback', () => ({
@@ -140,5 +141,41 @@ describe('readLivePlayback state discrimination', () => {
       throw new Error('expected playing')
     expect(r.readAtMs).toBeGreaterThanOrEqual(before)
     expect(r.readAtMs).toBeLessThanOrEqual(after)
+  })
+})
+
+describe('entry read recovery and member isolation', () => {
+  it('starts a new member read while an old account response is still pending', async () => {
+    lib.getStreamingToken.mockResolvedValue({ ok: true, token: 't' } as never)
+    let oldResolve!: (response: Response) => void
+    const fetcher = vi.fn().mockReturnValueOnce(new Promise<Response>((resolve) => {
+      oldResolve = resolve
+    })).mockResolvedValueOnce(new Response(JSON.stringify({ item: track({ id: 'member-b-track' }), is_playing: false }), { status: 200 }))
+    vi.stubGlobal('fetch', fetcher)
+    const old = readLivePlayback()
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce())
+    syncAuthIdentity(true)
+    const fresh = readLivePlayback()
+    expect(fresh).not.toBe(old)
+    expect(await fresh).toMatchObject({ state: 'paused', trackId: 'member-b-track' })
+    oldResolve(new Response(JSON.stringify({ item: track({ id: 'member-a-track' }), is_playing: true }), { status: 200 }))
+    expect(await old).toEqual({ state: 'unavailable' })
+  })
+
+  it('releases a stalled playback read after its deadline so foreground can retry', async () => {
+    vi.useFakeTimers()
+    try {
+      lib.getStreamingToken.mockResolvedValue({ ok: true, token: 't' } as never)
+      const fetcher = vi.fn().mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce(new Response(null, { status: 204 }))
+      vi.stubGlobal('fetch', fetcher)
+      const stalled = readLivePlayback()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(await stalled).toEqual({ state: 'unavailable' })
+      expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true)
+      expect(await readLivePlayback()).toEqual({ state: 'idle' })
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })

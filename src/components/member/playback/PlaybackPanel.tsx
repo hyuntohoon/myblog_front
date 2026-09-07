@@ -14,6 +14,7 @@ import { PlaybackOwnerBanner } from './PlaybackOwnerBanner'
 import { bucketStore, useBucketStore } from '@lib/pocketBuckit/bucketStore'
 import { resolveDbAlbumId } from '@lib/spotifyCatalog'
 import { providerStore } from '@lib/playback/provider'
+import { observePlaybackLifecycle } from '@lib/playback/lifecycle'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 
@@ -91,15 +92,9 @@ export function usePlaybackViewModel(): PlaybackViewModel {
     playbackSession.prefetch()
   }, [queueKey])
 
-  // Adopt whatever is actually sounding the moment a player surface appears.
-  //
-  // Without this the panel could only ever describe playback IT had started, so
-  // opening it while a track ran from an album page — or from the phone — showed a
-  // stale row or nothing at all, with a dead transport beside it. One read on mount;
-  // afterwards `MYBLOG_PLAYBACK_CHANGED` keeps it honest. Never a timer (D28).
-  useEffect(() => {
-    void playbackSession.syncFromLive()
-  }, [])
+  // The persisted island needs entry/home/foreground reads even without a
+  // remount. Session-owned reads preserve provider and tab authority.
+  useEffect(observePlaybackLifecycle, [])
 
   return { state, queue, current: displayCurrent, elapsedMs: elapsed ?? 0, durationMs }
 }
