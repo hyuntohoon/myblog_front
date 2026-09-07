@@ -13,11 +13,14 @@ import { ENT_OPEN_LIVE_LYRICS } from '@lib/entityEvents'
 import { openPlaybackLyrics } from './playbackEntryActions'
 
 const mocks = vi.hoisted(() => ({
+  provider: { provider: 'spotify', trackId: null, videoId: null } as { provider: string, trackId: string | null, videoId: string | null },
   cachedUri: vi.fn(),
   resolveUri: vi.fn(),
   reportNotice: vi.fn(),
   snapshot: { anchor: null, durationMs: null } as unknown as PlaybackSessionState,
 }))
+
+vi.mock('@lib/playback/provider', () => ({ providerStore: { getSnapshot: () => mocks.provider } }))
 
 vi.mock('@lib/playback/uris', () => ({
   cachedUri: mocks.cachedUri,
@@ -49,6 +52,7 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.provider = { provider: 'spotify', trackId: null, videoId: null }
   mocks.snapshot = { anchor: null, durationMs: null } as unknown as PlaybackSessionState
 })
 
@@ -132,5 +136,63 @@ describe('openPlaybackLyrics', () => {
     const detail = (await event).detail
     expect(detail.progressMs).toBe(9_000)
     expect(detail.durationMs).toBe(200_000)
+  })
+})
+
+describe('provider-safe lyrics entry', () => {
+  it('resolves an uncached external YouTube catalog track on the first press', async () => {
+    mocks.provider = { provider: 'youtube', trackId: 'catalog-youtube', videoId: 'video-1' }
+    mocks.cachedUri.mockReturnValue(undefined)
+    mocks.resolveUri.mockResolvedValue('spotify:track:youtube-lyrics')
+    const event = opened()
+
+    openPlaybackLyrics(null, { ...STATE, external: { title: 'YouTube song', spotifyTrackId: null } } as PlaybackSessionState)
+
+    expect((await event).detail.trackId).toBe('youtube-lyrics')
+    expect(mocks.resolveUri).toHaveBeenCalledWith('catalog-youtube')
+  })
+
+  it('opens the same YouTube track when resolution also warms the session identity', async () => {
+    mocks.provider = { provider: 'youtube', trackId: 'catalog-youtube', videoId: 'video-1' }
+    mocks.cachedUri.mockReturnValue(undefined)
+    mocks.resolveUri.mockImplementation(async () => {
+      mocks.snapshot = { ...mocks.snapshot, external: { spotifyTrackId: 'resolved-youtube' } } as PlaybackSessionState
+      return 'spotify:track:resolved-youtube'
+    })
+    const event = opened()
+    openPlaybackLyrics(null, STATE)
+    expect((await event).detail.trackId).toBe('resolved-youtube')
+  })
+
+  it('does not borrow a stale Spotify identity from a YouTube session without a catalog track', async () => {
+    mocks.provider = { provider: 'youtube', trackId: null, videoId: 'video-1' }
+    const listener = vi.fn()
+    window.addEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+    openPlaybackLyrics(null, { ...STATE, external: { spotifyTrackId: 'old-spotify' } } as PlaybackSessionState)
+    await settle()
+    expect(listener).not.toHaveBeenCalled()
+    expect(mocks.reportNotice).toHaveBeenCalledWith(expect.objectContaining({ reason: 'unresolvable' }))
+    window.removeEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+  })
+
+  it.each(['provider', 'track'])('discards a resolve after the %s changes', async (change) => {
+    let finish!: (uri: string) => void
+    mocks.cachedUri.mockReturnValue(undefined)
+    mocks.resolveUri.mockReturnValue(new Promise<string>((resolve) => {
+      finish = resolve
+    }))
+    const listener = vi.fn()
+    window.addEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+    openPlaybackLyrics(ROW, STATE)
+    if (change === 'provider')
+      mocks.provider = { provider: 'youtube', trackId: 'catalog-youtube', videoId: 'video-1' }
+    else
+      mocks.snapshot = { ...mocks.snapshot, currentItemId: 'new-track', anchor: { ms: 90_000, wallMs: 10 } }
+    finish('spotify:track:old-song')
+    await settle()
+
+    expect(listener).not.toHaveBeenCalled()
+    expect(mocks.reportNotice).not.toHaveBeenCalled()
+    window.removeEventListener(ENT_OPEN_LIVE_LYRICS, listener)
   })
 })

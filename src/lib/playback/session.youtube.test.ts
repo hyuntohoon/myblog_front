@@ -320,6 +320,18 @@ message: '다른 영상을 골라주세요',
     expect(playbackSession.getSnapshot().currentItemId).toBe('b')
   })
 
+  it('reloads likes when returning to the same Spotify track after YouTube', async () => {
+    playbackSession.loadLiked('track-a')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playbackSession.getSnapshot().liked).toBe('unliked')
+    await startYouTube()
+    expect(playbackSession.getSnapshot().liked).toBe('unknown')
+    await finish(playbackSession.playAt('a'))
+    playbackSession.loadLiked('track-a')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playbackSession.getSnapshot().liked).toBe('unliked')
+  })
+
   it('stops video audio when this tab loses playback ownership', async () => {
     await startYouTube()
     mocks.setHost.mockClear()

@@ -1,10 +1,17 @@
 import type { BoardAlbum, BoardBucket } from '@lib/buckets'
 import type { PlaybackSessionState } from '@lib/playback/session'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PLAYBACK_KIND, PLAYBACK_TYPE } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { GlobalPlaybackBar, isGlobalPlaybackBarVisible } from './GlobalPlaybackBar'
+
+const lyrics = vi.hoisted(() => ({ open: vi.fn() }))
+vi.mock('./playbackEntryActions', () => ({ openPlaybackLyrics: lyrics.open }))
+const provider = vi.hoisted(() => ({ state: { provider: 'spotify', trackId: null as string | null, title: null as string | null } }))
+vi.mock('@lib/playback/provider', () => ({
+  providerStore: { subscribe: () => () => {}, getSnapshot: () => provider.state, getServerSnapshot: () => provider.state },
+}))
 
 const session = vi.hoisted(() => ({
   state: null as PlaybackSessionState | null,
@@ -136,6 +143,7 @@ let mobile = false
 beforeEach(() => {
   vi.clearAllMocks()
   mobile = false
+  provider.state = { provider: 'spotify', trackId: null, title: null }
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: mobile && (query.includes('1179px') || query.includes('767px')),
     media: query,
@@ -198,7 +206,7 @@ describe('globalPlaybackBar', () => {
     expect(session.setMode).toHaveBeenCalledWith({ kind: 'repeat', mode: 'context' })
   })
 
-  it('maps signal-rail pointer position to the one session seek command', async () => {
+  it('maps timeline pointer position to the one session seek command', async () => {
     bucketStore.setTree([queueBucket([row()])])
     session.state = activeState()
     render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
@@ -224,6 +232,63 @@ describe('globalPlaybackBar', () => {
     expect(screen.queryByLabelText('재생 대기열 플레이어')).not.toBeInTheDocument()
   })
 
+  it('opens current queue and external lyrics directly without opening the queue', () => {
+    const current = row()
+    bucketStore.setTree([queueBucket([current])])
+    session.state = activeState()
+    const openPanel = vi.fn()
+    const { rerender } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={openPanel} />)
+    fireEvent.click(screen.getByRole('button', { name: '현재 곡 가사 열기' }))
+    expect(lyrics.open).toHaveBeenLastCalledWith(current, session.state)
+    session.state = activeState({ currentItemId: null, external: { title: 'External song', artist: 'Artist', albumCoverUrl: null, spotifyTrackId: 'external-id', spotifyAlbumId: null, deviceName: 'Living room' } })
+    rerender(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={openPanel} />)
+    fireEvent.click(screen.getByRole('button', { name: '현재 곡 가사 열기' }))
+    expect(lyrics.open).toHaveBeenLastCalledWith(null, session.state)
+    expect(openPanel).not.toHaveBeenCalled()
+    expect(screen.getByText('Living room')).toBeInTheDocument()
+  })
+
+  it('keeps YouTube mapping and lyrics reachable while hiding Spotify-only controls', () => {
+    bucketStore.setTree([queueBucket([row()])])
+    session.state = activeState({ shuffle: null, repeat: null, volumePercent: 60 })
+    provider.state = { provider: 'youtube', trackId: 'youtube-catalog-track', title: 'YouTube song' }
+    const listener = vi.fn()
+    window.addEventListener('myblog:open-youtube-mapping', listener)
+    render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'YouTube 영상 고르기' }))
+    expect(listener.mock.calls[0][0].detail).toEqual({ trackId: 'youtube-catalog-track', title: 'YouTube song' })
+    expect(screen.getByRole('button', { name: '현재 곡 가사 열기' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '좋아요' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '재생 기기 바꾸기' })).not.toBeInTheDocument()
+    expect(session.loadLiked).not.toHaveBeenCalled()
+    window.removeEventListener('myblog:open-youtube-mapping', listener)
+  })
+
+  it('reserves the measured bar including reflow, restores after navigation and releases on collapse', () => {
+    let resize = () => {}
+    const disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resize = callback }
+      observe() {}
+      disconnect = disconnect
+    })
+    bucketStore.setTree([queueBucket([row()])])
+    session.state = activeState()
+    const { unmount } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    const bar = screen.getByRole('region', { name: '전역 재생 제어' })
+    vi.spyOn(bar, 'getBoundingClientRect').mockReturnValue({ height: 237.5 } as DOMRect)
+    act(() => resize())
+    expect(document.documentElement.style.getPropertyValue('--global-player-h')).toBe('238px')
+    document.documentElement.style.removeProperty('--global-player-h')
+    act(() => document.dispatchEvent(new Event('astro:after-swap')))
+    expect(document.documentElement.style.getPropertyValue('--global-player-h')).toBe('238px')
+    fireEvent.click(screen.getByRole('button', { name: '재생 바 접기' }))
+    expect(document.documentElement.style.getPropertyValue('--global-player-h')).toBe('0px')
+    expect(disconnect).toHaveBeenCalled()
+    unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('opens the shared device picker and transfers to the selected device', async () => {
     bucketStore.setTree([queueBucket([row()])])
     session.state = activeState()
@@ -236,14 +301,14 @@ describe('globalPlaybackBar', () => {
     await waitFor(() => expect(session.transferTo).toHaveBeenCalledWith('speaker'))
   })
 
-  it('keeps every desktop control reachable in the mobile two-row deck', () => {
+  it('keeps every desktop control reachable in the mobile three-group bar', () => {
     mobile = true
     bucketStore.setTree([queueBucket([row()])])
     session.state = activeState()
     render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
 
     const deck = screen.getByRole('region', { name: '전역 재생 제어' })
-    expect(deck).toHaveAttribute('data-mobile-layout', 'two-row')
+    expect(deck).toHaveAttribute('data-mobile-layout', 'three-group')
     expect(screen.getByRole('button', { name: '좋아요' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '셔플 켜기' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '이전 곡' })).toBeInTheDocument()

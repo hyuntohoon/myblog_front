@@ -204,11 +204,10 @@ undefined
 }
 
 /**
- * Read at popover-open time from the anchor, so the portaled dropdown (which
- * escapes `.global-playback-bar`'s dark "deck" theme scope) still renders with
- * the right colors instead of falling back to the page's ambient theme.
+ * Copy the anchor's inherited site tokens into the body portal, then refresh
+ * them on theme changes while the menu stays open.
  */
-const DEVICE_POPOVER_THEME_VARS = ['--color-bg', '--color-border', '--color-border-soft', '--color-faded', '--color-accent', '--color-text'] as const
+const DEVICE_POPOVER_THEME_VARS = ['--color-bg', '--color-border', '--color-border-soft', '--color-faded', '--color-subtle', '--color-accent', '--color-text'] as const
 
 interface DevicePopoverPlacement {
   left: number
@@ -216,10 +215,8 @@ interface DevicePopoverPlacement {
   bottom: number
   theme: CSSProperties
   /**
-   * `--deck-raised` when the anchor sits in the dark deck bar (a deliberate
-   * lighter-than-bar elevation, previously an `!important` CSS override that
-   * only matched while the listbox was DOM-nested under `.global-playback-bar`)
-   * — falls back to `--color-bg` for the plain-theme NowPlaying picker.
+   * The player's raised site surface, or the ambient background for a picker
+   * outside the global bar.
    */
   background: string | undefined
 }
@@ -257,18 +254,25 @@ export function PlaybackDevicePicker({ name, devices, activeDeviceId, onRefresh,
       const theme = {} as Record<string, string>
       for (const cssVar of DEVICE_POPOVER_THEME_VARS)
         theme[cssVar] = computed.getPropertyValue(cssVar)
+      const width = Math.min(280, Math.max(0, window.innerWidth - 24))
       setPlacement({
-        left: rect.left + 8,
-        width: Math.max(0, rect.width - 16),
+        left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)),
+        width,
         bottom: window.innerHeight - rect.top + 4,
         theme: theme as CSSProperties,
         background: computed.getPropertyValue('--deck-raised').trim() || undefined,
       })
     }
     measure()
+    const themeObserver = new MutationObserver(measure)
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] })
+    const colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+    colorScheme.addEventListener('change', measure)
     window.addEventListener('resize', measure)
     window.addEventListener('scroll', measure, true)
     return () => {
+      themeObserver.disconnect()
+      colorScheme.removeEventListener('change', measure)
       window.removeEventListener('resize', measure)
       window.removeEventListener('scroll', measure, true)
     }
@@ -339,7 +343,7 @@ export function PlaybackDevicePicker({ name, devices, activeDeviceId, onRefresh,
             '재생 기기 선택' :
 (
             <>
-{'Listening on '}
+<span className="playback-device-prefix">Listening on </span>
 <span style={{ color: 'var(--color-subtle)' }}>{name}</span>
             </>
           )}

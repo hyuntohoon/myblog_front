@@ -26,7 +26,7 @@ import type { TailRow } from './uris'
 import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, TransferOutcome } from '@lib/spotifyPlayback'
 import type { OwnershipMessage } from './ownership'
-import { subscribeAuthIdentity } from '@lib/authIdentity'
+import { captureAuthEpoch, isAuthEpochCurrent, subscribeAuthIdentity } from '@lib/authIdentity'
 import { addBucketPlayback, deleteBucketItem, expandAlbumTracks } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { getStreamingToken, IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
@@ -314,6 +314,8 @@ function patch(p: Partial<PlaybackSessionState>): void {
  * any window width, including one that varies per request.
  */
 let localWriteSeq = 0
+let adoptionGeneration = 0
+let liveSync: Promise<void> | null = null
 
 /**
  * BUG-26(a): true when the row currently anchored by `currentItemId` was matched
@@ -1033,6 +1035,8 @@ function adoptYouTube(): void {
   if (provider.provider !== 'youtube' || !live)
     return
   const uri = provider.trackId ? cachedUri(provider.trackId) : null
+  // Returning to the same Spotify track must reload its library state.
+  likedTrackId = null
   patch({
     currentItemId: null,
     external: {
@@ -1082,6 +1086,14 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
   const previousRowIndex = rowIndex(current.currentItemId)
   const previousRow = previousRowIndex < 0 ? null : queueRows()[previousRowIndex]
   const seqAtStart = localWriteSeq
+  const generation = ++adoptionGeneration
+  const providerAtStart = providerStore.getSnapshot()
+  const isStale = () => [
+    localWriteSeq !== seqAtStart,
+    adoptionGeneration !== generation,
+    providerStore.getSnapshot() !== providerAtStart,
+    !current.isOwner && current.ownerPresent,
+  ].some(Boolean)
   const livePromise = readLivePlayback()
   const [live] = await Promise.all([livePromise, beforeApply])
 
@@ -1090,7 +1102,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
   // and the read lands inside Spotify's ack→apply window with the PREVIOUS state.
   // Discard rather than apply: the fresher local write is already correct, and an
   // adoption is a read, never the tie-breaker over an action. See `localWriteSeq`.
-  if (localWriteSeq !== seqAtStart || getActiveProvider() === 'youtube')
+  if (isStale())
     return null
 
   // `unavailable` is a token/network failure, NOT "nothing is playing". Treating it
@@ -1139,6 +1151,10 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
     }
   }
 
+  // Queue cleanup can await storage; a newer read/action may win meanwhile.
+  if (isStale())
+    return null
+
   if (live.state === 'idle') {
     likedTrackId = null
     patch({
@@ -1146,6 +1162,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
       external: null,
       currentItemId: null,
       activeDeviceId: null,
+      device: null,
       shuffle: null,
       repeat: null,
       volumePercent: null,
@@ -1163,6 +1180,15 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
   // A read that got this far carries a device and a track, whatever else it says:
   // the recoverable half of the capability split is over (E1).
   deviceSeen()
+  const device: PlaybackDevice | null = live.deviceId ?
+{
+    id: live.deviceId,
+    name: live.deviceName ?? 'Spotify',
+    type: current.devices?.find(item => item.id === live.deviceId)?.type ?? 'Unknown',
+    isActive: true,
+    isInPage: current.device?.id === live.deviceId && current.device.isInPage,
+  } :
+null
   const playing = live.state === 'playing'
   // Anchor on `readAtMs`, not `performance.now()`: Spotify stamps the position
   // somewhere inside the request window, and that field is the measured midpoint.
@@ -1186,6 +1212,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
       anchor,
       durationMs: live.durationMs,
       activeDeviceId: live.deviceId ?? null,
+      device,
       shuffle: live.shuffle,
       repeat: live.repeat,
       volumePercent: live.volumePercent,
@@ -1210,6 +1237,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
     anchor,
     durationMs: live.durationMs,
     activeDeviceId: live.deviceId ?? null,
+    device,
     shuffle: live.shuffle,
     repeat: live.repeat,
     volumePercent: live.volumePercent,
@@ -1379,9 +1407,11 @@ async function resolveCapability(): Promise<void> {
     return
   if (capabilityInflight)
     return capabilityInflight
+  const account = captureAuthEpoch()
+  const provider = providerStore.getSnapshot()
   capabilityInflight = (async () => {
     const r = await getStreamingToken()
-    if (getActiveProvider() === 'youtube')
+    if (!isAuthEpochCurrent(account) || providerStore.getSnapshot() !== provider || getActiveProvider() === 'youtube')
       return
     if (r.ok) {
       patch({ capabilityTier: 'full', reconnect: false })
@@ -1699,13 +1729,24 @@ async function runSeek(target: number, onReanchored?: () => void): Promise<Playe
  * by design, and without warm URIs a track that IS in the queue would be
  * misreported as external on the very first read.
  */
-async function syncFromLive(): Promise<void> {
+function syncFromLive(): Promise<void> {
   if (getActiveProvider() === 'youtube') {
     adoptYouTube()
-    return
+    return Promise.resolve()
   }
-  const prefetched = prefetchUris(trackIdsFrom(queueRows()))
-  await adoptLive(prefetched)
+  if (!current.isOwner && current.ownerPresent) {
+    playbackOwnership.post({ type: 'sync-request' })
+    return Promise.resolve()
+  }
+  if (liveSync)
+    return liveSync
+  const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
+  const request = adoptLive(prefetched).then(() => {}).finally(() => {
+    if (liveSync === request)
+      liveSync = null
+  })
+  liveSync = request
+  return request
 }
 
 /**
@@ -2229,6 +2270,8 @@ export const playbackSession = {
    * nothing about what account A was playing may survive into account B's session.
    */
   __reset(): void {
+    adoptionGeneration++
+    liveSync = null
     closeYouTubePlayer()
     clearBoundaryCheck()
     clearReissue()
@@ -2468,6 +2511,10 @@ async function executeCommand(command: SessionCommand): Promise<void> {
 function syncOwnership(): void {
   const ownership = playbackOwnership.getSnapshot()
   const wasOwner = current.isOwner
+  if (wasOwner !== ownership.isOwner) {
+    adoptionGeneration++
+    liveSync = null
+  }
   if (wasOwner && !ownership.isOwner)
     playbackSession.stopYouTube()
   const ownerArrived = !current.ownerPresent && ownership.ownerPresent
@@ -2526,7 +2573,10 @@ function handleOwnershipMessage(message: OwnershipMessage): void {
     void executeCommand(message.cmd as SessionCommand)
   }
   else if (message.type === 'sync-request' && current.isOwner) {
-    broadcastState()
+    void syncFromLive().then(() => {
+      if (current.isOwner)
+        broadcastState()
+    })
   }
 }
 

@@ -11,6 +11,7 @@
 //   - a play that cannot possibly sound never downloads the ~1 MB SDK
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as authLib from '@lib/auth'
+import { syncAuthIdentity } from '@lib/authIdentity'
 import { __resetPlaybackState, getStreamingToken, isSdkLoaded, play } from '@lib/spotifyPlayback'
 
 vi.mock('@lib/auth', () => ({
@@ -336,5 +337,46 @@ describe('token expiry mid-session', () => {
     await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({ ok: true, rung: 'remote' })
     expect(playCalls()).toHaveLength(2)
     expect(playCalls()[1].url).not.toContain('device_id=')
+  })
+})
+
+describe('member streaming-token boundary', () => {
+  it('never reuses a cached token after account invalidation', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(json({ access_token: 'member-a', expires_in: 3600 })).mockResolvedValueOnce(json({ access_token: 'member-b', expires_in: 3600 }))
+    vi.stubGlobal('fetch', fetcher)
+    expect(await getStreamingToken()).toMatchObject({ token: 'member-a' })
+    syncAuthIdentity(true)
+    expect(await getStreamingToken()).toMatchObject({ token: 'member-b' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not share or cache an old account mint while the new one is pending', async () => {
+    let oldResolve!: (response: Response) => void
+    const fetcher = vi.fn().mockReturnValueOnce(new Promise<Response>((resolve) => {
+      oldResolve = resolve
+    })).mockResolvedValueOnce(json({ access_token: 'member-b', expires_in: 3600 }))
+    vi.stubGlobal('fetch', fetcher)
+    const old = getStreamingToken()
+    syncAuthIdentity(true)
+    expect(await getStreamingToken()).toMatchObject({ token: 'member-b' })
+    oldResolve(json({ access_token: 'member-a', expires_in: 3600 }))
+    expect(await old).toMatchObject({ ok: false })
+    expect(await getStreamingToken()).toMatchObject({ token: 'member-b' })
+  })
+
+  it('bounds a stalled mint and allows the next entry to retry', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetcher = vi.fn().mockImplementationOnce(() => new Promise(() => {})).mockResolvedValueOnce(json({ access_token: 'recovered', expires_in: 3600 }))
+      vi.stubGlobal('fetch', fetcher)
+      const stalled = getStreamingToken()
+      await vi.advanceTimersByTimeAsync(8_000)
+      expect(await stalled).toMatchObject({ ok: false, status: 'error' })
+      expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true)
+      expect(await getStreamingToken()).toMatchObject({ token: 'recovered' })
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })

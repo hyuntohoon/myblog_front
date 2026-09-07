@@ -19,6 +19,8 @@
 // a second request. Per-member since member-player Step 2/3: the token mint is
 // row-scoped to the signed-in member, so the former owner gate is gone.
 import { getStreamingToken } from '@lib/spotifyPlayback'
+import type { AuthEpoch } from '@lib/authIdentity'
+import { captureAuthEpoch, isAuthEpochCurrent } from '@lib/authIdentity'
 
 const PLAYER_URL = 'https://api.spotify.com/v1/me/player'
 
@@ -107,29 +109,42 @@ export type LivePlayback =
  *   itself failed; distinct from idle so callers never *hide* the entry over a
  *   transient failure.
  */
-let inflightPlaybackRead: Promise<LivePlayback> | null = null
+let inflightPlaybackRead: { request: Promise<LivePlayback>, epoch: AuthEpoch } | null = null
+const PLAYBACK_READ_TIMEOUT_MS = 10_000
 
 export function readLivePlayback(): Promise<LivePlayback> {
-  if (inflightPlaybackRead)
-    return inflightPlaybackRead
+  if (inflightPlaybackRead && isAuthEpochCurrent(inflightPlaybackRead.epoch))
+    return inflightPlaybackRead.request
 
-  const request = readLivePlaybackOnce().finally(() => {
-    if (inflightPlaybackRead === request)
+  const epoch = captureAuthEpoch()
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<LivePlayback>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      resolve({ state: 'unavailable' })
+    }, PLAYBACK_READ_TIMEOUT_MS)
+  })
+  const request = Promise.race([readLivePlaybackOnce(epoch, controller.signal), timeout]).then((live): LivePlayback => {
+    return isAuthEpochCurrent(epoch) ? live : { state: 'unavailable' }
+  }).finally(() => {
+    clearTimeout(timer)
+    if (inflightPlaybackRead?.request === request)
       inflightPlaybackRead = null
   })
-  inflightPlaybackRead = request
+  inflightPlaybackRead = { request, epoch }
   return request
 }
 
-async function readLivePlaybackOnce(): Promise<LivePlayback> {
+async function readLivePlaybackOnce(epoch: AuthEpoch, signal: AbortSignal): Promise<LivePlayback> {
   const tok = await getStreamingToken()
-  if (!tok.ok)
+  if (!tok.ok || !isAuthEpochCurrent(epoch) || signal.aborted)
     return { state: 'unavailable' }
 
   const requestStartMs = performance.now()
   let res: Response
   try {
-    res = await fetch(PLAYER_URL, { headers: { Authorization: `Bearer ${tok.token}` } })
+    res = await fetch(PLAYER_URL, { headers: { Authorization: `Bearer ${tok.token}` }, signal })
   }
   catch {
     return { state: 'unavailable' }

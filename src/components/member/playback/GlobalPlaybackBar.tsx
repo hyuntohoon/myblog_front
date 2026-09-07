@@ -1,6 +1,7 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import type { PlaybackSessionState } from '@lib/playback/session'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { openPlaybackLyrics } from './playbackEntryActions'
 import { providerStore } from '@lib/playback/provider'
 import { openYouTubeMapping } from '@lib/playback/youtubeEvents'
 import { playbackSession } from '@lib/playback/session'
@@ -118,12 +119,15 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   const youtube = provider.provider === 'youtube'
   const mappingTrackId = youtube ? provider.trackId : model.current?.trackId
   const compactUtilities = useMediaQuery('(max-width: 1179px)')
-  const mobile = useMediaQuery('(max-width: 767px)')
   const visible = isGlobalPlaybackBarVisible(model.state)
   const canControl = canControlPlayback(model.state)
   const durationMs = model.durationMs ?? 0
   const ratio = durationMs > 0 ? Math.min(1, Math.max(0, model.elapsedMs / durationMs)) : 0
   const [notice, setNotice] = useState<string | null>(null)
+  useEffect(() => {
+    setNotice(null)
+  }, [youtube, model.state.currentItemId, model.state.external?.spotifyTrackId])
+  const barRef = useRef<HTMLElement>(null)
   const dragRef = useRef({ active: false, moved: false, suppressClick: false })
 
   // Collapse is scoped to the current playing stretch, not remembered across
@@ -144,16 +148,21 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   // normally drive it.
   useEffect(() => {
     const apply = () => {
-      const value = visible && !collapsed ? `calc(${mobile ? 112 : 88}px + env(safe-area-inset-bottom))` : '0px'
+      // Border-box measurement includes the actual reflow and safe-area padding.
+      const value = visible && !collapsed ? `${Math.ceil(barRef.current?.getBoundingClientRect().height ?? 0)}px` : '0px'
       document.documentElement.style.setProperty('--global-player-h', value)
     }
     apply()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(apply) : null
+    if (barRef.current)
+      observer?.observe(barRef.current)
     document.addEventListener('astro:after-swap', apply)
     return () => {
+      observer?.disconnect()
       document.removeEventListener('astro:after-swap', apply)
       document.documentElement.style.setProperty('--global-player-h', '0px')
     }
-  }, [mobile, visible, collapsed])
+  }, [visible, collapsed])
 
   useEffect(() => {
     if (!visible || youtube)
@@ -224,36 +233,11 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   }
 
   const progressStyle = { '--deck-progress': `${ratio * 100}%` } as CSSProperties
-  const deviceName = model.state.device?.name ?? model.state.external?.deviceName ?? null
+  const deviceName = model.state.external?.deviceName ?? model.state.device?.name ?? null
+  const displayedNotice = notice ?? model.state.notice?.message
 
   return (
-    <section className="global-playback-bar" role="region" aria-label="전역 재생 제어" data-mobile-layout="two-row" style={progressStyle}>
-      <div
-	ref={seek.ref}
-	className="deck-signal-rail"
-	role="slider"
-	aria-label="재생 위치"
-	aria-valuemin={0}
-	aria-valuemax={durationMs}
-	aria-valuenow={Math.round(model.elapsedMs)}
-	aria-valuetext={`${formatTime(model.elapsedMs)} / ${formatTime(model.durationMs)}`}
-	tabIndex={seekEnabled ? 0 : -1}
-	onClick={(event) => {
-          if (dragRef.current.suppressClick) {
-            dragRef.current.suppressClick = false
-            return
-          }
-          seek.onClick?.(event)
-        }}
-	onKeyDown={seek.onKeyDown}
-	onPointerDown={onSeekPointerDown}
-	onPointerMove={onSeekPointerMove}
-	onPointerUp={onSeekPointerUp}
-	onPointerCancel={() => { dragRef.current.active = false }}
-      >
-        <i />
-      </div>
-
+    <section ref={barRef} className="global-playback-bar" role="region" aria-label="전역 재생 제어" data-mobile-layout="three-group" style={progressStyle}>
       <div className="global-playback-main">
         <div className="deck-identity-zone">
           <PlaybackIdentity row={model.current} external={model.state.external} compact />
@@ -283,14 +267,40 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
               </span>
             )}
           </div>
-          <div className="deck-time-line" aria-hidden="true">
+          <div className="deck-time-line">
             <span>{formatTime(model.elapsedMs)}</span>
-            <span className="deck-center-progress" onClick={event => seekFromPointer(event.clientX, event.currentTarget)}><i /></span>
+            <div
+	ref={seek.ref}
+	className="deck-center-progress"
+	role="slider"
+	aria-label="재생 위치"
+	aria-disabled={!seekEnabled}
+	aria-valuemin={0}
+	aria-valuemax={durationMs}
+	aria-valuenow={Math.round(model.elapsedMs)}
+	aria-valuetext={`${formatTime(model.elapsedMs)} / ${formatTime(model.durationMs)}`}
+	tabIndex={seekEnabled ? 0 : -1}
+	onClick={(event) => {
+          if (dragRef.current.suppressClick) {
+            dragRef.current.suppressClick = false
+            return
+          }
+          seek.onClick?.(event)
+        }}
+	onKeyDown={seek.onKeyDown}
+	onPointerDown={onSeekPointerDown}
+	onPointerMove={onSeekPointerMove}
+	onPointerUp={onSeekPointerUp}
+	onPointerCancel={() => { dragRef.current.active = false }}
+            >
+        <i />
+            </div>
             <span>{formatTime(model.durationMs)}</span>
           </div>
         </div>
 
         <div className="deck-utility-zone" role="group" aria-label="재생 도구">
+          <button type="button" className="deck-icon-button deck-lyrics-button" aria-label="현재 곡 가사 열기" onClick={() => openPlaybackLyrics(model.current, model.state)}>가사</button>
           <button
 	type="button"
 	className="deck-icon-button"
@@ -314,11 +324,11 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
             />
 </div>
 )}
-          {mappingTrackId && <button type="button" className="deck-icon-button" aria-label="YouTube 영상 고르기" onClick={() => openYouTubeMapping(mappingTrackId, provider.title ?? model.current?.title ?? '이 곡')}>YouTube</button>}
+          {mappingTrackId && <button type="button" className="deck-icon-button deck-youtube-button" aria-label="YouTube 영상 고르기" onClick={() => openYouTubeMapping(mappingTrackId, provider.title ?? model.current?.title ?? '이 곡')}>YouTube</button>}
           {compactUtilities && <NarrowVolume percent={model.state.volumePercent} onSet={setMode} />}
           <button
 	type="button"
-	className="deck-icon-button"
+	className="deck-icon-button deck-collapse-button"
 	aria-label="재생 바 접기"
 	title="재생 바 접기"
 	onClick={() => setCollapsed(true)}
@@ -327,7 +337,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
           </button>
         </div>
       </div>
-      {notice && <div className="deck-alert" role="status">{notice}</div>}
+      {displayedNotice && <div className="deck-alert" role="status">{displayedNotice}</div>}
     </section>
   )
 }

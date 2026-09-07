@@ -2510,3 +2510,75 @@ describe('the account boundary (FIX-auth-identity-lifecycle Step 1)', () => {
     expect(playbackSession.getSnapshot().currentItemId).toBe('a')
   })
 })
+
+describe('entry and return synchronization', () => {
+  it('coalesces overlapping entry reads without issuing playback or device commands', async () => {
+    let resolve!: (value: ReturnType<typeof liveTrack>) => void
+    mocks.readLivePlayback.mockReturnValueOnce(new Promise((done) => {
+      resolve = done
+    }))
+    const first = playbackSession.syncFromLive()
+    const second = playbackSession.syncFromLive()
+    expect(first).toBe(second)
+    expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+    expect(mocks.prefetchUris).toHaveBeenCalledOnce()
+    resolve(liveTrack('entry', 'paused'))
+    await first
+    expect(playbackSession.getSnapshot()).toMatchObject({ external: { spotifyTrackId: 'entry' }, playing: false })
+    expect(mocks.play).not.toHaveBeenCalled()
+    expect(mocks.sendPlayerCommand).not.toHaveBeenCalled()
+    expect(mocks.transferPlayback).not.toHaveBeenCalled()
+    expect(mocks.ensureOwner).not.toHaveBeenCalled()
+  })
+
+  it('requests the existing owner snapshot instead of reading or taking the device', async () => {
+    setOwnership({ isOwner: false, ownerPresent: true, ownerTabId: 'peer' })
+    mocks.ownershipPost.mockClear()
+    await playbackSession.syncFromLive()
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+    expect(mocks.prefetchUris).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).toHaveBeenCalledWith({ type: 'sync-request' })
+    expect(mocks.ensureOwner).not.toHaveBeenCalled()
+    expect(mocks.transferPlayback).not.toHaveBeenCalled()
+  })
+
+  it('rejects an older entry read delayed by URI prefetch after a fresh transport echo', async () => {
+    let finishPrefetch!: () => void
+    mocks.prefetchUris.mockReturnValueOnce(new Promise<void>((done) => {
+      finishPrefetch = done
+    }))
+    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('old')).mockResolvedValueOnce(liveTrack('new'))
+    const old = playbackSession.syncFromLive()
+    await flushPlaybackStart()
+    window.dispatchEvent(new Event(MYBLOG_PLAYBACK_CHANGED))
+    await flushPlaybackStart()
+    finishPrefetch()
+    await old
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('new')
+  })
+
+  it('rejects a read from an account that has been reset', async () => {
+    let resolve!: (value: ReturnType<typeof liveTrack>) => void
+    mocks.readLivePlayback.mockReturnValueOnce(new Promise((done) => {
+      resolve = done
+    }))
+    const old = playbackSession.syncFromLive()
+    playbackSession.__reset()
+    resolve(liveTrack('previous-account'))
+    await old
+    expect(playbackSession.getSnapshot().external).toBeNull()
+    expect(mocks.getTrackLiked).not.toHaveBeenCalled()
+  })
+
+  it('rejects a read if another tab acquired ownership while it was pending', async () => {
+    let resolve!: (value: ReturnType<typeof liveTrack>) => void
+    mocks.readLivePlayback.mockReturnValueOnce(new Promise((done) => {
+      resolve = done
+    }))
+    const old = playbackSession.syncFromLive()
+    setOwnership({ isOwner: false, ownerPresent: true, ownerTabId: 'peer' })
+    resolve(liveTrack('obsolete'))
+    await old
+    expect(playbackSession.getSnapshot().external).toBeNull()
+  })
+})

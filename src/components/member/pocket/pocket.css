@@ -396,67 +396,36 @@
   transition: margin-right .32s cubic-bezier(.22,.85,.25,1), padding-bottom .2s ease;
 }
 
+/* Keep shared controls and portaled menus on the site's light/dark palette. */
+.pb-scope .global-playback-bar,
+.pb-scope .global-playback-pill,
+.pb-scope .pbp-panel {
+  --deck-night: var(--color-bg);
+  --deck-raised: var(--color-paper);
+  --deck-ink: var(--color-text);
+  --deck-muted: var(--color-faded);
+  --deck-signal: var(--color-accent);
+  --deck-alert: var(--color-accent);
+}
 .pb-scope .global-playback-bar {
-  --deck-night: #12151B;
-  --deck-raised: #1B2028;
-  --deck-ink: #F4F7FB;
-  --deck-muted: #9DA8B6;
-  --deck-signal: #74B9FF;
-  --deck-alert: #FF8A80;
-  /* Shared control primitives consume the established playback tokens. These
-     aliases are local to the deck and never alter the surrounding site theme. */
-  --color-bg: var(--deck-night);
-  --color-paper: var(--deck-raised);
-  --color-text: var(--deck-ink);
-  --color-subtle: var(--deck-muted);
-  --color-faded: var(--deck-muted);
-  --color-accent: var(--deck-signal);
-  --color-border: #323A47;
-  --color-border-soft: #262C36;
-  --on-accent: var(--deck-night);
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: calc(var(--z-pocket, 70) + 4);
-  height: var(--global-player-h, 0px);
   padding-bottom: env(safe-area-inset-bottom);
   box-sizing: border-box;
   color: var(--deck-ink);
   background: var(--deck-night);
-  border-top: 1px solid #323A47;
-  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-sans);
 }
-.pb-scope .deck-signal-rail {
-  position: absolute;
-  z-index: 2;
-  top: -5px;
-  left: 0;
-  right: 0;
-  height: 10px;
-  padding: 4px 0 3px;
-  background: transparent;
-  cursor: pointer;
-  outline: none;
-}
-.pb-scope .deck-signal-rail::before,
-.pb-scope .deck-signal-rail i {
-  position: absolute;
-  top: 4px;
-  left: 0;
-  height: 3px;
-  content: '';
-}
-.pb-scope .deck-signal-rail::before { right: 0; background: #323A47; }
-.pb-scope .deck-signal-rail i { width: var(--deck-progress); background: var(--deck-signal); }
-.pb-scope .deck-signal-rail:focus-visible { box-shadow: inset 0 0 0 2px var(--deck-signal); }
 .pb-scope .global-playback-main {
   display: grid;
-  grid-template-columns: minmax(230px, 1fr) minmax(430px, 2fr) minmax(230px, 1fr);
+  grid-template-columns: minmax(180px, .85fr) minmax(270px, 1fr) minmax(290px, 1.25fr);
   align-items: center;
-  gap: clamp(14px, 2vw, 36px);
-  height: 100%;
-  padding: 0 clamp(14px, 2.4vw, 36px);
+  gap: 18px;
+  padding: 16px 24px;
 }
 .pb-scope .deck-identity-zone {
   display: grid;
@@ -467,23 +436,23 @@
 }
 .pb-scope .global-playback-bar .pbp-identity,
 .pb-scope .global-playback-bar .pbp-identity.is-compact {
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 45px minmax(0, 1fr);
   gap: 12px;
 }
 .pb-scope .global-playback-bar .pbp-cover {
-  width: 56px;
-  height: 56px;
+  width: 45px;
+  height: 45px;
   border: 0;
   border-radius: 0;
   color: var(--deck-muted);
   background: var(--deck-raised);
-  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
 }
 .pb-scope .global-playback-bar .pbp-current-title,
 .pb-scope .global-playback-bar .pbp-identity.is-compact .pbp-current-title {
   color: var(--deck-ink);
-  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   font-style: normal;
   font-weight: 650;
@@ -492,7 +461,7 @@
 .pb-scope .global-playback-bar .pbp-current-artist {
   margin-top: 3px;
   color: var(--deck-muted);
-  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   letter-spacing: 0;
   line-height: 1.25;
@@ -523,15 +492,16 @@
   min-height: 44px;
   height: 44px;
   color: var(--deck-ink);
-  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 24px;
 }
 .pb-scope .global-playback-bar .pbp-transport .pbp-play-toggle {
   width: 44px;
   height: 44px;
-  color: var(--deck-night);
-  background: var(--deck-ink);
-  box-shadow: inset 0 0 0 2px var(--deck-night);
+  color: var(--deck-ink);
+  background: var(--deck-raised);
+  border: 1px solid var(--color-border);
+  box-shadow: none;
   font-size: 13px;
 }
 .pb-scope .global-playback-bar .deck-mode-set button {
@@ -545,19 +515,26 @@
   grid-template-columns: 42px minmax(80px, 1fr) 42px;
   align-items: center;
   gap: 8px;
-  margin-top: -2px;
+  margin-top: 5px;
   color: var(--deck-muted);
-  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 .pb-scope .deck-time-line > :last-child { text-align: right; }
-.pb-scope .deck-center-progress { position: relative; height: 3px; background: #323A47; }
-.pb-scope .deck-center-progress i { display: block; width: var(--deck-progress); height: 100%; background: var(--deck-signal); }
+.pb-scope .deck-center-progress { position: relative; height: 24px; cursor: pointer; touch-action: none; }
+.pb-scope .deck-center-progress::before,
+.pb-scope .deck-center-progress i { content: ''; position: absolute; top: 10px; left: 0; height: 3px; }
+.pb-scope .deck-center-progress::before { width: 100%; background: var(--color-border); }
+.pb-scope .deck-center-progress i { width: var(--deck-progress); background: var(--deck-signal); }
+.pb-scope .deck-center-progress:focus-visible { outline: 2px solid var(--deck-signal); outline-offset: 2px; }
+.pb-scope .deck-center-progress[aria-disabled='true'] { cursor: default; }
 .pb-scope .deck-utility-zone {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
   min-width: 0;
 }
 .pb-scope .deck-icon-button {
@@ -577,13 +554,16 @@
 .pb-scope .deck-icon-button:focus-visible,
 .pb-scope .global-playback-bar button:focus-visible,
 .pb-scope .global-playback-bar input:focus-visible { outline: 2px solid var(--deck-signal); outline-offset: -2px; }
-.pb-scope .deck-device-picker { width: min(190px, 15vw); min-width: 44px; }
+.pb-scope .deck-lyrics-button { color: var(--deck-signal); text-decoration: underline; text-underline-offset: 4px; font-size: 12px; }
+.pb-scope .deck-youtube-button { flex-basis: 58px; width: 58px; font-size: 11px; }
+.pb-scope .deck-device-picker { width: min(160px, 100%); min-width: 80px; }
+.pb-scope .deck-device-picker .playback-device-prefix { display: none; }
 .pb-scope .global-playback-bar .deck-device-picker > div > button {
   min-height: 44px;
   padding: 7px 8px !important;
   border: 0 !important;
   color: var(--deck-muted) !important;
-  font-family: ui-monospace, 'IBM Plex Mono', monospace !important;
+  font-family: var(--font-sans) !important;
   font-variant-numeric: tabular-nums;
 }
 .pb-scope .deck-volume-menu { position: relative; }
@@ -596,7 +576,7 @@
   min-height: 44px;
   place-items: center;
   padding: 8px 12px;
-  border: 1px solid #323A47;
+  border: 1px solid var(--color-border);
   color: var(--deck-ink);
   background: var(--deck-raised);
 }
@@ -610,7 +590,7 @@
   border: 1px solid var(--deck-alert);
   color: var(--deck-alert);
   background: var(--deck-raised);
-  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
@@ -619,10 +599,6 @@
    (never a height-reserving element, unlike the bar itself: `--global-player-h`
    goes to 0px while collapsed, same as when nothing is playing). */
 .pb-scope .global-playback-pill {
-  --deck-night: #12151B;
-  --deck-raised: #1B2028;
-  --deck-ink: #F4F7FB;
-  --deck-muted: #9DA8B6;
   position: fixed;
   right: 12px;
   bottom: calc(12px + env(safe-area-inset-bottom));
@@ -632,7 +608,7 @@
   gap: 8px;
   max-width: min(220px, calc(100vw - 24px));
   padding: 6px 12px 6px 6px;
-  border: 1px solid #323A47;
+  border: 1px solid var(--color-border);
   border-radius: 999px;
   color: var(--deck-ink);
   background: var(--deck-raised);
@@ -640,7 +616,7 @@
   cursor: pointer;
 }
 .pb-scope .global-playback-pill .pbp-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.pb-scope .global-playback-pill .pbp-cover { width: 30px; height: 30px; border-radius: 50%; border-color: #323A47; }
+.pb-scope .global-playback-pill .pbp-cover { width: 30px; height: 30px; border-radius: 50%; border-color: var(--color-border); }
 .pb-scope .global-playback-pill .pbp-current-title { font-size: 12px; font-style: normal; max-width: 130px; }
 .pb-scope .global-playback-pill .pbp-current-artist,
 .pb-scope .global-playback-pill .pbp-current-outside { display: none; }
@@ -675,11 +651,6 @@
 }
 
 .pb-scope .pbp-panel {
-  --deck-night: #12151B;
-  --deck-raised: #1B2028;
-  --deck-ink: #F4F7FB;
-  --deck-muted: #9DA8B6;
-  --deck-signal: #74B9FF;
   position: fixed;
   z-index: calc(var(--z-pocket, 70) + 5);
   display: flex;
@@ -687,7 +658,7 @@
   box-sizing: border-box;
   color: var(--color-text);
   background: var(--color-bg);
-  border: 1px solid #323A47;
+  border: 1px solid var(--color-border);
   box-shadow: 0 20px 52px rgba(0, 0, 0, .3);
   overflow: hidden;
   transition: left .32s cubic-bezier(.22,.85,.25,1), top .32s cubic-bezier(.22,.85,.25,1),
@@ -695,7 +666,7 @@
 }
 .pb-scope .pbp-panel.is-docked {
   border-width: 0 0 0 1px;
-  border-color: #323A47;
+  border-color: var(--color-border);
   box-shadow: -10px 0 30px rgba(0, 0, 0, .18);
 }
 .pb-scope .pbp-panel.is-float { border-radius: var(--radius-lg); }
@@ -710,7 +681,7 @@
   flex: 0 0 auto;
   min-height: 48px;
   padding: 10px 14px;
-  border-bottom: 1px solid #323A47;
+  border-bottom: 1px solid var(--color-border);
   color: var(--deck-ink);
   background: var(--deck-night);
   cursor: grab;
@@ -720,7 +691,7 @@
 .pb-scope .pbp-panel.is-grabbed .pbp-head { cursor: grabbing; }
 .pb-scope .pbp-head-title {
   color: var(--deck-ink);
-  font-family: ui-sans-serif, system-ui, 'Noto Sans KR', sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--text-2xs);
   letter-spacing: .13em;
 }
@@ -730,12 +701,12 @@
   gap: 6px;
 }
 .pb-scope .pbp-place, .pb-scope .pbp-close, .pb-scope .pbp-mini-actions button {
-  border: 1px solid #323A47;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   padding: 5px 9px;
   color: var(--deck-muted);
   background: var(--deck-raised);
-  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
   cursor: pointer;
 }
@@ -1051,47 +1022,54 @@
 
 @media (max-width: 1179px) {
   .pb-scope .global-playback-main {
-    grid-template-columns: minmax(150px, 1fr) minmax(308px, 2fr) 132px;
-    gap: 10px;
-    padding-inline: 12px 4px;
+    grid-template-columns: minmax(170px, .85fr) minmax(220px, 1fr) minmax(250px, 1.15fr);
+    gap: 12px;
+    padding-inline: 16px;
   }
-  .pb-scope .global-playback-bar .pbp-identity,
-  .pb-scope .global-playback-bar .pbp-identity.is-compact { grid-template-columns: 48px minmax(0, 1fr); gap: 9px; }
-  .pb-scope .global-playback-bar .pbp-cover { width: 48px; height: 48px; }
-  .pb-scope .deck-device-picker { width: 44px; }
-  .pb-scope .global-playback-bar .deck-device-picker > div > button {
-    width: 44px !important;
-    justify-content: center;
-    padding: 0 !important;
+}
+
+@media (max-width: 850px) {
+  .pb-scope .global-playback-main {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr);
+    gap: 12px 24px;
   }
-  .pb-scope .global-playback-bar .deck-device-picker > div > button > span { display: none; }
+  .pb-scope .deck-utility-zone {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--color-border);
+    padding-top: 7px;
+  }
+  .pb-scope .deck-device-picker { order: -1; margin-right: auto; width: min(220px, 40%); }
 }
 
 @media (max-width: 767px) {
   .site-shell { margin-right: 0; }
+}
+
+@media (max-width: 480px) {
   .pb-scope .global-playback-main {
-    display: grid;
-    grid-template-columns: minmax(220px, 1fr) auto;
-    grid-template-rows: 60px 48px;
-    gap: 0;
-    padding: 0 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 12px 8px;
   }
-  .pb-scope .deck-identity-zone {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    padding: 5px 4px 3px;
-  }
+  .pb-scope .deck-identity-zone { padding-right: 44px; }
   .pb-scope .global-playback-bar .pbp-identity,
-  .pb-scope .global-playback-bar .pbp-identity.is-compact { grid-template-columns: 44px minmax(0, 1fr); gap: 9px; }
-  .pb-scope .global-playback-bar .pbp-cover { width: 44px; height: 44px; }
+  .pb-scope .global-playback-bar .pbp-identity.is-compact { grid-template-columns: 40px minmax(0, 1fr); gap: 9px; }
+  .pb-scope .global-playback-bar .pbp-cover { width: 40px; height: 40px; }
   .pb-scope .global-playback-bar .pbp-current-title,
-  .pb-scope .global-playback-bar .pbp-identity.is-compact .pbp-current-title { font-size: 13px; }
+  .pb-scope .global-playback-bar .pbp-identity.is-compact .pbp-current-title { font-size: 14px; }
   .pb-scope .global-playback-bar .pbp-current-artist { font-size: 11px; }
-  .pb-scope .deck-transport-zone { grid-column: 1; grid-row: 2; align-self: stretch; }
-  .pb-scope .deck-transport-line { justify-content: flex-start; min-height: 48px; }
-  .pb-scope .deck-time-line { display: none; }
-  .pb-scope .deck-utility-zone { grid-column: 2; grid-row: 2; align-self: stretch; }
+  .pb-scope .deck-transport-line { gap: 12px; }
+  .pb-scope .deck-time-line { margin-top: 3px; }
+  .pb-scope .deck-utility-zone { justify-content: space-between; flex-wrap: nowrap; gap: 2px; }
+  .pb-scope .deck-device-picker { flex: 1; width: auto; min-width: 0; margin: 0; }
+  .pb-scope .global-playback-bar .deck-device-picker > div > button { padding-inline: 0 !important; gap: 4px !important; }
+  .pb-scope .deck-collapse-button { position: absolute; top: 14px; right: 12px; }
   .pb-scope .deck-popover { right: 0; }
+}
+
+@media (max-width: 767px) {
   .pb-scope .pbp-dock-slot { display: none; }
   .pb-scope .pbp-panel.is-mobile {
     inset: 0 !important;
@@ -1106,7 +1084,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .site-shell, .pb-scope .pbp-panel, .pb-scope .pbp-dock-hint { transition: none; }
-  .pb-scope .deck-signal-rail i,
   .pb-scope .deck-center-progress i,
   .pb-scope .deck-popover { transition: none; }
   .pb-scope .pbp-eq[data-playing] i { animation: none; }
