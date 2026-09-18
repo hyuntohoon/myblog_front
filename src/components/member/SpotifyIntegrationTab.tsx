@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import { capabilityRows } from '@lib/playerCapabilityMatrix'
 import { readSpotifyCapabilityStanding } from '@lib/spotifyCapability'
-import { buildSpotifyAuthorizeUrl, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
+import { buildSpotifyAuthorizeUrl, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksFollowScope, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
 import type { Integration, SpotifyScopeGeneration } from './integrations.api'
 import { SectionTitle } from './ui'
 
@@ -51,6 +51,7 @@ const GENERATION_COPY: Record<SpotifyScopeGeneration, string> = {
   legacy: '구스코프(재생 스코프 이전)',
   playback: '재생 스코프 세대',
   library: '좋아요 스코프 세대',
+  follow: '팔로우 스코프 세대',
 }
 
 function Powers({ connected, generation }: { connected: boolean, generation: SpotifyScopeGeneration }) {
@@ -100,6 +101,10 @@ export function SpotifyIntegrationTab() {
   const generation = spotifyScopeGeneration(conn?.scope, conn != null)
   const needsPlaybackReconsent = connected && spotifyGrantNeedsReconsent(conn?.scope)
   const needsLibraryReconsent = connected && spotifyGrantLacksLibraryScopes(conn?.scope)
+  // A separate gap with its own copy, not a reuse of the library one: a member can
+  // hold every library scope and still be missing `user-follow-read`, and telling
+  // them to re-consent "for 좋아요" when 좋아요 already works reads as a bug.
+  const needsFollowReconsent = connected && spotifyGrantLacksFollowScope(conn?.scope)
   const scopes = (conn?.scope ?? '').split(/\s+/).filter(Boolean)
   const probe = readSpotifyCapabilityStanding()
   const probeCopy = `컨트롤 ${probe.transport === 'available' ? '사용 가능' : probe.transport === 'no-capability' ? '제한 응답' : '확인 전'} · 좋아요 ${probe.library === 'available' ? '사용 가능' : probe.library === 'scope-missing' ? '권한 부족 응답' : '확인 전'}`
@@ -145,7 +150,7 @@ export function SpotifyIntegrationTab() {
                 the fuller version belongs. */}
             <a className="sans" href="/help/player/" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: 'var(--color-accent)' }}>기능별 조건 자세히 보기 →</a>
             <div className="sans" style={{ marginTop: 12, borderTop: '1px solid var(--color-border-soft)', paddingTop: 10, fontSize: 12.5, lineHeight: 1.55, color: 'var(--color-subtle)' }}>
-              {generation === 'legacy' ? '재동의 한 번으로 기기 안내와 좋아요까지 열려요. 좋아요는 무료 계정도 쓸 수 있고 컨트롤만 Premium 전용이에요.' : generation === 'playback' ? '재동의하면 무료 계정에서도 가능한 좋아요가 열려요.' : connected ? '좋아요는 무료 계정도 사용할 수 있고, 재생 컨트롤만 Premium 전용이에요.' : '연동하면 라이브 바·가사·기기 안내와 좋아요가 열려요. 컨트롤은 Premium 전용이에요.'}
+              {generation === 'legacy' ? '재동의 한 번으로 기기 안내와 좋아요까지 열려요. 좋아요는 무료 계정도 쓸 수 있고 컨트롤만 Premium 전용이에요.' : generation === 'playback' ? '재동의하면 무료 계정에서도 가능한 좋아요가 열려요.' : generation === 'library' ? '재동의하면 팔로우한 아티스트의 가사 번역까지 열려요.' : connected ? '좋아요는 무료 계정도 사용할 수 있고, 재생 컨트롤만 Premium 전용이에요.' : '연동하면 라이브 바·가사·기기 안내와 좋아요가 열려요. 컨트롤은 Premium 전용이에요.'}
             </div>
           </div>
 
@@ -161,7 +166,13 @@ export function SpotifyIntegrationTab() {
             </div>
           )}
 
-          {(status !== 'connected' || needsPlaybackReconsent || needsLibraryReconsent) && (
+          {needsFollowReconsent && !needsLibraryReconsent && (
+            <div className="meta" style={{ padding: '9px 10px', color: 'var(--color-accent)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', textTransform: 'none' }}>
+              팔로우한 아티스트의 가사 번역을 받으려면 재동의가 필요해요. 팔로우 목록은 읽기만 하고, Spotify에는 아무것도 쓰지 않아요.
+            </div>
+          )}
+
+          {(status !== 'connected' || needsPlaybackReconsent || needsLibraryReconsent || needsFollowReconsent) && (
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button type="button" className="btn btn-solid" disabled={!spotifyConnectAvailable()} onClick={onAuthorize}>{conn ? '다시 연결' : 'Spotify 연결'}</button>
             </div>

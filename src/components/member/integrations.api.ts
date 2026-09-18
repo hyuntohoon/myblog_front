@@ -52,12 +52,39 @@ export async function getLastfmNowPlaying(): Promise<LastfmNowPlaying | null> {
 
 export const SPOTIFY_REDIRECT_URI = 'https://www.ratemymusic.blog/settings/spotify/callback'
 const SPOTIFY_AUTHORIZE_URL = 'https://accounts.spotify.com/authorize'
-const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-recently-played user-read-playback-state user-modify-playback-state user-library-read user-library-modify'
+// `user-follow-read` joins the grant in FEAT-lyrics-listening-experience Step 5: the
+// worker reconciles a member's followed artists into durable translation demand, and
+// GET /me/following is the only way to read them. Every member who connected before
+// this build has a grant WITHOUT it, so their follow reads 403 until they re-consent —
+// which is why `follow` below is a scope generation rather than a silent assumption.
+const SPOTIFY_SCOPES = 'user-read-currently-playing user-read-recently-played user-read-playback-state user-modify-playback-state user-library-read user-library-modify user-follow-read'
 const SPOTIFY_PLAYBACK_SCOPES = ['user-read-playback-state', 'user-modify-playback-state']
 const SPOTIFY_LIBRARY_SCOPES = ['user-library-read', 'user-library-modify']
+const SPOTIFY_FOLLOW_SCOPES = ['user-follow-read']
 const SS_SPOTIFY_STATE = 'spotify_connect_state'
 
-export type SpotifyScopeGeneration = 'none' | 'legacy' | 'playback' | 'library'
+/**
+ * The stored grant's vintage, oldest to newest. Ordered on purpose: consumers ask
+ * "is this at least X?" through `spotifyGenerationAtLeast`, never by listing the
+ * members they happen to know about — a list like that silently excludes every
+ * generation added after it was written, which is exactly how adding `follow` would
+ * have turned the player's capability matrix off for members with the NEWEST grant.
+ */
+export type SpotifyScopeGeneration = 'none' | 'legacy' | 'playback' | 'library' | 'follow'
+
+/** Rank per generation. A new generation cannot compile without declaring its place. */
+const GENERATION_RANK: Record<SpotifyScopeGeneration, number> = {
+	none: 0,
+	legacy: 1,
+	playback: 2,
+	library: 3,
+	follow: 4,
+}
+
+/** Whether a grant is at least as new as `minimum`. */
+export function spotifyGenerationAtLeast(generation: SpotifyScopeGeneration, minimum: SpotifyScopeGeneration): boolean {
+	return GENERATION_RANK[generation] >= GENERATION_RANK[minimum]
+}
 
 /**
  * Spotify OAuth client id — public by design (it rides the authorize URL).
@@ -82,6 +109,12 @@ export function spotifyGrantLacksLibraryScopes(scope: string | null | undefined)
 	return SPOTIFY_LIBRARY_SCOPES.some(requiredScope => !grantedScopes.has(requiredScope))
 }
 
+/** Whether the stored grant is missing the followed-artists read (Step 5). */
+export function spotifyGrantLacksFollowScope(scope: string | null | undefined): boolean {
+	const grantedScopes = new Set((scope ?? '').split(/\s+/).filter(Boolean))
+	return SPOTIFY_FOLLOW_SCOPES.some(requiredScope => !grantedScopes.has(requiredScope))
+}
+
 /** Human-guide generation derived only from the stored OAuth scope string. */
 export function spotifyScopeGeneration(scope: string | null | undefined, connected: boolean): SpotifyScopeGeneration {
 	if (!connected)
@@ -90,7 +123,9 @@ export function spotifyScopeGeneration(scope: string | null | undefined, connect
 		return 'legacy'
 	if (spotifyGrantLacksLibraryScopes(scope))
 		return 'playback'
-	return 'library'
+	if (spotifyGrantLacksFollowScope(scope))
+		return 'library'
+	return 'follow'
 }
 
 /**

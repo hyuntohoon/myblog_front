@@ -132,3 +132,45 @@ describe('whyNoControls — the 7b answer', () => {
     expect(why?.reason).toContain('기기')
   })
 })
+
+// FEAT-lyrics-listening-experience Step 5 added `follow` ABOVE `library` in the scope
+// generation ladder. These pin the regression that change could have caused: the
+// derivations here used to be equality lists (`=== 'playback' || === 'library'`), so a
+// member holding the NEWEST grant would have matched neither and had the whole matrix
+// switched off — the most generous member treated as the least.
+describe('a newer generation than the one a derivation was written for', () => {
+  it('keeps every capability on for a grant that also has the follow scope', () => {
+    const rows = capabilityRows({
+      connected: true,
+      generation: 'follow',
+      probe: probe('available', 'available'),
+    })
+
+    expect(row(rows, 'liked')!.on).toBe(true)
+    expect(row(rows, 'transport')!.on).toBe(true)
+    // The control: the same situation one generation down behaves identically, so
+    // this is asserting "at least library", not "exactly follow".
+    const atLibrary = capabilityRows({
+      connected: true,
+      generation: 'library',
+      probe: probe('available', 'available'),
+    })
+    expect(row(atLibrary, 'liked')!.on).toBe(true)
+    expect(row(atLibrary, 'transport')!.on).toBe(true)
+  })
+
+  it('does not tell a follow-generation member to re-consent for controls', () => {
+    expect(whyNoControls({
+      connected: true,
+      generation: 'follow',
+      probe: probe('available', 'available'),
+    })).toBeNull()
+
+    // ...while a genuinely old grant still gets the re-consent answer.
+    expect(whyNoControls({
+      connected: true,
+      generation: 'legacy',
+      probe: probe('available', 'available'),
+    })!.action).toContain('다시 연결')
+  })
+})
