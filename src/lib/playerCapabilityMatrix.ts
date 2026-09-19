@@ -12,6 +12,7 @@
 // same rows with `situation: null` — one code path, two audiences.
 import type { SpotifyCapabilityStanding } from '@lib/spotifyCapability'
 import type { SpotifyScopeGeneration } from '@components/member/integrations.api'
+import { spotifyGenerationAtLeast } from '@components/member/integrations.api'
 
 /** Everything the matrix needs to know about one member, right now. */
 export interface CapabilitySituation {
@@ -46,6 +47,7 @@ export const SCOPE_GENERATION_COPY: Record<SpotifyScopeGeneration, string> = {
   legacy: '구스코프(재생 스코프 이전)',
   playback: '재생 스코프 세대',
   library: '좋아요 스코프 세대',
+  follow: '팔로우 스코프 세대',
 }
 
 /**
@@ -61,8 +63,12 @@ export function capabilityRows(situation: CapabilitySituation | null): Capabilit
   const connected = situation?.connected ?? false
   const generation = situation?.generation ?? 'none'
   const probe = situation?.probe
-  const modernPlayback = connected && (generation === 'playback' || generation === 'library')
-  const library = connected && generation === 'library'
+  // "at least", never a list of the generations that existed when this line was
+  // written: Step 5 added `follow` ABOVE `library`, and an equality list would have
+  // read the newest grant as having neither playback nor library — turning the whole
+  // matrix off for exactly the members who granted the most.
+  const modernPlayback = connected && spotifyGenerationAtLeast(generation, 'playback')
+  const library = connected && spotifyGenerationAtLeast(generation, 'library')
 
   const transportStanding = !situation ?
     'Spotify Premium 필요' :
@@ -179,7 +185,7 @@ export function standingLine(situation: CapabilitySituation): string {
  * is not the same as listing capabilities: it names the ONE next action.
  */
 export function whyNoControls(situation: CapabilitySituation): { reason: string, action: string, href?: string } | null {
-  const modernPlayback = situation.connected && (situation.generation === 'playback' || situation.generation === 'library')
+  const modernPlayback = situation.connected && spotifyGenerationAtLeast(situation.generation, 'playback')
   if (!situation.connected)
     return { reason: 'Spotify가 연동되어 있지 않아요.', action: '설정에서 연동하기', href: '/settings/' }
   if (!modernPlayback)

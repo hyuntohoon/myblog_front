@@ -9,7 +9,7 @@ import { logout } from '@lib/auth'
 import { readSpotifyCapabilityStanding } from '@lib/spotifyCapability'
 import { deleteMe, getMe, HANDLE_RE, HandleTakenError, OwnerUndeletableError, updateMe } from './me.api'
 import { capabilityRows, standingLine } from '@lib/playerCapabilityMatrix'
-import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
+import { buildSpotifyAuthorizeUrl, connectLastfm, disconnectLastfm, disconnectSpotify, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksFollowScope, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
 import type { Integration } from './integrations.api'
 import { SectionTitle } from './ui'
 
@@ -86,7 +86,7 @@ function SpotifyCapabilityGuide({ conn }: { conn: Integration | null }) {
 		(conn ? '재동의하면 라이브 바·가사·기기 안내와 무료 계정에서도 가능한 좋아요가 열려요. 재생 컨트롤은 Premium 전용이에요.' : '연동하면 스냅샷·라이브 바·가사·기기 안내와 무료 계정에서도 가능한 좋아요가 열려요. 재생 컨트롤은 Premium 전용이에요.') :
 		generation === 'legacy' ?
 '재동의 한 번으로 기기 안내와 좋아요 권한까지 열려요. 좋아요는 무료 계정도 쓸 수 있고, 재생 컨트롤만 Premium 전용이에요.' :
-			generation === 'playback' ? '재동의하면 좋아요가 열려요. 좋아요는 무료 계정도 사용할 수 있어요.' : '현재 권한으로 모든 기능이 열려요. 재생 컨트롤만 Spotify Premium이 필요해요.'
+			generation === 'playback' ? '재동의하면 좋아요가 열려요. 좋아요는 무료 계정도 사용할 수 있어요.' : generation === 'library' ? '재동의하면 팔로우한 아티스트의 가사 번역까지 열려요. 지금 권한으로도 나머지 기능은 모두 쓸 수 있어요.' : '현재 권한으로 모든 기능이 열려요. 재생 컨트롤만 Spotify Premium이 필요해요.'
 
 	return (
 		<IntegrationGuide
@@ -229,6 +229,9 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 		const needsReauth = conn.status === 'reauth'
 		const needsPlaybackReconsent = conn.status === 'connected' && spotifyGrantNeedsReconsent(conn.scope)
 		const needsLibraryReconsent = conn.status === 'connected' && spotifyGrantLacksLibraryScopes(conn.scope)
+		// Step 5's gap is its own: a grant can hold every library scope and still lack
+		// `user-follow-read`, so the re-consent prompt has to fire for that case too.
+		const needsFollowReconsent = conn.status === 'connected' && spotifyGrantLacksFollowScope(conn.scope)
 		const statusLabel = needsReauth ?
 			'다시 연결이 필요해요 — 재생 기록을 읽지 못하고 있어요' :
 			conn.status === 'connected' ? '연결됨' : conn.status
@@ -248,10 +251,15 @@ function SpotifyConnect({ initial }: { initial: Integration | null }) {
 						좋아요 기능을 쓰려면 재동의가 필요해요 — 무료 계정도 재동의 후 좋아요를 쓸 수 있어요.
 					</span>
 				)}
+				{needsFollowReconsent && !needsLibraryReconsent && (
+					<span className="meta" style={{ padding: '8px 10px', color: 'var(--color-accent)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', textTransform: 'none' }}>
+						팔로우한 아티스트의 가사 번역을 받으려면 재동의가 필요해요 — 팔로우 목록은 읽기만 하고 Spotify에는 쓰지 않아요.
+					</span>
+				)}
 				<SpotifyCapabilityGuide conn={conn} />
 				<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'flex-end' }}>
 					{error && <span className="meta" role="alert" style={{ color: 'var(--color-accent)', textTransform: 'none' }}>{error}</span>}
-					{(needsReauth || needsPlaybackReconsent || needsLibraryReconsent) && <button type="button" className="btn btn-solid" disabled={busy} onClick={onAuthorize}>다시 연결</button>}
+					{(needsReauth || needsPlaybackReconsent || needsLibraryReconsent || needsFollowReconsent) && <button type="button" className="btn btn-solid" disabled={busy} onClick={onAuthorize}>다시 연결</button>}
 					<button type="button" className="btn" disabled={busy} onClick={onDisconnect}>{busy ? '해제 중…' : '연결 해제'}</button>
 				</div>
 			</div>
