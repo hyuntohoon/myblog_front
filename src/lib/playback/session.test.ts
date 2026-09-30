@@ -2582,3 +2582,144 @@ describe('entry and return synchronization', () => {
     expect(playbackSession.getSnapshot().external).toBeNull()
   })
 })
+
+// OPS-project-stabilization Step 2A (finding B) — the lyrics viewer's own read goes
+// THROUGH the session, so the song it sees is the song every surface sees.
+describe('observeLive — a surface reading through the session', () => {
+  it('adopts what it read, so the session names the new song too', async () => {
+    setQueue([])
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-B'))
+
+    const o = await playbackSession.observeLive()
+
+    expect(o).toEqual({ k: 'adopted', live: expect.objectContaining({ trackId: 'SPOT-B' }) })
+    expect(playbackSession.currentSpotifyTrackId()).toBe('SPOT-B')
+    expect(mocks.readLivePlayback).toHaveBeenCalledTimes(1)
+  })
+
+  // Review 2026-09-30: posting a sync request here bought one OWNER read per viewer
+  // read — four extra per end burst. The viewer forwards one only on disagreement.
+  it('does not adopt in a mirror tab, and does not wake the owner on its own', async () => {
+    setOwnership({ isOwner: false, ownerTabId: 'other-tab', ownerPresent: true })
+    // Becoming a mirror posts its own sync request; that is ownership, not this read.
+    mocks.ownershipPost.mockClear()
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-B'))
+
+    const o = await playbackSession.observeLive()
+
+    expect(o).toEqual({ k: 'mirror' })
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+    expect(mocks.ownershipPost).not.toHaveBeenCalledWith({ type: 'sync-request' })
+  })
+
+  // Review 2026-09-30: a ↻ inside a ⏭'s ack→apply window read the song being left,
+  // adopted it into the session, and bumped the generation that discards the
+  // command's own confirmation read. While the session is settling, it answers.
+  it('does not read while a command is still settling', async () => {
+    setQueue([])
+    mocks.readLivePlayback.mockResolvedValue(liveTrack('SPOT-X'))
+    await playbackSession.syncFromLive()
+    mocks.readLivePlayback.mockClear()
+
+    const skipping = playbackSession.next()
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot().transportBusy).toBe(true)
+
+    expect(await playbackSession.observeLive()).toEqual({ k: 'superseded' })
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
+    await skipping
+  })
+
+  it('reports `superseded` when a newer local write lands while the read is in flight', async () => {
+    setQueue([row('a')])
+    mocks.cachedUri.mockImplementation((t: string) => (t === 'track-a' ? 'spotify:track:SPOT-A' : null))
+    await startAt('a')
+    let resolveRead!: (v: unknown) => void
+    mocks.readLivePlayback.mockReturnValue(new Promise((resolve) => {
+      resolveRead = resolve
+    }))
+    const observing = playbackSession.observeLive()
+
+    await finishPlayback(playbackSession.togglePlay())
+    resolveRead(liveTrack('SPOT-OLD'))
+
+    expect(await observing).toEqual({ k: 'superseded' })
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+  })
+})
+
+// Review 2026-09-30 (blocker): the session's boundary burst settled on `idle`. Connect
+// reports a transitional idle between two tracks, so the burst stopped while B was
+// about to start — and a lyrics viewer that deferred to it was left on A.
+describe('the boundary burst does not settle on idle', () => {
+  function answer(...reads: Array<() => unknown>): void {
+    let i = 0
+    mocks.readLivePlayback.mockImplementation(async () => {
+      const r = reads[Math.min(i, reads.length - 1)]
+      i += 1
+      return r()
+    })
+  }
+
+  it('asks again through a transitional idle and lands on the next song', async () => {
+    mocks.cachedUri.mockImplementation((trackId: string) => `spotify:track:${trackId}`)
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    mocks.readLivePlayback.mockClear()
+    answer(
+      () => ({ state: 'idle' }),
+      () => ({ ...liveTrack('track-b'), progressMs: 900, readAtMs: performance.now() }),
+    )
+
+    await vi.advanceTimersByTimeAsync(180_000 + 1_500 + 100 + 600)
+
+    expect(mocks.readLivePlayback).toHaveBeenCalledTimes(2)
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+  })
+
+  it('treats an idle that outlasts the budget as the genuine stop, and stops asking', async () => {
+    mocks.cachedUri.mockImplementation((trackId: string) => `spotify:track:${trackId}`)
+    setQueue([row('a')])
+    await startAt('a')
+    mocks.readLivePlayback.mockClear()
+    answer(() => ({ state: 'idle' }))
+
+    await vi.advanceTimersByTimeAsync(180_000 + 1_500 + 100 + 60_000)
+
+    expect(mocks.readLivePlayback).toHaveBeenCalledTimes(4)
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+    expect(playbackSession.currentSpotifyTrackId()).toBeNull()
+    expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+  })
+})
+
+describe('boundaryConfirmationPending', () => {
+  it('stays true across the gap where the timer has fired and the burst read is in flight', async () => {
+    mocks.cachedUri.mockImplementation((trackId: string) => `spotify:track:${trackId}`)
+    setQueue([row('a'), row('b')])
+    expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+
+    await startAt('a')
+    expect(playbackSession.boundaryConfirmationPending()).toBe(true)
+
+    // The burst's first read is held open: the boundary timer has already been
+    // spent, so only the burst itself can answer "someone is confirming this end".
+    // This is the instant the lyrics viewer's own end timer fires.
+    let resolveRead!: (v: unknown) => void
+    mocks.readLivePlayback.mockReturnValue(new Promise((resolve) => {
+      resolveRead = resolve
+    }))
+    await vi.advanceTimersByTimeAsync(180_000 + 1_500 + 100)
+    expect(mocks.readLivePlayback).toHaveBeenCalledTimes(1)
+    expect(playbackSession.boundaryConfirmationPending()).toBe(true)
+
+    resolveRead({ ...liveTrack('track-b'), progressMs: 900, readAtMs: performance.now() })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+
+    playbackSession.__reset()
+    expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+  })
+})
