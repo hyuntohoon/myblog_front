@@ -1750,6 +1750,52 @@ function syncFromLive(): Promise<void> {
 }
 
 /**
+ * OPS-project-stabilization Step 2A — what a surface that must SEE the live answer
+ * got back from reading it through the session.
+ *
+ *   · `adopted`    — the read happened and the session applied it (or found it
+ *                    `unavailable` and kept what it had); `live` is the answer.
+ *   · `superseded` — the session is itself settling playback right now (a command,
+ *                    a jump, a boundary burst), or a newer write, adoption or
+ *                    provider change won while the read was in flight. The session
+ *                    will hold the fresher truth; the caller takes it from there.
+ *   · `mirror`     — another tab owns playback, so this tab may not adopt. The
+ *                    caller reads for itself.
+ */
+export type LiveObservation = { k: 'adopted', live: LivePlayback } | { k: 'superseded' } | { k: 'mirror' }
+
+/**
+ * OPS-project-stabilization Step 2A (finding B) — the lyrics viewer's own read, taken
+ * THROUGH the session instead of beside it.
+ *
+ * The viewer used to call `readLivePlayback()` directly. That read could see song B
+ * while the session still named A, and the viewer's adoption rule ("session-confirmed
+ * identity beats a viewer-local guess") then put it straight back on A: A → B → A.
+ * Going through `adoptLive()` makes the fresh observation the session's too, under the
+ * fences every other adoption already has, so there is one current song and the
+ * Global Player moves with the viewer. In the owner tab it is the caller's ONE read,
+ * not an extra one.
+ *
+ * It does NOT read while the session is settling playback itself. A command's own
+ * confirmation burst is still waiting out Spotify's ack→apply window; a read started
+ * inside it would adopt the song the command just left, flicker every surface back,
+ * and — by bumping the adoption generation — discard the burst's own in-flight read.
+ *
+ * A mirror is told so and asks nobody: it may not adopt, and a sync request per read
+ * would buy one owner read per viewer read. The viewer asks the owner only when its
+ * own answer disagrees with the session (`syncFromLive()` forwards it).
+ */
+async function observeLive(): Promise<LiveObservation> {
+  if (getActiveProvider() !== 'youtube' && !current.isOwner && current.ownerPresent)
+    return { k: 'mirror' }
+  if (current.busy || current.transportBusy || completionBurstRunning())
+    return { k: 'superseded' }
+  const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
+  const live = await adoptLive(prefetched)
+  return live ? { k: 'adopted', live } : { k: 'superseded' }
+}
+
+/**
  * The Spotify track id the session currently believes is sounding, whatever the
  * anchor happens to be — external reads carry one directly, a queue-matched row
  * goes through the cache-only reverse lookup.
@@ -2150,6 +2196,18 @@ export const playbackSession = {
   /** Adopt whatever is actually playing — call when a player surface becomes visible. */
   syncFromLive,
 
+  /** Read what is playing THROUGH the session — see `observeLive()`. */
+  observeLive,
+
+  /**
+   * Whether the session itself will confirm the current track's natural end — its
+   * boundary timer is armed or its completion burst is running. A consumer with its
+   * own end detection (the lyrics viewer) defers to it rather than reading twice.
+   */
+  boundaryConfirmationPending(): boolean {
+    return boundaryConfirmationPending()
+  },
+
   /** Closing or hiding the video must stop its audio immediately. */
   stopYouTube(): void {
     if (getActiveProvider() !== 'youtube')
@@ -2274,6 +2332,7 @@ export const playbackSession = {
     liveSync = null
     closeYouTubePlayer()
     clearBoundaryCheck()
+    resetCompletionBurst()
     clearReissue()
     issuedTail = null
     queueDirty = false
@@ -2377,13 +2436,19 @@ function scheduleBoundaryCheck(): void {
  * confirmation loop since 2026-08-02; the natural end of a track — the far more
  * common transition — did not.
  *
- * "Settled" is three outcomes, not one, because a track can legitimately end into
- * any of them:
+ * "Settled" is two outcomes, not one, because a track can legitimately end into
+ * either of them:
  *   · a DIFFERENT track is playing — ordinary advance;
- *   · `idle` — the queue ran out, or playback stopped;
  *   · the SAME track at a position near zero — repeat-one restarted it. That is a
  *     new playback epoch even though the identity never changed, and treating it as
  *     "not settled yet" would spin the whole budget on a correct answer.
+ *
+ * `idle` used to be a third. It is not an answer at a boundary (OPS-project-
+ * stabilization Step 2A): Connect reports a transitional idle for a beat between
+ * two tracks, and a burst that settled on it stopped asking while B was about to
+ * start — the session, and a lyrics viewer deferring to it, then showed nothing
+ * forever. An idle that outlasts the whole budget is the genuine stop, and the last
+ * read has already adopted it.
  *
  * Still not polling (D28): it runs once per track boundary, behind a real end, and
  * it stops the moment Spotify agrees.
@@ -2395,9 +2460,41 @@ const COMPLETION_CONFIRM_GAP_MS = 500
  * restart rather than a stale read — nothing else puts a playhead back near zero at
  * a boundary. Generous on purpose: it only has to separate "≈0" from "≈duration".
  */
-const EPOCH_RESTART_MS = 5_000
+export const EPOCH_RESTART_MS = 5_000
+
+/**
+ * The burst `confirmCompletion()` is spending, or null. Read by
+ * `boundaryConfirmationPending()` so the lyrics viewer does not run a second burst
+ * over the same boundary (OPS-project-stabilization Step 2A). A token rather than a
+ * boolean: a burst that outlives `__reset` must not clear a newer burst's claim.
+ */
+let completionBurst: object | null = null
+
+function boundaryConfirmationPending(): boolean {
+  return boundaryTimer !== null || completionBurst !== null
+}
+
+function completionBurstRunning(): boolean {
+  return completionBurst !== null
+}
+
+function resetCompletionBurst(): void {
+  completionBurst = null
+}
 
 async function confirmCompletion(endingUri: string | null): Promise<void> {
+  const burst = {}
+  completionBurst = burst
+  try {
+    await runCompletionBurst(endingUri)
+  }
+  finally {
+    if (completionBurst === burst)
+      completionBurst = null
+  }
+}
+
+async function runCompletionBurst(endingUri: string | null): Promise<void> {
   let last: LivePlayback | null = null
   await confirmTransport(
     async () => {
@@ -2405,10 +2502,8 @@ async function confirmCompletion(endingUri: string | null): Promise<void> {
     },
     () => {
       const live: LivePlayback | null = last
-      if (!live || live.state === 'unavailable')
+      if (!live || live.state === 'unavailable' || live.state === 'idle')
         return false
-      if (live.state === 'idle')
-        return true
       const uri = liveUriOf(live)
       if (endingUri == null || uri !== endingUri)
         return true

@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@lib/playback/session', () => ({
+  EPOCH_RESTART_MS: 5_000,
   // The REAL predicate, not a stub: whether a queue row is offered while a ⏭ is
   // in flight is the question the E4/jump tests are asking, and a stub that
   // always said "not blocked" could not tell the two answers apart.
@@ -80,6 +81,11 @@ vi.mock('@lib/playback/session', () => ({
     jumpToSpotifyQueue: mocks.jumpToSpotifyQueue,
     currentSpotifyTrackId: mocks.currentSpotifyTrackId,
     currentRow: mocks.currentRow,
+    // OPS-project-stabilization Step 2A — the viewer's Spotify read goes through
+    // the session. These tests are about transport, not adoption, so the read is
+    // passed straight through; `LyricsViewer.nextTrack.test.tsx` models the rest.
+    observeLive: async () => ({ k: 'adopted', live: await mocks.readLivePlayback() }),
+    boundaryConfirmationPending: () => false,
   },
 }))
 

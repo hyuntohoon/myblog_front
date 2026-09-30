@@ -54,11 +54,12 @@
 //     FEAT-lyrics-sync-precision, below; nothing now models Spotify-side
 //     staleness or tick granularity, because neither is a term any more.)
 // (2) End-of-track auto re-sync — the live entry now hands in `durationMs`;
-//     when the estimate passes duration + END_GRACE_MS the viewer fires ONE
-//     automatic `refresh()` (same one-shot read — event-driven, not polling, so
-//     D28 still holds). Next track playing → existing swap path shows its
+//     when the estimate passes duration + END_GRACE_MS the viewer fires an
+//     automatic `refresh()` (event-driven, not polling, so D28 still holds). Since
+//     OPS-project-stabilization Step 2A that is a bounded burst on its own song
+//     clock, not a one-shot inside the lyric scheduler — see `confirmEnd`. Next track playing → existing swap path shows its
 //     lyrics; idle → the existing "지금 재생 중인 곡이 없어요" notice, view kept.
-//     One shot per anchor seed (`endSynced` ref): a re-sync re-arms it only
+//     One burst per playhead seed (`endSynced` ref): a re-sync re-arms it only
 //     when the fresh position sits meaningfully before the end; idle/failed
 //     results and a player stuck reporting `playing` at ≈duration leave it
 //     disarmed, so neither a stopped nor a wedged player is ever hammered.
@@ -96,7 +97,8 @@ import type { LivePlayback } from './playback.api'
 import type { JumpContext } from './queueJump'
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
-import { nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
+import { confirmTransport } from '@lib/playback/confirmTransport'
+import { EPOCH_RESTART_MS, nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
 import { providerStore } from '@lib/playback/provider'
 import { cachedUri, resolveUri } from '@lib/playback/uris'
 import { canControlPlayback } from '@lib/playback/ownership'
@@ -152,6 +154,19 @@ export function leadMsForStyle(style: 'blur' | 'flat'): number {
  * estimate drift near the boundary.
  */
 const END_GRACE_MS = 1500
+/**
+ * OPS-project-stabilization Step 2A (finding C) — the end-of-track read is a bounded
+ * burst, not a one-shot. At a natural boundary Spotify can still answer with the
+ * track that just ended, with `unavailable`, or with a transitional `idle` for a beat
+ * before it names the next one; a single read that lands there used to leave the
+ * viewer on the old song with nothing left to ask again. Same budget and settle rule
+ * as the session's own `confirmCompletion()` — including that `idle` is not an answer
+ * until the budget is spent — and the repeat-one threshold is the session's own
+ * `EPOCH_RESTART_MS`, so the two cannot drift apart.
+ * Still not polling (D28): it runs once per track end and stops on the first answer.
+ */
+const END_CONFIRM_TRIES = 4
+const END_CONFIRM_GAP_MS = 500
 /** Idle snap-back delay for the un-dimmed browse window (and its countdown ring). */
 const BROWSE_IDLE_MS = 3000
 /**
@@ -191,6 +206,14 @@ const EVENT_RESYNC_FLOOR_MS = 1500
  * of its own.
  */
 type ResyncSource = 'manual' | 'command' | 'visibility' | 'end' | 'session'
+
+/**
+ * What one `refresh()` call came back with: the read itself, `superseded` when the
+ * session already holds something fresher than this read could have said, or
+ * `queued` when a read was already in flight and this one was folded into its
+ * trailing catch-up.
+ */
+type RefreshOutcome = LivePlayback | 'superseded' | 'queued'
 
 /**
  * The segment a playback moment maps to: the last segment whose `start_ms` is
@@ -613,6 +636,62 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // player gets exactly one automatic read.
   const endSynced = useRef(false)
 
+  /**
+   * OPS-project-stabilization Step 2A (finding C) — where the SONG is, kept apart
+   * from where the LYRICS are.
+   *
+   * End detection used to live inside the lyric-line scheduler and read its anchor.
+   * That scheduler stands down for plain, missing, loading or failed lyrics, while
+   * the member browses, and — since the anchor is only ever seeded for timed rows —
+   * whenever the song simply had no timestamps. Each of those silently switched off
+   * the one thing that notices the song ended, so a song without synced lyrics
+   * stayed "current" for as long as the viewer was open. This clock is fed by every
+   * live position the viewer receives, whatever the lyrics are doing.
+   */
+  const playhead = useRef<ClockAnchor | null>(
+    initialProgressMs != null ? { ms: initialProgressMs, wallMs: initialProgressAtMs ?? performance.now() } : null,
+  )
+  const [playheadSeq, setPlayheadSeq] = useState(0)
+  /**
+   * `durationMs` is passed rather than read from state for the same reason
+   * `applyAnchor` takes `isPlaying`: every caller sets the duration in the same
+   * breath, and the closure would still hold the previous track's length.
+   */
+  const setPlayhead = (progressMs: number | null, readAtMs: number | undefined, duration: number | null) => {
+    if (progressMs == null)
+      return
+    const next = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
+    // Latest observation wins. The adoption effect re-runs on every session patch
+    // and hands the same anchor back each time; applying it again would re-arm a
+    // spent end burst, and applying an OLDER one would move the song clock back.
+    if (playhead.current && next.wallMs <= playhead.current.wallMs)
+      return
+    playhead.current = next
+    // Re-arm end detection only when the fresh position sits meaningfully before
+    // the end. A same-track read still pinned inside the grace window (a player
+    // stuck reporting `playing` at ≈duration) leaves it spent — the burst already
+    // had its budget; manual ↻ remains.
+    if (duration == null || progressMs < duration - END_GRACE_MS)
+      endSynced.current = false
+    setPlayheadSeq(k => k + 1)
+  }
+
+  /**
+   * OPS-project-stabilization Step 2A (finding B) — the newest song this viewer has
+   * SEEN with its own read, and when. The adoption effect refuses a session
+   * identity older than this: a shared snapshot still naming A must not overwrite a
+   * fresher observation of B. That is the A → B → A rollback, and it survives in a
+   * mirror tab even after `observeLive()`, because a mirror may not adopt.
+   */
+  const observed = useRef<{ trackId: string, readAtMs: number } | null>(null)
+  /**
+   * The song whose end this viewer handed to the session's own burst. If that burst
+   * ends in a genuine stop, the session clears its identity rather than naming a new
+   * one — which the adoption effect would otherwise ignore, leaving this viewer
+   * presenting the finished song as playing. Review caught it (2026-09-30).
+   */
+  const deferredEnd = useRef<string | null>(null)
+
   // Re-seed the anchor from a fresh playback position and (re)compute the
   // focus from it. Centralizes the "position → anchor + focus" step used by
   // same-track re-sync. `readAtMs` is the wall instant the
@@ -627,12 +706,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       return
     const next: ClockAnchor = { ms: progressMs, wallMs: readAtMs ?? performance.now() }
     setAnchor(next)
-    // Re-arm end detection only when the fresh position sits meaningfully
-    // before the end. A same-track read still pinned inside the grace window
-    // (a player stuck reporting `playing` at ≈duration) keeps the auto
-    // re-sync spent — one automatic read, never a hammer; manual ↻ remains.
-    if (durationMs == null || progressMs < durationMs - END_GRACE_MS)
-      endSynced.current = false
     // PAUSED BROWSE (ARCH-playback-authority-convergence Step 3). While the music
     // is stopped AND the member is browsing, a re-anchor updates where the player
     // is held and nothing more.
@@ -688,7 +761,6 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       pendingSeed.current = null
       if (seed != null && data.availability === 'ok' && data.trackable && data.segments?.length) {
         setAnchor(seed)
-        endSynced.current = false
         setFocus(focusIndexForMs(data.segments, seed.ms + leadMs + (performance.now() - seed.wallMs)))
       }
     }
@@ -732,21 +804,54 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // A ref, not state, because the guard must be exact within one tick.
   const refreshingRef = useRef(false)
   const refreshQueued = useRef(false)
-  const refresh = async (source: ResyncSource = 'manual'): Promise<void> => {
+  // Unmounted viewers stop reading: the end burst and the trailing catch-up below
+  // would otherwise keep adopting into the session for a screen nobody has open.
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+    }
+  }, [])
+  /**
+   * The read behind `refresh()`. Spotify goes through the session
+   * (OPS-project-stabilization Step 2A, finding B) so what this viewer sees is what
+   * every other surface sees; only a mirror tab, which may not adopt, still reads on
+   * its own — and `observed` then keeps the session's older answer from undoing it.
+   */
+  const readForRefresh = async (youtube: boolean): Promise<LivePlayback | 'superseded'> => {
+    if (youtube)
+      return readYouTubeLyricsPlayback()
+    const o = await playbackSession.observeLive()
+    if (o.k === 'adopted')
+      return o.live
+    if (o.k === 'superseded')
+      return 'superseded'
+    const r = await readLivePlayback()
+    // A mirror may not adopt. When its own answer disagrees with what the owner
+    // broadcasts, that is news for the owner — and only then is it worth the
+    // owner's read (`syncFromLive` forwards a sync request from a mirror).
+    if ((r.state === 'playing' || r.state === 'paused') && r.trackId !== playbackSession.currentSpotifyTrackId())
+      void playbackSession.syncFromLive()
+    return r
+  }
+  const refresh = async (source: ResyncSource = 'manual'): Promise<RefreshOutcome> => {
     if (refreshingRef.current) {
       refreshQueued.current = true
-      return
+      return 'queued'
     }
     refreshingRef.current = true
     setRefreshing(true)
     try {
       const provider = providerStore.getSnapshot()
-      const r = await (provider.provider === 'youtube' ? readYouTubeLyricsPlayback() : readLivePlayback())
+      const r = await readForRefresh(provider.provider === 'youtube')
       const latest = providerStore.getSnapshot()
       // An old provider response must not replace the song selected meanwhile.
-      if (latest !== provider)
-        return
+      if (r === 'superseded' || latest !== provider)
+        return 'superseded'
       if (r.state === 'playing' || r.state === 'paused') {
+        observed.current = { trackId: r.trackId, readAtMs: r.readAtMs }
+        setPlayhead(r.progressMs, r.readAtMs, r.durationMs)
         // No ack→apply guards here any more. This component no longer issues
         // transport, so there is no in-flight command of its own for a read to
         // contradict; `playbackSession` owns that race and its own reads discard
@@ -785,6 +890,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       else {
         setNotice('재생 상태를 확인하지 못했어요')
       }
+      return r
     }
     finally {
       refreshingRef.current = false
@@ -794,7 +900,8 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       // rather than replaying every dropped call (D28: still no polling).
       if (refreshQueued.current) {
         refreshQueued.current = false
-        void refresh(source)
+        if (alive.current)
+          void refresh(source)
       }
     }
   }
@@ -804,6 +911,54 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const refreshRef = useRef(refresh)
   useEffect(() => {
     refreshRef.current = refresh
+  })
+
+  /**
+   * The end-of-track burst (OPS-project-stabilization Step 2A, finding C). Settles
+   * on the first read that names a different song, a same-song restart near zero
+   * (repeat-one), or a newer session answer; keeps asking through a stale same-song
+   * read, `unavailable` and a transitional `idle`. An `idle` that outlasts the whole
+   * budget is a genuine stop — `refresh()` has already said so, and nothing re-arms
+   * until a fresh position arrives.
+   *
+   * When the session itself is confirming this boundary it already spends the same
+   * burst, and this viewer adopts its answer; a second burst would only double the
+   * reads.
+   */
+  const confirmEnd = async () => {
+    const ending = trackId
+    if (playbackSession.boundaryConfirmationPending() && playbackSession.currentSpotifyTrackId() === ending) {
+      deferredEnd.current = ending
+      return
+    }
+    let last: RefreshOutcome | null = null
+    await confirmTransport(
+      async () => {
+        // Hidden or closed: stop spending reads. A hidden tab re-checks on return.
+        if (!alive.current || document.hidden) {
+          last = 'superseded'
+          if (alive.current)
+            endSynced.current = false
+          return
+        }
+        last = await refreshRef.current('end')
+      },
+      () => {
+        const r: RefreshOutcome | null = last
+        if (r === 'superseded')
+          return true
+        if (r == null || r === 'queued' || r.state === 'unavailable' || r.state === 'idle')
+          return false
+        if (r.trackId !== ending)
+          return true
+        return (r.progressMs ?? 0) < EPOCH_RESTART_MS
+      },
+      { tries: END_CONFIRM_TRIES, gapMs: END_CONFIRM_GAP_MS },
+    )
+  }
+  const confirmEndRef = useRef(confirmEnd)
+  useEffect(() => {
+    confirmEndRef.current = confirmEnd
   })
 
   // An uncached YouTube identity has no Spotify id for the ordinary adoption
@@ -987,9 +1142,31 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
    */
   useEffect(() => {
     const sessionTrackId = playbackSession.currentSpotifyTrackId()
-    if (sessionTrackId == null)
+    if (sessionTrackId == null) {
+      // Nothing current at all, after a boundary this viewer deferred: the
+      // session's burst settled on a stop. Say so, as this viewer's own burst would.
+      if (deferredEnd.current === trackId && !sessionState.playing && sessionState.currentItemId == null && sessionState.external == null) {
+        setPlaying(false)
+        setNotice('지금 재생 중인 곡이 없어요')
+      }
       return
+    }
+    deferredEnd.current = null
     if (sessionTrackId !== trackId) {
+      // OPS-project-stabilization Step 2A (finding B): "session-confirmed beats a
+      // viewer-local guess" holds only while the session's answer is the NEWER one.
+      // This viewer's own read of `trackId` is not a guess — it is an observation
+      // with a timestamp — and a session snapshot whose anchor was taken before it
+      // (a mirror's broadcast of the owner's stale A, an adoption that started
+      // earlier) is the older claim. A local command stamps `performance.now()` and
+      // an adoption its own `readAtMs`, so those win as before. A session identity
+      // with NO anchor has no age to compare, and is adopted as it always was.
+      // Cross-tab anchors are rebuilt from `Date.now()`, so a wall-clock jump can
+      // misorder a mirror's comparison by the size of the jump; the next owner
+      // read corrects it.
+      const seen = observed.current
+      if (seen?.trackId === trackId && sessionState.anchor != null && sessionState.anchor.wallMs < seen.readAtMs)
+        return
       // Identity moved under us — a skip from the Global Player, a natural track
       // change, another tab. Seed the new document from the session's own anchor
       // so the swap lands on the right line instead of at 0.
@@ -1006,6 +1183,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       })
       setDurationMs(sessionState.durationMs)
       setPlaying(sessionState.playing)
+      setPlayhead(a?.ms ?? null, a?.wallMs, sessionState.durationMs)
       setNotice(null)
       setTrackId(sessionTrackId)
       return
@@ -1015,6 +1193,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     logResidual('session', sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing ? 'playing' : 'paused')
     setDurationMs(sessionState.durationMs)
     setPlaying(sessionState.playing)
+    setPlayhead(sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.durationMs)
     applyAnchor(sessionState.anchor.ms, sessionState.anchor.wallMs, sessionState.playing)
   }, [sessionState.anchor, sessionState.playing, sessionState.durationMs, sessionState.currentItemId, sessionState.external, trackId])
 
@@ -1220,33 +1399,20 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       if (!a)
         return
       const estimatedMs = estimateMs(a) + leadMs
-      const endAtMs = canRefresh && durationMs != null ? durationMs + END_GRACE_MS : null
-      // End-of-track auto re-sync (FEAT-lyrics-end-resync): once the estimate
-      // runs past the track length + grace, fire ONE automatic refresh — next
-      // track playing swaps the lyrics in place, idle keeps the view with the
-      // notice. Live entries only (`canRefresh`); armed once per anchor seed.
-      // Held back while hidden so a backgrounded tab never fires the request;
-      // the visibility listener below re-arms and it goes out on return.
-      if (endAtMs != null && !endSynced.current && estimatedMs >= endAtMs && !document.hidden) {
-        endSynced.current = true
-        void refreshRef.current('end')
-        return // the refresh re-anchors, which re-arms through `anchorSeq`
-      }
+      // End-of-track detection used to share this timer. It has its own effect
+      // below now (OPS-project-stabilization Step 2A, finding C): every condition
+      // that stands this scheduler down — no timestamps, a browse, no lines — is a
+      // condition under which the song still ends.
       setFocus((f) => {
         const nf = focusIndexForMs(segs, estimatedMs)
         return nf !== f ? nf : f
       })
-      // Wake at whichever comes first: the next line, or the end-of-track
-      // threshold. Both are track positions, and playback runs at 1.0x, so the
-      // gap to either is also the wall-clock delay.
+      // Playback runs at 1.0x, so the gap to the next line in track time is also
+      // the wall-clock delay.
       const boundary = nextBoundaryMs(segs, estimatedMs)
-      const pendingEnd = endAtMs != null && !endSynced.current && endAtMs > estimatedMs ? endAtMs : null
-      const target = boundary != null && pendingEnd != null ?
-        Math.min(boundary, pendingEnd) :
-        boundary ?? pendingEnd
-      if (target == null)
-        return // past the last line with no end re-sync pending — nothing left to do
-      timer = window.setTimeout(arm, Math.max(0, target - estimatedMs))
+      if (boundary == null)
+        return // past the last line — nothing left to do
+      timer = window.setTimeout(arm, Math.max(0, boundary - estimatedMs))
     }
     arm()
     // A throttled or skipped timer leaves the focus stale while hidden; re-arm
@@ -1260,7 +1426,55 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       document.removeEventListener('visibilitychange', onVisible)
       clear()
     }
-  }, [trackable, suspended, playing, n, segs, canRefresh, durationMs, anchorSeq, leadMs])
+  }, [trackable, suspended, playing, n, segs, anchorSeq, leadMs])
+
+  /**
+   * End-of-track detection (FEAT-lyrics-end-resync), on its own clock since
+   * OPS-project-stabilization Step 2A (finding C).
+   *
+   * Runs off `playhead`, which every live position feeds, so plain / missing /
+   * loading / failed lyrics, a browse and the queue view no longer switch it off.
+   * One timer to `duration + END_GRACE_MS`; when it passes, one bounded burst.
+   * Held back while hidden so a backgrounded tab never fires the request; the
+   * visibility listener re-checks and it goes out on return.
+   */
+  useEffect(() => {
+    if (!canRefresh || !playing || durationMs == null)
+      return
+    let timer: number | null = null
+    const clear = () => {
+      if (timer != null) {
+        window.clearTimeout(timer)
+        timer = null
+      }
+    }
+    const check = () => {
+      clear()
+      const p = playhead.current
+      if (!p || endSynced.current)
+        return
+      const endAtMs = durationMs + END_GRACE_MS
+      const estimatedMs = estimateMs(p)
+      if (estimatedMs < endAtMs) {
+        timer = window.setTimeout(check, endAtMs - estimatedMs)
+        return
+      }
+      if (document.hidden)
+        return
+      endSynced.current = true
+      void confirmEndRef.current()
+    }
+    check()
+    const onVisible = () => {
+      if (!document.hidden)
+        check()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      clear()
+    }
+  }, [canRefresh, playing, durationMs, playheadSeq])
 
   // Vertical swipe/drag = manual navigation (touch-action: none on the scroll
   // area hands touch pans to us). Dragging up (finger/pointer moves up) reads
