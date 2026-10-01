@@ -29,7 +29,7 @@ import type { OwnershipMessage } from './ownership'
 import { captureAuthEpoch, isAuthEpochCurrent, subscribeAuthIdentity } from '@lib/authIdentity'
 import { addBucketPlayback, deleteBucketItem, expandAlbumTracks } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
-import { getStreamingToken, IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
+import { getInPageDeviceId, getStreamingToken, IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { closeYouTubePlayer, getActiveProvider, getTrackLiked, getYouTubeNowPlaying, listDevices, play, providerStore, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback, tryPlayYouTubeTrack } from './provider'
 import { rememberSpotifyLibraryProbe, rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { readLivePlayback } from '@components/member/lyrics/playback.api'
@@ -1160,6 +1160,12 @@ async function adoptLive(): Promise<LivePlayback | null> {
     providerStore.getSnapshot() !== providerAtStart,
     !current.isOwner && current.ownerPresent,
   ].some(Boolean)
+  // The ONE uri this read cannot do without: the row this tab is anchored to. The
+  // completion delete below and row continuity both compare against it, and a tab
+  // that was a mirror until now (finding A3 makes it a reader) never warmed it —
+  // the queue-wide prefetch no longer gates the read (A4). Normally cached: free.
+  if (previousRow?.trackId && cachedUri(previousRow.trackId) === undefined)
+    await prefetchUris([previousRow.trackId])
   const live = await readLivePlayback()
 
   // A newer AUTHORITATIVE local write landed while this read was in flight — e.g.
@@ -1803,13 +1809,16 @@ async function runSeek(target: number, onReanchored?: () => void): Promise<Playe
  */
 async function adoptWithPrefetch(): Promise<LivePlayback | null> {
   const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
+  const anchorBefore = current.currentItemId
   const live = await adoptLive()
-  if (!live || (live.state !== 'playing' && live.state !== 'paused') || current.external?.spotifyTrackId !== live.trackId)
-    return live
-  const generation = adoptionGeneration
-  const seq = localWriteSeq
-  await prefetched
-  rematchExternal(live.trackId, generation, seq)
+  if (live && (live.state === 'playing' || live.state === 'paused') && current.external?.spotifyTrackId === live.trackId) {
+    // Detached: the caller — and anyone deduped onto this sync — has its answer
+    // now, and must not be held for the queue's URIs (finding A4).
+    const { trackId } = live
+    const generation = adoptionGeneration
+    const seq = localWriteSeq
+    void prefetched.then(() => rematchExternal(trackId, anchorBefore, generation, seq))
+  }
   return live
 }
 
@@ -1818,10 +1827,11 @@ async function adoptWithPrefetch(): Promise<LivePlayback | null> {
  * URI was warm comes back external. Fix the label once the cache is warm — but only
  * while nothing newer (an adoption, a local write) has spoken since.
  */
-function rematchExternal(trackId: string, generation: number, seq: number): void {
+function rematchExternal(trackId: string, anchorItemId: string | null, generation: number, seq: number): void {
   if (adoptionGeneration !== generation || localWriteSeq !== seq || current.currentItemId != null || current.external?.spotifyTrackId !== trackId)
     return
-  const { row, ambiguous } = rowForSpotifyTrack(trackId, null)
+  // The pre-read anchor keeps a duplicate-track queue on the same occurrence (BUG-26a).
+  const { row, ambiguous } = rowForSpotifyTrack(trackId, anchorItemId)
   if (!row)
     return
   patch({ currentItemId: row.itemId, external: null })
@@ -2519,11 +2529,24 @@ function clearBoundaryCheck(): void {
  * home page is adopted with no owner and `rung: null` — so nothing confirmed its
  * end, and the player and lyrics stayed on the finished song. The question is not
  * who started the audio but whether a push signal will report the end: only an
- * in-page SDK device (`rung: 'in-page'`) has one. And the read belongs to the tab
+ * in-page SDK device — see `soundsInThisTab()` — has one. And the read belongs to the tab
  * allowed to adopt — the owner, or any tab while nobody owns playback.
  */
 function needsBoundaryRead(): boolean {
-  return isReader() && current.rung !== 'in-page' && current.playing
+  return isReader() && !soundsInThisTab() && current.playing
+}
+
+/**
+ * Where the audio is NOW. `rung` only remembers the last play this site started,
+ * so after a member moves playback from this tab to their phone it still says
+ * `'in-page'` while no SDK event will ever report the phone's song ending. The
+ * adopted device says where it actually is; `rung` decides only until a read has
+ * named one.
+ */
+function soundsInThisTab(): boolean {
+  if (current.activeDeviceId != null)
+    return current.activeDeviceId === getInPageDeviceId()
+  return current.rung === 'in-page'
 }
 
 function scheduleBoundaryCheck(): void {
@@ -2547,7 +2570,7 @@ function scheduleBoundaryCheck(): void {
     // visibility read when it comes back.
     if (!current.isOwner && document.visibilityState === 'hidden')
       return
-    void confirmCompletion(endingUri)
+    void confirmCompletion(endingUri, row)
   }, delay)
 }
 
@@ -2608,11 +2631,20 @@ function resetCompletionBurst(): void {
   completionBurst = null
 }
 
-async function confirmCompletion(endingUri: string | null): Promise<void> {
+async function confirmCompletion(endingUri: string | null, row: BoardAlbum | null = null): Promise<void> {
   const burst = {}
   completionBurst = burst
   try {
-    await runCompletionBurst(endingUri)
+    // The ending song's uri is what the burst waits to see replaced. A tab that
+    // was a mirror until now (finding A3) may never have warmed it, and a null
+    // here settles on the very first — stale — read. Warm it and ask again.
+    let ending = endingUri
+    if (ending == null && row?.trackId && cachedUri(row.trackId) === undefined) {
+      await prefetchUris([row.trackId])
+      if (completionBurst === burst)
+        ending = currentSpotifyUri()
+    }
+    await runCompletionBurst(ending)
   }
   finally {
     if (completionBurst === burst)
@@ -2758,10 +2790,13 @@ function syncOwnership(): void {
   if (!isReader()) {
     clearBoundaryCheck()
     clearDiscoveryRetry()
+    // A mirror never reads, so this tab's failure is no longer the one to show.
+    if (current.discoveryFailed)
+      patch({ discoveryFailed: false })
   }
   else if (wasOwner !== ownership.isOwner || ownerLeft) {
     scheduleBoundaryCheck()
-}
+  }
   // ARCH-playback-authority-convergence Step 2. A mirror keeps `issuedTail` level
   // with what it can see and never owes anything, because it never writes
   // playback. On promotion that assumption expires: the previous owner may have

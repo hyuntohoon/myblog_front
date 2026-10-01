@@ -96,7 +96,7 @@ export type LivePlayback =
 	{ state: 'idle' } |
 	/**
 	 * `retryable` (OPS-project-stabilization Step 2A, finding A2) marks a failure that
-	 * asking again can fix — a network error, a timeout, a 429/5xx, a token route that
+	 * asking again can fix — a network error, a timeout, a 5xx, a token route that
 	 * errored. Absent means asking again would get the same answer: no connected
 	 * Spotify, not signed in, a dormant integration, or an account that changed under
 	 * the read. Only the first kind earns the session's bounded discovery retry.
@@ -160,10 +160,12 @@ async function readLivePlaybackOnce(epoch: AuthEpoch, signal: AbortSignal): Prom
   }
   if (res.status === 204)
     return { state: 'idle' }
-  // 401 is an expired token the next mint replaces; 429 and 5xx pass. A 403 is the
-  // account (scope, region, non-Premium) and asking again would not change it.
+  // Only a 5xx passes on its own. A 401 comes back on the same cached token until
+  // it nears expiry; a 429 is Spotify asking for FEWER requests, and the app's
+  // quota is not one to gamble with; a 403 is the account. None is retried here —
+  // the next lifecycle read (focus, return, navigation) still asks.
   if (!res.ok)
-    return res.status === 401 || res.status === 429 || res.status >= 500 ? { state: 'unavailable', retryable: true } : { state: 'unavailable' }
+    return res.status >= 500 ? { state: 'unavailable', retryable: true } : { state: 'unavailable' }
 
   let body: {
     is_playing?: boolean

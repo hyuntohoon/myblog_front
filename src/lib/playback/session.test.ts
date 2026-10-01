@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   prefetchUris: vi.fn(),
   cachedUri: vi.fn(),
   readLivePlayback: vi.fn(),
+  inPageDeviceId: null as string | null,
   ownershipState: {
     tabId: 'test-tab',
     isOwner: true,
@@ -55,6 +56,7 @@ vi.mock('@lib/buckets', async (importOriginal) => {
 
 vi.mock('@lib/spotifyPlayback', () => ({
   IN_PAGE_MESSAGE: '이 브라우저에서 재생 중 (음질 제한)',
+  getInPageDeviceId: () => mocks.inPageDeviceId ?? null,
   MYBLOG_PLAYBACK_CHANGED: 'myblog:playback-changed',
   play: mocks.play,
   sendPlayerCommand: mocks.sendPlayerCommand,
@@ -254,6 +256,7 @@ beforeEach(() => {
     return true
   })
   nextPlayOutcome = OK
+  mocks.inPageDeviceId = null
   serverSeq = 0
   server = []
   albumTracks = {}
@@ -2801,6 +2804,74 @@ describe('home entry discovery', () => {
       }
     })
 
+    it('confirms the end once playback has moved from this tab to the phone', async () => {
+      // `rung` still says in-page — it remembers the last play this site started —
+      // but the adopted device is the phone, and no SDK event will report its end.
+      mocks.inPageDeviceId = 'this-tab'
+      nextPlayOutcome = IN_PAGE_OK
+      setQueue([row('a')])
+      await startAt('a')
+      reads({ ...onPhone(ON_PHONE, 5_000), deviceId: 'phone' })
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().rung).toBe('in-page')
+      expect(playbackSession.boundaryConfirmationPending()).toBe(true)
+    })
+
+    it('leaves the end to the SDK while the adopted device is this tab', async () => {
+      mocks.inPageDeviceId = 'this-tab'
+      ownerless()
+      reads({ ...onPhone(ON_PHONE, 5_000), deviceId: 'this-tab' })
+      await playbackSession.syncFromLive()
+      expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+    })
+
+    it('removes the finished queue row in a tab promoted from mirror with a cold cache', async () => {
+      // The tab knew row `a` from the owner's broadcast and never warmed its uri.
+      // Without that uri the completion delete (T2) cannot recognise `a` as the song
+      // that finished, so `a` would outlive its own playback.
+      setQueue([row('a'), row('b')])
+      await startAt('a')
+      const warm = new Set<string>()
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm.has(trackId) ? `spotify:track:${trackId}` : undefined))
+      // The whole-queue prefetch never lands; only the anchored row's own one does.
+      mocks.prefetchUris.mockImplementation((ids: string[]) => {
+        if (ids.length > 1)
+          return new Promise(() => {})
+        ids.forEach(id => warm.add(id))
+        return Promise.resolve()
+      })
+      reads({ ...liveTrack('track-a'), progressMs: 180_000, durationMs: 180_000 }, { ...liveTrack('track-b'), progressMs: 900, durationMs: 180_000 })
+      await vi.advanceTimersByTimeAsync(180_000 + 1_500 + 600)
+
+      expect(mocks.deleteBucketItem).toHaveBeenCalledWith('playback-bucket', 'a')
+      expect(queueIds()).toEqual(['b'])
+    })
+
+    it('removes the finished row on a return read too, not only at a boundary', async () => {
+      // The song ended while this ownerless tab was hidden (no boundary read), and
+      // its cache is cold. The read on return must still recognise `a` as finished.
+      setQueue([row('a'), row('b')])
+      await startAt('a')
+      ownerless()
+      const warm = new Set<string>()
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm.has(trackId) ? `spotify:track:${trackId}` : undefined))
+      mocks.prefetchUris.mockImplementation((ids: string[]) => {
+        if (ids.length > 1)
+          return new Promise(() => {})
+        ids.forEach(id => warm.add(id))
+        return Promise.resolve()
+      })
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      await vi.advanceTimersByTimeAsync(200_000)
+      visibility.mockRestore()
+      reads({ ...liveTrack('track-b'), progressMs: 20_000, durationMs: 180_000 })
+
+      await playbackSession.syncFromLive()
+
+      expect(mocks.deleteBucketItem).toHaveBeenCalledWith('playback-bucket', 'a')
+      expect(queueIds()).toEqual(['b'])
+    })
+
     it('still leaves an in-page device to its own push signal', async () => {
       nextPlayOutcome = IN_PAGE_OK
       setQueue([row('a')])
@@ -2825,13 +2896,14 @@ describe('home entry discovery', () => {
       mocks.cachedUri.mockImplementation((trackId: string) => (warm ? `spotify:track:${trackId}` : undefined))
       reads(onPhone('track-a', 5_000))
 
-      const pending = playbackSession.syncFromLive()
-      await vi.waitFor(() => expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a'))
+      // The sync itself — and anyone deduped onto it — is released by the read,
+      // not held for the queue's URIs.
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a')
       expect(playbackSession.getSnapshot().currentItemId).toBeNull()
 
       finishPrefetch()
-      await pending
-      expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+      await vi.waitFor(() => expect(playbackSession.getSnapshot().currentItemId).toBe('a'))
       expect(playbackSession.getSnapshot().external).toBeNull()
       expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
     })
@@ -2850,14 +2922,14 @@ describe('home entry discovery', () => {
       mocks.cachedUri.mockImplementation((trackId: string) => (warm ? `spotify:track:${trackId}` : undefined))
       reads(onPhone('track-a', 5_000), onPhone('track-z', 1_000))
 
-      const first = playbackSession.syncFromLive()
-      await vi.waitFor(() => expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a'))
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a')
       // A newer adoption — the transport echo — names a different song.
       window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
       await vi.waitFor(() => expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-z'))
 
       finishPrefetch()
-      await first
+      await vi.advanceTimersByTimeAsync(0)
       expect(playbackSession.getSnapshot().currentItemId).toBeNull()
       expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-z')
     })
@@ -2937,6 +3009,16 @@ describe('home entry discovery', () => {
       finally {
         visibility.mockRestore()
       }
+    })
+
+    it('takes the failure down when another tab becomes the owner', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(22_000)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(true)
+      setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
     })
 
     it('drops a pending retry at the account boundary', async () => {
