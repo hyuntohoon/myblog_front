@@ -37,7 +37,7 @@ import { jumpToQueueIndex } from '@components/member/lyrics/queueJump'
 import { confirmTransport } from './confirmTransport'
 import { playbackOwnership } from './ownership'
 import { playbackQueue, withoutQueueItems } from './queue'
-import { cachedUri, prefetchUris, resolveTail } from './uris'
+import { cachedUri, prefetchUris, resolveTail, resolveUri } from './uris'
 
 /** How the last play/transport attempt ended, as ONE sentence the forms render verbatim. */
 export interface SessionNotice {
@@ -1082,6 +1082,31 @@ function rowForSpotifyTrack(
 const BOUNDARY_BUFFER_MS = 1_500
 
 /**
+ * The anchored row's uri, resolved before a read that compares against it
+ * (OPS-project-stabilization Step 2A). A tab promoted from mirror has never
+ * warmed it. `resolveUri` joins a resolve the queue-wide prefetch already has in
+ * flight, where `prefetchUris` would skip it and return at once. Capped: a slow
+ * resolve route must not hold up asking Spotify — past the cap the read goes
+ * ahead and the completion delete simply waits for the next one.
+ */
+const ANCHOR_RESOLVE_CAP_MS = 1_000
+async function warmAnchorUri(trackId: string): Promise<string | null> {
+  const known = cachedUri(trackId)
+  if (known !== undefined)
+    return known
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cap = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ANCHOR_RESOLVE_CAP_MS)
+  })
+  try {
+    return await Promise.race([resolveUri(trackId), cap])
+  }
+  finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
  * Ask Spotify what is actually playing and adopt it.
  *
  * ONE read, never a loop — D28 (no polling) is upheld: this runs when the panel
@@ -1164,8 +1189,8 @@ async function adoptLive(): Promise<LivePlayback | null> {
   // completion delete below and row continuity both compare against it, and a tab
   // that was a mirror until now (finding A3 makes it a reader) never warmed it —
   // the queue-wide prefetch no longer gates the read (A4). Normally cached: free.
-  if (previousRow?.trackId && cachedUri(previousRow.trackId) === undefined)
-    await prefetchUris([previousRow.trackId])
+  if (previousRow?.trackId)
+    await warmAnchorUri(previousRow.trackId)
   const live = await readLivePlayback()
 
   // A newer AUTHORITATIVE local write landed while this read was in flight — e.g.
@@ -2638,11 +2663,11 @@ async function confirmCompletion(endingUri: string | null, row: BoardAlbum | nul
     // The ending song's uri is what the burst waits to see replaced. A tab that
     // was a mirror until now (finding A3) may never have warmed it, and a null
     // here settles on the very first — stale — read. Warm it and ask again.
+    // Named from the row that ended, not from whatever the session holds by now.
     let ending = endingUri
-    if (ending == null && row?.trackId && cachedUri(row.trackId) === undefined) {
-      await prefetchUris([row.trackId])
-      if (completionBurst === burst)
-        ending = currentSpotifyUri()
+    if (ending == null && row?.trackId) {
+      const uri = await warmAnchorUri(row.trackId)
+      ending = uri?.startsWith('spotify:track:') ? uri : null
     }
     await runCompletionBurst(ending)
   }

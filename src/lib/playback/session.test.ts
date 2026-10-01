@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   resolveTail: vi.fn(),
   prefetchUris: vi.fn(),
   cachedUri: vi.fn(),
+  resolveUri: vi.fn(),
   readLivePlayback: vi.fn(),
   inPageDeviceId: null as string | null,
   ownershipState: {
@@ -77,6 +78,7 @@ vi.mock('@lib/playback/uris', () => ({
   resolveTail: mocks.resolveTail,
   prefetchUris: mocks.prefetchUris,
   cachedUri: mocks.cachedUri,
+  resolveUri: mocks.resolveUri,
 }))
 
 vi.mock('@lib/playback/ownership', () => ({
@@ -280,6 +282,7 @@ beforeEach(() => {
   }))
   mocks.prefetchUris.mockResolvedValue(undefined)
   mocks.cachedUri.mockImplementation((trackId: string) => `provider:track:${trackId}`)
+  mocks.resolveUri.mockImplementation(async (trackId: string) => `provider:track:${trackId}`)
   mocks.readLivePlayback.mockResolvedValue({ state: 'idle' })
   // Spotify acknowledges the write before the player applies it. Every playback
   // stub keeps that stale-read window alive; fake timers keep the suite fast.
@@ -2751,6 +2754,20 @@ describe('home entry discovery', () => {
     })
   }
 
+  /**
+   * A tab promoted from mirror: its cache is cold, and the queue-wide prefetch has
+   * every row's resolve IN FLIGHT and slow. Like the real `prefetchUris`, a second
+   * prefetch of an in-flight id returns at once without warming anything — only a
+   * `resolveUri` that joins the in-flight request waits for the answer.
+   */
+  function coldPromotedTab(warm: Set<string>): void {
+    mocks.prefetchUris.mockImplementation(() => Promise.resolve())
+    mocks.resolveUri.mockImplementation(async (trackId: string) => {
+      warm.add(trackId)
+      return `spotify:track:${trackId}`
+    })
+  }
+
   function onPhone(trackId: string, progressMs: number) {
     return { ...liveTrack(trackId), progressMs, durationMs: 30_000 }
   }
@@ -2833,13 +2850,7 @@ describe('home entry discovery', () => {
       await startAt('a')
       const warm = new Set<string>()
       mocks.cachedUri.mockImplementation((trackId: string) => (warm.has(trackId) ? `spotify:track:${trackId}` : undefined))
-      // The whole-queue prefetch never lands; only the anchored row's own one does.
-      mocks.prefetchUris.mockImplementation((ids: string[]) => {
-        if (ids.length > 1)
-          return new Promise(() => {})
-        ids.forEach(id => warm.add(id))
-        return Promise.resolve()
-      })
+      coldPromotedTab(warm)
       reads({ ...liveTrack('track-a'), progressMs: 180_000, durationMs: 180_000 }, { ...liveTrack('track-b'), progressMs: 900, durationMs: 180_000 })
       await vi.advanceTimersByTimeAsync(180_000 + 1_500 + 600)
 
@@ -2855,12 +2866,7 @@ describe('home entry discovery', () => {
       ownerless()
       const warm = new Set<string>()
       mocks.cachedUri.mockImplementation((trackId: string) => (warm.has(trackId) ? `spotify:track:${trackId}` : undefined))
-      mocks.prefetchUris.mockImplementation((ids: string[]) => {
-        if (ids.length > 1)
-          return new Promise(() => {})
-        ids.forEach(id => warm.add(id))
-        return Promise.resolve()
-      })
+      coldPromotedTab(warm)
       const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
       await vi.advanceTimersByTimeAsync(200_000)
       visibility.mockRestore()
@@ -2870,6 +2876,23 @@ describe('home entry discovery', () => {
 
       expect(mocks.deleteBucketItem).toHaveBeenCalledWith('playback-bucket', 'a')
       expect(queueIds()).toEqual(['b'])
+    })
+
+    it('does not let a stalled resolve route hold up asking Spotify', async () => {
+      setQueue([row('a')])
+      await startAt('a')
+      mocks.cachedUri.mockImplementation(() => undefined)
+      mocks.resolveUri.mockImplementation(() => new Promise(() => {}))
+      mocks.readLivePlayback.mockClear()
+      reads(onPhone(ON_PHONE, 1_000))
+
+      const pending = playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(999)
+      expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      await pending
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
     })
 
     it('still leaves an in-page device to its own push signal', async () => {
