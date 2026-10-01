@@ -13,7 +13,7 @@
 // RFC asks for is the first `describe`: it fails on the pre-fix component, and no
 // remount is involved in making it pass.
 import type { LyricsResponse } from './lyrics.api'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LyricsViewer } from './LyricsViewer'
 
@@ -27,6 +27,8 @@ const mocks = vi.hoisted(() => ({
   role: { v: 'owner' as 'owner' | 'mirror' },
   pending: { v: false },
   observeLive: vi.fn(),
+  releaseWatch: vi.fn(),
+  watchExternalPlayback: vi.fn(),
   syncFromLive: vi.fn(async () => {}),
   getLyrics: vi.fn(),
   readLivePlayback: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock('@lib/playback/session', () => ({
     currentSpotifyTrackId: () => mocks.sessionTrack.id,
     currentRow: () => null,
     observeLive: mocks.observeLive,
+    watchExternalPlayback: mocks.watchExternalPlayback,
     boundaryConfirmationPending: () => mocks.pending.v,
     syncFromLive: mocks.syncFromLive,
     seekTo: vi.fn(async () => ({ ok: true })),
@@ -223,6 +226,7 @@ beforeEach(() => {
   mocks.getLyrics.mockImplementation(async (id: string) => lyricsById[id] ?? MISSING)
   mocks.readQueue.mockResolvedValue({ ok: true, current: null, items: [] })
   mocks.readLivePlayback.mockResolvedValue({ state: 'idle' })
+  mocks.watchExternalPlayback.mockImplementation(() => mocks.releaseWatch)
   // The real contract: the owner adopts the read into the session; a mirror may not,
   // and the viewer is told to read for itself.
   mocks.observeLive.mockImplementation(async () => {
@@ -503,5 +507,38 @@ describe('song detection does not depend on the lyrics (case 7)', () => {
     await waitFor(() => expect(title()).toContain('Title B'))
     fireEvent.click(screen.getByLabelText('대기열'))
     await waitFor(() => expect(screen.getByText('B one')).toBeTruthy())
+  })
+})
+
+describe('the external watch belongs to the open viewer (OQ2)', () => {
+  it('asks the session to watch while bound to live playback, and releases on close', async () => {
+    await openOnA()
+    expect(mocks.watchExternalPlayback).toHaveBeenCalledOnce()
+    expect(mocks.releaseWatch).not.toHaveBeenCalled()
+
+    cleanup()
+
+    expect(mocks.releaseWatch).toHaveBeenCalledOnce()
+  })
+
+  it('does not ask from a static entry, which has no live playback to watch', async () => {
+    render(<LyricsViewer spotifyTrackId="A" onClose={() => {}} />)
+    await waitFor(() => expect(mocks.getLyrics).toHaveBeenCalledWith('A'))
+
+    expect(mocks.watchExternalPlayback).not.toHaveBeenCalled()
+  })
+
+  it('spends no read of its own between events: the watch is the session\'s', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    await openOnA()
+    mocks.observeLive.mockClear()
+    mocks.readLivePlayback.mockClear()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+
+    expect(mocks.observeLive).not.toHaveBeenCalled()
+    expect(mocks.readLivePlayback).not.toHaveBeenCalled()
   })
 })

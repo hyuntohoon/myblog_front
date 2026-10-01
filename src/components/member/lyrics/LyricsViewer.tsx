@@ -27,7 +27,8 @@
 // via `focusIndexForMs()`. The ↻ re-sync re-seeds the anchor. Plain-only
 // (non-trackable) rows never run the estimate. No backend / polling / SDK
 // coupling — the position source is still the existing one-shot REST read
-// (D28 honored).
+// (D28 honored; since OPS-project-stabilization Step 2A the session's external
+// watch is the one recorded exception, and it never re-anchors on agreement).
 //
 // FEAT-lyrics-sync-precision Step 1 removes the fixed lead by removing what it
 // was hiding. `SYNC_LEAD_MS = 300` was never a latency correction: it
@@ -1475,6 +1476,19 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
       clear()
     }
   }, [canRefresh, playing, durationMs, playheadSeq])
+
+  /**
+   * OPS-project-stabilization Step 2A (OQ2, owner decision 2026-10-01) — while this
+   * viewer is bound to live playback, the session watches for a skip, seek or pause
+   * made in another Spotify client. No event reports those to a visible tab, and
+   * without this the viewer kept song A's lyrics up until A's estimated end. The
+   * watch is the session's (one reader, quiet unless something changed); this
+   * viewer only asks for it and adopts the result like any other session answer.
+   */
+  useEffect(() => {
+    if (canRefresh)
+      return playbackSession.watchExternalPlayback()
+  }, [canRefresh])
 
   // Vertical swipe/drag = manual navigation (touch-action: none on the scroll
   // area hands touch pans to us). Dragging up (finger/pointer moves up) reads

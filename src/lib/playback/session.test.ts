@@ -5,7 +5,7 @@ import { getAuthIdentity } from '@lib/authIdentity'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { playbackQueue } from './queue'
-import { playbackSession } from './session'
+import { EXTERNAL_PAUSED_WATCH_MS, EXTERNAL_SEEK_TOLERANCE_MS, EXTERNAL_WATCH_FAILURE_BUDGET, EXTERNAL_WATCH_INTERVAL_MS, playbackSession } from './session'
 
 const mocks = vi.hoisted(() => ({
   deleteBucketItem: vi.fn(),
@@ -3052,5 +3052,379 @@ describe('home entry discovery', () => {
       await vi.advanceTimersByTimeAsync(60_000)
       expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
     })
+  })
+})
+
+describe('external watch (OPS-project-stabilization Step 2A, OQ2)', () => {
+  const TEN_S = EXTERNAL_WATCH_INTERVAL_MS
+  /** What the phone is doing. Reads report it as of the instant they are made. */
+  let phone: { trackId: string, baseMs: number, sinceMs: number, playing: boolean, deviceId: string | null }
+  let answer: (() => Record<string, unknown>) | null
+  let release: (() => void) | null
+
+  function phoneRead(): Record<string, unknown> {
+    const now = performance.now()
+    return {
+      ...liveTrack(phone.trackId, phone.playing ? 'playing' : 'paused'),
+      progressMs: phone.playing ? phone.baseMs + (now - phone.sinceMs) : phone.baseMs,
+      readAtMs: now,
+      durationMs: 600_000,
+      deviceId: phone.deviceId,
+    }
+  }
+  function onPhone(next: Partial<typeof phone>): void {
+    phone = { ...phone, sinceMs: performance.now(), ...next }
+  }
+  function ownerless(): void {
+    setOwnership({ isOwner: false, ownerTabId: null, ownerPresent: false })
+  }
+  function watch(): void {
+    release = playbackSession.watchExternalPlayback()
+  }
+  function reads(): number {
+    return mocks.readLivePlayback.mock.calls.length
+  }
+  /** Home entry while the phone plays, with the lyrics viewer open. */
+  async function watching(): Promise<void> {
+    ownerless()
+    await playbackSession.syncFromLive()
+    watch()
+    mocks.readLivePlayback.mockClear()
+  }
+
+  beforeEach(() => {
+    phone = { trackId: 'track-a', baseMs: 20_000, sinceMs: performance.now(), playing: true, deviceId: 'phone' }
+    answer = null
+    release = null
+    mocks.readLivePlayback.mockImplementation(async () => answer ? answer() : phoneRead())
+  })
+  afterEach(() => {
+    release?.()
+  })
+
+  it('reads nothing between events when no surface asked for it', async () => {
+    ownerless()
+    await playbackSession.syncFromLive()
+    mocks.readLivePlayback.mockClear()
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(reads()).toBe(0)
+  })
+
+  it('reads once per interval, and an agreeing read changes nothing', async () => {
+    await watching()
+    const before = playbackSession.getSnapshot()
+
+    await vi.advanceTimersByTimeAsync(TEN_S - 1)
+    expect(reads()).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(reads()).toBe(1)
+    await vi.advanceTimersByTimeAsync(2 * TEN_S)
+
+    expect(reads()).toBe(3)
+    // Same object: no patch, so no re-anchor and no re-render anywhere.
+    expect(playbackSession.getSnapshot()).toBe(before)
+  })
+
+  it('finds a skip made on the phone within one interval, with the read that saw it', async () => {
+    await watching()
+    await vi.advanceTimersByTimeAsync(3_000)
+    onPhone({ trackId: 'track-b', baseMs: 0 })
+
+    await vi.advanceTimersByTimeAsync(TEN_S - 3_000)
+
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-b')
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(7_000)
+    expect(reads()).toBe(1)
+  })
+
+  it('finds a skip even when the new song sits at the position the old one would have', async () => {
+    await watching()
+    await vi.advanceTimersByTimeAsync(TEN_S - 1)
+    onPhone({ trackId: 'track-b', baseMs: 20_000 + TEN_S - 1 })
+
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-b')
+  })
+
+  it('keeps watching the new song', async () => {
+    await watching()
+    onPhone({ trackId: 'track-b', baseMs: 0 })
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    onPhone({ trackId: 'track-c', baseMs: 0 })
+    await vi.advanceTimersByTimeAsync(TEN_S)
+
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-c')
+    expect(reads()).toBe(2)
+  })
+
+  it('re-anchors on a seek, and not on drift inside the tolerance', async () => {
+    await watching()
+    const anchored = playbackSession.getSnapshot().anchor
+
+    onPhone({ baseMs: 20_000 + EXTERNAL_SEEK_TOLERANCE_MS - 1 })
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    expect(playbackSession.getSnapshot().anchor).toBe(anchored)
+
+    onPhone({ baseMs: 300_000 })
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    expect(playbackSession.getSnapshot().anchor?.ms).toBe(310_000)
+  })
+
+  it('sees a pause, then the resume', async () => {
+    await watching()
+    // Paused exactly where the clock already is: only the play state differs.
+    await vi.advanceTimersByTimeAsync(TEN_S - 1)
+    onPhone({ playing: false, baseMs: 20_000 + TEN_S - 1 })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(playbackSession.getSnapshot().playing).toBe(false)
+    const held = playbackSession.getSnapshot()
+
+    // A held position is not drift: paused reads that agree change nothing.
+    await vi.advanceTimersByTimeAsync(2 * TEN_S)
+    expect(playbackSession.getSnapshot()).toBe(held)
+
+    await vi.advanceTimersByTimeAsync(TEN_S - 1)
+    onPhone({ playing: true })
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+  })
+
+  it('stops asking about a song left paused', async () => {
+    await watching()
+    onPhone({ playing: false, baseMs: 25_000 })
+    await vi.advanceTimersByTimeAsync(TEN_S + EXTERNAL_PAUSED_WATCH_MS)
+    const spent = reads()
+    expect(spent).toBeGreaterThan(1)
+    expect(spent).toBeLessThanOrEqual(1 + EXTERNAL_PAUSED_WATCH_MS / TEN_S)
+
+    await vi.advanceTimersByTimeAsync(10 * TEN_S)
+
+    expect(reads()).toBe(spent)
+  })
+
+  it('does not read while the page is hidden, and picks up again when it returns', async () => {
+    await watching()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    try {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(3 * TEN_S)
+      expect(reads()).toBe(0)
+
+      visibility.mockReturnValue('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(TEN_S)
+      expect(reads()).toBe(1)
+    }
+    finally {
+      visibility.mockRestore()
+    }
+  })
+
+  it('does not read in a mirror tab', async () => {
+    await watching()
+    setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+
+    await vi.advanceTimersByTimeAsync(3 * TEN_S)
+
+    expect(reads()).toBe(0)
+  })
+
+  it('does not read when the audio is this tab\'s own SDK device, which pushes', async () => {
+    mocks.inPageDeviceId = 'this-tab'
+    phone.deviceId = 'this-tab'
+    await watching()
+
+    await vi.advanceTimersByTimeAsync(3 * TEN_S)
+
+    expect(reads()).toBe(0)
+  })
+
+  it('stops when the surface closes', async () => {
+    ownerless()
+    await playbackSession.syncFromLive()
+    watch()
+    mocks.readLivePlayback.mockClear()
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    const armed = vi.getTimerCount()
+    release?.()
+    release = null
+    expect(vi.getTimerCount()).toBe(armed - 1)
+
+    await vi.advanceTimersByTimeAsync(3 * TEN_S)
+
+    expect(reads()).toBe(1)
+  })
+
+  it('stops on a failure asking again cannot fix, until another read gets an answer', async () => {
+    await watching()
+    answer = () => ({ state: 'unavailable' })
+    await vi.advanceTimersByTimeAsync(5 * TEN_S)
+    expect(reads()).toBe(1)
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a')
+
+    answer = null
+    await playbackSession.syncFromLive()
+    mocks.readLivePlayback.mockClear()
+    await vi.advanceTimersByTimeAsync(TEN_S)
+
+    expect(reads()).toBe(1)
+  })
+
+  it('gives a retryable failure a bounded number of tries', async () => {
+    await watching()
+    answer = () => ({ state: 'unavailable', retryable: true })
+
+    await vi.advanceTimersByTimeAsync(10 * TEN_S)
+
+    expect(reads()).toBe(EXTERNAL_WATCH_FAILURE_BUDGET)
+  })
+
+  it('a failure that recovers does not count against the next one', async () => {
+    await watching()
+    answer = () => ({ state: 'unavailable', retryable: true })
+    await vi.advanceTimersByTimeAsync((EXTERNAL_WATCH_FAILURE_BUDGET - 1) * TEN_S)
+    answer = null
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    answer = () => ({ state: 'unavailable', retryable: true })
+    mocks.readLivePlayback.mockClear()
+
+    await vi.advanceTimersByTimeAsync(10 * TEN_S)
+
+    expect(reads()).toBe(EXTERNAL_WATCH_FAILURE_BUDGET)
+  })
+
+  it('does not take one idle read for a stop: the next song still arrives', async () => {
+    await watching()
+    let n = 0
+    answer = () => {
+      n += 1
+      if (n === 1)
+        return { state: 'idle' }
+      onPhone({ trackId: 'track-b', baseMs: 0 })
+      answer = null
+      return phoneRead()
+    }
+
+    await vi.advanceTimersByTimeAsync(TEN_S + 2_000)
+
+    expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-b')
+    expect(playbackSession.getSnapshot().playing).toBe(true)
+    // …and the watch survived the idle in between.
+    mocks.readLivePlayback.mockClear()
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    expect(reads()).toBe(1)
+  })
+
+  it('accepts a stop that outlasts the boundary burst, and then stops reading', async () => {
+    await watching()
+    answer = () => ({ state: 'idle' })
+
+    await vi.advanceTimersByTimeAsync(TEN_S + 5_000)
+    expect(playbackSession.getSnapshot().external).toBeNull()
+    const spent = reads()
+    expect(spent).toBe(5)
+
+    await vi.advanceTimersByTimeAsync(5 * TEN_S)
+    expect(reads()).toBe(spent)
+  })
+
+  it('stands aside while a command is settling', async () => {
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    watch()
+    mocks.readLivePlayback.mockClear()
+    mocks.sendPlayerCommand.mockImplementation(() => new Promise(() => {}))
+    void playbackSession.togglePlay()
+    await flushPlaybackStart()
+
+    await vi.advanceTimersByTimeAsync(2 * TEN_S)
+
+    expect(reads()).toBe(0)
+  })
+
+  it('drops its read when a local command landed while it was in flight', async () => {
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    watch()
+    let land: (v: Record<string, unknown>) => void = () => {}
+    mocks.readLivePlayback.mockImplementation(() => new Promise((resolve) => {
+      land = resolve
+    }))
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    // The read is out. The member starts row b from this site meanwhile.
+    const pending = playbackSession.playAt('b')
+    await flushPlaybackStart()
+    await finishPlayback(pending)
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+
+    land({ ...liveTrack('track-zzz'), readAtMs: performance.now(), deviceId: 'phone' })
+    await flushPlaybackStart()
+
+    expect(playbackSession.getSnapshot().currentItemId).toBe('b')
+    expect(playbackSession.getSnapshot().external).toBeNull()
+  })
+
+  it('counts the interval from the last answer, whoever asked', async () => {
+    await watching()
+    await vi.advanceTimersByTimeAsync(6_000)
+    await playbackSession.syncFromLive()
+    mocks.readLivePlayback.mockClear()
+
+    await vi.advanceTimersByTimeAsync(TEN_S - 1)
+    expect(reads()).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(reads()).toBe(1)
+  })
+
+  it('starts when this tab becomes the reader, with no read in between', async () => {
+    await watching()
+    setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+    await vi.advanceTimersByTimeAsync(2 * TEN_S)
+    expect(reads()).toBe(0)
+
+    setOwnership({ ownerTabId: null, ownerPresent: false })
+    await vi.advanceTimersByTimeAsync(TEN_S)
+
+    expect(reads()).toBe(1)
+  })
+
+  it('comes back after standing aside for a read that then failed', async () => {
+    await watching()
+    let land: (v: Record<string, unknown>) => void = () => {}
+    mocks.readLivePlayback.mockImplementationOnce(() => new Promise((resolve) => {
+      land = resolve
+    }))
+    await vi.advanceTimersByTimeAsync(TEN_S - 1)
+    // A lifecycle read is in flight when the interval comes round.
+    const sync = playbackSession.syncFromLive()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(reads()).toBe(1)
+    // It fails: no answer, so nothing else restarts the watch.
+    land({ state: 'unavailable' })
+    await sync
+
+    await vi.advanceTimersByTimeAsync(TEN_S)
+
+    expect(reads()).toBe(2)
+  })
+
+  it('does not carry a stop across an account change', async () => {
+    await watching()
+    answer = () => ({ state: 'unavailable' })
+    await vi.advanceTimersByTimeAsync(TEN_S)
+    answer = null
+    playbackSession.__reset()
+    setOwnership({ isOwner: true, ownerTabId: 'test-tab', ownerPresent: true })
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    mocks.readLivePlayback.mockClear()
+
+    await vi.advanceTimersByTimeAsync(TEN_S)
+
+    expect(reads()).toBe(1)
   })
 })
