@@ -33,6 +33,7 @@ vi.mock('@lib/buckets', async original => ({
 }))
 vi.mock('@lib/spotifyPlayback', () => ({
   IN_PAGE_MESSAGE: '이 브라우저에서 재생 중 (음질 제한)',
+  getInPageDeviceId: () => null,
   MYBLOG_PLAYBACK_CHANGED: 'myblog:playback-changed',
   play: mocks.spotifyPlay,
   sendPlayerCommand: mocks.spotifyCommand,

@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   resolveUri: vi.fn(),
   reportNotice: vi.fn(),
   snapshot: { anchor: null, durationMs: null } as unknown as PlaybackSessionState,
+  currentRow: null as BoardAlbum | null,
+  observeLive: vi.fn(),
+  readLivePlayback: vi.fn(),
 }))
 
 vi.mock('@lib/playback/provider', () => ({ providerStore: { getSnapshot: () => mocks.provider } }))
@@ -31,8 +34,12 @@ vi.mock('@lib/playback/session', () => ({
   playbackSession: {
     reportNotice: mocks.reportNotice,
     getSnapshot: () => mocks.snapshot,
+    currentRow: () => mocks.currentRow,
+    observeLive: mocks.observeLive,
   },
 }))
+
+vi.mock('@components/member/lyrics/playback.api', () => ({ readLivePlayback: mocks.readLivePlayback }))
 
 const ROW = { itemId: 'i1', trackId: 'track-1', title: 'A Song', artist: 'Someone', cover: null } as BoardAlbum
 const STATE = { anchor: null, durationMs: null, external: null } as unknown as PlaybackSessionState
@@ -54,14 +61,55 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.provider = { provider: 'spotify', trackId: null, videoId: null }
   mocks.snapshot = { anchor: null, durationMs: null } as unknown as PlaybackSessionState
+  mocks.currentRow = null
+  // Default: the press-time read fails, so the stored-identity path below runs.
+  mocks.observeLive.mockResolvedValue({ k: 'adopted', live: { state: 'unavailable' } })
 })
+
+/**
+ * Press 가사 on `row`/`state` with the session holding the same — the stored-
+ * identity path reads the session as it stands after the press-time read.
+ */
+function press(row: BoardAlbum | null, state: PlaybackSessionState): void {
+  mocks.currentRow = row
+  mocks.snapshot = { ...state, ...stripUndefined(mocks.snapshot) } as PlaybackSessionState
+  openPlaybackLyrics(row, state)
+}
+
+function stripUndefined<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v != null)) as Partial<T>
+}
+
+function live(trackId: string, state: 'playing' | 'paused' | 'idle' = 'playing') {
+  if (state === 'idle')
+    return { state }
+  return {
+    state,
+    trackId,
+    progressMs: 61_000,
+    readAtMs: 4_242,
+    durationMs: 180_000,
+    track: `Song ${trackId}`,
+    artist: 'Live Artist',
+    artists: [{ id: 'ar1', name: 'Live Artist' }],
+    album: 'Live Album',
+    albumSpotifyId: null,
+    albumCoverUrl: `https://img/${trackId}`,
+    deviceName: 'Phone',
+    shuffle: null,
+    repeat: null,
+    volumePercent: null,
+    contextUri: null,
+    contextType: null,
+  }
+}
 
 describe('openPlaybackLyrics', () => {
   it('opens straight from the cache without spending a request', async () => {
     mocks.cachedUri.mockReturnValue('spotify:track:abc')
     const event = opened()
 
-    openPlaybackLyrics(ROW, STATE)
+    press(ROW, STATE)
 
     expect((await event).detail.trackId).toBe('abc')
     expect(mocks.resolveUri).not.toHaveBeenCalled()
@@ -74,7 +122,7 @@ describe('openPlaybackLyrics', () => {
     mocks.resolveUri.mockResolvedValue('spotify:track:xyz')
     const event = opened()
 
-    openPlaybackLyrics(ROW, STATE)
+    press(ROW, STATE)
 
     expect((await event).detail.trackId).toBe('xyz')
     expect(mocks.resolveUri).toHaveBeenCalledWith('track-1')
@@ -86,7 +134,7 @@ describe('openPlaybackLyrics', () => {
     // re-asking spends a round trip to be told the same thing.
     mocks.cachedUri.mockReturnValue(null)
 
-    openPlaybackLyrics(ROW, STATE)
+    press(ROW, STATE)
     await settle()
 
     expect(mocks.resolveUri).not.toHaveBeenCalled()
@@ -101,7 +149,7 @@ describe('openPlaybackLyrics', () => {
       openedAt = e
     }, { once: true })
 
-    openPlaybackLyrics(ROW, STATE)
+    press(ROW, STATE)
     await settle()
 
     expect(openedAt).toBeNull()
@@ -114,7 +162,7 @@ describe('openPlaybackLyrics', () => {
   it('falls back to external playback when there is no row at all', async () => {
     const event = opened()
 
-    openPlaybackLyrics(null, { ...STATE, external: { spotifyTrackId: 'ext-1' } } as unknown as PlaybackSessionState)
+    press(null, { ...STATE, external: { spotifyTrackId: 'ext-1' } } as unknown as PlaybackSessionState)
 
     expect((await event).detail.trackId).toBe('ext-1')
     expect(mocks.cachedUri).not.toHaveBeenCalled()
@@ -131,7 +179,7 @@ describe('openPlaybackLyrics', () => {
     })
     const event = opened()
 
-    openPlaybackLyrics(ROW, { ...STATE, anchor: { ms: 1_000, wallMs: 1 } } as unknown as PlaybackSessionState)
+    press(ROW, { ...STATE, anchor: { ms: 1_000, wallMs: 1 } } as unknown as PlaybackSessionState)
 
     const detail = (await event).detail
     expect(detail.progressMs).toBe(9_000)
@@ -183,7 +231,9 @@ describe('provider-safe lyrics entry', () => {
     }))
     const listener = vi.fn()
     window.addEventListener(ENT_OPEN_LIVE_LYRICS, listener)
-    openPlaybackLyrics(ROW, STATE)
+    press(ROW, STATE)
+    // The change lands while the URI resolve is in flight, after the press-time read.
+    await settle()
     if (change === 'provider')
       mocks.provider = { provider: 'youtube', trackId: 'catalog-youtube', videoId: 'video-1' }
     else
@@ -194,5 +244,92 @@ describe('provider-safe lyrics entry', () => {
     expect(listener).not.toHaveBeenCalled()
     expect(mocks.reportNotice).not.toHaveBeenCalled()
     window.removeEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+  })
+})
+
+// OPS-project-stabilization Step 2A, finding A5 — the press opens what is playing
+// NOW, not what the session last stored. With the song changed on a phone since
+// the page last read, the stored identity is the previous song, and the viewer
+// trusts its entry: it showed A's lyrics until A's estimated end.
+describe('press-time observation', () => {
+  it('opens the song Spotify names now, with its own clock, over a stale stored song', async () => {
+    mocks.observeLive.mockResolvedValue({ k: 'adopted', live: live('B') })
+    mocks.cachedUri.mockReturnValue('spotify:track:A')
+    const event = opened()
+
+    openPlaybackLyrics(ROW, { ...STATE, anchor: { ms: 1_000, wallMs: 1 } } as unknown as PlaybackSessionState)
+
+    const detail = (await event).detail
+    expect(detail).toMatchObject({
+      trackId: 'B',
+      progressMs: 61_000,
+      progressAtMs: 4_242,
+      durationMs: 180_000,
+      track: 'Song B',
+      albumCoverUrl: 'https://img/B',
+    })
+    expect(mocks.cachedUri).not.toHaveBeenCalled()
+    expect(mocks.resolveUri).not.toHaveBeenCalled()
+  })
+
+  it('opens a paused song as well — held is not idle', async () => {
+    mocks.observeLive.mockResolvedValue({ k: 'adopted', live: live('P', 'paused') })
+    const event = opened()
+    openPlaybackLyrics(null, STATE)
+    expect((await event).detail.trackId).toBe('P')
+  })
+
+  it('opens nothing when Spotify says nothing is playing', async () => {
+    mocks.observeLive.mockResolvedValue({ k: 'adopted', live: live('', 'idle') })
+    const listener = vi.fn()
+    window.addEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+    press(ROW, { ...STATE, external: { spotifyTrackId: 'stale' } } as unknown as PlaybackSessionState)
+    await settle()
+    expect(listener).not.toHaveBeenCalled()
+    window.removeEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+  })
+
+  it('reads for itself in a mirror tab, which may not adopt', async () => {
+    mocks.observeLive.mockResolvedValue({ k: 'mirror' })
+    mocks.readLivePlayback.mockResolvedValue(live('M'))
+    const event = opened()
+    openPlaybackLyrics(ROW, STATE)
+    expect((await event).detail.trackId).toBe('M')
+    expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+  })
+
+  it('falls back to what the session holds AFTER the read when the session is settling', async () => {
+    // `superseded`: a command or boundary burst owns the answer. What it settled
+    // on is the session's row now, not the row that was pressed.
+    mocks.observeLive.mockImplementation(async () => {
+      mocks.currentRow = { ...ROW, itemId: 'i2', trackId: 'track-2' } as BoardAlbum
+      return { k: 'superseded' }
+    })
+    mocks.cachedUri.mockImplementation((id: string) => `spotify:track:${id}-uri`)
+    const event = opened()
+    openPlaybackLyrics(ROW, STATE)
+    expect((await event).detail.trackId).toBe('track-2-uri')
+  })
+
+  it('drops the answer when the provider switched during the read', async () => {
+    mocks.observeLive.mockImplementation(async () => {
+      mocks.provider = { provider: 'youtube', trackId: 'yt', videoId: 'v' }
+      return { k: 'adopted', live: live('B') }
+    })
+    const listener = vi.fn()
+    window.addEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+    openPlaybackLyrics(ROW, STATE)
+    await settle()
+    expect(listener).not.toHaveBeenCalled()
+    window.removeEventListener(ENT_OPEN_LIVE_LYRICS, listener)
+  })
+
+  it('does not read Spotify at all for a YouTube session', async () => {
+    mocks.provider = { provider: 'youtube', trackId: 'catalog-youtube', videoId: 'video-1' }
+    mocks.cachedUri.mockReturnValue('spotify:track:yt-lyrics')
+    const event = opened()
+    openPlaybackLyrics(null, STATE)
+    expect((await event).detail.trackId).toBe('yt-lyrics')
+    expect(mocks.observeLive).not.toHaveBeenCalled()
   })
 })

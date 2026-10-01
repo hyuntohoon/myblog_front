@@ -620,6 +620,13 @@
 .pb-scope .global-playback-pill .pbp-current-title { font-size: 12px; font-style: normal; max-width: 130px; }
 .pb-scope .global-playback-pill .pbp-current-artist,
 .pb-scope .global-playback-pill .pbp-current-outside { display: none; }
+.pb-scope .global-playback-pill-failed { right: auto; left: 12px; max-width: min(280px, calc(100vw - 24px)); padding: 8px 14px; font-size: 12px; }
+.pb-scope .global-playback-pill-failed .pbp-discovery-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-scope .global-playback-pill-failed:disabled { cursor: progress; color: var(--deck-muted); }
+/* Narrow screens: Pocket's entry shares the bottom row, so sit one row above it. */
+@media (max-width: 420px) {
+  .pb-scope .global-playback-pill-failed { bottom: calc(62px + env(safe-area-inset-bottom)); }
+}
 
 .pb-scope .pbp-dock-slot {
   position: fixed;

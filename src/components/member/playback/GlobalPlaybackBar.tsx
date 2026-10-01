@@ -108,6 +108,34 @@ function NarrowVolume({ percent, onSet }: {
   )
 }
 
+/**
+ * OPS-project-stabilization Step 2A (finding A2). Nothing is known to be playing
+ * because the read kept failing — not because nothing plays. Rendering nothing here
+ * told the member the second thing. Shown only after the session's bounded retry
+ * is spent and only for a failure asking again can fix, so a member without
+ * Spotify connected never sees it. Same pill shape as the collapsed bar: it is
+ * the player saying where it is, not a new surface.
+ */
+function DiscoveryFailedPill() {
+  const [retrying, setRetrying] = useState(false)
+  const retry = () => {
+    setRetrying(true)
+    void playbackSession.syncFromLive().finally(() => setRetrying(false))
+  }
+  return (
+    <button
+	type="button"
+	className="global-playback-pill global-playback-pill-failed"
+	onClick={retry}
+	disabled={retrying}
+	aria-busy={retrying}
+	aria-label={retrying ? '재생 정보를 다시 확인하는 중' : '재생 정보를 불러오지 못했어요. 다시 시도'}
+    >
+      <span className="pbp-discovery-text">{retrying ? '확인하는 중…' : '재생 정보를 못 불러왔어요 · 다시 시도'}</span>
+    </button>
+  )
+}
+
 export interface GlobalPlaybackBarProps {
   playbackPanelOpen: boolean
   onOpenPlaybackPanel: () => void
@@ -215,7 +243,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   }
 
   if (!visible)
-    return null
+    return model.state.discoveryFailed && !youtube ? <DiscoveryFailedPill /> : null
 
   if (collapsed) {
     return (

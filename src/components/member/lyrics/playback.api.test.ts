@@ -170,12 +170,46 @@ describe('entry read recovery and member isolation', () => {
       vi.stubGlobal('fetch', fetcher)
       const stalled = readLivePlayback()
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(await stalled).toEqual({ state: 'unavailable' })
+      expect(await stalled).toEqual({ state: 'unavailable', retryable: true })
       expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true)
       expect(await readLivePlayback()).toEqual({ state: 'idle' })
     }
     finally {
       vi.useRealTimers()
     }
+  })
+})
+
+// OPS-project-stabilization Step 2A, finding A2 — only a failure asking again can
+// fix earns the session's bounded discovery retry. 401 returns on the same cached
+// token, 429 asks for fewer requests, 403 is the account: none of them is retried.
+describe('which failures are worth asking again', () => {
+  it.each([
+    [503, true],
+    [500, true],
+    [401, false],
+    [403, false],
+    [429, false],
+  ])('hTTP %i → retryable %s', async (status, retryable) => {
+    respond(status, {})
+    expect(await readLivePlayback()).toEqual(retryable ? { state: 'unavailable', retryable: true } : { state: 'unavailable' })
+  })
+
+  it('retries a network failure', async () => {
+    lib.getStreamingToken.mockResolvedValue({ ok: true, token: 't' } as never)
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network')))
+    expect(await readLivePlayback()).toEqual({ state: 'unavailable', retryable: true })
+  })
+
+  it.each([
+    ['error', true],
+    ['disconnected', false],
+    ['unauthorized', false],
+    ['dormant', false],
+    ['unsupported', false],
+  ])('token %s → retryable %s', async (status, retryable) => {
+    lib.getStreamingToken.mockResolvedValue({ ok: false, status } as never)
+    vi.stubGlobal('fetch', vi.fn())
+    expect(await readLivePlayback()).toEqual(retryable ? { state: 'unavailable', retryable: true } : { state: 'unavailable' })
   })
 })

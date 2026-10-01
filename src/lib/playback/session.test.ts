@@ -25,7 +25,9 @@ const mocks = vi.hoisted(() => ({
   resolveTail: vi.fn(),
   prefetchUris: vi.fn(),
   cachedUri: vi.fn(),
+  resolveUri: vi.fn(),
   readLivePlayback: vi.fn(),
+  inPageDeviceId: null as string | null,
   ownershipState: {
     tabId: 'test-tab',
     isOwner: true,
@@ -55,6 +57,7 @@ vi.mock('@lib/buckets', async (importOriginal) => {
 
 vi.mock('@lib/spotifyPlayback', () => ({
   IN_PAGE_MESSAGE: '이 브라우저에서 재생 중 (음질 제한)',
+  getInPageDeviceId: () => mocks.inPageDeviceId ?? null,
   MYBLOG_PLAYBACK_CHANGED: 'myblog:playback-changed',
   play: mocks.play,
   sendPlayerCommand: mocks.sendPlayerCommand,
@@ -75,6 +78,7 @@ vi.mock('@lib/playback/uris', () => ({
   resolveTail: mocks.resolveTail,
   prefetchUris: mocks.prefetchUris,
   cachedUri: mocks.cachedUri,
+  resolveUri: mocks.resolveUri,
 }))
 
 vi.mock('@lib/playback/ownership', () => ({
@@ -254,6 +258,7 @@ beforeEach(() => {
     return true
   })
   nextPlayOutcome = OK
+  mocks.inPageDeviceId = null
   serverSeq = 0
   server = []
   albumTracks = {}
@@ -277,6 +282,7 @@ beforeEach(() => {
   }))
   mocks.prefetchUris.mockResolvedValue(undefined)
   mocks.cachedUri.mockImplementation((trackId: string) => `provider:track:${trackId}`)
+  mocks.resolveUri.mockImplementation(async (trackId: string) => `provider:track:${trackId}`)
   mocks.readLivePlayback.mockResolvedValue({ state: 'idle' })
   // Spotify acknowledges the write before the player applies it. Every playback
   // stub keeps that stale-read window alive; fake timers keep the suite fast.
@@ -1338,7 +1344,10 @@ describe('session-owned seek', () => {
   })
 
   it('re-anchors optimistically before a playing confirmation resolves', async () => {
-    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('SPOT-X'))
+    // Anchored at the fake clock's NOW: since Step 2A finding A3 an adopted remote
+    // track arms its end read even with `rung: null`, and `readAtMs: 1_000` on a
+    // clock that has long passed it reads as a track already over.
+    mocks.readLivePlayback.mockResolvedValueOnce({ ...liveTrack('SPOT-X'), readAtMs: performance.now() })
     await playbackSession.syncFromLive()
     mocks.readLivePlayback.mockClear()
 
@@ -2721,5 +2730,327 @@ describe('boundaryConfirmationPending', () => {
 
     playbackSession.__reset()
     expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+  })
+})
+
+// OPS-project-stabilization Step 2A, finding A — music already playing on a phone
+// when the member opens the home page. No tab owns playback, nothing was started
+// from this site (`rung: null`), and the first read may fail.
+describe('home entry discovery', () => {
+  const ON_PHONE = 'track-phone'
+  const UNAVAILABLE = { state: 'unavailable', retryable: true } as const
+
+  function ownerless(): void {
+    setOwnership({ isOwner: false, ownerTabId: null, ownerPresent: false })
+  }
+
+  /** `readLivePlayback()` results in order, each stamped with the current instant. */
+  function reads(...answers: Array<Record<string, unknown>>): void {
+    let i = 0
+    mocks.readLivePlayback.mockImplementation(async () => {
+      const r = answers[Math.min(i, answers.length - 1)]
+      i += 1
+      return 'trackId' in r ? { ...r, readAtMs: performance.now() } : r
+    })
+  }
+
+  /**
+   * A tab promoted from mirror: its cache is cold, and the queue-wide prefetch has
+   * every row's resolve IN FLIGHT and slow. Like the real `prefetchUris`, a second
+   * prefetch of an in-flight id returns at once without warming anything — only a
+   * `resolveUri` that joins the in-flight request waits for the answer.
+   */
+  function coldPromotedTab(warm: Set<string>): void {
+    mocks.prefetchUris.mockImplementation(() => Promise.resolve())
+    mocks.resolveUri.mockImplementation(async (trackId: string) => {
+      warm.add(trackId)
+      return `spotify:track:${trackId}`
+    })
+  }
+
+  function onPhone(trackId: string, progressMs: number) {
+    return { ...liveTrack(trackId), progressMs, durationMs: 30_000 }
+  }
+
+  describe('the end of an adopted external song is confirmed (A3)', () => {
+    it('moves to the next song in a tab that does not own playback', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000), onPhone(ON_PHONE, 30_000), onPhone('track-next', 600))
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
+      expect(playbackSession.getSnapshot().rung).toBeNull()
+
+      // 10 s left, the 1.5 s buffer, then the burst's first stale answer and one gap.
+      await vi.advanceTimersByTimeAsync(10_000 + 1_500 + 600)
+
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-next')
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(3)
+    })
+
+    it('arms nothing in a mirror — the owner reads for everyone', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000))
+      await playbackSession.syncFromLive()
+      setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+
+      expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-arms when the owner tab goes away', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000))
+      await playbackSession.syncFromLive()
+      setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+      setOwnership({ ownerTabId: null, ownerPresent: false })
+      expect(playbackSession.boundaryConfirmationPending()).toBe(true)
+    })
+
+    it('leaves the read to a visible tab when no tab owns playback', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000), onPhone('track-next', 600))
+      await playbackSession.syncFromLive()
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      try {
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(mocks.readLivePlayback).toHaveBeenCalledTimes(1)
+      }
+      finally {
+        visibility.mockRestore()
+      }
+    })
+
+    it('confirms the end once playback has moved from this tab to the phone', async () => {
+      // `rung` still says in-page — it remembers the last play this site started —
+      // but the adopted device is the phone, and no SDK event will report its end.
+      mocks.inPageDeviceId = 'this-tab'
+      nextPlayOutcome = IN_PAGE_OK
+      setQueue([row('a')])
+      await startAt('a')
+      reads({ ...onPhone(ON_PHONE, 5_000), deviceId: 'phone' })
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().rung).toBe('in-page')
+      expect(playbackSession.boundaryConfirmationPending()).toBe(true)
+    })
+
+    it('leaves the end to the SDK while the adopted device is this tab', async () => {
+      mocks.inPageDeviceId = 'this-tab'
+      ownerless()
+      reads({ ...onPhone(ON_PHONE, 5_000), deviceId: 'this-tab' })
+      await playbackSession.syncFromLive()
+      expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+    })
+
+    it('removes the finished queue row in a tab promoted from mirror with a cold cache', async () => {
+      // The tab knew row `a` from the owner's broadcast and never warmed its uri.
+      // Without that uri the completion delete (T2) cannot recognise `a` as the song
+      // that finished, so `a` would outlive its own playback.
+      setQueue([row('a'), row('b')])
+      await startAt('a')
+      const warm = new Set<string>()
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm.has(trackId) ? `spotify:track:${trackId}` : undefined))
+      coldPromotedTab(warm)
+      reads({ ...liveTrack('track-a'), progressMs: 180_000, durationMs: 180_000 }, { ...liveTrack('track-b'), progressMs: 900, durationMs: 180_000 })
+      await vi.advanceTimersByTimeAsync(180_000 + 1_500 + 600)
+
+      expect(mocks.deleteBucketItem).toHaveBeenCalledWith('playback-bucket', 'a')
+      expect(queueIds()).toEqual(['b'])
+    })
+
+    it('removes the finished row on a return read too, not only at a boundary', async () => {
+      // The song ended while this ownerless tab was hidden (no boundary read), and
+      // its cache is cold. The read on return must still recognise `a` as finished.
+      setQueue([row('a'), row('b')])
+      await startAt('a')
+      ownerless()
+      const warm = new Set<string>()
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm.has(trackId) ? `spotify:track:${trackId}` : undefined))
+      coldPromotedTab(warm)
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      await vi.advanceTimersByTimeAsync(200_000)
+      visibility.mockRestore()
+      reads({ ...liveTrack('track-b'), progressMs: 20_000, durationMs: 180_000 })
+
+      await playbackSession.syncFromLive()
+
+      expect(mocks.deleteBucketItem).toHaveBeenCalledWith('playback-bucket', 'a')
+      expect(queueIds()).toEqual(['b'])
+    })
+
+    it('does not let a stalled resolve route hold up asking Spotify', async () => {
+      setQueue([row('a')])
+      await startAt('a')
+      mocks.cachedUri.mockImplementation(() => undefined)
+      mocks.resolveUri.mockImplementation(() => new Promise(() => {}))
+      mocks.readLivePlayback.mockClear()
+      reads(onPhone(ON_PHONE, 1_000))
+
+      const pending = playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(999)
+      expect(mocks.readLivePlayback).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      await pending
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
+    })
+
+    it('still leaves an in-page device to its own push signal', async () => {
+      nextPlayOutcome = IN_PAGE_OK
+      setQueue([row('a')])
+      await startAt('a')
+      expect(playbackSession.getSnapshot().rung).toBe('in-page')
+      expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+    })
+  })
+
+  describe('the current song does not wait for the queue (A4)', () => {
+    it('shows the song as soon as the read lands, then matches its queue row when the cache warms', async () => {
+      ownerless()
+      setQueue([row('a')])
+      let warm = false
+      let finishPrefetch!: () => void
+      mocks.prefetchUris.mockReturnValue(new Promise<void>((resolve) => {
+        finishPrefetch = () => {
+          warm = true
+          resolve()
+        }
+      }))
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm ? `spotify:track:${trackId}` : undefined))
+      reads(onPhone('track-a', 5_000))
+
+      // The sync itself — and anyone deduped onto it — is released by the read,
+      // not held for the queue's URIs.
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a')
+      expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+
+      finishPrefetch()
+      await vi.waitFor(() => expect(playbackSession.getSnapshot().currentItemId).toBe('a'))
+      expect(playbackSession.getSnapshot().external).toBeNull()
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+    })
+
+    it('does not re-label a song a newer read has already replaced', async () => {
+      ownerless()
+      setQueue([row('a')])
+      let warm = false
+      let finishPrefetch!: () => void
+      mocks.prefetchUris.mockReturnValueOnce(new Promise<void>((resolve) => {
+        finishPrefetch = () => {
+          warm = true
+          resolve()
+        }
+      }))
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm ? `spotify:track:${trackId}` : undefined))
+      reads(onPhone('track-a', 5_000), onPhone('track-z', 1_000))
+
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a')
+      // A newer adoption — the transport echo — names a different song.
+      window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+      await vi.waitFor(() => expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-z'))
+
+      finishPrefetch()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-z')
+    })
+  })
+
+  describe('a failed first read recovers on the same page, within a budget (A2)', () => {
+    it('finds the song once the provider recovers, without a reload or a focus change', async () => {
+      ownerless()
+      reads(UNAVAILABLE, onPhone(ON_PHONE, 5_000))
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(2)
+    })
+
+    it('stops after the budget, says so, and asks no more', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+
+      await vi.advanceTimersByTimeAsync(2_000 + 5_000 + 15_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(4)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(4)
+    })
+
+    it('starts a fresh budget from the next lifecycle read, and clears the failure on an answer', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(22_000)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(true)
+
+      reads({ state: 'idle' })
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
+    })
+
+    it.each([
+      ['an answer that nothing is playing', { state: 'idle' }],
+      ['a failure asking again cannot fix', { state: 'unavailable' }],
+    ])('does not retry after %s', async (_label, answer) => {
+      ownerless()
+      reads(answer)
+      await playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
+    })
+
+    it('does not retry while a song is already known — a failure keeps it', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 1_000), UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      await playbackSession.syncFromLive()
+      // Well short of the song's end, so only a retry could read again.
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(2)
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
+    })
+
+    it('spends no retry on a hidden page', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      try {
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+      }
+      finally {
+        visibility.mockRestore()
+      }
+    })
+
+    it('takes the failure down when another tab becomes the owner', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(22_000)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(true)
+      setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
+    })
+
+    it('drops a pending retry at the account boundary', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      playbackSession.__reset()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+    })
   })
 })
