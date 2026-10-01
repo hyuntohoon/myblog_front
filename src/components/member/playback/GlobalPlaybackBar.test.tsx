@@ -69,6 +69,7 @@ const EMPTY_STATE: PlaybackSessionState = {
   liked: 'unknown',
   reconnect: false,
   notice: null,
+  discoveryFailed: false,
   busy: false,
   transportBusy: false,
   isOwner: true,
@@ -162,6 +163,40 @@ beforeEach(() => {
 })
 
 describe('globalPlaybackBar', () => {
+  // OPS-project-stabilization Step 2A, finding A2.
+  it('says the read failed, instead of rendering nothing, once discovery has given up', async () => {
+    session.state = { ...EMPTY_STATE, discoveryFailed: true }
+    render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    // The lifecycle's own mount read is not the one under test.
+    session.syncFromLive.mockClear()
+    let finish!: () => void
+    session.syncFromLive.mockReturnValueOnce(new Promise<void>((resolve) => {
+      finish = resolve
+    }))
+
+    const pill = screen.getByRole('button', { name: /재생 정보를 불러오지 못했어요/ })
+    expect(screen.queryByRole('region', { name: '전역 재생 제어' })).toBeNull()
+    fireEvent.click(pill)
+    expect(session.syncFromLive).toHaveBeenCalledOnce()
+    expect(pill).toBeDisabled()
+    expect(pill).toHaveAccessibleName('재생 정보를 다시 확인하는 중')
+
+    await act(async () => finish())
+    expect(pill).not.toBeDisabled()
+  })
+
+  it('renders nothing when nothing is playing and nothing failed', () => {
+    const { container } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('keeps the Spotify failure out of a YouTube session', () => {
+    provider.state = { provider: 'youtube', trackId: null, title: null }
+    session.state = { ...EMPTY_STATE, discoveryFailed: true }
+    const { container } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('uses the exact active-or-external visibility rule for playing and paused playback', () => {
     expect(isGlobalPlaybackBarVisible(EMPTY_STATE)).toBe(false)
     expect(isGlobalPlaybackBarVisible({ ...EMPTY_STATE, currentItemId: 'item-1', playing: true })).toBe(true)

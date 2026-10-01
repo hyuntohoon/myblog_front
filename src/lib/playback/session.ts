@@ -131,6 +131,14 @@ export interface PlaybackSessionState {
   reconnect: ReconnectState
   /** One sentence about the last attempt. Cleared on the next successful action. */
   notice: SessionNotice | null
+  /**
+   * OPS-project-stabilization Step 2A (finding A2). Nothing is known to be playing,
+   * the read that should have said what is kept failing for a reason asking again
+   * could fix, and the bounded retry is spent. Lets the Global Player offer
+   * "다시 시도" instead of rendering nothing, which reads as "nothing is playing".
+   * This tab's own fact — it is not broadcast, because a mirror never reads.
+   */
+  discoveryFailed: boolean
   /** A play call that CANNOT coalesce is in flight — the forms disable rather than double-fire. */
   busy: boolean
   /**
@@ -237,6 +245,7 @@ const EMPTY: PlaybackSessionState = {
   liked: 'unknown',
   reconnect: false,
   notice: null,
+  discoveryFailed: false,
   busy: false,
   transportBusy: false,
   isOwner: false,
@@ -316,6 +325,63 @@ function patch(p: Partial<PlaybackSessionState>): void {
 let localWriteSeq = 0
 let adoptionGeneration = 0
 let liveSync: Promise<void> | null = null
+
+/**
+ * The tab that may turn a Spotify read into session state — the owner, or any tab
+ * while nobody owns playback. `adoptLive()` has always used exactly this rule; it
+ * is named here because the boundary check now uses it too (finding A3).
+ */
+function isReader(): boolean {
+  return current.isOwner || !current.ownerPresent
+}
+
+// ── initial-discovery recovery (OPS-project-stabilization Step 2A, finding A2) ──
+// Home entry reads once. If that read FAILS — a network blip, a cold token route,
+// a 429 — and nothing is known to be playing, the member used to see no player and
+// no lyrics entry until they happened to switch tabs or windows. These delays buy a
+// same-page recovery without becoming the polling D28 forbids:
+//   · it starts only from a failed read, never from a successful one — an `idle`
+//     answer is an answer, and it is never re-asked here;
+//   · it is finite: three reads, about 22 s, then it stops and says so
+//     (`discoveryFailed`) and leaves the next attempt to the member;
+//   · it stops at the first answer of any kind, the moment anything is known to be
+//     playing, and while the page is hidden (the lifecycle's visibility read takes
+//     over on return, with a fresh budget, 1:1 with that event).
+// Observing a change in playback that was read SUCCESSFULLY (an external skip) is a
+// different question — OQ2 — and nothing here answers it.
+export const DISCOVERY_RETRY_DELAYS_MS = [2_000, 5_000, 15_000] as const
+let discoveryRetryTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearDiscoveryRetry(): void {
+  if (discoveryRetryTimer !== null) {
+    clearTimeout(discoveryRetryTimer)
+    discoveryRetryTimer = null
+  }
+}
+
+function nothingKnown(): boolean {
+  return current.currentItemId == null && current.external == null
+}
+
+function afterDiscoveryRead(live: LivePlayback | null, attempt: number): void {
+  // Superseded, stale or YouTube: someone fresher owns the answer.
+  // Any answer clears the debt inside `adoptLive()` itself.
+  if (live == null || live.state !== 'unavailable')
+    return
+  if (!live.retryable || !nothingKnown())
+    return
+  clearDiscoveryRetry()
+  if (attempt >= DISCOVERY_RETRY_DELAYS_MS.length) {
+    patch({ discoveryFailed: true })
+    return
+  }
+  discoveryRetryTimer = setTimeout(() => {
+    discoveryRetryTimer = null
+    if (document.visibilityState === 'hidden' || !nothingKnown() || getActiveProvider() === 'youtube' || !isReader())
+      return
+    void runLiveSync(attempt + 1)
+  }, DISCOVERY_RETRY_DELAYS_MS[attempt])
+}
 
 /**
  * BUG-26(a): true when the row currently anchored by `currentItemId` was matched
@@ -1064,7 +1130,7 @@ function adoptYouTube(): void {
   })
 }
 
-async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback | null> {
+async function adoptLive(): Promise<LivePlayback | null> {
   if (getActiveProvider() === 'youtube') {
     adoptYouTube()
     return null
@@ -1076,7 +1142,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
   // different instants. A mirror gets the same information for free — the owner
   // broadcasts the adopted state — so the read is not merely redundant, it is
   // harmful. With no owner at all, this tab is the only reader and proceeds.
-  if (!current.isOwner && current.ownerPresent)
+  if (!isReader())
     return null
 
   // The row this tab believes is sounding, BEFORE the read — captured now so a
@@ -1094,8 +1160,7 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
     providerStore.getSnapshot() !== providerAtStart,
     !current.isOwner && current.ownerPresent,
   ].some(Boolean)
-  const livePromise = readLivePlayback()
-  const [live] = await Promise.all([livePromise, beforeApply])
+  const live = await readLivePlayback()
 
   // A newer AUTHORITATIVE local write landed while this read was in flight — e.g.
   // this very read was triggered by `MYBLOG_PLAYBACK_CHANGED` off our own command,
@@ -1110,6 +1175,10 @@ async function adoptLive(beforeApply?: Promise<unknown>): Promise<LivePlayback |
   // the same distinction `readLivePlayback`'s own docstring insists on.
   if (live.state === 'unavailable')
     return live
+  // An answer, whichever surface asked for it, ends any discovery retry.
+  clearDiscoveryRetry()
+  if (current.discoveryFailed)
+    patch({ discoveryFailed: false })
 
   // The row we thought was playing is no longer live — natural completion (or a
   // skip away from it that did not go through this session, e.g. another surface).
@@ -1723,25 +1792,60 @@ async function runSeek(target: number, onReanchored?: () => void): Promise<Playe
 }
 
 /**
- * Adopt whatever is actually sounding.
+ * Adopt the live answer as soon as it lands, then let the queue match catch up.
  *
- * Prefetches first so the URI match can succeed: `rowForSpotifyTrack` is cache-only
- * by design, and without warm URIs a track that IS in the queue would be
- * misreported as external on the very first read.
+ * OPS-project-stabilization Step 2A (finding A4). This used to hand
+ * `Promise.all([prefetchUris(…), resolveCapability()])` to `adoptLive()` as a
+ * gate, so the current song could not appear until every queue row's URI had
+ * resolved — work the song's own display never needed. The prefetch still runs,
+ * alongside the read instead of in front of it, and when it lands a song first
+ * shown as external is re-matched to its queue row with no second read.
  */
+async function adoptWithPrefetch(): Promise<LivePlayback | null> {
+  const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
+  const live = await adoptLive()
+  if (!live || (live.state !== 'playing' && live.state !== 'paused') || current.external?.spotifyTrackId !== live.trackId)
+    return live
+  const generation = adoptionGeneration
+  const seq = localWriteSeq
+  await prefetched
+  rematchExternal(live.trackId, generation, seq)
+  return live
+}
+
+/**
+ * `rowForSpotifyTrack` is cache-only by design, so a queue track read before its
+ * URI was warm comes back external. Fix the label once the cache is warm — but only
+ * while nothing newer (an adoption, a local write) has spoken since.
+ */
+function rematchExternal(trackId: string, generation: number, seq: number): void {
+  if (adoptionGeneration !== generation || localWriteSeq !== seq || current.currentItemId != null || current.external?.spotifyTrackId !== trackId)
+    return
+  const { row, ambiguous } = rowForSpotifyTrack(trackId, null)
+  if (!row)
+    return
+  patch({ currentItemId: row.itemId, external: null })
+  anchorAmbiguous = ambiguous
+  scheduleBoundaryCheck()
+}
+
+/** Adopt whatever is actually sounding. */
 function syncFromLive(): Promise<void> {
+  return runLiveSync(0)
+}
+
+function runLiveSync(attempt: number): Promise<void> {
   if (getActiveProvider() === 'youtube') {
     adoptYouTube()
     return Promise.resolve()
   }
-  if (!current.isOwner && current.ownerPresent) {
+  if (!isReader()) {
     playbackOwnership.post({ type: 'sync-request' })
     return Promise.resolve()
   }
   if (liveSync)
     return liveSync
-  const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
-  const request = adoptLive(prefetched).then(() => {}).finally(() => {
+  const request = adoptWithPrefetch().then(live => afterDiscoveryRead(live, attempt)).finally(() => {
     if (liveSync === request)
       liveSync = null
   })
@@ -1790,8 +1894,7 @@ async function observeLive(): Promise<LiveObservation> {
     return { k: 'mirror' }
   if (current.busy || current.transportBusy || completionBurstRunning())
     return { k: 'superseded' }
-  const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
-  const live = await adoptLive(prefetched)
+  const live = await adoptWithPrefetch()
   return live ? { k: 'adopted', live } : { k: 'superseded' }
 }
 
@@ -2332,6 +2435,7 @@ export const playbackSession = {
     liveSync = null
     closeYouTubePlayer()
     clearBoundaryCheck()
+    clearDiscoveryRetry()
     resetCompletionBurst()
     clearReissue()
     issuedTail = null
@@ -2406,9 +2510,25 @@ function clearBoundaryCheck(): void {
   }
 }
 
+/**
+ * Whether this tab has to ASK Spotify about the end of the current track.
+ *
+ * OPS-project-stabilization Step 2A (finding A3). This used to be
+ * `isOwner && rung === 'remote'`, and both halves are set only by a play command
+ * from this site. Playback already running on a phone when the member opens the
+ * home page is adopted with no owner and `rung: null` — so nothing confirmed its
+ * end, and the player and lyrics stayed on the finished song. The question is not
+ * who started the audio but whether a push signal will report the end: only an
+ * in-page SDK device (`rung: 'in-page'`) has one. And the read belongs to the tab
+ * allowed to adopt — the owner, or any tab while nobody owns playback.
+ */
+function needsBoundaryRead(): boolean {
+  return isReader() && current.rung !== 'in-page' && current.playing
+}
+
 function scheduleBoundaryCheck(): void {
   clearBoundaryCheck()
-  if (!current.isOwner || current.rung !== 'remote' || !current.playing)
+  if (!needsBoundaryRead())
     return
   const i = rowIndex(current.currentItemId)
   const row = i < 0 ? null : queueRows()[i]
@@ -2420,8 +2540,14 @@ function scheduleBoundaryCheck(): void {
   const endingUri = currentSpotifyUri()
   boundaryTimer = setTimeout(() => {
     boundaryTimer = null
-    if (current.isOwner && current.rung === 'remote')
-      void confirmCompletion(endingUri)
+    if (!needsBoundaryRead())
+      return
+    // Without a lease, every open tab of this account is a reader. Only visible
+    // ones spend the read; a hidden one catches up through the lifecycle's
+    // visibility read when it comes back.
+    if (!current.isOwner && document.visibilityState === 'hidden')
+      return
+    void confirmCompletion(endingUri)
   }, delay)
 }
 
@@ -2613,6 +2739,7 @@ function syncOwnership(): void {
   if (wasOwner && !ownership.isOwner)
     playbackSession.stopYouTube()
   const ownerArrived = !current.ownerPresent && ownership.ownerPresent
+  const ownerLeft = current.ownerPresent && !ownership.ownerPresent
   const ownerRung = ownership.isOwner ?
     current.rung :
     ownership.ownerPresent ?
@@ -2626,10 +2753,15 @@ function syncOwnership(): void {
   // Only the owner schedules a boundary check (same reasoning as `adoptLive`
   // being owner-only) — losing ownership must not leave a stale timer armed to
   // fire in a tab that is now a mirror.
-  if (!ownership.isOwner)
+  // Ownerless tabs read too (finding A3), so "may this tab read" is the test, and a
+  // change in it — an owner arriving elsewhere, or leaving — re-decides the timer.
+  if (!isReader()) {
     clearBoundaryCheck()
-  else if (wasOwner !== ownership.isOwner)
+    clearDiscoveryRetry()
+  }
+  else if (wasOwner !== ownership.isOwner || ownerLeft) {
     scheduleBoundaryCheck()
+}
   // ARCH-playback-authority-convergence Step 2. A mirror keeps `issuedTail` level
   // with what it can see and never owes anything, because it never writes
   // playback. On promotion that assumption expires: the previous owner may have

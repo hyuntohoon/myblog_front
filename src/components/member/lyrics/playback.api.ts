@@ -94,7 +94,14 @@ export type LivePlayback =
 	 */
 	({ state: 'paused' } & LivePlaybackTrack) |
 	{ state: 'idle' } |
-	{ state: 'unavailable' }
+	/**
+	 * `retryable` (OPS-project-stabilization Step 2A, finding A2) marks a failure that
+	 * asking again can fix — a network error, a timeout, a 429/5xx, a token route that
+	 * errored. Absent means asking again would get the same answer: no connected
+	 * Spotify, not signed in, a dormant integration, or an account that changed under
+	 * the read. Only the first kind earns the session's bounded discovery retry.
+	 */
+	{ state: 'unavailable', retryable?: true }
 
 /**
  * Read the current playback moment once.
@@ -122,7 +129,7 @@ export function readLivePlayback(): Promise<LivePlayback> {
   const timeout = new Promise<LivePlayback>((resolve) => {
     timer = setTimeout(() => {
       controller.abort()
-      resolve({ state: 'unavailable' })
+      resolve({ state: 'unavailable', retryable: true })
     }, PLAYBACK_READ_TIMEOUT_MS)
   })
   const request = Promise.race([readLivePlaybackOnce(epoch, controller.signal), timeout]).then((live): LivePlayback => {
@@ -138,8 +145,10 @@ export function readLivePlayback(): Promise<LivePlayback> {
 
 async function readLivePlaybackOnce(epoch: AuthEpoch, signal: AbortSignal): Promise<LivePlayback> {
   const tok = await getStreamingToken()
-  if (!tok.ok || !isAuthEpochCurrent(epoch) || signal.aborted)
+  if (!isAuthEpochCurrent(epoch) || signal.aborted)
     return { state: 'unavailable' }
+  if (!tok.ok)
+    return tok.status === 'error' ? { state: 'unavailable', retryable: true } : { state: 'unavailable' }
 
   const requestStartMs = performance.now()
   let res: Response
@@ -147,12 +156,14 @@ async function readLivePlaybackOnce(epoch: AuthEpoch, signal: AbortSignal): Prom
     res = await fetch(PLAYER_URL, { headers: { Authorization: `Bearer ${tok.token}` }, signal })
   }
   catch {
-    return { state: 'unavailable' }
+    return { state: 'unavailable', retryable: true }
   }
   if (res.status === 204)
     return { state: 'idle' }
+  // 401 is an expired token the next mint replaces; 429 and 5xx pass. A 403 is the
+  // account (scope, region, non-Premium) and asking again would not change it.
   if (!res.ok)
-    return { state: 'unavailable' }
+    return res.status === 401 || res.status === 429 || res.status >= 500 ? { state: 'unavailable', retryable: true } : { state: 'unavailable' }
 
   let body: {
     is_playing?: boolean
@@ -178,7 +189,7 @@ async function readLivePlaybackOnce(epoch: AuthEpoch, signal: AbortSignal): Prom
     body = await res.json()
   }
   catch {
-    return { state: 'unavailable' }
+    return { state: 'unavailable', retryable: true }
   }
 
   const item = body?.item

@@ -1338,7 +1338,10 @@ describe('session-owned seek', () => {
   })
 
   it('re-anchors optimistically before a playing confirmation resolves', async () => {
-    mocks.readLivePlayback.mockResolvedValueOnce(liveTrack('SPOT-X'))
+    // Anchored at the fake clock's NOW: since Step 2A finding A3 an adopted remote
+    // track arms its end read even with `rung: null`, and `readAtMs: 1_000` on a
+    // clock that has long passed it reads as a track already over.
+    mocks.readLivePlayback.mockResolvedValueOnce({ ...liveTrack('SPOT-X'), readAtMs: performance.now() })
     await playbackSession.syncFromLive()
     mocks.readLivePlayback.mockClear()
 
@@ -2721,5 +2724,228 @@ describe('boundaryConfirmationPending', () => {
 
     playbackSession.__reset()
     expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+  })
+})
+
+// OPS-project-stabilization Step 2A, finding A — music already playing on a phone
+// when the member opens the home page. No tab owns playback, nothing was started
+// from this site (`rung: null`), and the first read may fail.
+describe('home entry discovery', () => {
+  const ON_PHONE = 'track-phone'
+  const UNAVAILABLE = { state: 'unavailable', retryable: true } as const
+
+  function ownerless(): void {
+    setOwnership({ isOwner: false, ownerTabId: null, ownerPresent: false })
+  }
+
+  /** `readLivePlayback()` results in order, each stamped with the current instant. */
+  function reads(...answers: Array<Record<string, unknown>>): void {
+    let i = 0
+    mocks.readLivePlayback.mockImplementation(async () => {
+      const r = answers[Math.min(i, answers.length - 1)]
+      i += 1
+      return 'trackId' in r ? { ...r, readAtMs: performance.now() } : r
+    })
+  }
+
+  function onPhone(trackId: string, progressMs: number) {
+    return { ...liveTrack(trackId), progressMs, durationMs: 30_000 }
+  }
+
+  describe('the end of an adopted external song is confirmed (A3)', () => {
+    it('moves to the next song in a tab that does not own playback', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000), onPhone(ON_PHONE, 30_000), onPhone('track-next', 600))
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
+      expect(playbackSession.getSnapshot().rung).toBeNull()
+
+      // 10 s left, the 1.5 s buffer, then the burst's first stale answer and one gap.
+      await vi.advanceTimersByTimeAsync(10_000 + 1_500 + 600)
+
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-next')
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(3)
+    })
+
+    it('arms nothing in a mirror — the owner reads for everyone', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000))
+      await playbackSession.syncFromLive()
+      setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+
+      expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-arms when the owner tab goes away', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000))
+      await playbackSession.syncFromLive()
+      setOwnership({ ownerTabId: 'other-tab', ownerPresent: true })
+      setOwnership({ ownerTabId: null, ownerPresent: false })
+      expect(playbackSession.boundaryConfirmationPending()).toBe(true)
+    })
+
+    it('leaves the read to a visible tab when no tab owns playback', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 20_000), onPhone('track-next', 600))
+      await playbackSession.syncFromLive()
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      try {
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(mocks.readLivePlayback).toHaveBeenCalledTimes(1)
+      }
+      finally {
+        visibility.mockRestore()
+      }
+    })
+
+    it('still leaves an in-page device to its own push signal', async () => {
+      nextPlayOutcome = IN_PAGE_OK
+      setQueue([row('a')])
+      await startAt('a')
+      expect(playbackSession.getSnapshot().rung).toBe('in-page')
+      expect(playbackSession.boundaryConfirmationPending()).toBe(false)
+    })
+  })
+
+  describe('the current song does not wait for the queue (A4)', () => {
+    it('shows the song as soon as the read lands, then matches its queue row when the cache warms', async () => {
+      ownerless()
+      setQueue([row('a')])
+      let warm = false
+      let finishPrefetch!: () => void
+      mocks.prefetchUris.mockReturnValue(new Promise<void>((resolve) => {
+        finishPrefetch = () => {
+          warm = true
+          resolve()
+        }
+      }))
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm ? `spotify:track:${trackId}` : undefined))
+      reads(onPhone('track-a', 5_000))
+
+      const pending = playbackSession.syncFromLive()
+      await vi.waitFor(() => expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a'))
+      expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+
+      finishPrefetch()
+      await pending
+      expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+      expect(playbackSession.getSnapshot().external).toBeNull()
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+    })
+
+    it('does not re-label a song a newer read has already replaced', async () => {
+      ownerless()
+      setQueue([row('a')])
+      let warm = false
+      let finishPrefetch!: () => void
+      mocks.prefetchUris.mockReturnValueOnce(new Promise<void>((resolve) => {
+        finishPrefetch = () => {
+          warm = true
+          resolve()
+        }
+      }))
+      mocks.cachedUri.mockImplementation((trackId: string) => (warm ? `spotify:track:${trackId}` : undefined))
+      reads(onPhone('track-a', 5_000), onPhone('track-z', 1_000))
+
+      const first = playbackSession.syncFromLive()
+      await vi.waitFor(() => expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-a'))
+      // A newer adoption — the transport echo — names a different song.
+      window.dispatchEvent(new CustomEvent(MYBLOG_PLAYBACK_CHANGED))
+      await vi.waitFor(() => expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-z'))
+
+      finishPrefetch()
+      await first
+      expect(playbackSession.getSnapshot().currentItemId).toBeNull()
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe('track-z')
+    })
+  })
+
+  describe('a failed first read recovers on the same page, within a budget (A2)', () => {
+    it('finds the song once the provider recovers, without a reload or a focus change', async () => {
+      ownerless()
+      reads(UNAVAILABLE, onPhone(ON_PHONE, 5_000))
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().external).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(2)
+    })
+
+    it('stops after the budget, says so, and asks no more', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+
+      await vi.advanceTimersByTimeAsync(2_000 + 5_000 + 15_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(4)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(4)
+    })
+
+    it('starts a fresh budget from the next lifecycle read, and clears the failure on an answer', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(22_000)
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(true)
+
+      reads({ state: 'idle' })
+      await playbackSession.syncFromLive()
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
+    })
+
+    it.each([
+      ['an answer that nothing is playing', { state: 'idle' }],
+      ['a failure asking again cannot fix', { state: 'unavailable' }],
+    ])('does not retry after %s', async (_label, answer) => {
+      ownerless()
+      reads(answer)
+      await playbackSession.syncFromLive()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+      expect(playbackSession.getSnapshot().discoveryFailed).toBe(false)
+    })
+
+    it('does not retry while a song is already known — a failure keeps it', async () => {
+      ownerless()
+      reads(onPhone(ON_PHONE, 1_000), UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      await playbackSession.syncFromLive()
+      // Well short of the song's end, so only a retry could read again.
+      await vi.advanceTimersByTimeAsync(20_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledTimes(2)
+      expect(playbackSession.getSnapshot().external?.spotifyTrackId).toBe(ON_PHONE)
+    })
+
+    it('spends no retry on a hidden page', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      try {
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+      }
+      finally {
+        visibility.mockRestore()
+      }
+    })
+
+    it('drops a pending retry at the account boundary', async () => {
+      ownerless()
+      reads(UNAVAILABLE)
+      await playbackSession.syncFromLive()
+      playbackSession.__reset()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.readLivePlayback).toHaveBeenCalledOnce()
+    })
   })
 })

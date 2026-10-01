@@ -84,6 +84,7 @@ const EMPTY_SESSION_STATE: PlaybackSessionState = {
   liked: 'unknown',
   reconnect: false,
   notice: null,
+  discoveryFailed: false,
   busy: false,
   transportBusy: false,
   isOwner: false,

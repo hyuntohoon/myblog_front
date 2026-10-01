@@ -170,7 +170,7 @@ describe('entry read recovery and member isolation', () => {
       vi.stubGlobal('fetch', fetcher)
       const stalled = readLivePlayback()
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(await stalled).toEqual({ state: 'unavailable' })
+      expect(await stalled).toEqual({ state: 'unavailable', retryable: true })
       expect(fetcher.mock.calls[0][1].signal.aborted).toBe(true)
       expect(await readLivePlayback()).toEqual({ state: 'idle' })
     }
