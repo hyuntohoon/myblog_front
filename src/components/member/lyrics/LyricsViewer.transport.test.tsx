@@ -86,6 +86,7 @@ vi.mock('@lib/playback/session', () => ({
     // passed straight through; `LyricsViewer.nextTrack.test.tsx` models the rest.
     observeLive: async () => ({ k: 'adopted', live: await mocks.readLivePlayback() }),
     boundaryConfirmationPending: () => false,
+    watchExternalPlayback: () => () => {},
   },
 }))
 

@@ -288,6 +288,16 @@ let reissueTimer: ReturnType<typeof setTimeout> | null = null
 const QUEUE_REISSUE_BUSY_TRIES = 8
 let reissueBusyTries = 0
 
+// External-watch state (OPS-project-stabilization Step 2A, OQ2). Declared here for
+// the same reason as the block above: `patch()` re-decides the timer. The block
+// that owns it is at `armExternalWatch`.
+const externalWatchers = new Set<symbol>()
+let externalWatchTimer: ReturnType<typeof setTimeout> | null = null
+let externalWatchFailures = 0
+let externalWatchBlocked = false
+let externalWatchReading = false
+let externalPausedSinceMs: number | null = null
+
 function patch(p: Partial<PlaybackSessionState>): void {
   const previousItemId = current.currentItemId
   current = { ...current, ...p }
@@ -302,6 +312,7 @@ function patch(p: Partial<PlaybackSessionState>): void {
   // mutation the member made while paused.
   if (current.currentItemId !== previousItemId && !queueDirty)
     rebaseIssuedTail()
+  armExternalWatch()
   emit()
   if (current.isOwner)
     broadcastState()
@@ -348,7 +359,7 @@ function isReader(): boolean {
 //     playing, and while the page is hidden (the lifecycle's visibility read takes
 //     over on return, with a fresh budget, 1:1 with that event).
 // Observing a change in playback that was read SUCCESSFULLY (an external skip) is a
-// different question — OQ2 — and nothing here answers it.
+// different question — OQ2 — answered by the external watch (`armExternalWatch`).
 export const DISCOVERY_RETRY_DELAYS_MS = [2_000, 5_000, 15_000] as const
 let discoveryRetryTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -1155,7 +1166,7 @@ function adoptYouTube(): void {
   })
 }
 
-async function adoptLive(): Promise<LivePlayback | null> {
+async function adoptLive(seen?: LivePlayback): Promise<LivePlayback | null> {
   if (getActiveProvider() === 'youtube') {
     adoptYouTube()
     return null
@@ -1191,7 +1202,9 @@ async function adoptLive(): Promise<LivePlayback | null> {
   // the queue-wide prefetch no longer gates the read (A4). Normally cached: free.
   if (previousRow?.trackId)
     await warmAnchorUri(previousRow.trackId)
-  const live = await readLivePlayback()
+  // `seen` is the external watch handing over the read it just made, so a detected
+  // change costs the one request that detected it.
+  const live = seen ?? await readLivePlayback()
 
   // A newer AUTHORITATIVE local write landed while this read was in flight — e.g.
   // this very read was triggered by `MYBLOG_PLAYBACK_CHANGED` off our own command,
@@ -1208,6 +1221,7 @@ async function adoptLive(): Promise<LivePlayback | null> {
     return live
   // An answer, whichever surface asked for it, ends any discovery retry.
   clearDiscoveryRetry()
+  externalAnswered()
   if (current.discoveryFailed)
     patch({ discoveryFailed: false })
 
@@ -1832,10 +1846,10 @@ async function runSeek(target: number, onReanchored?: () => void): Promise<Playe
  * alongside the read instead of in front of it, and when it lands a song first
  * shown as external is re-matched to its queue row with no second read.
  */
-async function adoptWithPrefetch(): Promise<LivePlayback | null> {
+async function adoptWithPrefetch(seen?: LivePlayback): Promise<LivePlayback | null> {
   const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
   const anchorBefore = current.currentItemId
-  const live = await adoptLive()
+  const live = await adoptLive(seen)
   if (live && (live.state === 'playing' || live.state === 'paused') && current.external?.spotifyTrackId === live.trackId) {
     // Detached: the caller — and anyone deduped onto this sync — has its answer
     // now, and must not be held for the queue's URIs (finding A4).
@@ -2337,6 +2351,9 @@ export const playbackSession = {
   /** Read what is playing THROUGH the session — see `observeLive()`. */
   observeLive,
 
+  /** Watch for changes made in another Spotify client — see `armExternalWatch`. */
+  watchExternalPlayback,
+
   /**
    * Whether the session itself will confirm the current track's natural end — its
    * boundary timer is armed or its completion burst is running. A consumer with its
@@ -2472,6 +2489,7 @@ export const playbackSession = {
     clearBoundaryCheck()
     clearDiscoveryRetry()
     resetCompletionBurst()
+    resetExternalWatch()
     clearReissue()
     issuedTail = null
     queueDirty = false
@@ -2696,6 +2714,168 @@ async function runCompletionBurst(endingUri: string | null): Promise<void> {
     },
     { tries: COMPLETION_CONFIRM_TRIES, gapMs: COMPLETION_CONFIRM_GAP_MS },
   )
+}
+
+// ── external watch (OPS-project-stabilization Step 2A, OQ2) ──────────────────────
+// The one REGULAR read in this file, and the one exception to "D28 — no polling".
+// Owner decision 2026-10-01; the owning record is OPS-project-stabilization finding E.
+//
+// Why it exists: a skip, seek or pause made in another Spotify client reaches a
+// visible tab through no event at all — the Web API has no push for a device that is
+// not this tab's own SDK player. Until now the old song's ESTIMATED end was the first
+// moment anything asked, so the lyrics viewer could show song A over song B for the
+// rest of A's length.
+//
+// What keeps it narrow:
+//   · it runs only while a surface asked for it (the open lyrics viewer), the page
+//     is visible, this tab may adopt, a track is known, and the audio is NOT this
+//     tab's SDK device (which pushes). Any of those false → no timer exists;
+//   · it is quiet. A read that agrees with the session changes nothing — no patch,
+//     no re-anchor. The 2026-08-01 rule ("싱크는 한번 맞으면 안 바뀌는게 맞아") stands:
+//     only an observed EVENT — another track, a play/pause flip, a position off by
+//     more than `EXTERNAL_SEEK_TOLERANCE_MS` — moves the anchor;
+//   · a paused track is watched for `EXTERNAL_PAUSED_WATCH_MS` and then left alone,
+//     so a tab parked on a paused song stops asking;
+//   · it stops on an answer asking again cannot fix (401/403/429) and after
+//     `EXTERNAL_WATCH_FAILURE_BUDGET` failures in a row, until some other read —
+//     a lifecycle event, a press — gets an answer.
+export const EXTERNAL_WATCH_INTERVAL_MS = 10_000
+export const EXTERNAL_SEEK_TOLERANCE_MS = 2_000
+export const EXTERNAL_PAUSED_WATCH_MS = 5 * 60_000
+export const EXTERNAL_WATCH_FAILURE_BUDGET = 3
+
+function clearExternalWatch(): void {
+  if (externalWatchTimer !== null) {
+    clearTimeout(externalWatchTimer)
+    externalWatchTimer = null
+  }
+}
+
+function shouldWatchExternal(): boolean {
+  if (externalWatchers.size === 0 || externalWatchBlocked)
+    return false
+  if (document.visibilityState === 'hidden' || getActiveProvider() === 'youtube')
+    return false
+  if (!isReader() || soundsInThisTab())
+    return false
+  if (current.playing)
+    return true
+  // Paused, or nothing known at all — `armExternalWatch` keeps the stamp null for
+  // the latter, so an idle session is never watched.
+  return externalPausedSinceMs != null && performance.now() - externalPausedSinceMs < EXTERNAL_PAUSED_WATCH_MS
+}
+
+/** Re-decide the timer. Called on every state change, so it must stay cheap. */
+function armExternalWatch(): void {
+  if (externalWatchers.size === 0)
+    return
+  if (current.playing || nothingKnown())
+    externalPausedSinceMs = null
+  else
+    externalPausedSinceMs ??= performance.now()
+  if (!shouldWatchExternal()) {
+    clearExternalWatch()
+    return
+  }
+  if (externalWatchTimer === null && !externalWatchReading)
+    externalWatchTimer = setTimeout(externalWatchTick, EXTERNAL_WATCH_INTERVAL_MS)
+}
+
+/** Any answer from Spotify restarts the interval and lifts a stop. */
+function externalAnswered(): void {
+  externalWatchFailures = 0
+  externalWatchBlocked = false
+  clearExternalWatch()
+  armExternalWatch()
+}
+
+/** Something else is already asking, or about to hold the fresher truth. */
+function settlingPlayback(): boolean {
+  return current.busy || current.transportBusy || completionBurstRunning() || liveSync !== null || playbackChangeAdoption !== null
+}
+
+function externalChange(live: Extract<LivePlayback, { state: 'playing' | 'paused' }>): boolean {
+  if (live.trackId !== currentSpotifyTrackId())
+    return true
+  if ((live.state === 'playing') !== current.playing)
+    return true
+  const a = current.anchor
+  if (!a || typeof live.progressMs !== 'number')
+    return false
+  const expected = current.playing ? a.ms + (live.readAtMs - a.wallMs) : a.ms
+  return Math.abs(live.progressMs - expected) > EXTERNAL_SEEK_TOLERANCE_MS
+}
+
+async function externalWatchTick(): Promise<void> {
+  externalWatchTimer = null
+  if (!shouldWatchExternal())
+    return
+  if (settlingPlayback()) {
+    armExternalWatch()
+    return
+  }
+  const seq = localWriteSeq
+  const generation = adoptionGeneration
+  const provider = providerStore.getSnapshot()
+  externalWatchReading = true
+  let live: LivePlayback
+  try {
+    live = await readLivePlayback()
+  }
+  finally {
+    externalWatchReading = false
+  }
+  // The same fences an adoption has: a newer write, adoption or provider wins.
+  const superseded = localWriteSeq !== seq || adoptionGeneration !== generation || providerStore.getSnapshot() !== provider || settlingPlayback()
+  if (!superseded && shouldWatchExternal()) {
+    if (live.state === 'unavailable') {
+      externalWatchFailures++
+      if (!live.retryable || externalWatchFailures >= EXTERNAL_WATCH_FAILURE_BUDGET)
+        externalWatchBlocked = true
+    }
+    else if (live.state === 'idle') {
+      // Not adopted on one read: Connect reports a transitional idle between two
+      // tracks, and adopting it would end this watch while the next song starts.
+      // The boundary burst already knows how to tell that from a real stop.
+      externalWatchFailures = 0
+      const i = rowIndex(current.currentItemId)
+      await confirmCompletion(currentSpotifyUri(), i < 0 ? null : queueRows()[i] ?? null)
+    }
+    else {
+      externalWatchFailures = 0
+      if (externalChange(live))
+        await adoptWithPrefetch(live)
+    }
+  }
+  armExternalWatch()
+}
+
+/**
+ * Ask for the external watch while a surface that shows WHICH song is playing, line
+ * by line, is open. Returns the release. See the block header above.
+ */
+function watchExternalPlayback(): () => void {
+  const watcher = Symbol('external watch')
+  if (externalWatchers.size === 0)
+    document.addEventListener('visibilitychange', armExternalWatch)
+  externalWatchers.add(watcher)
+  armExternalWatch()
+  return () => {
+    externalWatchers.delete(watcher)
+    if (externalWatchers.size === 0) {
+      document.removeEventListener('visibilitychange', armExternalWatch)
+      clearExternalWatch()
+      externalPausedSinceMs = null
+    }
+  }
+}
+
+function resetExternalWatch(): void {
+  clearExternalWatch()
+  externalWatchFailures = 0
+  externalWatchBlocked = false
+  externalWatchReading = false
+  externalPausedSinceMs = null
 }
 
 /**

@@ -346,3 +346,16 @@ message: '다른 영상을 골라주세요',
     expect(playbackSession.getSnapshot()).toMatchObject({ playing: false, external: null, isOwner: false })
   })
 })
+
+describe('the external watch is Spotify-only (OPS-project-stabilization Step 2A, OQ2)', () => {
+  it('spends no Spotify read while YouTube is the provider', async () => {
+    await startYouTube()
+    const release = playbackSession.watchExternalPlayback()
+    mocks.live.mockClear()
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(mocks.live).not.toHaveBeenCalled()
+    release()
+  })
+})
