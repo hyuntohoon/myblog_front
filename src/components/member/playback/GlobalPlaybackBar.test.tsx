@@ -28,6 +28,8 @@ const session = vi.hoisted(() => ({
   previous: vi.fn().mockResolvedValue(undefined),
   togglePlay: vi.fn().mockResolvedValue(undefined),
   next: vi.fn().mockResolvedValue(undefined),
+  release: vi.fn(),
+  watchExternalPlayback: vi.fn(),
 }))
 
 vi.mock('@lib/playback/session', () => ({
@@ -47,6 +49,7 @@ vi.mock('@lib/playback/session', () => ({
     previous: session.previous,
     togglePlay: session.togglePlay,
     next: session.next,
+    watchExternalPlayback: session.watchExternalPlayback,
   },
 }))
 
@@ -158,6 +161,7 @@ beforeEach(() => {
   session.seekTo.mockResolvedValue({ ok: true })
   session.refreshDevices.mockResolvedValue({ ok: true, devices: activeState().devices })
   session.transferTo.mockResolvedValue({ ok: true })
+  session.watchExternalPlayback.mockReturnValue(session.release)
   bucketStore.setTree([])
   document.documentElement.style.removeProperty('--global-player-h')
 })
@@ -183,6 +187,53 @@ describe('globalPlaybackBar', () => {
 
     await act(async () => finish())
     expect(pill).not.toBeDisabled()
+  })
+
+  // OPS-project-stabilization Step 2A, owner decision 2026-10-06 (finding E): the bar
+  // is the second surface that asks for the external watch — a phone skip must reach
+  // it without the lyrics viewer open.
+  it('asks for the external watch while it shows a song, and releases it when the song goes', () => {
+    session.state = activeState({ currentItemId: null, external: { title: 'Phone song', artist: 'Artist', albumCoverUrl: null, spotifyTrackId: 'sp-1', spotifyAlbumId: null, deviceName: 'Phone' } })
+    const { rerender, unmount } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.watchExternalPlayback).toHaveBeenCalledOnce()
+    expect(session.release).not.toHaveBeenCalled()
+
+    session.state = { ...EMPTY_STATE }
+    rerender(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.release).toHaveBeenCalledOnce()
+
+    unmount()
+    expect(session.watchExternalPlayback).toHaveBeenCalledOnce()
+    expect(session.release).toHaveBeenCalledOnce()
+  })
+
+  it('releases the external watch on unmount', () => {
+    session.state = activeState()
+    const { unmount } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.watchExternalPlayback).toHaveBeenCalledOnce()
+    unmount()
+    expect(session.release).toHaveBeenCalledOnce()
+  })
+
+  it('releases the external watch when the session switches to YouTube under a visible bar', () => {
+    session.state = activeState()
+    const { rerender } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.watchExternalPlayback).toHaveBeenCalledOnce()
+
+    provider.state = { provider: 'youtube', trackId: 'yt-track', title: 'YouTube song' }
+    rerender(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.release).toHaveBeenCalledOnce()
+    expect(session.watchExternalPlayback).toHaveBeenCalledOnce()
+  })
+
+  it('does not ask for the external watch with nothing to show, or for a YouTube session', () => {
+    render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.watchExternalPlayback).not.toHaveBeenCalled()
+
+    provider.state = { provider: 'youtube', trackId: 'yt-track', title: 'YouTube song' }
+    session.state = activeState()
+    render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.watchExternalPlayback).not.toHaveBeenCalled()
   })
 
   it('renders nothing when nothing is playing and nothing failed', () => {

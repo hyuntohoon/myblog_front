@@ -201,7 +201,7 @@ describe('short-circuits before any cost', () => {
   })
 
   it('a dormant (503) account never reaches the resolve or the SDK', async () => {
-    install({ token: () => json({}, 503) })
+    install({ token: () => json({ detail: 'Spotify playback not configured' }, 503) })
     fakeSdk()
 
     await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({
@@ -212,6 +212,20 @@ describe('short-circuits before any cost', () => {
     expect(calls.filter(c => c.url.startsWith(RESOLVE_URL))).toHaveLength(0)
     expect(playCalls()).toHaveLength(0)
     expect(isSdkLoaded()).toBe(false)
+  })
+
+  // OPS-project-stabilization Step 2A, real-device gate 2026-10-06: API Gateway
+  // answers a throttled Lambda 503 with its own body. That is transient — `error`,
+  // which the live read retries — not the route's "not configured" `dormant`.
+  it.each([
+    ['an API Gateway throttle', () => json({ message: 'Service Unavailable' }, 503)],
+    ['an auth-guard JWKS outage', () => json({ detail: 'Auth service unavailable' }, 503)],
+    ['a non-JSON body', () => new Response('Service Unavailable', { status: 503 })],
+  ])('a 503 from %s is a transient error, not dormant', async (_label, token) => {
+    install({ token })
+    fakeSdk()
+
+    await expect(getStreamingToken()).resolves.toEqual({ ok: false, status: 'error', httpStatus: 503 })
   })
 
   it('an unresolvable item never attempts a play', async () => {

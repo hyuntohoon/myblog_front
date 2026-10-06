@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { __resetUriCache, cachedUri, resolveTail, resolveUri } from './uris'
+import { __resetUriCache, cachedUri, PREFETCH_CONCURRENCY, prefetchUris, resolveTail, resolveUri } from './uris'
 
 vi.mock('@lib/auth', () => ({ getAuthHeader: vi.fn(() => ({ Authorization: 'Bearer test' })) }))
 
@@ -130,5 +130,52 @@ describe('resolveTail', () => {
 
     expect(tail.resolved).toEqual([])
     expect(tail.failed).toHaveLength(1)
+  })
+})
+
+// OPS-project-stabilization Step 2A, real-device gate 2026-10-06: home entry makes two
+// prefetch calls at once, and per-call concurrency let them fan out together against
+// an account-wide Lambda concurrency of 10. The limit is the tab's, not the call's.
+describe('prefetch concurrency', () => {
+  it('keeps every concurrent prefetch call inside one tab-wide limit, and still resolves them all', async () => {
+    let active = 0
+    let peak = 0
+    const pending: Array<() => void> = []
+    fetchMock.mockImplementation((url: string) => {
+      active++
+      peak = Math.max(peak, active)
+      const id = new URL(url, 'https://x').searchParams.get('id')
+      return new Promise((resolve) => {
+        pending.push(() => {
+          active--
+          resolve(response(true, `spotify:track:${id}`))
+        })
+      })
+    })
+
+    const a = prefetchUris(['a1', 'a2', 'a3', 'a4', 'a5', 'a6'])
+    const b = prefetchUris(['b1', 'b2', 'b3', 'b4', 'b5', 'b6'])
+    for (let i = 0; i < 12; i++) {
+      await vi.waitFor(() => expect(pending.length).toBeGreaterThan(0))
+      expect(active).toBeLessThanOrEqual(PREFETCH_CONCURRENCY)
+      pending.shift()!()
+    }
+    await Promise.all([a, b])
+
+    expect(peak).toBe(PREFETCH_CONCURRENCY)
+    expect(fetchMock).toHaveBeenCalledTimes(12)
+    for (const id of ['a1', 'a6', 'b1', 'b6'])
+      expect(cachedUri(id)).toBe(`spotify:track:${id}`)
+  })
+
+  // `resolveUri` never throws (a failure comes back as `transient`), so this is the
+  // path a failed resolve really takes: it must still hand its slot on.
+  it('a failed resolve hands its slot on', async () => {
+    fetchMock.mockRejectedValue(new Error('network'))
+    await prefetchUris(['x1', 'x2', 'x3', 'x4', 'x5'])
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValue(response(true, 'spotify:track:y'))
+    await prefetchUris(['y'])
+    expect(cachedUri('y')).toBe('spotify:track:y')
   })
 })

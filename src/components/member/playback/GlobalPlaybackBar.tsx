@@ -192,6 +192,17 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
     }
   }, [visible, collapsed])
 
+  // OPS-project-stabilization Step 2A (owner decision 2026-10-06, finding E): the bar
+  // is the second surface that asks for the session's external watch. Before it, a
+  // skip, seek or pause made on the phone reached the bar only at the next lifecycle
+  // event or the old song's estimated end — the viewer alone was watched. The watch
+  // stays the session's: one reader, quiet unless something changed, and the same
+  // conditions (visible page, reader tab, not this tab's SDK device, Spotify).
+  useEffect(() => {
+    if (visible && !youtube)
+      return playbackSession.watchExternalPlayback()
+  }, [visible, youtube])
+
   useEffect(() => {
     if (!visible || youtube)
       return
