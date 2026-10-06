@@ -168,7 +168,9 @@ describe('prefetch concurrency', () => {
       expect(cachedUri(id)).toBe(`spotify:track:${id}`)
   })
 
-  it('frees the slot when a resolve fails', async () => {
+  // `resolveUri` never throws (a failure comes back as `transient`), so this is the
+  // path a failed resolve really takes: it must still hand its slot on.
+  it('a failed resolve hands its slot on', async () => {
     fetchMock.mockRejectedValue(new Error('network'))
     await prefetchUris(['x1', 'x2', 'x3', 'x4', 'x5'])
     fetchMock.mockReset()

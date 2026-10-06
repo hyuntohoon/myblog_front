@@ -106,8 +106,11 @@ const RESOLVE_PATH = '/api/playback/resolve'
 export const PREFETCH_CONCURRENCY = 4
 let prefetchActive = 0
 const prefetchWaiters: Array<() => void> = []
+// Bumped by the test seam so a slot taken before a reset never frees one counted after it.
+let prefetchGeneration = 0
 
 async function withPrefetchSlot<T>(fn: () => Promise<T>): Promise<T> {
+  const generation = prefetchGeneration
   if (prefetchActive < PREFETCH_CONCURRENCY)
     prefetchActive++
   else
@@ -116,12 +119,14 @@ async function withPrefetchSlot<T>(fn: () => Promise<T>): Promise<T> {
     return await fn()
   }
   finally {
-    // Hand the slot straight to the next waiter; only free it when nobody waits.
-    const next = prefetchWaiters.shift()
-    if (next)
-      next()
-    else
-      prefetchActive--
+    if (generation === prefetchGeneration) {
+      // Hand the slot straight to the next waiter; only free it when nobody waits.
+      const next = prefetchWaiters.shift()
+      if (next)
+        next()
+      else
+        prefetchActive--
+    }
   }
 }
 
@@ -239,8 +244,11 @@ export interface ResolvedTail { resolved: ResolvedTailRow[], failed: TailRow[] }
 export function __resetUriCache(): void {
   cache.clear()
   inflight.clear()
+  prefetchGeneration++
   prefetchActive = 0
-  prefetchWaiters.length = 0
+  // Let anything parked from the previous test finish; its slot is no longer counted.
+  for (const wake of prefetchWaiters.splice(0))
+    wake()
 }
 
 /** What is already known, without touching the network. Used by the play path's fast case. */

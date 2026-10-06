@@ -3127,6 +3127,25 @@ describe('external watch (OPS-project-stabilization Step 2A, OQ2)', () => {
     expect(playbackSession.getSnapshot()).toBe(before)
   })
 
+  // Owner decision 2026-10-06: the global bar asks too, so "bar + viewer" is the
+  // ordinary case. Two surfaces share one timer, and closing one keeps the other's.
+  it('shares one timer between two surfaces, and keeps reading when one releases', async () => {
+    await watching()
+    const second = playbackSession.watchExternalPlayback()
+
+    await vi.advanceTimersByTimeAsync(3 * TEN_S)
+    expect(reads()).toBe(3)
+
+    second()
+    await vi.advanceTimersByTimeAsync(2 * TEN_S)
+    expect(reads()).toBe(5)
+
+    release?.()
+    release = null
+    await vi.advanceTimersByTimeAsync(3 * TEN_S)
+    expect(reads()).toBe(5)
+  })
+
   it('finds a skip made on the phone within one interval, with the read that saw it', async () => {
     await watching()
     await vi.advanceTimersByTimeAsync(3_000)

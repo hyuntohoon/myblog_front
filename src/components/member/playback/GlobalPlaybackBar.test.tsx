@@ -215,6 +215,17 @@ describe('globalPlaybackBar', () => {
     expect(session.release).toHaveBeenCalledOnce()
   })
 
+  it('releases the external watch when the session switches to YouTube under a visible bar', () => {
+    session.state = activeState()
+    const { rerender } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.watchExternalPlayback).toHaveBeenCalledOnce()
+
+    provider.state = { provider: 'youtube', trackId: 'yt-track', title: 'YouTube song' }
+    rerender(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(session.release).toHaveBeenCalledOnce()
+    expect(session.watchExternalPlayback).toHaveBeenCalledOnce()
+  })
+
   it('does not ask for the external watch with nothing to show, or for a YouTube session', () => {
     render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
     expect(session.watchExternalPlayback).not.toHaveBeenCalled()

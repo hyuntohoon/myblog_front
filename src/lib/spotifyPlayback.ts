@@ -132,6 +132,8 @@ export async function getStreamingToken(): Promise<TokenResult> {
 // Reading every 503 as `dormant` made that throttle look like "playback not configured",
 // which is not retryable — so the home discovery retry never ran and the bar never
 // appeared. Only the route's own detail means dormant.
+// The literal is the backend route's (`myblog_backend` app/api/routes/playback.py, pinned by
+// tests/api/test_playback.py). Rewording it there turns every real dormant into `error`.
 export const TOKEN_NOT_CONFIGURED_DETAIL = 'Spotify playback not configured'
 
 async function isNotConfigured(res: Response): Promise<boolean> {
@@ -179,8 +181,12 @@ async function mintOnce(epoch: AuthEpoch, signal: AbortSignal): Promise<TokenRes
     }
   }
 
-  if (res.status === 503)
-    return (await isNotConfigured(res)) ? { ok: false, status: 'dormant', httpStatus: 503 } : { ok: false, status: 'error', httpStatus: 503 }
+  if (res.status === 503) {
+    const notConfigured = await isNotConfigured(res)
+    if (!isAuthEpochCurrent(epoch) || signal.aborted)
+      return { ok: false, status: 'unauthorized' }
+    return notConfigured ? { ok: false, status: 'dormant', httpStatus: 503 } : { ok: false, status: 'error', httpStatus: 503 }
+  }
   // 404 = this member has no connected ('connected'-status) Spotify integration
   // (member-player Step 2 route contract) — a capability state, not an error.
   if (res.status === 404)
