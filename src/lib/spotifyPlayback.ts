@@ -56,7 +56,10 @@ export type PlaybackTarget =
 
 // ── streaming-capability state (generic, NOT owner-specific) ──────────────────
 //   ready        — a live token + a connected Premium device (post-provisioning)
-//   dormant      — the token route returned 503 (playback not configured server-side)
+//   dormant      — the token route returned 503 with the route's own "not configured"
+//                  detail (playback not configured server-side). Any other 503 — a
+//                  Lambda throttle answered by API Gateway, a JWKS outage in the auth
+//                  guard — is `error`: transient, and asking again can fix it.
 //   disconnected — the token route returned 404: this member has no connected
 //                  Spotify integration (member-player Step 2 mint contract —
 //                  also what a revoked row returns after its first 502)
@@ -123,6 +126,24 @@ export async function getStreamingToken(): Promise<TokenResult> {
   return request
 }
 
+// OPS-project-stabilization Step 2A (real-device gate, 2026-10-06): a cold home entry
+// fires ~15 backend requests at once against an account-wide Lambda concurrency of 10,
+// and API Gateway answers the throttled ones 503 `{"message":"Service Unavailable"}`.
+// Reading every 503 as `dormant` made that throttle look like "playback not configured",
+// which is not retryable — so the home discovery retry never ran and the bar never
+// appeared. Only the route's own detail means dormant.
+export const TOKEN_NOT_CONFIGURED_DETAIL = 'Spotify playback not configured'
+
+async function isNotConfigured(res: Response): Promise<boolean> {
+  try {
+    const body = (await res.json()) as { detail?: unknown } | null
+    return body?.detail === TOKEN_NOT_CONFIGURED_DETAIL
+  }
+  catch {
+    return false
+  }
+}
+
 async function mintOnce(epoch: AuthEpoch, signal: AbortSignal): Promise<TokenResult> {
   const initialHeaders = getAuthHeader()
   let res: Response
@@ -159,7 +180,7 @@ async function mintOnce(epoch: AuthEpoch, signal: AbortSignal): Promise<TokenRes
   }
 
   if (res.status === 503)
-    return { ok: false, status: 'dormant', httpStatus: 503 }
+    return (await isNotConfigured(res)) ? { ok: false, status: 'dormant', httpStatus: 503 } : { ok: false, status: 'error', httpStatus: 503 }
   // 404 = this member has no connected ('connected'-status) Spotify integration
   // (member-player Step 2 route contract) — a capability state, not an error.
   if (res.status === 404)

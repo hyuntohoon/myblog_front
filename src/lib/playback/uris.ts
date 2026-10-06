@@ -93,8 +93,37 @@ import { getAuthHeader } from '@lib/auth'
 const BASE = import.meta.env.PUBLIC_BACKEND_API_URL as string | undefined
 const RESOLVE_PATH = '/api/playback/resolve'
 
-/** Concurrency for the idle prefetch. Low on purpose: it must never crowd out a play tap. */
-const PREFETCH_CONCURRENCY = 4
+/**
+ * Concurrency for the idle prefetch — ACROSS every `prefetchUris` call in this tab,
+ * not per call. Low on purpose: it must never crowd out a play tap.
+ *
+ * It used to be per call, and home entry makes two calls at once (the lifecycle sync
+ * and the queue load), so a cold home fanned out ~10 resolves on top of the page's
+ * own requests. Against an account-wide Lambda concurrency of 10 that throttled the
+ * backend, and the throttled token mint is what kept the bar from appearing
+ * (OPS-project-stabilization Step 2A, real-device gate 2026-10-06).
+ */
+export const PREFETCH_CONCURRENCY = 4
+let prefetchActive = 0
+const prefetchWaiters: Array<() => void> = []
+
+async function withPrefetchSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (prefetchActive < PREFETCH_CONCURRENCY)
+    prefetchActive++
+  else
+    await new Promise<void>(resolve => prefetchWaiters.push(resolve))
+  try {
+    return await fn()
+  }
+  finally {
+    // Hand the slot straight to the next waiter; only free it when nobody waits.
+    const next = prefetchWaiters.shift()
+    if (next)
+      next()
+    else
+      prefetchActive--
+  }
+}
 
 /** The providers this module can resolve. `spotify` is the default everywhere. */
 export type UriProvider = 'spotify' | 'youtube'
@@ -210,6 +239,8 @@ export interface ResolvedTail { resolved: ResolvedTailRow[], failed: TailRow[] }
 export function __resetUriCache(): void {
   cache.clear()
   inflight.clear()
+  prefetchActive = 0
+  prefetchWaiters.length = 0
 }
 
 /** What is already known, without touching the network. Used by the play path's fast case. */
@@ -358,7 +389,7 @@ export async function prefetchUris(
   const worker = async (): Promise<void> => {
     while (cursor < todo.length) {
       const id = todo[cursor++]
-      await resolveUri(id, provider)
+      await withPrefetchSlot(() => resolveUri(id, provider))
     }
   }
   await Promise.all(

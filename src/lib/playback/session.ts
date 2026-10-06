@@ -2727,7 +2727,8 @@ async function runCompletionBurst(endingUri: string | null): Promise<void> {
 // rest of A's length.
 //
 // What keeps it narrow:
-//   · it runs only while a surface asked for it (the open lyrics viewer), the page
+//   · it runs only while a surface asked for it (the open lyrics viewer, or the
+//     global bar while it shows a song — owner decision 2026-10-06), the page
 //     is visible, this tab may adopt, a track is known, and the audio is NOT this
 //     tab's SDK device (which pushes). Any of those false → no timer exists;
 //   · it is quiet. A read that agrees with the session changes nothing — no patch,
@@ -2851,8 +2852,9 @@ async function externalWatchTick(): Promise<void> {
 }
 
 /**
- * Ask for the external watch while a surface that shows WHICH song is playing, line
- * by line, is open. Returns the release. See the block header above.
+ * Ask for the external watch while a surface that shows WHICH song is playing is
+ * up (the lyrics viewer, the global bar). Returns the release. Ref-counted: two
+ * surfaces share one timer. See the block header above.
  */
 function watchExternalPlayback(): () => void {
   const watcher = Symbol('external watch')
