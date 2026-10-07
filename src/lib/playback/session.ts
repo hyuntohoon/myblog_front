@@ -426,6 +426,19 @@ let anchorAmbiguous = false
  * chaining so one press's rejection never wedges every later press behind it.
  */
 let replaceChain: Promise<unknown> = Promise.resolve()
+
+/**
+ * Run a queue replace behind every replace already queued — a ▶ press AND an Undo.
+ * Each is one request now, but two answers can still arrive out of order, and the
+ * last `setTree` wins: an Undo answered after a newer ▶ committed would show rows
+ * the server already deleted. Serializing them makes the screen's last write the
+ * server's last commit.
+ */
+function enqueueReplace<T>(run: () => Promise<T>): Promise<T> {
+  const settled = replaceChain.catch(() => undefined).then(run)
+  replaceChain = settled
+  return settled
+}
 let capabilityInflight: Promise<void> | null = null
 let likedTrackId: string | null = null
 let libraryBusy = false
@@ -1461,12 +1474,25 @@ async function replaceQueue(
 }
 
 /**
+ * Longer than `apiFetch`'s own 15 s timeout: a request the client gave up on can
+ * still be running server-side, and only a read issued after it finishes sees it.
+ */
+export const REPLACE_REREAD_DELAY_MS = 20_000
+
+/**
  * The narrow case the RFC names: the server committed, but the answer never
  * arrived. The client cannot tell that from a failure, so it re-reads instead of
  * keeping a screen that may show a queue the server already replaced.
+ *
+ * Twice. The first read catches a commit whose answer was dropped. It cannot catch
+ * a request the client TIMED OUT on while the server was still working (a cold
+ * Lambda, a waking database): that read can land before the commit, see the old
+ * queue, and stamp it fresh for the store's whole SWR window. The second read,
+ * after the server-side request must have ended, is the one that settles it.
  */
 function rereadAfterFailedReplace(): void {
   void bucketStore.ensureFresh(true)
+  window.setTimeout(() => void bucketStore.ensureFresh(true), REPLACE_REREAD_DELAY_MS)
 }
 
 function replacedMessage(intent: ReplaceIntent, count: number, degraded: boolean): string {
@@ -2255,7 +2281,7 @@ export const playbackSession = {
         const outcome = await playFrom(0)
         const { displacedTrackIds } = replaced
         const undo = undoable(displacedTrackIds) ?
-          () => undoReplace(bucket.id, displacedTrackIds) :
+          () => enqueueReplace(() => undoReplace(bucket.id, displacedTrackIds)) :
           null
 
         if (!outcome || !outcome.ok) {
@@ -2278,9 +2304,7 @@ export const playbackSession = {
         return { ok: false, message: REPLACE_FAILED, undo: null, play: null }
       }
     }
-    const settled = replaceChain.catch(() => undefined).then(run)
-    replaceChain = settled
-    return settled
+    return enqueueReplace(run)
   },
 
   /**

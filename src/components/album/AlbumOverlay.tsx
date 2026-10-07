@@ -115,9 +115,9 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
   // ARCH-entity-interaction-v2 Step 5 — the track-level twin of `playAlbum`,
   // same primitive (`replaceQueueAndPlay`, `kind: 'track'`) the vanilla review
   // page's per-track ▶ already uses in production (`albumDetail.client.ts`).
-  // No local busy guard, matching that same precedent — a double click races
-  // two `rewriteQueue` calls in theory, but the shipped vanilla version has
-  // carried that exact risk with no reported issue.
+  // No local busy guard, matching that same precedent — a double click sends two
+  // replaces, and the session's `replaceChain` (BUG-23) runs them one after the
+  // other, so the second press is the one that lands.
   const playTrack = async (trackId: string, title: string) => {
     if (!isLoggedIn())
       return

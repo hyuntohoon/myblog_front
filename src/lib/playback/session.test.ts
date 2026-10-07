@@ -930,6 +930,26 @@ describe('▶ replaces the queue', () => {
     expect(order).toEqual(['seed:track-a', 'seed:track-b', 'prefetch'])
   })
 
+  // Every cache-only reader that runs when the store notifies (row matching, the
+  // lyrics viewer) must already find the new rows' URIs — seeded BEFORE publish.
+  it('seeds the replaced rows\' URIs before the store publishes them', async () => {
+    setQueue([row('a')])
+    albumTracks = { 'alb-1': ['t1', 't2'] }
+    const seededAtPublish: boolean[] = []
+    const stop = bucketStore.subscribe(() => {
+      if (queueTrackIds()[0] === 't1')
+        seededAtPublish.push(mocks.rememberSpotifyUri.mock.calls.some(([trackId, uri]) => trackId === 't2' && uri === 'spotify:track:sp-t2'))
+    })
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await settleAll()
+    await pending
+    stop()
+
+    expect(seededAtPublish.length).toBeGreaterThan(0)
+    expect(seededAtPublish[0]).toBe(true)
+  })
+
   it('makes a single track the queue and plays it', async () => {
     setQueue([row('a'), row('b')])
 
@@ -1036,6 +1056,31 @@ describe('▶ replace — failures preserve', () => {
     expect(queueTrackIds()).toEqual(['t1', 't2'])
   })
 
+  // Reviewer finding 1: the client times out (apiFetch, 15 s) while the server is
+  // still working, and commits a moment later. A re-read sent at once lands BEFORE
+  // the commit and would stamp the old queue fresh; the delayed second read is the
+  // one that must bring the screen to the server's truth.
+  it('re-reads again after the server-side request must have ended, when the client timed out first', async () => {
+    setQueue([row('a'), row('b')])
+    albumTracks = { 'alb-1': ['t1', 't2'] }
+    mocks.listBuckets.mockImplementation(() => afterWriteLag(() => [bucket(server)]))
+    mocks.replacePlaybackQueue.mockImplementation((_bucketId: string, source: { albumId: string }) => {
+      window.setTimeout(() => replaceServerQueue(source), 17_000)
+      return new Promise((_resolve, reject) => window.setTimeout(() => reject(new Error('timeout')), 15_000))
+    })
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await vi.advanceTimersByTimeAsync(16_000)
+    const outcome = await pending
+    expect(outcome).toMatchObject({ ok: false, message: '재생 대기열을 바꾸지 못했어요' })
+    // The immediate re-read saw the server before its commit — honestly the old queue.
+    expect(queueTrackIds()).toEqual(['track-a', 'track-b'])
+
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(server.map(item => item.trackId)).toEqual(['t1', 't2'])
+    expect(queueTrackIds()).toEqual(['t1', 't2'])
+  })
+
   it('leaves the queue untouched when the album has nothing to queue', async () => {
     setQueue([row('a'), row('b')])
     albumTracks = { 'alb-empty': [] }
@@ -1124,6 +1169,31 @@ describe('▶ replace — Undo', () => {
 
   // Defensive: the endpoint answers an empty `items` only when it queued nothing and
   // left the queue alone. An Undo that restored nothing must not claim it did.
+  // Reviewer finding 2. The real server commits in arrival order; the ANSWERS can
+  // come back in either. Unserialized, an Undo answered after a newer ▶ committed
+  // would publish rows the server had already deleted.
+  it('runs an Undo and a following ▶ one after the other, so the screen ends where the server does', async () => {
+    setQueue([row('a'), row('b')])
+    albumTracks = { 'alb-1': ['t1'], 'alb-2': ['t7', 't8'] }
+    const replacing = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await settleAll()
+    const outcome = await replacing
+
+    // Commit at arrival, answer later — and the Undo's answer is the slow one.
+    mocks.replacePlaybackQueue.mockImplementation((_bucketId: string, source: { albumId: string } | { trackIds: string[] }) => {
+      const answer = replaceServerQueue(source)
+      const lag = 'trackIds' in source ? 1_000 : WRITE_LAG_MS
+      return new Promise(resolve => window.setTimeout(() => resolve(answer), lag))
+    })
+    const undoing = outcome.undo?.()
+    const pressing = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-2' })
+    await settleAll()
+    await Promise.all([undoing, pressing])
+
+    expect(server.map(item => item.trackId)).toEqual(['t7', 't8'])
+    expect(queueTrackIds()).toEqual(['t7', 't8'])
+  })
+
   it('reports failure when the restore answers with nothing queued', async () => {
     setQueue([row('a')])
     albumTracks = { 'alb-1': ['t1'] }
