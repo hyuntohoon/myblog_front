@@ -27,11 +27,11 @@
 //   · play time resolves only the misses, and a miss that fails is reported to the
 //     caller rather than failing the whole play.
 //
-// THE REAL FIX IS ONE FIELD, and it is deliberately not taken here because it is
-// cross-repo and this step is front-only: surface `tracks.spotify_id` on playback
-// bucket items in the tree payload. Then `queueUris` is `map(r => 'spotify:track:'+id)`,
-// this module deletes, and the request count is zero even cold. Recorded in the RFC
-// as the follow-up rather than left as a comment nobody reads.
+// THE REAL FIX WAS ONE FIELD, and ARCH-playback-queue-atomic-replace took it: playback
+// rows now carry `spotify_uri` in both the tree payload and the replace response, and
+// `resolveTail`'s Spotify branch reads it, so a ▶ costs zero resolves even cold. The
+// resolver stays for rows that arrive without it and for YouTube, whose mappings are
+// revocable and must be asked at play time.
 //
 // ARCH-playback-authority-convergence Step 1 changed two things here.
 //
@@ -226,8 +226,14 @@ export type UriResolution =
 	/** Network, timeout, 5xx, or no API base. Says nothing about the track. */
 	{ kind: 'transient' }
 
-/** One row of a tail, before and after resolution. */
-export interface TailRow { itemId: string, trackId: string }
+/**
+ * One row of a tail, before and after resolution.
+ *
+ * `spotifyUri` is the payload's own answer (ARCH-playback-queue-atomic-replace):
+ * playback rows carry `spotify:track:<tracks.spotify_id>` from the server, so the
+ * Spotify branch of `resolveTail` takes it as-is and never asks the network.
+ */
+export interface TailRow { itemId: string, trackId: string, spotifyUri?: string | null }
 export interface ResolvedTailRow extends TailRow { uri: string }
 
 /**
@@ -249,6 +255,23 @@ export function __resetUriCache(): void {
   // Let anything parked from the previous test finish; its slot is no longer counted.
   for (const wake of prefetchWaiters.splice(0))
     wake()
+}
+
+const SPOTIFY_TRACK_URI = /^spotify:track:[A-Za-z0-9]+$/
+
+/**
+ * Record a Spotify URI the server already handed us on a queue row.
+ *
+ * Sound for the same reason the Spotify memo is: `tracks.spotify_id` is NOT NULL +
+ * UNIQUE, so the payload's answer and `resolve`'s answer are the same fact. Seeding
+ * it lets every cache-only reader (`cachedUri` — row matching, the lyrics viewer,
+ * the entry actions) see the row without anyone resolving it, and lets the idle
+ * prefetch skip it. Spotify only: a YouTube mapping never arrives on the payload.
+ */
+export function rememberSpotifyUri(trackId: string, uri: string | null | undefined): void {
+  if (!uri || !SPOTIFY_TRACK_URI.test(uri))
+    return
+  cache.set(cacheKey('spotify', trackId), { value: uri, expiresAt: undefined })
 }
 
 /** What is already known, without touching the network. Used by the play path's fast case. */
@@ -367,13 +390,22 @@ export async function resolveTail(
   rows: readonly TailRow[],
   provider: UriProvider = 'spotify',
 ): Promise<ResolvedTail> {
-  const results = await Promise.all(rows.map(row => resolveUriDetailed(row.trackId, provider)))
+  // The payload already names the Spotify URI — use it and ask nothing. Only a row
+  // without one (an older cached tree, a caller that did not carry it) still pays a
+  // resolve. YouTube ignores the field: its mappings are revocable and resolved here.
+  const results = await Promise.all(rows.map((row): Promise<UriResolution> => {
+    if (provider === 'spotify' && row.spotifyUri && SPOTIFY_TRACK_URI.test(row.spotifyUri)) {
+      rememberSpotifyUri(row.trackId, row.spotifyUri)
+      return Promise.resolve({ kind: 'uri', uri: row.spotifyUri })
+    }
+    return resolveUriDetailed(row.trackId, provider)
+  }))
   const resolved: ResolvedTailRow[] = []
   const failed: TailRow[] = []
   rows.forEach((row, i) => {
     const r = results[i]
     if (r.kind === 'uri')
-      resolved.push({ ...row, uri: r.uri })
+      resolved.push({ itemId: row.itemId, trackId: row.trackId, uri: r.uri })
     else failed.push(row)
   })
   return { resolved, failed }

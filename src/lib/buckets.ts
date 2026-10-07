@@ -18,6 +18,7 @@ type ApiArtistExpansion = components['schemas']['Backend_ArtistExpansionResponse
 type ApiArtistBrief = components['schemas']['Backend_ArtistBrief']
 type ApiTrackExpansion = components['schemas']['Backend_TrackExpansionResponse']
 type ApiTrackBrief = components['schemas']['Backend_TrackBrief']
+type ApiReplacePlaybackQueue = components['schemas']['Backend_ReplacePlaybackQueueResponse']
 type ApiPublicBucketsResponse = components['schemas']['Backend_PublicBucketsResponse']
 type ApiPublicBucket = components['schemas']['Backend_PublicBucket']
 type ApiPublicItem = components['schemas']['Backend_PublicBucketItem']
@@ -49,6 +50,12 @@ export interface BoardAlbum {
   trackAlbumId?: string | null
   /** Track length supplied by the playback bucket's TrackBrief. */
   durationSec?: number | null
+  /**
+   * ARCH-playback-queue-atomic-replace: `spotify:track:<tracks.spotify_id>` on a
+   * playback row, null on every other kind. The player plays it as-is, so a queue
+   * row needs no `GET /api/playback/resolve` round-trip.
+   */
+  spotifyUri?: string | null
   reviewTargetId: string | null
   /**
    * FEAT-my-buckit-artist: the credited artist for an `itemType==='artist'`
@@ -182,6 +189,7 @@ function mapItem(it: ApiItem): BoardAlbum {
     trackId: it.track_id ?? null,
     trackAlbumId: isTrack ? (tr?.album_id ?? null) : null,
     durationSec: isTrack ? (tr?.duration_sec ?? null) : null,
+    spotifyUri: it.spotify_uri ?? null,
     reviewTargetId: it.review_target_id ?? null,
     artistId: it.artist_id ?? null,
     // FEAT-pocket-buckit Step 6: a track/playback member renders from its TrackBrief
@@ -574,6 +582,37 @@ export async function expandAlbumTracks(bucketId: string, albumId: string): Prom
   })
   const data = await asJson<ApiTrackExpansion>(res)
   return (data.expansion?.added ?? []).map(mapTrackBrief)
+}
+
+/** The queue a replace left behind, and what it displaced (the Undo payload). */
+export interface PlaybackQueueReplace {
+  /** The new playback rows in queue order. Empty ⇒ nothing to queue; the queue was left untouched. */
+  items: BoardAlbum[]
+  /** The replaced rows' track ids in their old order — send back as `trackIds` to undo. */
+  displacedTrackIds: string[]
+}
+
+/**
+ * ARCH-playback-queue-atomic-replace: PUT /api/buckets/{bucketId}/playback-queue —
+ * make the Playback Bucket hold exactly `source` (an album's tracks in album order,
+ * or these tracks in this order) and nothing else, in ONE server transaction. The
+ * queue ends fully replaced or untouched; there is no client-side sequence left to
+ * be interrupted half-way.
+ */
+export async function replacePlaybackQueue(
+  bucketId: string,
+  source: { albumId: string } | { trackIds: string[] },
+): Promise<PlaybackQueueReplace> {
+  const body = 'albumId' in source ? { album_id: source.albumId } : { track_ids: source.trackIds }
+  const res = await apiFetch(`${BASE}/api/buckets/${bucketId}/playback-queue`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+  const data = await asJson<ApiReplacePlaybackQueue>(res)
+  return {
+    items: (data.items ?? []).map(mapItem),
+    displacedTrackIds: data.displaced_track_ids ?? [],
+  }
 }
 
 /** DELETE /api/buckets/{bucketId}/items/{itemId} — remove a single album (204). */

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   deleteBucketItem: vi.fn(),
   addBucketPlayback: vi.fn(),
   expandAlbumTracks: vi.fn(),
+  replacePlaybackQueue: vi.fn(),
   listBuckets: vi.fn(),
   play: vi.fn(),
   sendPlayerCommand: vi.fn(),
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   prefetchUris: vi.fn(),
   cachedUri: vi.fn(),
   resolveUri: vi.fn(),
+  rememberSpotifyUri: vi.fn(),
   readLivePlayback: vi.fn(),
   inPageDeviceId: null as string | null,
   ownershipState: {
@@ -51,6 +53,7 @@ vi.mock('@lib/buckets', async (importOriginal) => {
     deleteBucketItem: mocks.deleteBucketItem,
     addBucketPlayback: mocks.addBucketPlayback,
     expandAlbumTracks: mocks.expandAlbumTracks,
+    replacePlaybackQueue: mocks.replacePlaybackQueue,
     listBuckets: mocks.listBuckets,
   }
 })
@@ -79,6 +82,7 @@ vi.mock('@lib/playback/uris', () => ({
   prefetchUris: mocks.prefetchUris,
   cachedUri: mocks.cachedUri,
   resolveUri: mocks.resolveUri,
+  rememberSpotifyUri: mocks.rememberSpotifyUri,
 }))
 
 vi.mock('@lib/playback/ownership', () => ({
@@ -104,8 +108,16 @@ const WRITE_LAG_MS = 200
 /** albumId → the track ids its expansion appends, in album order. */
 let albumTracks: Record<string, string[]> = {}
 
+/** A write that lands after the lag. A throwing `apply` REJECTS after it, like a failed request. */
 function afterWriteLag<T>(apply: () => T): Promise<T> {
-  return new Promise<T>(resolve => window.setTimeout(() => resolve(apply()), WRITE_LAG_MS))
+  return new Promise<T>((resolve, reject) => window.setTimeout(() => {
+    try {
+      resolve(apply())
+    }
+    catch (e) {
+      reject(e)
+    }
+  }, WRITE_LAG_MS))
 }
 const OK = { ok: true, rung: 'remote', degraded: false, message: '재생을 시작했어요.' } as const
 const IN_PAGE_OK = { ok: true, rung: 'in-page', degraded: true, message: '이 브라우저에서 재생 중 (음질 제한)' } as const
@@ -162,9 +174,24 @@ let serverSeq = 0
 /** Rows land server-side APPENDED, in call order — `position` is append order. */
 function appendServerRow(trackId: string): BoardAlbum {
   serverSeq += 1
-  const created = { ...row(`srv-${serverSeq}`), trackId }
+  const created = { ...row(`srv-${serverSeq}`), trackId, spotifyUri: `spotify:track:sp-${trackId}` }
   server = [...server, created]
   return created
+}
+
+/**
+ * The server half of `PUT …/playback-queue`: one transaction that swaps every row,
+ * or — when there is nothing to queue — touches nothing. Answers after the write
+ * lag like every other write here, so a same-tick stub cannot hide a race.
+ */
+function replaceServerQueue(source: { albumId: string } | { trackIds: string[] }) {
+  const incoming = 'albumId' in source ? (albumTracks[source.albumId] ?? []) : source.trackIds
+  if (incoming.length === 0)
+    return { items: [], displacedTrackIds: [] }
+  const displacedTrackIds = server.flatMap(item => (item.trackId ? [item.trackId] : []))
+  server = []
+  const items = incoming.map(trackId => appendServerRow(trackId))
+  return { items, displacedTrackIds }
 }
 
 function setQueue(items: BoardAlbum[]): void {
@@ -270,6 +297,8 @@ beforeEach(() => {
     afterWriteLag(() => (albumTracks[albumId] ?? []).map(trackId => appendServerRow(trackId))))
   mocks.addBucketPlayback.mockImplementation(async (_bucketId: string, trackId: string) =>
     afterWriteLag(() => ({ item: appendServerRow(trackId), conflict: false })))
+  mocks.replacePlaybackQueue.mockImplementation(async (_bucketId: string, source: { albumId: string } | { trackIds: string[] }) =>
+    afterWriteLag(() => replaceServerQueue(source)))
   // DELETE resolves on a microtask, unlike the appends: the transitions that shipped
   // before this step (completion, remove-current) drive it with microtask flushes and
   // are asserting playback ordering, not write latency.
@@ -843,10 +872,62 @@ describe('▶ replaces the queue', () => {
     expect(playbackSession.getSnapshot()).toMatchObject({ playing: true, busy: false })
     expect(playbackSession.currentRow()?.trackId).toBe('t1')
     // The displaced rows are gone from the server, not just from the screen.
-    expect(mocks.deleteBucketItem.mock.calls.map(call => call[1])).toEqual(['a', 'b'])
     expect(server.map(item => item.trackId)).toEqual(['t1', 't2', 't3'])
     expect(outcome).toMatchObject({ ok: true, message: '재생 대기열을 이 앨범 3곡으로 바꿨어요' })
     expect(outcome.undo).toBeTypeOf('function')
+  })
+
+  // ARCH-playback-queue-atomic-replace: the shape the 2026-10-07 measurement
+  // condemned was 1 append + 1 re-read + N deletes per ▶, every one of them a
+  // separate chance to be throttled. One ▶ is now one request.
+  it('sends exactly one backend request per ▶ — no append, no re-read, no per-row delete', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    albumTracks = { 'alb-1': ['t1', 't2'] }
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await settleAll()
+    await pending
+
+    expect(mocks.replacePlaybackQueue).toHaveBeenCalledOnce()
+    expect(mocks.replacePlaybackQueue).toHaveBeenCalledWith('playback-bucket', { albumId: 'alb-1' })
+    expect(mocks.expandAlbumTracks).not.toHaveBeenCalled()
+    expect(mocks.addBucketPlayback).not.toHaveBeenCalled()
+    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
+    expect(mocks.listBuckets).not.toHaveBeenCalled()
+  })
+
+  it('plays the URIs the replace answered with, so the tail needs no resolve', async () => {
+    setQueue([row('a')])
+    albumTracks = { 'alb-1': ['t1', 't2'] }
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await settleAll()
+    await pending
+
+    // `resolveTail`'s Spotify branch takes a row's `spotifyUri` as-is (uris.test.ts
+    // proves it sends nothing). What the session owes it is to pass the payload's
+    // URI through, bound to the row it came from.
+    expect(mocks.resolveTail).toHaveBeenLastCalledWith([
+      { itemId: 'srv-1', trackId: 't1', spotifyUri: 'spotify:track:sp-t1' },
+      { itemId: 'srv-2', trackId: 't2', spotifyUri: 'spotify:track:sp-t2' },
+    ])
+  })
+
+  // Every cache-only reader (row matching, the lyrics viewer) sees a payload row
+  // only if something seeded it; the queue's prefetch is that something, and it
+  // seeds BEFORE it asks, so the ask finds nothing left to resolve.
+  it('seeds the payload URIs before the queue prefetch asks for anything', async () => {
+    setQueue([{ ...row('a'), spotifyUri: 'spotify:track:spA' }, row('b')])
+    const order: string[] = []
+    mocks.rememberSpotifyUri.mockImplementation((trackId: string) => order.push(`seed:${trackId}`))
+    mocks.prefetchUris.mockImplementation(async () => {
+      order.push('prefetch')
+    })
+
+    playbackSession.prefetch()
+
+    expect(mocks.rememberSpotifyUri).toHaveBeenCalledWith('track-a', 'spotify:track:spA')
+    expect(order).toEqual(['seed:track-a', 'seed:track-b', 'prefetch'])
   })
 
   it('makes a single track the queue and plays it', async () => {
@@ -856,6 +937,7 @@ describe('▶ replaces the queue', () => {
     await settleAll()
     const outcome = await pending
 
+    expect(mocks.replacePlaybackQueue).toHaveBeenCalledWith('playback-bucket', { trackIds: ['t9'] })
     expect(queueTrackIds()).toEqual(['t9'])
     expect(mocks.play).toHaveBeenLastCalledWith({ kind: 'uris', uris: ['provider:track:t9'] })
     expect(outcome).toMatchObject({ ok: true, message: '재생 대기열을 이 곡으로 바꿨어요' })
@@ -870,15 +952,14 @@ describe('▶ replaces the queue', () => {
 
     // Falls back to the intent itself — still the one shipped play path, no queue.
     expect(mocks.play).toHaveBeenLastCalledWith({ kind: 'album', albumId: 'alb-1' })
-    expect(mocks.expandAlbumTracks).not.toHaveBeenCalled()
-    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
+    expect(mocks.replacePlaybackQueue).not.toHaveBeenCalled()
     expect(outcome).toMatchObject({ ok: true, undo: null })
   })
 
-  it('never leaves a half-erased queue while the replacement is in flight', async () => {
+  it('never publishes a half-replaced queue while the replacement is in flight', async () => {
     setQueue([row('a'), row('b'), row('c')])
     albumTracks = { 'alb-1': ['t1', 't2'] }
-    const before = new Set<string | null>(['track-a', 'track-b', 'track-c'])
+    const before = ['track-a', 'track-b', 'track-c']
     const seen: (string | null)[][] = []
     const stop = bucketStore.subscribe(() => seen.push(queueTrackIds()))
 
@@ -887,16 +968,12 @@ describe('▶ replaces the queue', () => {
     await pending
     stop()
 
-    // Every intermediate the store ever published either still holds all three old
-    // rows, or holds the replacement. What must never appear is a state that has
-    // lost old rows without having gained new ones — deleting first would produce
-    // exactly that, and it is unplayable and un-undoable.
+    // Every state the store ever published is the old queue whole or the new one
+    // whole. A mix — old rows surviving next to new ones, the 2026-10-07 *Backwards*
+    // bug — must never appear.
     expect(seen.length).toBeGreaterThan(0)
-    for (const state of seen) {
-      const keptOld = state.filter(id => before.has(id)).length
-      const gainedNew = state.some(id => !before.has(id))
-      expect(keptOld === before.size || gainedNew).toBe(true)
-    }
+    for (const state of seen)
+      expect([before, ['t1', 't2']]).toContainEqual(state)
     expect(queueTrackIds()).toEqual(['t1', 't2'])
   })
 
@@ -910,12 +987,8 @@ describe('▶ replaces the queue', () => {
     await settleAll()
     await Promise.all([first, second])
 
-    // The second press is what the member actually meant to land on. Before the
-    // fix, both presses snapshotted `rewriteQueue`'s `beforeIds` off the SAME
-    // pre-press tree, so the second press's own diff wrongly folded in the first
-    // press's rows too — the queue ended up holding all three tracks and
-    // `playFrom(0)` named the FIRST press's track as current regardless of which
-    // press actually landed last.
+    // The second press is what the member actually meant to land on: its queue,
+    // and its track as current, regardless of how the first press's play settled.
     expect(queueTrackIds()).toEqual(['t9'])
     expect(playbackSession.currentRow()?.trackId).toBe('t9')
     expect(playbackSession.getSnapshot()).toMatchObject({ playing: true, busy: false })
@@ -923,22 +996,47 @@ describe('▶ replaces the queue', () => {
 })
 
 describe('▶ replace — failures preserve', () => {
-  it('leaves the queue untouched and deletes nothing when the write fails', async () => {
+  it('leaves the queue untouched when the replace request fails', async () => {
     setQueue([row('a'), row('b')])
-    mocks.expandAlbumTracks.mockRejectedValue(new Error('500'))
+    mocks.replacePlaybackQueue.mockImplementation(() => afterWriteLag(() => {
+      throw new Error('HTTP 503')
+    }))
 
     const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
     await settleAll()
     const outcome = await pending
 
     expect(queueTrackIds()).toEqual(['track-a', 'track-b'])
-    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
+    expect(server.map(item => item.trackId)).toEqual(['track-a', 'track-b'])
     expect(mocks.play).not.toHaveBeenCalled()
     expect(outcome).toMatchObject({ ok: false, message: '재생 대기열을 바꾸지 못했어요', undo: null })
-    expect(playbackSession.getSnapshot().busy).toBe(false)
+    expect(playbackSession.getSnapshot()).toMatchObject({
+      busy: false,
+      notice: { tone: 'error', message: '재생 대기열을 바꾸지 못했어요' },
+    })
   })
 
-  it('leaves the queue untouched when the album expands to nothing', async () => {
+  // The narrow exception the RFC names: the transaction committed, the answer was
+  // lost. The client cannot tell that from a failure, so it must not keep showing
+  // the old queue as if it were still there.
+  it('re-reads the tree when the replace committed but its answer was lost', async () => {
+    setQueue([row('a'), row('b')])
+    albumTracks = { 'alb-1': ['t1', 't2'] }
+    mocks.replacePlaybackQueue.mockImplementation((_bucketId: string, source: { albumId: string }) => afterWriteLag(() => {
+      replaceServerQueue(source)
+      throw new Error('network error (no response)')
+    }))
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await settleAll()
+    const outcome = await pending
+
+    expect(outcome).toMatchObject({ ok: false, message: '재생 대기열을 바꾸지 못했어요', undo: null })
+    expect(mocks.listBuckets).toHaveBeenCalled()
+    expect(queueTrackIds()).toEqual(['t1', 't2'])
+  })
+
+  it('leaves the queue untouched when the album has nothing to queue', async () => {
     setQueue([row('a'), row('b')])
     albumTracks = { 'alb-empty': [] }
 
@@ -947,7 +1045,7 @@ describe('▶ replace — failures preserve', () => {
     const outcome = await pending
 
     expect(queueTrackIds()).toEqual(['track-a', 'track-b'])
-    expect(mocks.deleteBucketItem).not.toHaveBeenCalled()
+    expect(mocks.play).not.toHaveBeenCalled()
     expect(outcome).toMatchObject({ ok: false, message: '이 앨범은 아직 트랙 정보가 없어요', undo: null })
   })
 
@@ -968,30 +1066,10 @@ describe('▶ replace — failures preserve', () => {
     expect(outcome.undo).toBeTypeOf('function')
     expect(playbackSession.getSnapshot().notice).toMatchObject({ tone: 'error', reason: 'transient' })
   })
-
-  it('re-reads the truth and says so when a displaced row cannot be deleted', async () => {
-    setQueue([row('a'), row('b')])
-    albumTracks = { 'alb-1': ['t1'] }
-    mocks.deleteBucketItem.mockImplementation(async (_bucketId: string, itemId: string) => {
-      if (itemId === 'b')
-        return Promise.reject(new Error('500'))
-      server = server.filter(item => item.itemId !== itemId)
-      return undefined
-    })
-
-    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
-    await settleAll()
-    const outcome = await pending
-
-    // The optimistic prune had already hidden 'b'; the forced re-read puts it back,
-    // because a queue that lies is worse than one that is briefly ugly.
-    expect(queueTrackIds()).toEqual(['track-b', 't1'])
-    expect(outcome.message).toContain('이전 1곡은 지우지 못했어요')
-  })
 })
 
 describe('▶ replace — Undo', () => {
-  it('restores the displaced queue, in order, and clears the stale current row', async () => {
+  it('restores the displaced queue, in order, in one request, and clears the stale current row', async () => {
     setQueue([row('a'), row('b')])
     albumTracks = { 'alb-1': ['t1', 't2'] }
 
@@ -1004,6 +1082,8 @@ describe('▶ replace — Undo', () => {
     await settleAll()
     const undone = await undoing
 
+    expect(mocks.replacePlaybackQueue).toHaveBeenCalledTimes(2)
+    expect(mocks.replacePlaybackQueue).toHaveBeenLastCalledWith('playback-bucket', { trackIds: ['track-a', 'track-b'] })
     expect(queueTrackIds()).toEqual(['track-a', 'track-b'])
     expect(server.map(item => item.trackId)).toEqual(['track-a', 'track-b'])
     expect(undone).toMatchObject({ ok: true, message: '이전 재생 대기열로 되돌렸어요' })
@@ -1024,14 +1104,52 @@ describe('▶ replace — Undo', () => {
     expect(queueTrackIds()).toEqual(['t1'])
   })
 
-  it('reports failure and keeps the replacement when the restore write fails', async () => {
+  // RFC §"When Undo is offered": the endpoint takes at most 200 `track_ids`, so a
+  // longer displaced queue cannot be restored in one call. Offering an Undo that
+  // can only fail would be worse than offering none.
+  it.each([
+    [200, true],
+    [201, false],
+  ])('offers Undo for a %i-track displaced queue: %s', async (size, offered) => {
+    setQueue(Array.from({ length: size }, (_, i) => row(`r${i}`)))
+    albumTracks = { 'alb-1': ['t1'] }
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await settleAll()
+    const outcome = await pending
+
+    expect(outcome.ok).toBe(true)
+    expect(outcome.undo !== null).toBe(offered)
+  })
+
+  // Defensive: the endpoint answers an empty `items` only when it queued nothing and
+  // left the queue alone. An Undo that restored nothing must not claim it did.
+  it('reports failure when the restore answers with nothing queued', async () => {
     setQueue([row('a')])
     albumTracks = { 'alb-1': ['t1'] }
     const replacing = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
     await settleAll()
     const outcome = await replacing
 
-    mocks.addBucketPlayback.mockRejectedValue(new Error('500'))
+    mocks.replacePlaybackQueue.mockImplementation(() => afterWriteLag(() => ({ items: [], displacedTrackIds: [] })))
+    const undoing = outcome.undo?.()
+    await settleAll()
+    const undone = await undoing
+
+    expect(undone).toMatchObject({ ok: false, message: '이전 대기열을 되돌리지 못했어요' })
+    expect(queueTrackIds()).toEqual(['t1'])
+  })
+
+  it('reports failure and keeps the replacement when the restore request fails', async () => {
+    setQueue([row('a')])
+    albumTracks = { 'alb-1': ['t1'] }
+    const replacing = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1' })
+    await settleAll()
+    const outcome = await replacing
+
+    mocks.replacePlaybackQueue.mockImplementation(() => afterWriteLag(() => {
+      throw new Error('HTTP 503')
+    }))
     const undoing = outcome.undo?.()
     await settleAll()
     const undone = await undoing
