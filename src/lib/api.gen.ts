@@ -189,6 +189,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/buckets/{bucket_id}/playback-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Playback Queue */
+        put: operations["replace_playback_queue_api_buckets__bucket_id__playback_queue_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/db/ping": {
         parameters: {
             query?: never;
@@ -2155,6 +2172,8 @@ export interface components {
             research_status?: string | null;
             /** Review Target Id */
             review_target_id?: string | null;
+            /** Spotify Uri */
+            spotify_uri?: string | null;
             /** Status */
             status: string;
             track?: components["schemas"]["Backend_TrackBrief"] | null;
@@ -3202,6 +3221,35 @@ export interface components {
         Backend_ReorderRequest: {
             /** Buckets */
             buckets?: components["schemas"]["Backend_ReorderBucket"][];
+        };
+        /**
+         * ReplacePlaybackQueueRequest
+         * @description PUT /api/buckets/{id}/playback-queue body: EXACTLY ONE of ``album_id`` (the album's
+         *     tracks, in album order — a ▶ on an album) or ``track_ids`` (these tracks, in this order —
+         *     a ▶ on a track, or an Undo replaying ``displaced_track_ids``). A track id is our UUID or a
+         *     Spotify track id, resolved the same way as POST /items.
+         */
+        Backend_ReplacePlaybackQueueRequest: {
+            /** Album Id */
+            album_id?: string | null;
+            /** Track Ids */
+            track_ids?: string[] | null;
+        };
+        /**
+         * ReplacePlaybackQueueResponse
+         * @description The queue after the replace, and what it displaced.
+         *
+         *     ``items`` are the new playback rows in queue order, each carrying ``spotify_uri``.
+         *     ``displaced_track_ids`` are the replaced rows' track ids in their old order — send them
+         *     back as ``track_ids`` to undo — replayable only when it holds 1..200 ids, so a client offers
+         *     no Undo when it is empty or longer than the request cap. Both empty ⇒ nothing to queue (an
+         *     album with no synced tracks) and the queue was left untouched.
+         */
+        Backend_ReplacePlaybackQueueResponse: {
+            /** Displaced Track Ids */
+            displaced_track_ids?: string[];
+            /** Items */
+            items?: components["schemas"]["Backend_BucketItemResponse"][];
         };
         /**
          * ResearchStatusMapResponse
@@ -4898,6 +4946,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_BucketsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_playback_queue_api_buckets__bucket_id__playback_queue_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bucket_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_ReplacePlaybackQueueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_ReplacePlaybackQueueResponse"];
                 };
             };
             /** @description Validation Error */
