@@ -270,10 +270,34 @@ function ensureSdk(): Promise<SpotifyNamespace> {
     script.src = SDK_SRC
     script.async = true
     script.dataset.spotifySdk = 'true'
-    script.addEventListener('error', () => reject(new Error('spotify sdk failed to load')))
+    script.addEventListener('error', () => {
+      // Forget the failure, or every later ▶ in this tab re-reads the same rejection
+      // and the in-page device can never be raised without a reload.
+      sdkPromise = null
+      script.remove()
+      reject(new Error('sdk_load_error'))
+    })
     document.head.appendChild(script)
   })
   return sdkPromise
+}
+
+/**
+ * How long raising the in-page device may take, SDK download included.
+ *
+ * Unbounded, a device that never reported `ready` left `play()` pending forever —
+ * and the session's `busy` with it, so ▶ stayed disabled and nothing said why
+ * (OPS-project-stabilization Step 2A; the 2026-10-07 `check_scope` 403 was exactly
+ * this). A healthy connect readies in a few seconds; this is the give-up line.
+ */
+const READY_TIMEOUT_MS = 15_000
+
+function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('ready_timeout')), ms)
+  })
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer))
 }
 
 let player: SpotifyPlayer | null = null
@@ -328,7 +352,8 @@ function notifyPlaybackChanged(): void {
 async function ensureConnectedDevice(token: string): Promise<string> {
   if (deviceId)
     return deviceId
-  const Spotify = await ensureSdk()
+  const startedAt = Date.now()
+  const Spotify = await withDeadline(ensureSdk(), READY_TIMEOUT_MS)
   return new Promise<string>((resolve, reject) => {
     const p = new Spotify.Player({
       name: 'Buckit',
@@ -340,16 +365,36 @@ async function ensureConnectedDevice(token: string): Promise<string> {
       // has itself expired the SDK call still fails, but that's no worse than not answering).
       getOAuthToken: cb => void getStreamingToken().then(r => cb(r.ok ? r.token : token)),
     })
+    // Settles once. A player that failed or timed out is disconnected here, so it
+    // cannot report `ready` later and become a second 'Buckit' device nobody holds.
+    // After `ready` the errors below no longer reject (there is nothing to reject)
+    // and never tear down the live device.
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const fail = (reason: string): void => {
+      if (settled)
+        return
+      settled = true
+      clearTimeout(timer)
+      p.disconnect()
+      // The SDK rejected the token itself — do not hand the same one to the retry.
+      if (reason === 'auth_error')
+        cachedToken = null
+      reject(new Error(reason))
+    }
+    timer = setTimeout(() => fail('ready_timeout'), Math.max(0, READY_TIMEOUT_MS - (Date.now() - startedAt)))
     p.addListener('ready', ({ device_id }) => {
-      if (device_id) {
-        player = p
-        deviceId = device_id
-        resolve(device_id)
-      }
+      if (!device_id || settled)
+        return
+      settled = true
+      clearTimeout(timer)
+      player = p
+      deviceId = device_id
+      resolve(device_id)
     })
-    p.addListener('initialization_error', () => reject(new Error('init_error')))
-    p.addListener('authentication_error', () => reject(new Error('auth_error')))
-    p.addListener('account_error', () => reject(new Error('account_error')))
+    p.addListener('initialization_error', () => fail('init_error'))
+    p.addListener('authentication_error', () => fail('auth_error'))
+    p.addListener('account_error', () => fail('account_error'))
     // Rung 2 has a real push signal for "the track changed" that rung 1 (Connect
     // remote) simply does not — the SDK fires this on every state change,
     // including a natural end-of-track auto-advance. Only act on an actual track
@@ -416,6 +461,19 @@ const STATUS_MESSAGE: Record<Exclude<StreamingStatus, 'ready'>, string> = {
 
 function messageFor(status: Exclude<StreamingStatus, 'ready'>): string {
   return STATUS_MESSAGE[status]
+}
+
+/**
+ * Why rung 2 could not raise this tab. These used to share the token sentence
+ * ("재생 토큰을 가져오지 못했어요"), which was wrong for every one of them — the
+ * token had already been minted. The way out differs: an SDK auth rejection needs
+ * the account looked at, a player that never started is routed to the app (whose
+ * device rung 1 then finds on the next ▶).
+ */
+function inPageFailureMessage(reason: string): string {
+  if (reason === 'auth_error')
+    return 'Spotify가 이 브라우저의 재생 인증을 거절했어요. 다시 눌러도 안 되면 설정에서 Spotify를 다시 연결해 주세요.'
+  return '이 브라우저에서 Spotify 재생기를 시작하지 못했어요. Spotify 앱에서 재생을 시작한 뒤 다시 눌러 주세요.'
 }
 
 // ── the play ladder (member-player Step 5) ───────────────────────────────────
@@ -568,12 +626,13 @@ export async function play(intent: PlayIntent): Promise<PlayOutcome> {
   }
   catch (e) {
     // Only account_error (the SDK requires Premium) means "you cannot do this" —
-    // rung 3. auth_error / init_error / a failed SDK script load are transient, so a
-    // Premium listener on a flaky network is never wrongly told to upgrade.
+    // rung 3. auth_error / init_error / a failed SDK script load / no `ready` in
+    // time are transient, so a Premium listener on a flaky network is never wrongly
+    // told to upgrade.
     const reason = e instanceof Error ? e.message : ''
     if (reason === 'account_error')
       return { ok: false, reason: 'no-capability', message: messageFor('unsupported') }
-    return { ok: false, reason: 'transient', message: messageFor('error') }
+    return { ok: false, reason: 'transient', message: inPageFailureMessage(reason) }
   }
 
   let res: Response

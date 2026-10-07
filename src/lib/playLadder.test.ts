@@ -69,23 +69,50 @@ function install(routes: Routes): void {
  * bundle — and `isSdkLoaded()` stays a truthful negative signal for the tests that
  * assert rung 2 was NOT reached.
  */
-function fakeSdk(opts: { failWith?: string } = {}): void {
+interface FakePlayer {
+  disconnected: boolean
+  emit: (event: string, payload: unknown) => void
+}
+let players: FakePlayer[]
+
+/**
+ * `readyAfterMs` models the real SDK's lag between `connect()` and `ready` (a
+ * websocket handshake plus a `check_scope` call). `never` is the 2026-10-07 shape:
+ * `connect()` resolves `true` and `ready` simply never comes — no error event.
+ */
+function fakeSdk(opts: { failWith?: string, readyAfterMs?: number, never?: boolean } = {}): void {
   ;(window as unknown as { Spotify: unknown }).Spotify = {
-    Player: class {
+    Player: class implements FakePlayer {
       private listeners: Record<string, (p: unknown) => void> = {}
+      disconnected = false
+      constructor() {
+        players.push(this)
+      }
+
       addListener(event: string, cb: (p: unknown) => void) {
         this.listeners[event] = cb
         return true
       }
 
-      disconnect() {}
+      emit(event: string, payload: unknown) {
+        this.listeners[event]?.(payload)
+      }
+
+      disconnect() {
+        this.disconnected = true
+      }
+
       async connect() {
         // Async, like the real one — the ladder must await 'ready', not assume it.
         await Promise.resolve()
+        if (opts.never)
+          return true
         if (opts.failWith)
-          this.listeners[opts.failWith]?.({ message: opts.failWith })
+          this.emit(opts.failWith, { message: opts.failWith })
+        else if (opts.readyAfterMs)
+          setTimeout(() => this.emit('ready', { device_id: DEVICE_ID }), opts.readyAfterMs)
         else
-          this.listeners.ready?.({ device_id: DEVICE_ID })
+          this.emit('ready', { device_id: DEVICE_ID })
         return true
       }
     },
@@ -98,6 +125,7 @@ function playCalls(): Call[] {
 
 beforeEach(() => {
   calls = []
+  players = []
   __resetPlaybackState()
   vi.mocked(authLib).isLoggedIn.mockReturnValue(true)
   vi.mocked(authLib).getAuthHeader.mockReturnValue({})
@@ -184,6 +212,88 @@ describe('rung 2 — cold start (the defect this step fixes)', () => {
       ok: false,
       reason: 'transient',
     })
+  })
+})
+
+describe('rung 2 — a device that never readies (OPS-project-stabilization Step 2A)', () => {
+  // Before the bound, `play()` never settled here, so the session's `busy` never
+  // cleared and ▶ stayed disabled with no notice. Each case runs next to a control
+  // that readies just inside the bound, so a green result cannot come from a harness
+  // that times everything out.
+  const STARTER = '이 브라우저에서 Spotify 재생기를 시작하지 못했어요'
+
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  async function settle(intent: Parameters<typeof play>[0], ms: number) {
+    let outcome: Awaited<ReturnType<typeof play>> | 'pending' = 'pending'
+    void play(intent).then((r) => {
+      outcome = r
+    })
+    await vi.advanceTimersByTimeAsync(ms)
+    return outcome
+  }
+
+  it('control: a device that readies inside the bound still plays in-page', async () => {
+    install({ playNoDevice: () => json({}, 404) })
+    fakeSdk({ readyAfterMs: 14_000 })
+
+    expect(await settle({ kind: 'album', albumId: 'alb1' }, 14_500)).toMatchObject({ ok: true, rung: 'in-page' })
+  })
+
+  it('gives up with a sentence of its own, not the token copy, and frees the button', async () => {
+    install({ playNoDevice: () => json({}, 404) })
+    fakeSdk({ never: true })
+
+    let outcome: Awaited<ReturnType<typeof play>> | 'pending' = 'pending'
+    void play({ kind: 'album', albumId: 'alb1' }).then((r) => {
+      outcome = r
+    })
+    await vi.advanceTimersByTimeAsync(14_900)
+    expect(outcome).toBe('pending')
+    await vi.advanceTimersByTimeAsync(200)
+    expect(players).toHaveLength(1)
+    expect(players[0].disconnected).toBe(true)
+    expect(outcome).toMatchObject({ ok: false, reason: 'transient', message: expect.stringContaining(STARTER) })
+    expect(playCalls().filter(c => c.url.includes('device_id='))).toHaveLength(0)
+  })
+
+  it('a player that readies AFTER giving up is not adopted as the device', async () => {
+    install({ playNoDevice: () => json({}, 404) })
+    fakeSdk({ readyAfterMs: 20_000 })
+
+    expect(await settle({ kind: 'album', albumId: 'alb1' }, 15_100)).toMatchObject({ ok: false, reason: 'transient' })
+    await vi.advanceTimersByTimeAsync(10_000)
+    // Had the late `ready` been adopted, this play would skip the connect and PUT
+    // straight to the stale device id.
+    fakeSdk({ never: true })
+    expect(await settle({ kind: 'album', albumId: 'alb1' }, 15_100)).toMatchObject({ ok: false, reason: 'transient' })
+    expect(playCalls().filter(c => c.url.includes('device_id='))).toHaveLength(0)
+  })
+
+  it('bounds the SDK download too, and a failed script load can be retried', async () => {
+    install({ playNoDevice: () => json({}, 404) })
+    // No window.Spotify: the real script path. Nothing ever loads it in jsdom.
+    expect(await settle({ kind: 'album', albumId: 'alb1' }, 15_100)).toMatchObject({ ok: false, reason: 'transient' })
+
+    const script = document.querySelector('script[data-spotify-sdk]')
+    script?.dispatchEvent(new Event('error'))
+    expect(document.querySelector('script[data-spotify-sdk]')).toBeNull()
+    fakeSdk()
+    expect(await settle({ kind: 'album', albumId: 'alb1' }, 100)).toMatchObject({ ok: true, rung: 'in-page' })
+  })
+
+  it('an SDK auth rejection says so and re-mints for the next try', async () => {
+    install({ playNoDevice: () => json({}, 404) })
+    fakeSdk({ failWith: 'authentication_error' })
+
+    const outcome = await settle({ kind: 'album', albumId: 'alb1' }, 100)
+    expect(outcome).toMatchObject({ ok: false, reason: 'transient', message: expect.stringContaining('재생 인증을 거절했어요') })
+    expect(players[0].disconnected).toBe(true)
+
+    const mints = calls.filter(c => c.url.startsWith(TOKEN_URL)).length
+    await settle({ kind: 'album', albumId: 'alb1' }, 100)
+    expect(calls.filter(c => c.url.startsWith(TOKEN_URL)).length).toBeGreaterThan(mints)
   })
 })
 
