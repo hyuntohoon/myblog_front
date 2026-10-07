@@ -102,3 +102,21 @@ export function withReorderedQueueItems(tree: BoardBucket[], bucketId: string, o
   })
   return walk(tree)
 }
+
+/**
+ * `tree` with `bucketId`'s direct members replaced by `items`, in that order.
+ *
+ * The shape of `PUT /api/buckets/{id}/playback-queue` (ARCH-playback-queue-atomic-
+ * replace): the server swapped every playback row in one transaction and answered
+ * with the new ones, so the tree takes the answer as-is rather than re-reading.
+ * Child buckets are left alone — they are containers parked under the queue, not
+ * part of it (see `queueItems`).
+ */
+export function withQueueReplaced(tree: BoardBucket[], bucketId: string, items: readonly BoardAlbum[]): BoardBucket[] {
+  const walk = (nodes: BoardBucket[]): BoardBucket[] => nodes.map((b) => {
+    if (b.id !== bucketId)
+      return b.children.length ? { ...b, children: walk(b.children) } : b
+    return { ...b, albums: [...items], children: b.children.length ? walk(b.children) : b.children }
+  })
+  return walk(tree)
+}

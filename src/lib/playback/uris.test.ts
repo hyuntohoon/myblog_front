@@ -131,6 +131,53 @@ describe('resolveTail', () => {
     expect(tail.resolved).toEqual([])
     expect(tail.failed).toHaveLength(1)
   })
+  // ARCH-playback-queue-atomic-replace: the 2026-10-07 ▶ fired 16 resolves at once
+  // and 8 came back 503. Rows now carry the URI; reading it is the whole fix.
+  describe('rows that carry their Spotify URI (the payload)', () => {
+    const paid = (itemId: string, trackId: string) => ({ itemId, trackId, spotifyUri: `spotify:track:sp${trackId}` })
+
+    it('sends no resolve at all, cold, and plays the payload URIs in order', async () => {
+      fetchMock.mockResolvedValue(response(true, 'spotify:track:WRONG'))
+
+      const tail = await resolveTail([paid('i-a', 'a'), paid('i-b', 'b')])
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(tail.resolved).toEqual([
+        { itemId: 'i-a', trackId: 'a', uri: 'spotify:track:spa' },
+        { itemId: 'i-b', trackId: 'b', uri: 'spotify:track:spb' },
+      ])
+      expect(tail.failed).toEqual([])
+    })
+
+    it('seeds the cache, so cache-only readers match the row and the idle prefetch skips it', async () => {
+      await resolveTail([paid('i-a', 'a')])
+
+      expect(cachedUri('a')).toBe('spotify:track:spa')
+      await prefetchUris(['a'])
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('still resolves a row that arrived without one', async () => {
+      fetchMock.mockResolvedValue(response(true, 'spotify:track:spc'))
+
+      const tail = await resolveTail([paid('i-a', 'a'), row('i-c', 'c')])
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(new URL(fetchMock.mock.calls[0][0] as string).searchParams.get('id')).toBe('c')
+      expect(tail.resolved.map(r => r.uri)).toEqual(['spotify:track:spa', 'spotify:track:spc'])
+    })
+
+    // A YouTube mapping is revocable and never arrives on the payload; a Spotify
+    // URI must never answer a YouTube question.
+    it('ignores the Spotify URI when resolving for YouTube', async () => {
+      fetchMock.mockResolvedValue(response(true, 'youtube:video:abcdefghijk'))
+
+      const tail = await resolveTail([paid('i-a', 'a')], 'youtube')
+
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(tail.resolved.map(r => r.uri)).toEqual(['youtube:video:abcdefghijk'])
+    })
+  })
 })
 
 // OPS-project-stabilization Step 2A, real-device gate 2026-10-06: home entry makes two

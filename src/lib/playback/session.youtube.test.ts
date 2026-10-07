@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   deleteItem: vi.fn(),
   addItem: vi.fn(),
   expandAlbum: vi.fn(),
+  replaceQueue: vi.fn(),
   listBuckets: vi.fn(),
   ownership: { tabId: 'yt-test', ownerTabId: 'yt-test', isOwner: true, ownerPresent: true },
   ownershipListeners: new Set<() => void>(),
@@ -30,6 +31,7 @@ vi.mock('@lib/buckets', async original => ({
   deleteBucketItem: mocks.deleteItem,
   addBucketPlayback: mocks.addItem,
   expandAlbumTracks: mocks.expandAlbum,
+  replacePlaybackQueue: mocks.replaceQueue,
 }))
 vi.mock('@lib/spotifyPlayback', () => ({
   IN_PAGE_MESSAGE: '이 브라우저에서 재생 중 (음질 제한)',
@@ -63,6 +65,7 @@ vi.mock('@lib/playback/uris', () => ({
   resolveTail: mocks.resolveTail,
   prefetchUris: mocks.prefetch,
   cachedUri: (trackId: string) => `spotify:track:${trackId}`,
+  rememberSpotifyUri: vi.fn(),
 }))
 vi.mock('@components/member/lyrics/playback.api', () => ({ readLivePlayback: mocks.live }))
 vi.mock('@lib/spotifyCapability', () => ({ rememberSpotifyLibraryProbe: vi.fn(), rememberSpotifyTransportProbe: vi.fn() }))
@@ -214,6 +217,7 @@ describe('mapped single-track session playback', () => {
     expect(bucketStore.getTree()).toEqual(original)
     expect(mocks.listBuckets).not.toHaveBeenCalled()
     expect(mocks.addItem).not.toHaveBeenCalled()
+    expect(mocks.replaceQueue).not.toHaveBeenCalled()
     expect(mocks.deleteItem).not.toHaveBeenCalled()
     expect(mocks.resolveTail).not.toHaveBeenCalled()
     expect(mocks.spotifyPlay).not.toHaveBeenCalled()
@@ -233,6 +237,7 @@ message: '다른 영상을 골라주세요',
     expect(playbackSession.getSnapshot().notice).toMatchObject({ tone: 'error', message: '다른 영상을 골라주세요' })
     expect(bucketStore.getTree()).toEqual(original)
     expect(mocks.addItem).not.toHaveBeenCalled()
+    expect(mocks.replaceQueue).not.toHaveBeenCalled()
     expect(mocks.deleteItem).not.toHaveBeenCalled()
     expect(mocks.spotifyPlay).not.toHaveBeenCalled()
   })

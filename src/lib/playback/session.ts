@@ -27,7 +27,7 @@ import type { ClockAnchor } from '@lib/clockEstimate'
 import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, TransferOutcome } from '@lib/spotifyPlayback'
 import type { OwnershipMessage } from './ownership'
 import { captureAuthEpoch, isAuthEpochCurrent, subscribeAuthIdentity } from '@lib/authIdentity'
-import { addBucketPlayback, deleteBucketItem, expandAlbumTracks } from '@lib/buckets'
+import { deleteBucketItem, replacePlaybackQueue } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { getInPageDeviceId, getStreamingToken, IN_PAGE_MESSAGE, MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { closeYouTubePlayer, getActiveProvider, getTrackLiked, getYouTubeNowPlaying, listDevices, play, providerStore, sendPlaybackMode, sendPlayerCommand, setTrackLiked, transferPlayback, tryPlayYouTubeTrack } from './provider'
@@ -36,8 +36,8 @@ import { readLivePlayback } from '@components/member/lyrics/playback.api'
 import { jumpToQueueIndex } from '@components/member/lyrics/queueJump'
 import { confirmTransport } from './confirmTransport'
 import { playbackOwnership } from './ownership'
-import { playbackQueue, withoutQueueItems } from './queue'
-import { cachedUri, prefetchUris, resolveTail, resolveUri } from './uris'
+import { playbackQueue, withoutQueueItems, withQueueReplaced } from './queue'
+import { cachedUri, prefetchUris, rememberSpotifyUri, resolveTail, resolveUri } from './uris'
 
 /** How the last play/transport attempt ended, as ONE sentence the forms render verbatim. */
 export interface SessionNotice {
@@ -410,8 +410,11 @@ let anchorAmbiguous = false
 
 /**
  * BUG-23: `replaceQueueAndPlay()` chains onto this so a second ▶ press waits for
- * an in-flight one to fully settle (write, play, AND its deletes) before it takes
- * its own `rewriteQueue` snapshot. Without it, two overlapping presses — the
+ * an in-flight one to fully settle (write AND play) before it starts. The
+ * snapshot race described below belonged to the client-side rewrite that
+ * ARCH-playback-queue-atomic-replace removed; the chain stays because two
+ * overlapping presses still race their `playFrom(0)` and their tree writes, and
+ * the later press must be the one that lands. Historically: two overlapping presses — the
  * untested double-click race `AlbumOverlay.tsx`'s own comment already accepted —
  * each snapshot the SAME pre-press tree, so the second press's own diff wrongly
  * includes rows the first press had already added; `playFrom(0)` then names the
@@ -423,6 +426,19 @@ let anchorAmbiguous = false
  * chaining so one press's rejection never wedges every later press behind it.
  */
 let replaceChain: Promise<unknown> = Promise.resolve()
+
+/**
+ * Run a queue replace behind every replace already queued — a ▶ press AND an Undo.
+ * Each is one request now, but two answers can still arrive out of order, and the
+ * last `setTree` wins: an Undo answered after a newer ▶ committed would show rows
+ * the server already deleted. Serializing them makes the screen's last write the
+ * server's last commit.
+ */
+function enqueueReplace<T>(run: () => Promise<T>): Promise<T> {
+  const settled = replaceChain.catch(() => undefined).then(run)
+  replaceChain = settled
+  return settled
+}
 let capabilityInflight: Promise<void> | null = null
 let likedTrackId: string | null = null
 let libraryBusy = false
@@ -705,7 +721,24 @@ function trackIdsFrom(rows: BoardAlbum[]): string[] {
  * `resolveTail`'s own header and `playFrom` below.
  */
 function tailRowsFrom(rows: BoardAlbum[]): TailRow[] {
-  return rows.flatMap(r => (r.trackId ? [{ itemId: r.itemId, trackId: r.trackId }] : []))
+  return rows.flatMap(r => (r.trackId ? [{ itemId: r.itemId, trackId: r.trackId, spotifyUri: r.spotifyUri ?? null }] : []))
+}
+
+/**
+ * Warm the queue's URIs: take what the payload already names, resolve only the rest.
+ *
+ * ARCH-playback-queue-atomic-replace: playback rows carry `spotifyUri`, so seeding
+ * the cache from them first leaves `prefetchUris` nothing to ask in the steady
+ * state, and every cache-only reader (`rowForSpotifyTrack`, the lyrics viewer)
+ * matches a row nobody resolved. Seeding is synchronous, so a read that follows
+ * this call already sees it.
+ */
+function warmQueueUris(rows: BoardAlbum[] = queueRows()): Promise<void> {
+  for (const r of rows) {
+    if (r.trackId)
+      rememberSpotifyUri(r.trackId, r.spotifyUri)
+  }
+  return prefetchUris(trackIdsFrom(rows))
 }
 
 function noticeForFailure(f: PlayFailure): SessionNotice {
@@ -1399,101 +1432,83 @@ const UNDO_FAILED = '이전 대기열을 되돌리지 못했어요'
 /** Reused verbatim from the board's album-expansion path — one sentence per situation. */
 const NO_TRACKS = '이 앨범은 아직 트랙 정보가 없어요'
 
-interface QueueRewrite {
-  /** Rows that appeared. Empty ⇒ nothing was written AND nothing was deleted. */
-  added: BoardAlbum[]
-  /** Track ids of the rows being displaced, in order — the Undo payload. */
-  displacedTrackIds: string[]
-  /** The displaced rows' DELETEs, still in flight. Resolves with how many failed. */
-  settle: Promise<number>
+/**
+ * The most track ids one replace may carry — the endpoint's own `track_ids` bound
+ * (backend `PLAYBACK_QUEUE_REPLACE_MAX_TRACKS`, RFC OQ3). An Undo replays the
+ * displaced queue as `track_ids`, so a displaced queue longer than this cannot be
+ * restored in one call and no Undo is offered for it.
+ */
+const UNDO_MAX_TRACKS = 200
+
+/** RFC §"When Undo is offered": only a displaced queue the endpoint can take back whole. */
+function undoable(displacedTrackIds: string[]): boolean {
+  return displacedTrackIds.length >= 1 && displacedTrackIds.length <= UNDO_MAX_TRACKS
 }
 
 /**
- * Make the queue hold whatever `append` writes, and nothing else.
+ * Make the queue hold `source` and nothing else — ONE request, ONE server
+ * transaction (ARCH-playback-queue-atomic-replace).
  *
- * **Write first, delete second — never the other way round.** There is no bulk
- * delete (a replacement is N+1 requests) and any of them can fail. Deleting first
- * would put that failure window on an EMPTY queue: old rows gone, new rows never
- * written, nothing to play and nothing left to undo. Appending first means the
- * worst case is a queue holding both lists — visibly wrong, but nothing is lost,
- * which is the half of T2's "failures preserve" rule that actually matters.
- */
-async function rewriteQueue(bucketId: string, append: () => Promise<void>): Promise<QueueRewrite> {
-  const before = queueRows()
-  const beforeIds = before.map(r => r.itemId)
-  const displacedTrackIds = trackIdsFrom(before)
-
-  await append()
-
-  // The write happened server-side; the new rows' item ids only exist there.
-  await bucketStore.ensureFresh(true)
-  const added = queueRows().filter(r => !beforeIds.includes(r.itemId))
-  if (added.length === 0)
-    return { added, displacedTrackIds, settle: Promise.resolve(0) }
-
-  // Show the replacement NOW. The deletes below are the slow part, and nobody
-  // should have to watch their old queue drain a row at a time while the new one
-  // is already playing.
-  bucketStore.setTree(withoutQueueItems(bucketStore.getTree(), bucketId, beforeIds))
-  return { added, displacedTrackIds, settle: deleteRows(bucketId, beforeIds) }
-}
-
-/**
- * Delete the displaced rows, ONE AT A TIME.
+ * This replaced a client-side sequence (append, re-read, then one DELETE per
+ * displaced row) whose every request could fail on its own. Under the account's
+ * Lambda concurrency limit some did, and the undeleted rows reappeared at the
+ * HEAD of the queue. The server now ends the queue fully replaced or untouched,
+ * so the only state this function has to publish is the response.
  *
- * Sequential rather than concurrent on purpose: `position` is server-assigned, and
- * firing N deletes at a list the server is simultaneously renumbering is a race
- * nobody here has measured. The latency is invisible — audio is already playing by
- * the time this runs. A failure means the optimistic prune above lied, so the truth
- * is refetched rather than left as a pretty fiction.
+ * Empty `items` ⇒ nothing to queue (an album with no synced tracks); the server
+ * left the queue untouched, so the tree is left untouched too.
  */
-async function deleteRows(bucketId: string, itemIds: string[]): Promise<number> {
-  let failed = 0
-  for (const id of itemIds) {
-    try {
-      await deleteBucketItem(bucketId, id)
+async function replaceQueue(
+  bucketId: string,
+  source: { albumId: string } | { trackIds: string[] },
+): Promise<{ items: BoardAlbum[], displacedTrackIds: string[] }> {
+  const result = await replacePlaybackQueue(bucketId, source)
+  if (result.items.length > 0) {
+    for (const r of result.items) {
+      if (r.trackId)
+        rememberSpotifyUri(r.trackId, r.spotifyUri)
     }
-    catch {
-      failed += 1
-    }
+    bucketStore.setTree(withQueueReplaced(bucketStore.getTree(), bucketId, result.items))
   }
-  if (failed > 0)
-    await bucketStore.ensureFresh(true)
-  return failed
-}
-
-/** The append half of a ▶: an album expands to its tracks in album order, a track is one row. */
-async function appendIntent(bucketId: string, intent: ReplaceIntent): Promise<void> {
-  if (intent.kind === 'album') {
-    await expandAlbumTracks(bucketId, intent.albumId)
-    return
-  }
-  await addBucketPlayback(bucketId, intent.trackId)
+  return result
 }
 
 /**
- * Re-append a snapshot's tracks. Sequential, because `position` is append order —
- * restoring a queue concurrently would scramble the very order it is restoring.
+ * Longer than `apiFetch`'s own 15 s timeout: a request the client gave up on can
+ * still be running server-side, and only a read issued after it finishes sees it.
  */
-async function appendTracks(bucketId: string, trackIds: string[]): Promise<void> {
-  for (const id of trackIds)
-    await addBucketPlayback(bucketId, id)
+export const REPLACE_REREAD_DELAY_MS = 20_000
+
+/**
+ * The narrow case the RFC names: the server committed, but the answer never
+ * arrived. The client cannot tell that from a failure, so it re-reads instead of
+ * keeping a screen that may show a queue the server already replaced.
+ *
+ * Twice. The first read catches a commit whose answer was dropped. It cannot catch
+ * a request the client TIMED OUT on while the server was still working (a cold
+ * Lambda, a waking database): that read can land before the commit, see the old
+ * queue, and stamp it fresh for the store's whole SWR window. The second read,
+ * after the server-side request must have ended, is the one that settles it.
+ */
+function rereadAfterFailedReplace(): void {
+  void bucketStore.ensureFresh(true)
+  window.setTimeout(() => void bucketStore.ensureFresh(true), REPLACE_REREAD_DELAY_MS)
 }
 
-function replacedMessage(intent: ReplaceIntent, count: number, failedDeletes: number, degraded: boolean): string {
+function replacedMessage(intent: ReplaceIntent, count: number, degraded: boolean): string {
   const head = intent.kind === 'album' ?
     `재생 대기열을 이 앨범 ${count}곡으로 바꿨어요` :
     '재생 대기열을 이 곡으로 바꿨어요'
   // Rung 2's quality limit was said by the surfaces this replaces; keep saying it.
   const tail = degraded ? ` · ${IN_PAGE_MESSAGE}` : ''
-  return failedDeletes > 0 ? `${head} · 이전 ${failedDeletes}곡은 지우지 못했어요${tail}` : `${head}${tail}`
+  return `${head}${tail}`
 }
 
 /**
  * Put the displaced queue back.
  *
- * The same primitive pointed the other way: append the snapshot, delete whatever
- * the replacement left. It deliberately does NOT restart the old audio. The harm
+ * The same one-request replace pointed the other way: the displaced track ids, in
+ * their old order. It deliberately does NOT restart the old audio. The harm
  * being undone is the lost queue; cutting off the album the member just started
  * would be a second surprise, not a reversal of the first. Instead the session
  * re-reads live playback, so the panel honestly reports the now-unqueued track as
@@ -1501,10 +1516,9 @@ function replacedMessage(intent: ReplaceIntent, count: number, failedDeletes: nu
  */
 async function undoReplace(bucketId: string, trackIds: string[]): Promise<UndoOutcome> {
   try {
-    const rewrite = await rewriteQueue(bucketId, () => appendTracks(bucketId, trackIds))
-    if (rewrite.added.length === 0)
+    const restored = await replaceQueue(bucketId, { trackIds })
+    if (restored.items.length === 0)
       return { ok: false, message: UNDO_FAILED }
-    await rewrite.settle
     // The restored rows are NEW memberships, so the id the session was holding
     // addresses a row that no longer exists. Clear it before asking what is live.
     authoritativePatch({ currentItemId: null })
@@ -1512,6 +1526,7 @@ async function undoReplace(bucketId: string, trackIds: string[]): Promise<UndoOu
     return { ok: true, message: '이전 재생 대기열로 되돌렸어요' }
   }
   catch {
+    rereadAfterFailedReplace()
     return { ok: false, message: UNDO_FAILED }
   }
 }
@@ -1847,7 +1862,7 @@ async function runSeek(target: number, onReanchored?: () => void): Promise<Playe
  * shown as external is re-matched to its queue row with no second read.
  */
 async function adoptWithPrefetch(seen?: LivePlayback): Promise<LivePlayback | null> {
-  const prefetched = Promise.all([prefetchUris(trackIdsFrom(queueRows())), resolveCapability()])
+  const prefetched = Promise.all([warmQueueUris(), resolveCapability()])
   const anchorBefore = current.currentItemId
   const live = await adoptLive(seen)
   if (live && (live.state === 'playing' || live.state === 'paused') && current.external?.spotifyTrackId === live.trackId) {
@@ -2196,26 +2211,25 @@ export const playbackSession = {
    * Ordering, and why it is this way:
    *   1. read the tree (the surfaces owning a ▶ may never have loaded it, and the
    *      Playback Bucket is minted lazily on that first read);
-   *   2. append the replacement, refresh, prune the old rows optimistically;
-   *   3. **play from the new head** — audio starts before the deletes finish;
-   *   4. settle the deletes, then hand back an Undo.
-   *
-   * The Undo is offered only after step 4 on purpose: it re-adds the old tracks and
-   * deletes the new ones, so letting it run while the original deletes are still in
-   * flight would race two rewrites over one list and could leave duplicates.
+   *   2. replace the queue in ONE request (`PUT …/playback-queue`): the server
+   *      swaps every row in one transaction and answers with the new rows, each
+   *      already carrying its Spotify URI (ARCH-playback-queue-atomic-replace);
+   *   3. **play from the new head** — the tail's URIs come from those rows, so this
+   *      step sends no resolve at all;
+   *   4. hand back an Undo when the displaced queue is one the endpoint can take
+   *      back whole (1..200 tracks).
    */
   async replaceQueueAndPlay(intent: ReplaceIntent): Promise<ReplaceOutcome> {
     // BUG-23: this press waits for any still-in-flight press ahead of it — see
     // `replaceChain`. Queued here, before the lease/tree work below, so a second
-    // press's `rewriteQueue` snapshot can never be taken while an earlier press's
-    // own snapshot-to-settle window is still open.
+    // press never starts while an earlier press's replace-and-play is still open.
     const run = async (): Promise<ReplaceOutcome> => {
       // ▶ is the most explicit "make sound HERE" there is, and this path can reach
       // rung 2, which raises *this* tab as the SDK device. So it takes the lease
       // rather than forwarding: T4 makes an explicit claim unconditional precisely
       // so a deliberate press is never argued with. Forwarding instead would also
       // strand the Undo — the toast belongs to the tab that pressed, and its rows
-      // were replaced by this tab's own rewrite.
+      // were replaced by this tab's own request.
       await playbackOwnership.ensureOwner()
       patch({ busy: true, notice: null })
       try {
@@ -2245,18 +2259,29 @@ export const playbackSession = {
           return { ok: r.ok, message: r.message, undo: null, play: r }
         }
 
-        const rewrite = await rewriteQueue(bucket.id, () => appendIntent(bucket.id, intent))
-        if (rewrite.added.length === 0) {
-          // Nothing was written, so nothing was deleted — the queue is untouched.
+        const source = intent.kind === 'album' ? { albumId: intent.albumId } : { trackIds: [intent.trackId] }
+        let replaced: Awaited<ReturnType<typeof replaceQueue>>
+        try {
+          replaced = await replaceQueue(bucket.id, source)
+        }
+        catch {
+          // The server's transaction either committed or did not; it never leaves a
+          // mix. Re-read so the screen shows whichever it was, and say it failed.
+          rereadAfterFailedReplace()
+          authoritativePatch({ busy: false, notice: { tone: 'error', message: REPLACE_FAILED } })
+          return { ok: false, message: REPLACE_FAILED, undo: null, play: null }
+        }
+        if (replaced.items.length === 0) {
+          // Nothing to queue, so the server left the queue untouched.
           const message = intent.kind === 'album' ? NO_TRACKS : REPLACE_FAILED
           authoritativePatch({ busy: false, notice: { tone: 'error', message } })
           return { ok: false, message, undo: null, play: null }
         }
 
         const outcome = await playFrom(0)
-        const failedDeletes = await rewrite.settle
-        const undo = rewrite.displacedTrackIds.length > 0 ?
-          () => undoReplace(bucket.id, rewrite.displacedTrackIds) :
+        const { displacedTrackIds } = replaced
+        const undo = undoable(displacedTrackIds) ?
+          () => enqueueReplace(() => undoReplace(bucket.id, displacedTrackIds)) :
           null
 
         if (!outcome || !outcome.ok) {
@@ -2267,20 +2292,19 @@ export const playbackSession = {
         }
         return {
           ok: true,
-          message: replacedMessage(intent, rewrite.added.length, failedDeletes, outcome.degraded),
+          message: replacedMessage(intent, replaced.items.length, outcome.degraded),
           undo,
           play: outcome,
         }
       }
       catch {
-        // A write threw before any delete ran, so the queue is exactly as it was.
+        // The tree read or the ladder threw. The replace itself has its own catch
+        // above, so a throw here never follows a half-applied queue.
         authoritativePatch({ busy: false, notice: { tone: 'error', message: REPLACE_FAILED } })
         return { ok: false, message: REPLACE_FAILED, undo: null, play: null }
       }
     }
-    const settled = replaceChain.catch(() => undefined).then(run)
-    replaceChain = settled
-    return settled
+    return enqueueReplace(run)
   },
 
   /**
@@ -2342,7 +2366,7 @@ export const playbackSession = {
 
   /** Warm the tail's URIs while the user is looking at the queue, so a tap costs no request. */
   prefetch(): void {
-    void prefetchUris(trackIdsFrom(queueRows()))
+    void warmQueueUris()
   },
 
   /** Adopt whatever is actually playing — call when a player surface becomes visible. */
