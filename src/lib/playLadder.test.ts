@@ -23,7 +23,7 @@ vi.mock('@lib/auth', () => ({
 const TOKEN_URL = 'https://backend.test/api/playback/spotify-token'
 const RESOLVE_URL = 'https://backend.test/api/playback/resolve'
 const PLAY_URL = 'https://api.spotify.com/v1/me/player/play'
-const PLAYER_URL = 'https://api.spotify.com/v1/me/player'
+const PLAYER_URL = 'https://api.spotify.com/v1/me/player?market=from_token'
 const DEVICE_ID = 'device-abc'
 
 interface Call { url: string, init?: RequestInit }
@@ -228,6 +228,14 @@ describe('rung 1 read-back — a 204 from a device that plays nothing', () => {
     expect(playerReads()).toHaveLength(2)
   })
 
+  it('accepts any track of the sent list — shuffle may start anywhere in it', async () => {
+    install({ player: () => json({ is_playing: true, item: { uri: 'spotify:track:c' } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a', 'spotify:track:b', 'spotify:track:c'] })).resolves.toMatchObject({ rung: 'remote' })
+    expect(isSdkLoaded()).toBe(false)
+  })
+
   it('accepts a relinked track (Spotify plays a market copy of the sent uri)', async () => {
     install({ player: () => json({ is_playing: true, item: { uri: 'spotify:track:copy', linked_from: { uri: 'spotify:track:a' } } }) })
     fakeSdk()
@@ -240,6 +248,47 @@ describe('rung 1 read-back — a 204 from a device that plays nothing', () => {
     fakeSdk()
 
     await expect(play({ kind: 'context', contextUri: 'spotify:album:z', offsetUri: 'spotify:track:o' })).resolves.toMatchObject({ rung: 'remote' })
+  })
+
+  it('confirms an album context from the track\'s album when the device reports no context', async () => {
+    install({ player: () => json({ is_playing: true, context: null, item: { uri: 'spotify:track:x', album: { uri: 'spotify:album:alb1' } } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({ rung: 'remote' })
+  })
+
+  it('does not count another album playing as this album starting', async () => {
+    install({ player: () => json({ is_playing: true, context: { uri: 'spotify:album:other' }, item: { uri: 'spotify:track:x', album: { uri: 'spotify:album:other' } } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({ rung: 'in-page' })
+  })
+
+  it('skips the read-back when the caller says the device was just playing', async () => {
+    install({ player: ghost })
+    fakeSdk()
+
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a'] }, { confirmRemote: false })).resolves.toMatchObject({ rung: 'remote' })
+    expect(playerReads()).toHaveLength(0)
+    expect(isSdkLoaded()).toBe(false)
+  })
+
+  it('keeps the 204 when the read throws or returns bad JSON', async () => {
+    install({
+      player: () => {
+        throw new Error('network down')
+      },
+    })
+    fakeSdk()
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a'] })).resolves.toMatchObject({ rung: 'remote' })
+
+    __resetPlaybackState()
+    __setRemoteConfirmSchedule([0, 0, 0])
+    const badJson = async (): Promise<never> => {
+      throw new SyntaxError('bad')
+    }
+    install({ player: () => ({ ok: true, status: 200, json: badJson }) as unknown as Response })
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a'] })).resolves.toMatchObject({ rung: 'remote' })
   })
 
   it('keeps the 204 when the read itself fails — a failed read is not evidence', async () => {

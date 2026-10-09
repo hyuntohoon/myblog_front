@@ -87,6 +87,7 @@ const EMPTY_SESSION_STATE: PlaybackSessionState = {
   discoveryFailed: false,
   busy: false,
   pendingItemId: null,
+  pendingLabel: null,
   transportBusy: false,
   isOwner: false,
   ownerPresent: false,

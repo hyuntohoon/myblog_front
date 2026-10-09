@@ -163,14 +163,16 @@ export function openPlaybackAlbum(row: BoardAlbum | null, external?: ExternalNow
  * says where it came from, because "왜 이 곡이 대기열에 없지" is the question a
  * member would otherwise be left holding.
  */
-export function PlaybackIdentity({ row, external, compact = false, pending = false }: {
+export function PlaybackIdentity({ row, external, compact = false, pending = false, pendingTitle = null }: {
   row: BoardAlbum | null
   external?: ExternalNowPlaying | null
   compact?: boolean
   /** `row` was just pressed and has not sounded yet — say so instead of implying it plays. */
   pending?: boolean
+  /** The pressed album/track's title before its queue row exists. */
+  pendingTitle?: string | null
 }) {
-  const title = row?.title ?? external?.title ?? '—'
+  const title = row?.title ?? external?.title ?? (pendingTitle || '—')
   const artist = row?.artist ?? external?.artist ?? '—'
   const cover = row?.cover ?? external?.albumCoverUrl ?? null
   return (

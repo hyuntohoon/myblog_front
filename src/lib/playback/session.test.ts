@@ -379,10 +379,11 @@ describe('drop semantics', () => {
     await vi.advanceTimersByTimeAsync(300 + PLAYBACK_LAG_MS)
     await vi.advanceTimersByTimeAsync(PLAYBACK_LAG_MS)
     if (mode === 'playing') {
+      // A reissue of the sounding track skips rung 1's read-back (OPS 2A, 2026-10-09).
       expect(mocks.play).toHaveBeenLastCalledWith({
         kind: 'uris',
         uris: ['provider:track:track-a', 'provider:track:track-b'],
-      })
+      }, { confirmRemote: false })
     }
     else {
       // Paused stays silent — the reissue is deferred to the next resume.
@@ -450,6 +451,62 @@ describe('pendingItemId — a ▶ is answered before it sounds', () => {
     expect(playbackSession.getSnapshot().pendingItemId).toBe('b')
     await finishPlayback(pending)
     expect(playbackSession.getSnapshot()).toMatchObject({ pendingItemId: null, currentItemId: 'b' })
+  })
+})
+
+describe('pendingLabel and transport while a ▶ is starting (OPS 2A review, 2026-10-09)', () => {
+  it('an album ▶ names its title before the queue replace returns, then hands over and clears', async () => {
+    setQueue([row('a')])
+    albumTracks = { 'alb-1': ['t1', 't2'] }
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1', title: 'Popstar' })
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot()).toMatchObject({ busy: true, pendingLabel: 'Popstar' })
+
+    await settleAll()
+    await pending
+    expect(playbackSession.getSnapshot()).toMatchObject({ busy: false, pendingLabel: null, pendingItemId: null })
+    expect(playbackSession.currentRow()?.trackId).toBe('t1')
+  })
+
+  it('clears the label when the replace fails', async () => {
+    setQueue([row('a')])
+    mocks.replacePlaybackQueue.mockRejectedValueOnce(new Error('503'))
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1', title: 'Popstar' })
+    await settleAll()
+    await pending
+    expect(playbackSession.getSnapshot()).toMatchObject({ busy: false, pendingLabel: null })
+  })
+
+  it('refuses ⏯ and ⏭ while a press is starting — they would aim at the old track', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    await startAt('a')
+    const playsBefore = mocks.play.mock.calls.length
+    const commandsBefore = mocks.sendPlayerCommand.mock.calls.length
+
+    const pending = playbackSession.playAt('c')
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot().pendingItemId).toBe('c')
+    await playbackSession.togglePlay()
+    await playbackSession.next()
+    await playbackSession.previous()
+    await finishPlayback(pending)
+
+    expect(mocks.sendPlayerCommand.mock.calls.length).toBe(commandsBefore)
+    expect(mocks.play.mock.calls.length).toBe(playsBefore + 1)
+    expect(playbackSession.getSnapshot().currentItemId).toBe('c')
+  })
+
+  it('a fresh press keeps the read-back; a natural advance skips it', async () => {
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    expect(mocks.play.mock.lastCall).toHaveLength(1)
+
+    const completing = playbackSession.onCompleted()
+    await settleAll()
+    await completing
+    expect(mocks.play.mock.lastCall?.[1]).toEqual({ confirmRemote: false })
   })
 })
 

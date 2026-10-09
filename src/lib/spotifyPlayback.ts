@@ -577,7 +577,7 @@ type RemoteVerdict = 'started' | 'not-started' | 'unknown'
 interface PlayerReadPayload {
   is_playing?: boolean
   context?: { uri?: string } | null
-  item?: { uri?: string, linked_from?: { uri?: string } | null } | null
+  item?: { uri?: string, linked_from?: { uri?: string } | null, album?: { uri?: string } | null } | null
 }
 
 /** True when the read shows THIS play sounding, not just "something". */
@@ -585,10 +585,15 @@ function readShowsBody(state: PlayerReadPayload, body: object): boolean {
   if (state.is_playing !== true || !state.item)
     return false
   const b = body as { uris?: string[], context_uri?: string, offset?: { uri?: string } }
-  const wanted = b.uris?.[0] ?? b.offset?.uri
-  if (wanted)
-    return state.item.uri === wanted || state.item.linked_from?.uri === wanted
-  return b.context_uri != null && state.context?.uri === b.context_uri
+  const playing = [state.item.uri, state.item.linked_from?.uri]
+  // Any track of the sent list: with shuffle on, Spotify may start anywhere in it,
+  // and a healthy device must never be read as a dead one.
+  if (b.uris)
+    return playing.some(uri => uri != null && b.uris!.includes(uri))
+  // Some Connect devices report `context: null`; the track's own album still says it.
+  if (b.context_uri != null && (state.context?.uri === b.context_uri || state.item.album?.uri === b.context_uri))
+    return true
+  return b.offset?.uri != null && playing.includes(b.offset.uri)
 }
 
 async function confirmRemoteStart(token: string, body: object): Promise<RemoteVerdict> {
@@ -599,7 +604,8 @@ async function confirmRemoteStart(token: string, body: object): Promise<RemoteVe
     const timer = setTimeout(() => ctrl.abort(), REMOTE_CONFIRM_READ_TIMEOUT_MS)
     let res: Response
     try {
-      res = await fetch(PLAYER_BASE, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal })
+      // `market` makes Spotify report `linked_from` when it plays a relinked copy.
+      res = await fetch(`${PLAYER_BASE}?market=from_token`, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal })
     }
     catch {
       return 'unknown'
@@ -633,7 +639,18 @@ async function confirmRemoteStart(token: string, body: object): Promise<RemoteVe
  * negative test (no `spotify-player.js` after a play that cannot possibly sound) holds
  * exactly as it did for the old `requestPlayback`.
  */
-export async function play(intent: PlayIntent): Promise<PlayOutcome> {
+export interface PlayOptions {
+  /**
+   * Read back a rung-1 204 (`confirmRemoteStart`). Default on: a fresh press is
+   * where a dead device shows up. Off where the device was demonstrably playing a
+   * moment ago — a queue reissue or a natural advance — because there it only adds
+   * latency (a reissue's restart glitch grows by the wait) and, on a slow speaker,
+   * could move playback into the browser for a mere reorder.
+   */
+  confirmRemote?: boolean
+}
+
+export async function play(intent: PlayIntent, opts: PlayOptions = {}): Promise<PlayOutcome> {
   // Visitors short-circuit before the token mint and before the catalog resolve.
   if (!isLoggedIn())
     return { ok: false, reason: 'token', status: 'unauthorized', message: messageFor('unauthorized') }
@@ -669,7 +686,7 @@ export async function play(intent: PlayIntent): Promise<PlayOutcome> {
       // A device that accepted and never played is no device: hand off to rung 2,
       // whose `device_id` PUT also moves playback off it. A failed read is not
       // evidence, so it keeps the 204's answer.
-      if (await confirmRemoteStart(tok.token, body) === 'not-started') {
+      if (opts.confirmRemote !== false && await confirmRemoteStart(tok.token, body) === 'not-started') {
         sawNoDevice = true
         break
       }
