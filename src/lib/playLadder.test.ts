@@ -12,7 +12,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as authLib from '@lib/auth'
 import { syncAuthIdentity } from '@lib/authIdentity'
-import { __resetPlaybackState, getStreamingToken, isSdkLoaded, play } from '@lib/spotifyPlayback'
+import { __resetPlaybackState, __setRemoteConfirmSchedule, getStreamingToken, isSdkLoaded, play } from '@lib/spotifyPlayback'
 
 vi.mock('@lib/auth', () => ({
   isLoggedIn: vi.fn(() => true),
@@ -23,6 +23,7 @@ vi.mock('@lib/auth', () => ({
 const TOKEN_URL = 'https://backend.test/api/playback/spotify-token'
 const RESOLVE_URL = 'https://backend.test/api/playback/resolve'
 const PLAY_URL = 'https://api.spotify.com/v1/me/player/play'
+const PLAYER_URL = 'https://api.spotify.com/v1/me/player?market=from_token'
 const DEVICE_ID = 'device-abc'
 
 interface Call { url: string, init?: RequestInit }
@@ -41,6 +42,8 @@ interface Routes {
   resolve?: () => Response
   playNoDevice?: () => Response
   playWithDevice?: () => Response
+  /** rung 1's read-back of what its 204 did (`GET /me/player`). */
+  player?: () => Response
 }
 
 function install(routes: Routes): void {
@@ -49,6 +52,8 @@ function install(routes: Routes): void {
     resolve: () => json({ uri: 'spotify:album:alb1' }),
     playNoDevice: () => json({}, 204),
     playWithDevice: () => json({}, 204),
+    // Default: the read fails, which is "unknown" and keeps the 204's answer.
+    player: () => json({}, 500),
     ...routes,
   }
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
@@ -59,6 +64,8 @@ function install(routes: Routes): void {
       return r.resolve()
     if (url.startsWith(PLAY_URL))
       return url.includes('device_id=') ? r.playWithDevice() : r.playNoDevice()
+    if (url === PLAYER_URL)
+      return r.player()
     throw new Error(`unstubbed fetch: ${url}`)
   }))
 }
@@ -127,6 +134,7 @@ beforeEach(() => {
   calls = []
   players = []
   __resetPlaybackState()
+  __setRemoteConfirmSchedule([0, 0, 0])
   vi.mocked(authLib).isLoggedIn.mockReturnValue(true)
   vi.mocked(authLib).getAuthHeader.mockReturnValue({})
   vi.mocked(authLib).refreshAccessToken.mockReset()
@@ -153,6 +161,172 @@ describe('rung 1 — an active Connect device', () => {
     expect(playCalls()).toHaveLength(1)
     expect(playCalls()[0].url).not.toContain('device_id=')
     expect(isSdkLoaded()).toBe(false)
+  })
+})
+
+// OPS-project-stabilization Step 2A, 2026-10-09: the owner's Mac desktop app stayed
+// the active Connect device, answered PUT /play 204, and loaded nothing (`item: null`).
+// The bar showed the song; nothing sounded.
+describe('rung 1 read-back — a 204 from a device that plays nothing', () => {
+  const ghost = () => json({ is_playing: false, item: null, device: { name: 'MacBook' } })
+  const playerReads = () => calls.filter(c => c.url === PLAYER_URL)
+
+  it('hands a device that accepted and never started to rung 2', async () => {
+    install({ player: ghost })
+    fakeSdk()
+
+    await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({
+      ok: true,
+      rung: 'in-page',
+      degraded: true,
+    })
+    const attempts = playCalls()
+    expect(attempts).toHaveLength(2)
+    expect(attempts[0].url).not.toContain('device_id=')
+    expect(attempts[1].url).toContain(`device_id=${DEVICE_ID}`)
+    expect(attempts[1].init?.body).toBe(attempts[0].init?.body)
+    // Bounded: exactly the schedule, then it gives up on the device.
+    expect(playerReads()).toHaveLength(3)
+  })
+
+  it('treats "no playback anywhere" (204 on every read) the same way', async () => {
+    install({ player: () => json({}, 204) })
+    fakeSdk()
+
+    await expect(play({ kind: 'track', trackId: 't1' })).resolves.toMatchObject({ rung: 'in-page' })
+  })
+
+  it('does not count the previous song still playing as this play starting', async () => {
+    install({
+      resolve: () => json({ uri: 'spotify:track:new' }),
+      player: () => json({ is_playing: true, item: { uri: 'spotify:track:old' } }),
+    })
+    fakeSdk()
+
+    await expect(play({ kind: 'track', trackId: 't1' })).resolves.toMatchObject({ rung: 'in-page' })
+  })
+
+  it('stays remote after one read when the device is playing what was sent', async () => {
+    install({ player: () => json({ is_playing: true, context: { uri: 'spotify:album:alb1' }, item: { uri: 'spotify:track:x' } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({ ok: true, rung: 'remote' })
+    expect(playerReads()).toHaveLength(1)
+    expect(playCalls()).toHaveLength(1)
+    expect(isSdkLoaded()).toBe(false)
+  })
+
+  it('waits out a device that starts on the second read', async () => {
+    const states = [
+      json({ is_playing: false, item: { uri: 'spotify:track:a' } }),
+      json({ is_playing: true, item: { uri: 'spotify:track:a' } }),
+    ]
+    install({ player: () => states.shift() ?? json({}, 500) })
+    fakeSdk()
+
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a', 'spotify:track:b'] })).resolves.toMatchObject({ rung: 'remote' })
+    expect(playerReads()).toHaveLength(2)
+  })
+
+  it('accepts any track of the sent list — shuffle may start anywhere in it', async () => {
+    install({ player: () => json({ is_playing: true, item: { uri: 'spotify:track:c' } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a', 'spotify:track:b', 'spotify:track:c'] })).resolves.toMatchObject({ rung: 'remote' })
+    expect(isSdkLoaded()).toBe(false)
+  })
+
+  it('accepts a relinked track (Spotify plays a market copy of the sent uri)', async () => {
+    install({ player: () => json({ is_playing: true, item: { uri: 'spotify:track:copy', linked_from: { uri: 'spotify:track:a' } } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a'] })).resolves.toMatchObject({ rung: 'remote' })
+  })
+
+  it('a jump inside a context is confirmed by the offset track', async () => {
+    install({ player: () => json({ is_playing: true, context: { uri: 'spotify:album:z' }, item: { uri: 'spotify:track:o' } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'context', contextUri: 'spotify:album:z', offsetUri: 'spotify:track:o' })).resolves.toMatchObject({ rung: 'remote' })
+  })
+
+  it('confirms an album context from the track\'s album when the device reports no context', async () => {
+    install({ player: () => json({ is_playing: true, context: null, item: { uri: 'spotify:track:x', album: { uri: 'spotify:album:alb1' } } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({ rung: 'remote' })
+  })
+
+  it('does not count another album playing as this album starting', async () => {
+    install({ player: () => json({ is_playing: true, context: { uri: 'spotify:album:other' }, item: { uri: 'spotify:track:x', album: { uri: 'spotify:album:other' } } }) })
+    fakeSdk()
+
+    await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({ rung: 'in-page' })
+  })
+
+  it('skips the read-back when the caller says the device was just playing', async () => {
+    install({ player: ghost })
+    fakeSdk()
+
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a'] }, { confirmRemote: false })).resolves.toMatchObject({ rung: 'remote' })
+    expect(playerReads()).toHaveLength(0)
+    expect(isSdkLoaded()).toBe(false)
+  })
+
+  it('keeps the 204 when the read throws or returns bad JSON', async () => {
+    install({
+      player: () => {
+        throw new Error('network down')
+      },
+    })
+    fakeSdk()
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a'] })).resolves.toMatchObject({ rung: 'remote' })
+
+    __resetPlaybackState()
+    __setRemoteConfirmSchedule([0, 0, 0])
+    const badJson = async (): Promise<never> => {
+      throw new SyntaxError('bad')
+    }
+    install({ player: () => ({ ok: true, status: 200, json: badJson }) as unknown as Response })
+    await expect(play({ kind: 'uris', uris: ['spotify:track:a'] })).resolves.toMatchObject({ rung: 'remote' })
+  })
+
+  it('keeps the 204 when the read itself fails — a failed read is not evidence', async () => {
+    install({ player: () => json({}, 429) })
+    fakeSdk()
+
+    await expect(play({ kind: 'album', albumId: 'alb1' })).resolves.toMatchObject({ rung: 'remote' })
+    expect(playerReads()).toHaveLength(1)
+    expect(isSdkLoaded()).toBe(false)
+  })
+})
+
+describe('a play PUT that hangs', () => {
+  it('gives up after its timeout instead of holding the press open', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.startsWith(TOKEN_URL))
+          return json({ access_token: 'tok', expires_in: 3600 })
+        // Never answers; only the caller's abort ends it, as with a stalled connection.
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        })
+      }))
+      const result = play({ kind: 'uris', uris: ['spotify:track:a'] })
+      await vi.advanceTimersByTimeAsync(7_999)
+      let settled = false
+      void result.then(() => {
+        settled = true
+      })
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(result).resolves.toMatchObject({ ok: false, reason: 'transient' })
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })
 

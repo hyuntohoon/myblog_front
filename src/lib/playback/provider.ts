@@ -265,7 +265,7 @@ function prepareSpotify(): void {
   }
 }
 
-export async function play(intent: PlayIntent): Promise<PlayOutcome> {
+export async function play(intent: PlayIntent, opts?: spotify.PlayOptions): Promise<PlayOutcome> {
   if (intent.kind === 'track') {
     const mapped = await tryPlayYouTubeTrack(intent)
     if (mapped)
@@ -273,7 +273,7 @@ export async function play(intent: PlayIntent): Promise<PlayOutcome> {
   }
   // Albums, explicit tails, and contexts are always Spotify-owned.
   prepareSpotify()
-  return spotify.play(intent)
+  return opts ? spotify.play(intent, opts) : spotify.play(intent)
 }
 
 export async function sendPlayerCommand(cmd: PlayerCommand): Promise<PlayerCommandOutcome> {

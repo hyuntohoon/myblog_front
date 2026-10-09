@@ -20,8 +20,13 @@ import { canControlPlayback, GLOBAL_PLAYBACK_PANEL_ID, PlaybackIdentity, Playbac
 export { GLOBAL_PLAYBACK_PANEL_ID }
 
 /** `session.ts` reports something sounding, whether queue-matched or external. */
-export function isGlobalPlaybackBarVisible(state: PlaybackSessionState): boolean {
+function isSounding(state: PlaybackSessionState): boolean {
   return state.currentItemId != null || state.external != null
+}
+
+/** Something sounds, or a ▶ is starting one — the press is answered before it plays. */
+export function isGlobalPlaybackBarVisible(state: PlaybackSessionState): boolean {
+  return isSounding(state) || state.pendingItemId != null || state.pendingLabel != null
 }
 
 function useMediaQuery(query: string): boolean {
@@ -148,9 +153,17 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   const mappingTrackId = youtube ? provider.trackId : model.current?.trackId
   const compactUtilities = useMediaQuery('(max-width: 1179px)')
   const visible = isGlobalPlaybackBarVisible(model.state)
+  // The watch and the liked read are about what SOUNDS; a pending press is not that yet.
+  const sounding = isSounding(model.state)
+  // While pending, everything row-scoped (heart, 가사, YouTube, time, transport)
+  // would act on the OLD track under the new title — so it is withheld until the
+  // press resolves. `seekEnabled` already waits on `busy`, which pending implies.
+  const pending = model.state.pendingItemId != null || model.state.pendingLabel != null
+  const shownRow = pending ? model.pending : model.current
+  const shownExternal = pending ? null : model.state.external
   const canControl = canControlPlayback(model.state)
   const durationMs = model.durationMs ?? 0
-  const ratio = durationMs > 0 ? Math.min(1, Math.max(0, model.elapsedMs / durationMs)) : 0
+  const ratio = !pending && durationMs > 0 ? Math.min(1, Math.max(0, model.elapsedMs / durationMs)) : 0
   const [notice, setNotice] = useState<string | null>(null)
   useEffect(() => {
     setNotice(null)
@@ -199,17 +212,17 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   // stays the session's: one reader, quiet unless something changed, and the same
   // conditions (visible page, reader tab, not this tab's SDK device, Spotify).
   useEffect(() => {
-    if (visible && !youtube)
+    if (sounding && !youtube)
       return playbackSession.watchExternalPlayback()
-  }, [visible, youtube])
+  }, [sounding, youtube])
 
   useEffect(() => {
-    if (!visible || youtube)
+    if (!sounding || youtube)
       return
     const trackId = playbackSession.currentSpotifyTrackId()
     if (trackId)
       playbackSession.loadLiked(trackId)
-  }, [model.state.currentItemId, model.state.external?.spotifyTrackId, visible, youtube])
+  }, [model.state.currentItemId, model.state.external?.spotifyTrackId, sounding, youtube])
 
   const requestSeek = (ms: number) => {
     void seekPlayback(ms, setNotice)
@@ -265,7 +278,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
 	aria-label="재생 바 펼치기"
 	title="재생 바 펼치기"
       >
-        <PlaybackIdentity row={model.current} external={model.state.external} compact />
+        <PlaybackIdentity row={shownRow} external={shownExternal} compact pending={pending} pendingTitle={model.state.pendingLabel} />
         <ExpandGlyph />
       </button>
     )
@@ -279,8 +292,8 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
     <section ref={barRef} className="global-playback-bar" role="region" aria-label="전역 재생 제어" data-mobile-layout="three-group" style={progressStyle}>
       <div className="global-playback-main">
         <div className="deck-identity-zone">
-          <PlaybackIdentity row={model.current} external={model.state.external} compact />
-          {!youtube && (
+          <PlaybackIdentity row={shownRow} external={shownExternal} compact pending={pending} pendingTitle={model.state.pendingLabel} />
+          {!youtube && !pending && (
 <span className="deck-hit-target deck-like">
             <PlaybackLikeControl
 	state={model.state.liked}
@@ -296,7 +309,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
             <span className="deck-hit-target deck-mode-set">
               <PlaybackModeControls shuffle={model.state.shuffle} repeat={null} volumePercent={null} onSet={setMode} micro={false} />
             </span>
-            <PlaybackTransport state={model.state} canControl={canControl} />
+            <PlaybackTransport state={model.state} canControl={canControl && !pending} />
             <span className="deck-hit-target deck-mode-set">
               <PlaybackModeControls shuffle={null} repeat={model.state.repeat} volumePercent={null} onSet={setMode} micro={false} />
             </span>
@@ -307,7 +320,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
             )}
           </div>
           <div className="deck-time-line">
-            <span>{formatTime(model.elapsedMs)}</span>
+            <span>{formatTime(pending ? null : model.elapsedMs)}</span>
             <div
 	ref={seek.ref}
 	className="deck-center-progress"
@@ -316,8 +329,8 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
 	aria-disabled={!seekEnabled}
 	aria-valuemin={0}
 	aria-valuemax={durationMs}
-	aria-valuenow={Math.round(model.elapsedMs)}
-	aria-valuetext={`${formatTime(model.elapsedMs)} / ${formatTime(model.durationMs)}`}
+	aria-valuenow={pending ? 0 : Math.round(model.elapsedMs)}
+	aria-valuetext={`${formatTime(pending ? null : model.elapsedMs)} / ${formatTime(pending ? null : model.durationMs)}`}
 	tabIndex={seekEnabled ? 0 : -1}
 	onClick={(event) => {
           if (dragRef.current.suppressClick) {
@@ -334,12 +347,12 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
             >
         <i />
             </div>
-            <span>{formatTime(model.durationMs)}</span>
+            <span>{formatTime(pending ? null : model.durationMs)}</span>
           </div>
         </div>
 
         <div className="deck-utility-zone" role="group" aria-label="재생 도구">
-          <button type="button" className="deck-icon-button deck-lyrics-button" aria-label="현재 곡 가사 열기" onClick={() => openPlaybackLyrics(model.current, model.state)}>가사</button>
+          {!pending && <button type="button" className="deck-icon-button deck-lyrics-button" aria-label="현재 곡 가사 열기" onClick={() => openPlaybackLyrics(model.current, model.state)}>가사</button>}
           <button
 	type="button"
 	className="deck-icon-button"
@@ -363,7 +376,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
             />
 </div>
 )}
-          {mappingTrackId && <button type="button" className="deck-icon-button deck-youtube-button" aria-label="YouTube 영상 고르기" onClick={() => openYouTubeMapping(mappingTrackId, provider.title ?? model.current?.title ?? '이 곡')}>YouTube</button>}
+          {mappingTrackId && !pending && <button type="button" className="deck-icon-button deck-youtube-button" aria-label="YouTube 영상 고르기" onClick={() => openYouTubeMapping(mappingTrackId, provider.title ?? model.current?.title ?? '이 곡')}>YouTube</button>}
           {compactUtilities && <NarrowVolume percent={model.state.volumePercent} onSet={setMode} />}
           <button
 	type="button"

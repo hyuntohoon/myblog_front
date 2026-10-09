@@ -1930,7 +1930,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={!canControl || sessionState.noActiveDevice}
+	disabled={!canControl || sessionState.noActiveDevice || sessionState.pendingItemId != null || sessionState.pendingLabel != null}
 	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.previous())
@@ -1942,7 +1942,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn is-play"
-	disabled={!canControl || sessionState.noActiveDevice}
+	disabled={!canControl || sessionState.noActiveDevice || sessionState.pendingItemId != null || sessionState.pendingLabel != null}
 	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.togglePlay())
@@ -1954,7 +1954,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-tbtn"
-	disabled={!canControl || sessionState.noActiveDevice}
+	disabled={!canControl || sessionState.noActiveDevice || sessionState.pendingItemId != null || sessionState.pendingLabel != null}
 	aria-busy={transportBusy || undefined}
 	onClick={() => {
                   void runTransport(() => playbackSession.next())

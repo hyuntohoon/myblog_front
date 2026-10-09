@@ -24,7 +24,7 @@ import type { JumpContext, JumpOutcome } from '@components/member/lyrics/queueJu
 import type { SetTrackLikedOutcome } from './provider'
 import type { TailRow } from './uris'
 import type { ClockAnchor } from '@lib/clockEstimate'
-import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayOutcome, PlayRung, RepeatMode, TransferOutcome } from '@lib/spotifyPlayback'
+import type { PlaybackDevice, PlaybackModeOutcome, PlayerCommandOutcome, PlayFailure, PlayIntent, PlayOptions, PlayOutcome, PlayRung, RepeatMode, TransferOutcome } from '@lib/spotifyPlayback'
 import type { OwnershipMessage } from './ownership'
 import { captureAuthEpoch, isAuthEpochCurrent, subscribeAuthIdentity } from '@lib/authIdentity'
 import { deleteBucketItem, replacePlaybackQueue } from '@lib/buckets'
@@ -142,6 +142,24 @@ export interface PlaybackSessionState {
   /** A play call that CANNOT coalesce is in flight — the forms disable rather than double-fire. */
   busy: boolean
   /**
+   * The row a ▶ is starting and that has not sounded yet. Set the moment `playFrom`
+   * begins, cleared by every way it ends.
+   *
+   * OPS-project-stabilization Step 2A, 2026-10-09: the bar appears on `currentItemId`,
+   * which is written only after `play()` returns. On a cold start `play()` holds rung
+   * 1's 404, the SDK download, the device's `ready` and the PUT, so the press showed
+   * nothing for that whole time. This lets the bar answer the press at once, saying it
+   * is getting ready rather than claiming the song plays. This tab's own fact, not
+   * broadcast: a mirror learns the outcome, not the attempt.
+   */
+  pendingItemId: string | null
+  /**
+   * A ▶ on an album or track is starting and its queue rows do not exist yet — the
+   * title the press named ('' when it named none). Covers the queue replace round
+   * trip before `playFrom` can set `pendingItemId`, which then takes over.
+   */
+  pendingLabel: string | null
+  /**
    * A COALESCING transport command (⏮ ⏯ ⏭, seek, a mode) is in flight.
    *
    * Split out of `busy` by ARCH-playback-authority-convergence Step 3. The two say
@@ -247,6 +265,8 @@ const EMPTY: PlaybackSessionState = {
   notice: null,
   discoveryFailed: false,
   busy: false,
+  pendingItemId: null,
+  pendingLabel: null,
   transportBusy: false,
   isOwner: false,
   ownerPresent: false,
@@ -774,12 +794,29 @@ function noticeForCommand(r: Exclude<PlayerCommandOutcome, { ok: true }>): Sessi
  * would silently discard every queued row after it (`queueJump.ts` protects the same
  * property and says so in the same words).
  */
-async function playFrom(index: number): Promise<PlayOutcome | null> {
+/**
+ * `confirmRemote: false` where the device was demonstrably playing a moment ago (a
+ * natural advance, ⏮) — see `PlayOptions`. A fresh press keeps the default.
+ */
+async function playFrom(index: number, opts?: PlayOptions): Promise<PlayOutcome | null> {
+  try {
+    return await playFromIndex(index, opts)
+  }
+  catch (e) {
+    // Every return path clears `pendingItemId`; a throw must not leave the bar
+    // saying "getting ready" for a press that is over.
+    if (current.pendingItemId !== null)
+      authoritativePatch({ busy: false, pendingItemId: null })
+    throw e
+  }
+}
+
+async function playFromIndex(index: number, opts: PlayOptions | undefined): Promise<PlayOutcome | null> {
   const rows = queueRows()
   const head = rows[index]
   if (!head)
     return null
-  patch({ busy: true })
+  patch({ busy: true, pendingItemId: head.itemId, pendingLabel: null })
   // IDENTITY-ALIGNED (ARCH-playback-authority-convergence Step 1). `resolveTail`
   // used to hand back a filtered `string[]`, so a head that could not resolve made
   // Spotify start at row n+1 while this function went on to record row n as
@@ -789,15 +826,19 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   const tail = await resolveTail(tailRowsFrom(rows.slice(index)))
   if (tail.resolved.length === 0) {
     const unresolvable: PlayFailure = { ok: false, reason: 'unresolvable', message: '이 곡을 재생할 수 없어요.' }
-    authoritativePatch({ busy: false, notice: noticeForFailure(unresolvable) })
+    authoritativePatch({ busy: false, pendingItemId: null, notice: noticeForFailure(unresolvable) })
     return unresolvable
   }
   const started = tail.resolved[0]
-  const r = await play({ kind: 'uris', uris: tail.resolved.map(row => row.uri) })
+  // The row that will actually start, now that the resolve has said which one.
+  if (started.itemId !== head.itemId)
+    patch({ pendingItemId: started.itemId })
+  const intent: PlayIntent = { kind: 'uris', uris: tail.resolved.map(row => row.uri) }
+  const r = await (opts ? play(intent, opts) : play(intent))
   if (!r.ok) {
     // T2: a play failure PRESERVES the queue. Nothing is removed, nothing is
     // reordered — the rows stay exactly as they were and only the notice changes.
-    authoritativePatch({ busy: false, notice: noticeForFailure(r) })
+    authoritativePatch({ busy: false, pendingItemId: null, notice: noticeForFailure(r) })
     return r
   }
   // AUTHORITATIVE: this is the local action's own confirmed result. `play()` just
@@ -811,6 +852,7 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   const skippedHead = started.itemId !== head.itemId
   authoritativePatch({
     busy: false,
+    pendingItemId: null,
     currentItemId: started.itemId,
     playing: true,
     rung: r.rung,
@@ -1039,7 +1081,9 @@ async function issueAndRestore(
   signature: string | null,
   resumeMs: number,
 ): Promise<boolean> {
-  const r = await play({ kind: 'uris', uris: tail.resolved.map(row => row.uri) })
+  // The track is sounding right now; reading it back would only lengthen the
+  // accepted restart glitch (OQ1) by the wait.
+  const r = await play({ kind: 'uris', uris: tail.resolved.map(row => row.uri) }, { confirmRemote: false })
   if (!r.ok) {
     // Same reasoning as the unresolvable head above: the debt stands, unretried.
     authoritativePatch({ busy: false, notice: noticeForFailure(r) })
@@ -2066,6 +2110,8 @@ async function runTogglePlay(): Promise<void> {
   // of the transport, not a read-only curiosity.
   if (!current.currentItemId && !current.external)
     return
+  if (startingPlay())
+    return
   if (!current.isOwner && !await gate({ kind: 'toggle-play' }))
     return
   // ARCH-playback-authority-convergence Step 2. A future-tail mutation made while
@@ -2111,8 +2157,21 @@ async function runTogglePlay(): Promise<void> {
     clearBoundaryCheck()
 }
 
+/**
+ * A ▶ is between its press and its first note. Transport aims at the device's
+ * CURRENT track, which is the old one: a ⏯ would pause what the ▶ is about to
+ * replace and make its read-back see "not playing", a ⏭ would start a second play
+ * racing the first. Both ended with playback moved into the browser. Checked on the
+ * owner, so a mirror's forwarded press is refused the same way.
+ */
+function startingPlay(): boolean {
+  return current.pendingItemId !== null || current.pendingLabel !== null
+}
+
 async function runNext(): Promise<void> {
   if (getActiveProvider() === 'youtube')
+    return
+  if (startingPlay())
     return
   if (!current.currentItemId && current.external)
     return externalAdvance('next')
@@ -2123,11 +2182,13 @@ async function runNext(): Promise<void> {
 async function runPrevious(): Promise<void> {
   if (getActiveProvider() === 'youtube')
     return
+  if (startingPlay())
+    return
   if (!current.currentItemId && current.external)
     return externalAdvance('previous')
   const i = rowIndex(current.currentItemId)
   if (i > 0 && (current.isOwner || await gate({ kind: 'previous' })))
-    await playFrom(i - 1)
+    await playFrom(i - 1, { confirmRemote: false })
 }
 
 export const playbackSession = {
@@ -2231,7 +2292,7 @@ export const playbackSession = {
       // strand the Undo — the toast belongs to the tab that pressed, and its rows
       // were replaced by this tab's own request.
       await playbackOwnership.ensureOwner()
-      patch({ busy: true, notice: null })
+      patch({ busy: true, notice: null, pendingLabel: intent.title ?? '' })
       try {
         if (intent.kind === 'track') {
           const mapped = await tryPlayYouTubeTrack(intent)
@@ -2302,6 +2363,11 @@ export const playbackSession = {
         // above, so a throw here never follows a half-applied queue.
         authoritativePatch({ busy: false, notice: { tone: 'error', message: REPLACE_FAILED } })
         return { ok: false, message: REPLACE_FAILED, undo: null, play: null }
+      }
+      finally {
+        // `playFrom` takes over with `pendingItemId`; every other way out ends here.
+        if (current.pendingLabel !== null)
+          patch({ pendingLabel: null })
       }
     }
     return enqueueReplace(run)
@@ -2966,7 +3032,7 @@ async function advance(cause: 'completed' | 'skip'): Promise<void> {
     authoritativePatch({ currentItemId: null, playing: false, anchor: null, rung: null, degraded: false })
     return
   }
-  await playFrom(nextIdx)
+  await playFrom(nextIdx, { confirmRemote: false })
 }
 
 async function executeCommand(command: SessionCommand): Promise<void> {

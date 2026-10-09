@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PLAYBACK_KIND, PLAYBACK_TYPE } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { GlobalPlaybackBar, isGlobalPlaybackBarVisible } from './GlobalPlaybackBar'
+import { PlaybackTransport } from './PlaybackPanel'
 
 const lyrics = vi.hoisted(() => ({ open: vi.fn() }))
 vi.mock('./playbackEntryActions', () => ({ openPlaybackLyrics: lyrics.open }))
@@ -74,6 +75,8 @@ const EMPTY_STATE: PlaybackSessionState = {
   notice: null,
   discoveryFailed: false,
   busy: false,
+  pendingItemId: null,
+  pendingLabel: null,
   transportBusy: false,
   isOwner: true,
   ownerPresent: false,
@@ -256,6 +259,61 @@ describe('globalPlaybackBar', () => {
       ...EMPTY_STATE,
       external: { title: 'External', artist: 'Artist', albumCoverUrl: null, spotifyTrackId: 'sp-1', spotifyAlbumId: null, deviceName: null },
     })).toBe(true)
+  })
+
+  // OPS-project-stabilization Step 2A, 2026-10-09: on a cold start the bar stayed
+  // absent for the whole rung-2 bootstrap, because it waited for `currentItemId`.
+  it('answers a ▶ at once with the pressed row, marked as getting ready', () => {
+    bucketStore.setTree([queueBucket([row()])])
+    session.state = { ...EMPTY_STATE, busy: true, pendingItemId: 'item-1' }
+    expect(isGlobalPlaybackBarVisible(session.state)).toBe(true)
+    render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+
+    expect(screen.getByText('Queue title')).toBeInTheDocument()
+    expect(screen.getByText('재생 준비 중…')).toBeInTheDocument()
+    // Nothing sounds yet: no external watch, no liked read for a song not playing.
+    expect(session.watchExternalPlayback).not.toHaveBeenCalled()
+    expect(session.loadLiked).not.toHaveBeenCalled()
+  })
+
+  it('shows the pressed row over the song still sounding, and drops the label once it plays', () => {
+    const other = { ...row(), itemId: 'item-2', title: 'Pressed title' }
+    bucketStore.setTree([queueBucket([row(), other])])
+    session.state = activeState({ busy: true, pendingItemId: 'item-2' })
+    const { rerender } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(screen.getByText('Pressed title')).toBeInTheDocument()
+    expect(screen.queryByText('Queue title')).not.toBeInTheDocument()
+    // Row-scoped controls would act on the old track under the new title — withheld.
+    expect(screen.queryByRole('button', { name: '좋아요' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '현재 곡 가사 열기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'YouTube 영상 고르기' })).not.toBeInTheDocument()
+    expect(screen.getByRole('slider', { name: '재생 위치' })).toHaveAttribute('aria-valuetext', '— / —')
+
+    session.state = activeState({ currentItemId: 'item-2' })
+    rerender(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(screen.getByText('Pressed title')).toBeInTheDocument()
+    expect(screen.queryByText('재생 준비 중…')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '좋아요' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '현재 곡 가사 열기' })).toBeInTheDocument()
+  })
+
+  // The transport's own gate, not the bar's: the queue panel renders it too.
+  it('the shared transport refuses to look pressable while a ▶ is starting', () => {
+    const { rerender } = render(<PlaybackTransport state={activeState({ pendingItemId: 'item-2' })} canControl />)
+    expect(screen.getByRole('button', { name: '다음 곡' })).toBeDisabled()
+    rerender(<PlaybackTransport state={activeState({ pendingLabel: 'Popstar' })} canControl />)
+    expect(screen.getByRole('button', { name: '이전 곡' })).toBeDisabled()
+    rerender(<PlaybackTransport state={activeState()} canControl />)
+    expect(screen.getByRole('button', { name: '다음 곡' })).not.toBeDisabled()
+  })
+
+  it('names an album ▶ by its title before its queue rows exist', () => {
+    session.state = { ...EMPTY_STATE, busy: true, pendingLabel: 'Popstar' }
+    expect(isGlobalPlaybackBarVisible(session.state)).toBe(true)
+    render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+
+    expect(screen.getByText('Popstar')).toBeInTheDocument()
+    expect(screen.getByText('재생 준비 중…')).toBeInTheDocument()
   })
 
   it('prefers queue identity artwork and falls back to external artwork', () => {
