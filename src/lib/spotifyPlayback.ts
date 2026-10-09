@@ -498,6 +498,9 @@ function inPageFailureMessage(reason: string): string {
 // Rung selection is attempt-then-fallback, NOT a `GET /me/player/devices` probe
 // first: the 404 the old path already returned *is* the "no active device" signal,
 // so the happy path stays at one request and D28 (no polling) holds by construction.
+// The one read-back after a rung-1 204 (`confirmRemoteStart`) is not a probe either:
+// it checks what the PUT did, because a 204 alone can come from a device that plays
+// nothing.
 
 /**
  * What to play. `album`/`track` carry DB ids resolved at play time (the provider
@@ -554,6 +557,75 @@ async function putPlay(token: string, body: object, deviceId?: string): Promise<
 }
 
 /**
+ * When rung 1 reads back what its 204 did, in ms after the PUT. Stops at the first
+ * read that settles the answer, so a healthy device costs one read.
+ *
+ * A 204 only says Spotify accepted the command. A Connect device can stay listed
+ * as active while it no longer takes commands: it answers every PUT with 204 and
+ * plays nothing, and the bar showed a song that never sounded (owner's Mac
+ * desktop app, 2026-10-09: active, `item: null`, no track in the app). Bounded
+ * like the boundary burst — three reads per ▶, never a timer that outlives the
+ * press — so the no-polling rule (finding E) holds.
+ */
+const REMOTE_CONFIRM_AT_MS = [600, 1_500, 3_000] as const
+const REMOTE_CONFIRM_READ_TIMEOUT_MS = 4_000
+let remoteConfirmAtMs: readonly number[] = REMOTE_CONFIRM_AT_MS
+
+/** `unknown` = the read itself failed; that is not evidence against the device. */
+type RemoteVerdict = 'started' | 'not-started' | 'unknown'
+
+interface PlayerReadPayload {
+  is_playing?: boolean
+  context?: { uri?: string } | null
+  item?: { uri?: string, linked_from?: { uri?: string } | null } | null
+}
+
+/** True when the read shows THIS play sounding, not just "something". */
+function readShowsBody(state: PlayerReadPayload, body: object): boolean {
+  if (state.is_playing !== true || !state.item)
+    return false
+  const b = body as { uris?: string[], context_uri?: string, offset?: { uri?: string } }
+  const wanted = b.uris?.[0] ?? b.offset?.uri
+  if (wanted)
+    return state.item.uri === wanted || state.item.linked_from?.uri === wanted
+  return b.context_uri != null && state.context?.uri === b.context_uri
+}
+
+async function confirmRemoteStart(token: string, body: object): Promise<RemoteVerdict> {
+  const startedAt = Date.now()
+  for (const at of remoteConfirmAtMs) {
+    await new Promise(resolve => setTimeout(resolve, Math.max(0, at - (Date.now() - startedAt))))
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), REMOTE_CONFIRM_READ_TIMEOUT_MS)
+    let res: Response
+    try {
+      res = await fetch(PLAYER_BASE, { headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal })
+    }
+    catch {
+      return 'unknown'
+    }
+    finally {
+      clearTimeout(timer)
+    }
+    // 204 = no playback anywhere: the device took the command and did nothing (yet).
+    if (res.status === 204)
+      continue
+    if (res.status !== 200)
+      return 'unknown'
+    let state: PlayerReadPayload
+    try {
+      state = (await res.json()) as PlayerReadPayload
+    }
+    catch {
+      return 'unknown'
+    }
+    if (readShowsBody(state, body))
+      return 'started'
+  }
+  return 'not-started'
+}
+
+/**
  * Start playback, climbing the ladder. Never throws.
  *
  * Token FIRST, before anything else: a dormant (503) or disconnected (404) account
@@ -594,6 +666,13 @@ export async function play(intent: PlayIntent): Promise<PlayOutcome> {
       return { ok: false, reason: 'transient', message: messageFor('error') }
     }
     if (res.ok) {
+      // A device that accepted and never played is no device: hand off to rung 2,
+      // whose `device_id` PUT also moves playback off it. A failed read is not
+      // evidence, so it keeps the 204's answer.
+      if (await confirmRemoteStart(tok.token, body) === 'not-started') {
+        sawNoDevice = true
+        break
+      }
       activeRung = 'remote'
       notifyPlaybackChanged()
       return { ok: true, rung: 'remote', degraded: false, message: REMOTE_MESSAGE }
@@ -1109,4 +1188,10 @@ export function __resetPlaybackState(): void {
   activeRung = null
   sdkPromise = null
   lastSdkTrackId = null
+  remoteConfirmAtMs = REMOTE_CONFIRM_AT_MS
+}
+
+/** Test-only: shrink rung 1's read-back schedule so suites do not wait real seconds. */
+export function __setRemoteConfirmSchedule(atMs: readonly number[]): void {
+  remoteConfirmAtMs = atMs
 }

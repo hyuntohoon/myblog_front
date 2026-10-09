@@ -20,8 +20,13 @@ import { canControlPlayback, GLOBAL_PLAYBACK_PANEL_ID, PlaybackIdentity, Playbac
 export { GLOBAL_PLAYBACK_PANEL_ID }
 
 /** `session.ts` reports something sounding, whether queue-matched or external. */
-export function isGlobalPlaybackBarVisible(state: PlaybackSessionState): boolean {
+function isSounding(state: PlaybackSessionState): boolean {
   return state.currentItemId != null || state.external != null
+}
+
+/** Something sounds, or a ▶ is starting one — the press is answered before it plays. */
+export function isGlobalPlaybackBarVisible(state: PlaybackSessionState): boolean {
+  return isSounding(state) || state.pendingItemId != null
 }
 
 function useMediaQuery(query: string): boolean {
@@ -148,6 +153,11 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   const mappingTrackId = youtube ? provider.trackId : model.current?.trackId
   const compactUtilities = useMediaQuery('(max-width: 1179px)')
   const visible = isGlobalPlaybackBarVisible(model.state)
+  // The watch and the liked read are about what SOUNDS; a pending press is not that yet.
+  const sounding = isSounding(model.state)
+  const pending = model.state.pendingItemId != null
+  const shownRow = pending ? model.pending ?? model.current : model.current
+  const shownExternal = pending ? null : model.state.external
   const canControl = canControlPlayback(model.state)
   const durationMs = model.durationMs ?? 0
   const ratio = durationMs > 0 ? Math.min(1, Math.max(0, model.elapsedMs / durationMs)) : 0
@@ -199,17 +209,17 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
   // stays the session's: one reader, quiet unless something changed, and the same
   // conditions (visible page, reader tab, not this tab's SDK device, Spotify).
   useEffect(() => {
-    if (visible && !youtube)
+    if (sounding && !youtube)
       return playbackSession.watchExternalPlayback()
-  }, [visible, youtube])
+  }, [sounding, youtube])
 
   useEffect(() => {
-    if (!visible || youtube)
+    if (!sounding || youtube)
       return
     const trackId = playbackSession.currentSpotifyTrackId()
     if (trackId)
       playbackSession.loadLiked(trackId)
-  }, [model.state.currentItemId, model.state.external?.spotifyTrackId, visible, youtube])
+  }, [model.state.currentItemId, model.state.external?.spotifyTrackId, sounding, youtube])
 
   const requestSeek = (ms: number) => {
     void seekPlayback(ms, setNotice)
@@ -265,7 +275,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
 	aria-label="재생 바 펼치기"
 	title="재생 바 펼치기"
       >
-        <PlaybackIdentity row={model.current} external={model.state.external} compact />
+        <PlaybackIdentity row={shownRow} external={shownExternal} compact pending={pending} />
         <ExpandGlyph />
       </button>
     )
@@ -279,7 +289,7 @@ export function GlobalPlaybackBar({ playbackPanelOpen, onOpenPlaybackPanel }: Gl
     <section ref={barRef} className="global-playback-bar" role="region" aria-label="전역 재생 제어" data-mobile-layout="three-group" style={progressStyle}>
       <div className="global-playback-main">
         <div className="deck-identity-zone">
-          <PlaybackIdentity row={model.current} external={model.state.external} compact />
+          <PlaybackIdentity row={shownRow} external={shownExternal} compact pending={pending} />
           {!youtube && (
 <span className="deck-hit-target deck-like">
             <PlaybackLikeControl

@@ -74,6 +74,7 @@ const EMPTY_STATE: PlaybackSessionState = {
   notice: null,
   discoveryFailed: false,
   busy: false,
+  pendingItemId: null,
   transportBusy: false,
   isOwner: true,
   ownerPresent: false,
@@ -256,6 +257,35 @@ describe('globalPlaybackBar', () => {
       ...EMPTY_STATE,
       external: { title: 'External', artist: 'Artist', albumCoverUrl: null, spotifyTrackId: 'sp-1', spotifyAlbumId: null, deviceName: null },
     })).toBe(true)
+  })
+
+  // OPS-project-stabilization Step 2A, 2026-10-09: on a cold start the bar stayed
+  // absent for the whole rung-2 bootstrap, because it waited for `currentItemId`.
+  it('answers a ▶ at once with the pressed row, marked as getting ready', () => {
+    bucketStore.setTree([queueBucket([row()])])
+    session.state = { ...EMPTY_STATE, busy: true, pendingItemId: 'item-1' }
+    expect(isGlobalPlaybackBarVisible(session.state)).toBe(true)
+    render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+
+    expect(screen.getByText('Queue title')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('재생 준비 중…')
+    // Nothing sounds yet: no external watch, no liked read for a song not playing.
+    expect(session.watchExternalPlayback).not.toHaveBeenCalled()
+    expect(session.loadLiked).not.toHaveBeenCalled()
+  })
+
+  it('shows the pressed row over the song still sounding, and drops the label once it plays', () => {
+    const other = { ...row(), itemId: 'item-2', title: 'Pressed title' }
+    bucketStore.setTree([queueBucket([row(), other])])
+    session.state = activeState({ busy: true, pendingItemId: 'item-2' })
+    const { rerender } = render(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(screen.getByText('Pressed title')).toBeInTheDocument()
+    expect(screen.queryByText('Queue title')).not.toBeInTheDocument()
+
+    session.state = activeState({ currentItemId: 'item-2' })
+    rerender(<GlobalPlaybackBar playbackPanelOpen={false} onOpenPlaybackPanel={vi.fn()} />)
+    expect(screen.getByText('Pressed title')).toBeInTheDocument()
+    expect(screen.queryByText('재생 준비 중…')).not.toBeInTheDocument()
   })
 
   it('prefers queue identity artwork and falls back to external artwork', () => {

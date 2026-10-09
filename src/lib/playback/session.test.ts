@@ -404,6 +404,55 @@ describe('drop semantics', () => {
   })
 })
 
+// OPS-project-stabilization Step 2A, 2026-10-09: the bar waited for `currentItemId`,
+// written only after `play()` returned, so a cold-start ▶ showed nothing for the
+// whole rung-2 bootstrap. `pendingItemId` answers the press; every exit must clear it.
+describe('pendingItemId — a ▶ is answered before it sounds', () => {
+  it('names the pressed row while play is in flight, then hands over to currentItemId', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+
+    const pending = playbackSession.playAt('b')
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot()).toMatchObject({ busy: true, pendingItemId: 'b', currentItemId: null })
+
+    await finishPlayback(pending)
+    expect(playbackSession.getSnapshot()).toMatchObject({ busy: false, pendingItemId: null, currentItemId: 'b' })
+  })
+
+  it('clears on a failed play, leaving nothing claimed', async () => {
+    nextPlayOutcome = FAILURE
+    setQueue([row('a'), row('b')])
+
+    const pending = playbackSession.playAt('b')
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot().pendingItemId).toBe('b')
+    await finishPlayback(pending)
+    expect(playbackSession.getSnapshot()).toMatchObject({ busy: false, pendingItemId: null, currentItemId: null })
+  })
+
+  it('clears when the resolve throws', async () => {
+    setQueue([row('a'), row('b')])
+    mocks.resolveTail.mockRejectedValueOnce(new Error('resolve blew up'))
+
+    await expect(playbackSession.playAt('b')).rejects.toThrow('resolve blew up')
+    expect(playbackSession.getSnapshot()).toMatchObject({ busy: false, pendingItemId: null })
+  })
+
+  it('moves to the row that will actually start when the pressed one cannot resolve', async () => {
+    setQueue([row('a'), row('b'), row('c')])
+    mocks.resolveTail.mockImplementationOnce(async (rows: Array<{ itemId: string, trackId: string }>) => ({
+      resolved: rows.slice(1).map(r => ({ itemId: r.itemId, trackId: r.trackId, uri: `spotify:track:${r.trackId}` })),
+      failed: rows.slice(0, 1),
+    }))
+
+    const pending = playbackSession.playAt('a')
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot().pendingItemId).toBe('b')
+    await finishPlayback(pending)
+    expect(playbackSession.getSnapshot()).toMatchObject({ pendingItemId: null, currentItemId: 'b' })
+  })
+})
+
 describe('queue-preserving transitions', () => {
   it('preserves every row and surfaces the shipped sentence when play fails', async () => {
     nextPlayOutcome = FAILURE

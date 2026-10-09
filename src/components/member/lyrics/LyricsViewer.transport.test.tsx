@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
     durationMs: null as number | null,
     notice: null as { tone: string, message: string } | null,
     busy: false,
+    pendingItemId: null,
     transportBusy: false,
     noActiveDevice: false,
     isOwner: true,

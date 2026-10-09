@@ -142,6 +142,18 @@ export interface PlaybackSessionState {
   /** A play call that CANNOT coalesce is in flight — the forms disable rather than double-fire. */
   busy: boolean
   /**
+   * The row a ▶ is starting and that has not sounded yet. Set the moment `playFrom`
+   * begins, cleared by every way it ends.
+   *
+   * OPS-project-stabilization Step 2A, 2026-10-09: the bar appears on `currentItemId`,
+   * which is written only after `play()` returns. On a cold start `play()` holds rung
+   * 1's 404, the SDK download, the device's `ready` and the PUT, so the press showed
+   * nothing for that whole time. This lets the bar answer the press at once, saying it
+   * is getting ready rather than claiming the song plays. This tab's own fact, not
+   * broadcast: a mirror learns the outcome, not the attempt.
+   */
+  pendingItemId: string | null
+  /**
    * A COALESCING transport command (⏮ ⏯ ⏭, seek, a mode) is in flight.
    *
    * Split out of `busy` by ARCH-playback-authority-convergence Step 3. The two say
@@ -247,6 +259,7 @@ const EMPTY: PlaybackSessionState = {
   notice: null,
   discoveryFailed: false,
   busy: false,
+  pendingItemId: null,
   transportBusy: false,
   isOwner: false,
   ownerPresent: false,
@@ -775,11 +788,24 @@ function noticeForCommand(r: Exclude<PlayerCommandOutcome, { ok: true }>): Sessi
  * property and says so in the same words).
  */
 async function playFrom(index: number): Promise<PlayOutcome | null> {
+  try {
+    return await playFromIndex(index)
+  }
+  catch (e) {
+    // Every return path clears `pendingItemId`; a throw must not leave the bar
+    // saying "getting ready" for a press that is over.
+    if (current.pendingItemId !== null)
+      authoritativePatch({ busy: false, pendingItemId: null })
+    throw e
+  }
+}
+
+async function playFromIndex(index: number): Promise<PlayOutcome | null> {
   const rows = queueRows()
   const head = rows[index]
   if (!head)
     return null
-  patch({ busy: true })
+  patch({ busy: true, pendingItemId: head.itemId })
   // IDENTITY-ALIGNED (ARCH-playback-authority-convergence Step 1). `resolveTail`
   // used to hand back a filtered `string[]`, so a head that could not resolve made
   // Spotify start at row n+1 while this function went on to record row n as
@@ -789,15 +815,18 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   const tail = await resolveTail(tailRowsFrom(rows.slice(index)))
   if (tail.resolved.length === 0) {
     const unresolvable: PlayFailure = { ok: false, reason: 'unresolvable', message: '이 곡을 재생할 수 없어요.' }
-    authoritativePatch({ busy: false, notice: noticeForFailure(unresolvable) })
+    authoritativePatch({ busy: false, pendingItemId: null, notice: noticeForFailure(unresolvable) })
     return unresolvable
   }
   const started = tail.resolved[0]
+  // The row that will actually start, now that the resolve has said which one.
+  if (started.itemId !== head.itemId)
+    patch({ pendingItemId: started.itemId })
   const r = await play({ kind: 'uris', uris: tail.resolved.map(row => row.uri) })
   if (!r.ok) {
     // T2: a play failure PRESERVES the queue. Nothing is removed, nothing is
     // reordered — the rows stay exactly as they were and only the notice changes.
-    authoritativePatch({ busy: false, notice: noticeForFailure(r) })
+    authoritativePatch({ busy: false, pendingItemId: null, notice: noticeForFailure(r) })
     return r
   }
   // AUTHORITATIVE: this is the local action's own confirmed result. `play()` just
@@ -811,6 +840,7 @@ async function playFrom(index: number): Promise<PlayOutcome | null> {
   const skippedHead = started.itemId !== head.itemId
   authoritativePatch({
     busy: false,
+    pendingItemId: null,
     currentItemId: started.itemId,
     playing: true,
     rung: r.rung,

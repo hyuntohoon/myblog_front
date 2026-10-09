@@ -216,6 +216,7 @@ beforeEach(() => {
     durationMs: null,
     notice: null,
     busy: false,
+    pendingItemId: null,
     transportBusy: false,
     noActiveDevice: false,
     isOwner: true,

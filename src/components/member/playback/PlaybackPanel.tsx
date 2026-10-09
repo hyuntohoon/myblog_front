@@ -45,6 +45,8 @@ interface PlaybackViewModel {
   state: PlaybackSessionState
   queue: BoardAlbum[]
   current: BoardAlbum | null
+  /** The row a ▶ is starting (`state.pendingItemId`), before it sounds. */
+  pending: BoardAlbum | null
   elapsedMs: number
   durationMs: number | null
 }
@@ -61,6 +63,10 @@ export function usePlaybackViewModel(): PlaybackViewModel {
   const current = useMemo(
     () => queue.find(row => row.itemId === state.currentItemId) ?? null,
     [queue, state.currentItemId],
+  )
+  const pending = useMemo(
+    () => state.pendingItemId == null ? null : queue.find(row => row.itemId === state.pendingItemId) ?? null,
+    [queue, state.pendingItemId],
   )
   const currentAlbumId = albumIdFor(current)
   const [resolvedCover, setResolvedCover] = useState<string | null>(null)
@@ -96,7 +102,7 @@ export function usePlaybackViewModel(): PlaybackViewModel {
   // remount. Session-owned reads preserve provider and tab authority.
   useEffect(observePlaybackLifecycle, [])
 
-  return { state, queue, current: displayCurrent, elapsedMs: elapsed ?? 0, durationMs }
+  return { state, queue, current: displayCurrent, pending, elapsedMs: elapsed ?? 0, durationMs }
 }
 
 function formatMs(ms: number | null): string {
@@ -157,10 +163,12 @@ export function openPlaybackAlbum(row: BoardAlbum | null, external?: ExternalNow
  * says where it came from, because "왜 이 곡이 대기열에 없지" is the question a
  * member would otherwise be left holding.
  */
-export function PlaybackIdentity({ row, external, compact = false }: {
+export function PlaybackIdentity({ row, external, compact = false, pending = false }: {
   row: BoardAlbum | null
   external?: ExternalNowPlaying | null
   compact?: boolean
+  /** `row` was just pressed and has not sounded yet — say so instead of implying it plays. */
+  pending?: boolean
 }) {
   const title = row?.title ?? external?.title ?? '—'
   const artist = row?.artist ?? external?.artist ?? '—'
@@ -174,8 +182,11 @@ export function PlaybackIdentity({ row, external, compact = false }: {
       </div>
       <div className="pbp-current-copy">
         <div className="pbp-current-title">{title}</div>
-        <div className="pbp-current-artist">{artist}</div>
-        {external && (
+        {/* In the artist line, not a third one: the bar hides `.pbp-current-outside`. */}
+        {pending ?
+          <div className="pbp-current-artist pbp-current-pending" role="status">재생 준비 중…</div> :
+          <div className="pbp-current-artist">{artist}</div>}
+        {!pending && external && (
           <div className="pbp-current-outside">
             {external.deviceName ? `${external.deviceName}에서 재생 중 · 대기열 밖` : '대기열 밖에서 재생 중'}
           </div>
