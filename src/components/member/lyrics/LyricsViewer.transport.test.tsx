@@ -547,6 +547,19 @@ describe('a queue jump and the transport cannot race over one player', () => {
     setSession({ noActiveDevice: false })
     expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
   })
+
+  // OPS 2A review, 2026-10-09: the session refuses transport while a ▶ is starting;
+  // a button that stays live would be a press that silently does nothing.
+  it('disables the transport while a ▶ is still starting', async () => {
+    await open()
+    setSession({ pendingItemId: 'row-2' })
+    for (const name of ['이전 곡', '다음 곡'])
+      expect(screen.getByLabelText(name)).toBeDisabled()
+    setSession({ pendingItemId: null, pendingLabel: 'Popstar' })
+    expect(screen.getByLabelText('다음 곡')).toBeDisabled()
+    setSession({ pendingLabel: null })
+    expect(screen.getByLabelText('다음 곡')).not.toBeDisabled()
+  })
 })
 
 describe('a paused re-anchor still moves the line when nobody is browsing', () => {

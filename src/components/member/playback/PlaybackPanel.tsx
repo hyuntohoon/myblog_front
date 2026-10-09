@@ -228,7 +228,10 @@ export { PlaybackOwnerBanner }
 export function PlaybackTransport({ state, canControl }: { state: PlaybackSessionState, canControl: boolean }) {
   const provider = useSyncExternalStore(providerStore.subscribe, providerStore.getSnapshot, providerStore.getServerSnapshot)
   const youtube = provider.provider === 'youtube'
-  const disabled = !canControl || state.noActiveDevice || (!state.currentItemId && !state.external)
+  // A ▶ still starting: transport would aim at the old track, and the session
+  // refuses it (`startingPlay`) — so it must not look pressable.
+  const starting = state.pendingItemId != null || state.pendingLabel != null
+  const disabled = !canControl || state.noActiveDevice || starting || (!state.currentItemId && !state.external)
   return (
     <div className="pbp-transport" role="group" aria-label="재생 제어" aria-busy={state.busy || undefined}>
       <button type="button" onClick={() => void playbackSession.previous()} disabled={disabled || youtube} aria-label="이전 곡">‹</button>

@@ -301,6 +301,35 @@ describe('rung 1 read-back — a 204 from a device that plays nothing', () => {
   })
 })
 
+describe('a play PUT that hangs', () => {
+  it('gives up after its timeout instead of holding the press open', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.startsWith(TOKEN_URL))
+          return json({ access_token: 'tok', expires_in: 3600 })
+        // Never answers; only the caller's abort ends it, as with a stalled connection.
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        })
+      }))
+      const result = play({ kind: 'uris', uris: ['spotify:track:a'] })
+      await vi.advanceTimersByTimeAsync(7_999)
+      let settled = false
+      void result.then(() => {
+        settled = true
+      })
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(result).resolves.toMatchObject({ ok: false, reason: 'transient' })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('rung 2 — cold start (the defect this step fixes)', () => {
   it('treats the 404 as a hand-off and plays in-page, marked degraded', async () => {
     install({ playNoDevice: () => json({}, 404) })

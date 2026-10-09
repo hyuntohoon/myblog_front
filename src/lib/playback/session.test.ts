@@ -498,6 +498,35 @@ describe('pendingLabel and transport while a ▶ is starting (OPS 2A review, 202
     expect(playbackSession.getSnapshot().currentItemId).toBe('c')
   })
 
+  it('refuses transport on the label alone, before the queue replace has returned', async () => {
+    setQueue([row('a'), row('b')])
+    await startAt('a')
+    const playsBefore = mocks.play.mock.calls.length
+    const commandsBefore = mocks.sendPlayerCommand.mock.calls.length
+    albumTracks = { 'alb-1': ['t1'] }
+
+    const pending = playbackSession.replaceQueueAndPlay({ kind: 'album', albumId: 'alb-1', title: 'Popstar' })
+    await flushPlaybackStart()
+    expect(playbackSession.getSnapshot()).toMatchObject({ pendingLabel: 'Popstar', pendingItemId: null })
+    await playbackSession.next()
+    await playbackSession.togglePlay()
+    await settleAll()
+    await pending
+
+    expect(mocks.sendPlayerCommand.mock.calls.length).toBe(commandsBefore)
+    expect(mocks.play.mock.calls.length).toBe(playsBefore + 1)
+  })
+
+  it('⏮ skips the read-back — the device was just playing', async () => {
+    setQueue([row('a'), row('b')])
+    await startAt('b')
+    const going = playbackSession.previous()
+    await settleAll()
+    await going
+    expect(mocks.play.mock.lastCall?.[1]).toEqual({ confirmRemote: false })
+    expect(playbackSession.getSnapshot().currentItemId).toBe('a')
+  })
+
   it('a fresh press keeps the read-back; a natural advance skips it', async () => {
     setQueue([row('a'), row('b')])
     await startAt('a')

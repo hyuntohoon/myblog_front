@@ -544,16 +544,32 @@ async function playBodyFor(intent: PlayIntent): Promise<object> {
   return intent.kind === 'album' ? { context_uri: uri } : { uris: [uri] }
 }
 
-/** One PUT /me/player/play. `deviceId` omitted = rung 1, present = rung 2. */
+/**
+ * How long one play PUT may hang. A healthy one answers in well under a second;
+ * unbounded, a stalled request held the press's pending state — and with it every
+ * transport control, which is refused while a ▶ is starting — until the browser
+ * gave up on the connection.
+ */
+const PUT_PLAY_TIMEOUT_MS = 8_000
+
+/** One PUT /me/player/play. `deviceId` omitted = rung 1, present = rung 2. Throws on timeout. */
 async function putPlay(token: string, body: object, deviceId?: string): Promise<Response> {
   const url = deviceId ?
     `${PLAYER_BASE}/play?device_id=${encodeURIComponent(deviceId)}` :
     `${PLAYER_BASE}/play`
-  return fetch(url, {
-    method: 'PUT',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), PUT_PLAY_TIMEOUT_MS)
+  try {
+    return await fetch(url, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    })
+  }
+  finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
@@ -586,6 +602,9 @@ function readShowsBody(state: PlayerReadPayload, body: object): boolean {
     return false
   const b = body as { uris?: string[], context_uri?: string, offset?: { uri?: string } }
   const playing = [state.item.uri, state.item.linked_from?.uri]
+  // Deliberately loose: a stale device still reporting the previous track of the
+  // same list/album as playing would pass. The observed dead device reported
+  // `is_playing: false`; what this must never do is call a healthy start dead.
   // Any track of the sent list: with shuffle on, Spotify may start anywhere in it,
   // and a healthy device must never be read as a dead one.
   if (b.uris)

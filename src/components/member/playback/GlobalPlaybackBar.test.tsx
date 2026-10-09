@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PLAYBACK_KIND, PLAYBACK_TYPE } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
 import { GlobalPlaybackBar, isGlobalPlaybackBarVisible } from './GlobalPlaybackBar'
+import { PlaybackTransport } from './PlaybackPanel'
 
 const lyrics = vi.hoisted(() => ({ open: vi.fn() }))
 vi.mock('./playbackEntryActions', () => ({ openPlaybackLyrics: lyrics.open }))
@@ -294,6 +295,16 @@ describe('globalPlaybackBar', () => {
     expect(screen.queryByText('재생 준비 중…')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '좋아요' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '현재 곡 가사 열기' })).toBeInTheDocument()
+  })
+
+  // The transport's own gate, not the bar's: the queue panel renders it too.
+  it('the shared transport refuses to look pressable while a ▶ is starting', () => {
+    const { rerender } = render(<PlaybackTransport state={activeState({ pendingItemId: 'item-2' })} canControl />)
+    expect(screen.getByRole('button', { name: '다음 곡' })).toBeDisabled()
+    rerender(<PlaybackTransport state={activeState({ pendingLabel: 'Popstar' })} canControl />)
+    expect(screen.getByRole('button', { name: '이전 곡' })).toBeDisabled()
+    rerender(<PlaybackTransport state={activeState()} canControl />)
+    expect(screen.getByRole('button', { name: '다음 곡' })).not.toBeDisabled()
   })
 
   it('names an album ▶ by its title before its queue rows exist', () => {
