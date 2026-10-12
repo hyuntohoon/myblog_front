@@ -169,6 +169,232 @@ export function kst(iso: string | null | undefined): string | null {
 	})
 }
 
+/** "12분" / "3시간" / "31일": how long something has been waiting. */
+export function waitedFor(iso: string | null | undefined, now: number = Date.now()): string | null {
+	if (!iso)
+		return null
+	const t = Date.parse(iso)
+	if (Number.isNaN(t))
+		return null
+	const min = Math.max(0, Math.floor((now - t) / 60000))
+	if (min < 60)
+		return `${min}분`
+	const hr = Math.floor(min / 60)
+	if (hr < 48)
+		return `${hr}시간`
+	return `${Math.floor(hr / 24)}일`
+}
+
+// ── Queue verdicts (owner feedback 2026-10-12: "is it working, what is wrong,
+// what is waiting?") ─────────────────────────────────────────────────────────
+//
+// Judged from DB queue evidence only — counts, oldest waiting row, expired
+// leases — which the snapshot already carries. Deliberately conservative: the
+// page cannot yet see WHY rows wait (`last_reason`) or how fast they drain, so
+// a long wait is "1일 넘게 대기", never "막힘". Measured on prod the same day,
+// 848 of 854 "waiting" album jobs were waiting on the catalog and the queue was
+// shrinking — a verdict that said "stuck" would have been confidently wrong.
+// The detail API (next sub-step) is what may sharpen these.
+//
+// `declared_state` is used in ONE direction only: to warn that a queue's
+// consumers are switched off in the inventory. It never makes anything look
+// healthy.
+
+export type Tone = 'bad' | 'warn' | 'frozen' | 'none' | 'ok'
+
+/** Most urgent first. Drives the summary order and the default selection. */
+export const TONE_ORDER: Tone[] = ['bad', 'warn', 'frozen', 'none', 'ok']
+
+export const TONE_LABEL: Record<Tone, string> = {
+	bad: '손볼 것',
+	warn: '지켜볼 것',
+	frozen: '동결',
+	none: '볼 수 없음',
+	ok: '문제 없음',
+}
+
+export interface QueueVerdict {
+	tone: Tone
+	label: string
+	say: string
+}
+
+const OFF_STATES: ReadonlySet<DeclaredState> = new Set<DeclaredState>(['disabled', 'obsolete', 'dropped'])
+const LONG_WAIT_MS = 24 * 60 * 60 * 1000
+
+/** Jobs that drain this queue, per the catalog's `queue_keys`. */
+export function consumersOf(queueKey: string, jobs: AutomationJob[]): AutomationJob[] {
+	return jobs.filter(j => (j.queue_keys ?? []).includes(queueKey))
+}
+
+function n(v: number): string {
+	return v.toLocaleString('ko-KR')
+}
+
+export function judgeQueue(queue: AutomationQueue, jobs: AutomationJob[], now: number = Date.now()): QueueVerdict {
+	const reading = readQueue(queue)
+	if (reading.kind === 'unknown')
+		return { tone: 'none', label: '읽기 실패', say: '이 대기열을 읽지 못했습니다. 건수를 모르므로 비어 있다고 볼 수 없습니다.' }
+	if (reading.kind === 'empty')
+		return { tone: 'none', label: '행 없음', say: '읽기는 성공했고, 이 대기열에는 아직 행이 하나도 없습니다.' }
+
+	const consumers = consumersOf(queue.key, jobs)
+	const consumersOff = consumers.length > 0 && consumers.every(j => OFF_STATES.has(j.declared_state))
+	const ineligible = reading.ineligible.reduce((a, s) => a + s.n, 0)
+	const ineligibleNote = ineligible > 0 ? ` 처리 불가 ${n(ineligible)}건은 작업자가 고를 수 없는 행이라 대기로 세지 않습니다.` : ''
+	const waited = waitedFor(queue.oldest_waiting_at, now)
+	const stale = queue.stale_running ?? 0
+
+	if (stale > 0) {
+		return {
+			tone: 'bad',
+			label: `멈춘 실행 ${n(stale)}`,
+			say: `리스가 끝났는데 "실행 중"으로 남은 행이 ${n(stale)}건 있습니다. 누가 정리하지 않으면 그대로 남습니다.${queue.frozen ? ' 이 대기열은 동결돼 있어 새로 처리되지 않습니다.' : ''}`,
+		}
+	}
+	if (queue.frozen) {
+		return {
+			tone: 'frozen',
+			label: '동결',
+			say: `의도적으로 멈춘 대기열입니다.${reading.waiting > 0 ? ` 남은 대기 ${n(reading.waiting)}건은 처리되지 않습니다.` : ''}`,
+		}
+	}
+	if (reading.waiting > 0 && consumersOff) {
+		return {
+			tone: 'warn',
+			label: '처리기 꺼짐',
+			say: `대기 ${n(reading.waiting)}건이 있지만, 이 대기열을 처리하는 작업이 인벤토리상 꺼져 있습니다.${ineligibleNote}`,
+		}
+	}
+	const oldestT = queue.oldest_waiting_at ? Date.parse(queue.oldest_waiting_at) : Number.NaN
+	if (reading.waiting > 0 && !Number.isNaN(oldestT) && now - oldestT > LONG_WAIT_MS) {
+		return {
+			tone: 'warn',
+			label: '1일 넘게 대기',
+			say: `대기 ${n(reading.waiting)}건, 가장 오래된 것은 ${waited}째입니다. 왜 기다리는지와 줄고 있는지는 아직 이 화면에서 볼 수 없습니다.${ineligibleNote}`,
+		}
+	}
+	if (reading.waiting > 0) {
+		return {
+			tone: 'ok',
+			label: '대기 짧음',
+			say: `대기 ${n(reading.waiting)}건, 가장 오래된 것도 ${waited ?? '하루'}째로 하루가 안 됐습니다.${ineligibleNote}`,
+		}
+	}
+	return {
+		tone: 'ok',
+		label: '대기 없음',
+		say: `기다리는 행이 없습니다.${ineligibleNote}${consumersOff ? ' 처리하는 작업이 인벤토리상 꺼져 있어, 새 요청이 들어오면 처리되지 않습니다.' : ''}`,
+	}
+}
+
+export function toneTally(verdicts: QueueVerdict[]): Record<Tone, number> {
+	const t: Record<Tone, number> = { bad: 0, warn: 0, frozen: 0, none: 0, ok: 0 }
+	for (const v of verdicts)
+		t[v.tone] += 1
+	return t
+}
+
+export function worstTone(tones: Tone[]): Tone {
+	for (const t of TONE_ORDER) {
+		if (tones.includes(t))
+			return t
+	}
+	return 'none'
+}
+
+// ── Flows ──────────────────────────────────────────────────────────────────
+//
+// Presentation grouping only: which queues and jobs read as one pipeline, in
+// order. It is NOT runtime state and adds no claim; a key missing from the
+// snapshot is skipped, and every queue the flows do not name is still shown,
+// under 그 밖의 대기열 — the page must not hide a queue because this list has
+// not heard of it.
+
+type StepRef = { queue: string } | { job: string }
+
+const FLOW_DEFS: { title: string, steps: StepRef[] }[] = [
+	{
+		title: '회원 수요 가사',
+		steps: [
+			{ job: 'lyrics_demand_source' },
+			{ queue: 'lyrics_album_jobs' },
+			{ queue: 'lyrics_album_tracks' },
+			{ job: 'gpt-translate-poller' },
+			{ queue: 'lyrics_translation_work:chatgpt/lyrics-ko-v1' },
+		],
+	},
+	{
+		title: '수동 요청 · Genius 번역',
+		steps: [
+			{ queue: 'track_lyrics_translations' },
+			{ queue: 'track_genius_annotations' },
+			{ job: 'gpt-translate-poller' },
+			{ queue: 'lyrics_translation_work:chatgpt/genius-ko-v1' },
+		],
+	},
+	{
+		title: '디스코그래피 열거',
+		steps: [
+			{ job: 'sqs_lyrics_discography_enumerate' },
+			{ queue: 'lyrics_artist_discographies' },
+		],
+	},
+	{
+		title: '요청형 (사이트 버튼 → Mac 폴러)',
+		steps: [
+			{ queue: 'album_research' },
+			{ job: 'research-poller' },
+			{ queue: 'genre_backfill_requests' },
+			{ job: 'genre-heal-poller' },
+		],
+	},
+	{
+		title: '구버전 Claude 번역',
+		steps: [
+			{ job: 'lyrics-translate-poller' },
+			{ queue: 'lyrics_translation_work:claude.sonnet/v2' },
+		],
+	},
+]
+
+export type FlowStep = { kind: 'queue', queue: AutomationQueue } | { kind: 'job', job: AutomationJob }
+
+export interface Flow {
+	title: string
+	steps: FlowStep[]
+}
+
+export function buildFlows(snapshot: AutomationSnapshot): Flow[] {
+	const queues = new Map(snapshot.queues.map(q => [q.key, q]))
+	const jobs = new Map(snapshot.jobs.map(j => [j.key, j]))
+	const placed = new Set<string>()
+	const flows: Flow[] = []
+	for (const def of FLOW_DEFS) {
+		const steps: FlowStep[] = []
+		for (const ref of def.steps) {
+			if ('queue' in ref) {
+				const q = queues.get(ref.queue)
+				if (q) {
+					steps.push({ kind: 'queue', queue: q })
+					placed.add(q.key)
+				}
+			}
+			else {
+				const j = jobs.get(ref.job)
+				if (j)
+					steps.push({ kind: 'job', job: j })
+			}
+		}
+		if (steps.some(s => s.kind === 'queue'))
+			flows.push({ title: def.title, steps })
+	}
+	const rest = snapshot.queues.filter(q => !placed.has(q.key))
+	if (rest.length > 0)
+		flows.push({ title: '그 밖의 대기열', steps: rest.map(queue => ({ kind: 'queue' as const, queue })) })
+	return flows
+}
+
 /** Heartbeat `details` as display text. Never markup: agents write it (2b security-review). */
 export function detailsText(details: Record<string, unknown> | undefined): string | null {
 	if (!details || Object.keys(details).length === 0)
