@@ -194,7 +194,8 @@ export function waitedFor(iso: string | null | undefined, now: number = Date.now
 // a long wait is "1일 넘게 대기", never "막힘". Measured on prod the same day,
 // 848 of 854 "waiting" album jobs were waiting on the catalog and the queue was
 // shrinking — a verdict that said "stuck" would have been confidently wrong.
-// The detail API (next sub-step) is what may sharpen these.
+// The 2f detail API shows reasons and 24 h flow in the panel; the verdicts
+// stay snapshot-only, because several flow columns are approximate or null.
 //
 // `declared_state` is used in ONE direction only: to warn that a queue's
 // consumers are switched off in the inventory. It never makes anything look
@@ -271,7 +272,7 @@ export function judgeQueue(queue: AutomationQueue, jobs: AutomationJob[], now: n
 		return {
 			tone: 'warn',
 			label: '1일 넘게 대기',
-			say: `대기 ${n(reading.waiting)}건, 가장 오래된 것은 ${waited}째입니다. 왜 기다리는지와 줄고 있는지는 아직 이 화면에서 볼 수 없습니다.${ineligibleNote}`,
+			say: `대기 ${n(reading.waiting)}건, 가장 오래된 것은 ${waited}째입니다. 왜 기다리는지와 최근 24시간 흐름은 상세에서 봅니다.${ineligibleNote}`,
 		}
 	}
 	if (reading.waiting > 0) {
@@ -405,4 +406,66 @@ export function detailsText(details: Record<string, unknown> | undefined): strin
 	catch {
 		return null
 	}
+}
+
+// ── 2f: queue detail ──────────────────────────────────────────────────────────
+
+/**
+ * Korean names for the reason codes measured on prod (2026-10-12). The code is
+ * always shown next to the name; a code not listed here is shown as-is.
+ */
+export const REASON_LABEL: Record<string, string> = {
+	album_not_in_catalog: '카탈로그에 없는 앨범',
+	album_partially_ingested: '앨범 일부만 수집됨',
+	album_has_no_tracks: '트랙이 없는 앨범',
+	not_found: '가사 소스를 못 찾음',
+	review_required: '검토 필요',
+	already_translated: '이미 번역됨',
+	korean_source: '원문이 한국어',
+	already_korean: '이미 한국어',
+	no_lyrics: '가사 없음',
+	temporary_error: '일시 오류',
+	output_limit: '출력 한도 초과',
+	engine_validation: '엔진 검증 실패',
+	unrecognized: '형식 밖 사유(본문은 표시하지 않음)',
+}
+
+export function reasonName(code: string | null | undefined): string {
+	if (code == null)
+		return '사유 기록 없음'
+	return REASON_LABEL[code] ?? code
+}
+
+/** "3시간 뒤" for a future timestamp, "지남" once it has passed. */
+export function untilText(iso: string | null | undefined, now: number = Date.now()): string | null {
+	if (!iso)
+		return null
+	const t = Date.parse(iso)
+	if (Number.isNaN(t))
+		return null
+	if (t <= now)
+		return '지남'
+	const min = Math.ceil((t - now) / 60000)
+	if (min < 60)
+		return `${min}분 뒤`
+	const hr = Math.floor(min / 60)
+	if (hr < 48)
+		return `${hr}시간 뒤`
+	return `${Math.floor(hr / 24)}일 뒤`
+}
+
+/**
+ * One sentence on direction, only when both sides were measured. Several
+ * "left" columns are approximate (their basis says so), hence "이 기준으로는".
+ */
+export function flowSentence(entered: number | null | undefined, left: number | null | undefined): string {
+	if (entered == null || left == null)
+		return '들어옴과 나감 중 잴 수 없는 쪽이 있어 줄고 있는지는 판단하지 않습니다.'
+	if (entered === 0 && left === 0)
+		return '최근 24시간 동안 들어오거나 나간 행이 없습니다.'
+	if (left > entered)
+		return '나간 행이 들어온 행보다 많습니다. 이 기준으로는 줄고 있습니다.'
+	if (left < entered)
+		return '들어온 행이 나간 행보다 많습니다. 이 기준으로는 늘고 있습니다.'
+	return '들어온 만큼 나갔습니다.'
 }

@@ -4,12 +4,12 @@
 // server is the boundary, not the guard), unknown is never worded as healthy,
 // a failed queue read never looks like an empty one, and agent-written text is
 // text (2b security-review).
-import type { SnapshotResult } from './automation.api'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import type { QueueDetailResult, SnapshotResult } from './automation.api'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { realSnapshot } from './automation.fixture'
+import { realDetails, realSnapshot } from './automation.fixture'
 
-const api = vi.hoisted(() => ({ fetchAutomationSnapshot: vi.fn() }))
+const api = vi.hoisted(() => ({ fetchAutomationSnapshot: vi.fn(), fetchQueueDetail: vi.fn() }))
 const auth = vi.hoisted(() => ({ isLoggedIn: vi.fn(() => true) }))
 
 vi.mock('./automation.api', () => api)
@@ -21,9 +21,15 @@ function serve(result: SnapshotResult) {
 	api.fetchAutomationSnapshot.mockResolvedValue(result)
 }
 
+function serveDetails(details = realDetails()) {
+	api.fetchQueueDetail.mockImplementation(async (key: string): Promise<QueueDetailResult> =>
+		details[key] ? { kind: 'ok', detail: details[key] } : { kind: 'error', status: 404 })
+}
+
 beforeEach(() => {
 	vi.clearAllMocks()
 	auth.isLoggedIn.mockReturnValue(true)
+	serveDetails()
 })
 
 describe('load outcomes', () => {
@@ -89,7 +95,7 @@ describe('the snapshot', () => {
 		fireEvent.click(node)
 		const detail = container.querySelector('[data-detail]')!
 		expect(detail.getAttribute('data-detail')).toBe('lyrics_album_jobs')
-		expect(detail).toHaveTextContent('왜 기다리는지와 줄고 있는지는 아직 이 화면에서 볼 수 없습니다')
+		expect(detail).toHaveTextContent('왜 기다리는지와 최근 24시간 흐름은 상세에서 봅니다')
 		expect(node.getAttribute('aria-current')).toBe('true')
 	})
 
@@ -173,6 +179,135 @@ describe('the snapshot', () => {
 		serve({ kind: 'ok', snapshot: realSnapshot() })
 		render(<AutomationBoard />)
 		expect(await screen.findByText(/아직 하트비트를 기록한 로컬 에이전트가 없습니다/)).toBeTruthy()
+	})
+})
+
+describe('queue detail (2f)', () => {
+	const CLAUDE = 'lyrics_translation_work:claude.sonnet/v2'
+
+	async function open(container: HTMLElement, key: string) {
+		await screen.findByText(/^대기열 5개/)
+		fireEvent.click(container.querySelector<HTMLButtonElement>(`button[data-queue="${key}"]`)!)
+		return container.querySelector('[data-detail]')! as HTMLElement
+	}
+
+	it('fetches the selected queue and shows why its rows wait, by reason code', async () => {
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByText(/^대기열 5개/)
+		await waitFor(() => expect(api.fetchQueueDetail).toHaveBeenCalledWith(CLAUDE, expect.any(AbortSignal)))
+		const detail = container.querySelector('[data-detail]')! as HTMLElement
+		const reasons = await within(detail).findByText('기다리는 이유')
+		const sec = reasons.parentElement!
+		// Waiting states only up top; the running rows' reason sits under 다른 상태.
+		const top = sec.querySelector(':scope > .auto-reasons')!
+		expect(top.querySelectorAll('li')).toHaveLength(1)
+		expect(top).toHaveTextContent('엔진 검증 실패engine_validationretryable_error169')
+		expect(sec.querySelector('.auto-reasons-other')).toHaveTextContent('running')
+		// The oldest rows carry title, attempts and an overdue next attempt.
+		expect(detail).toHaveTextContent('limelight')
+		expect(detail).toHaveTextContent('시도 17회')
+		expect(detail).toHaveTextContent('다음 시도 지남')
+		expect(container.querySelector('.auto-d-next')).toBeNull()
+	})
+
+	it('says when every waiting row is backing off, and which way the queue moves', async () => {
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		const detail = await open(container, 'lyrics_album_jobs')
+		expect(await within(detail).findAllByText('카탈로그에 없는 앨범')).not.toHaveLength(0)
+		expect(detail).toHaveTextContent('모두 재시도 시각 전')
+		expect(detail).toHaveTextContent('나간 행이 들어온 행보다 많습니다. 이 기준으로는 줄고 있습니다.')
+		expect(detail).toHaveTextContent('Approximate:')
+		// No title → the provider id is the label; next attempt is in the future.
+		expect(detail).toHaveTextContent('0f3AAclv8NgV0jXxYz1234')
+		expect(detail).toHaveTextContent(/다음 시도 \d+시간 뒤/)
+	})
+
+	it('renders an unmeasurable flow as 측정 불가, never 0', async () => {
+		const details = realDetails()
+		details.lyrics_album_jobs = { ...details.lyrics_album_jobs, flow: { ...details.lyrics_album_jobs.flow!, entered: null } }
+		serveDetails(details)
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		const detail = await open(container, 'lyrics_album_jobs')
+		await within(detail).findAllByText('카탈로그에 없는 앨범')
+		const kv = [...detail.querySelectorAll('.auto-kv')].at(-1)!
+		expect(kv).toHaveTextContent('들어옴측정 불가')
+		expect(kv).toHaveTextContent('나감19')
+		expect(detail).toHaveTextContent('줄고 있는지는 판단하지 않습니다')
+	})
+
+	it('a table with no reason codes says so, instead of an empty reason list', async () => {
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		const detail = await open(container, 'track_genius_annotations')
+		expect(await within(detail).findByText(/사유 코드를 남기지 않습니다/)).toBeTruthy()
+		expect(detail).toHaveTextContent('This table has no reason column.')
+	})
+
+	it('a failed detail read is an alert, and the snapshot numbers stay', async () => {
+		api.fetchQueueDetail.mockResolvedValue({ kind: 'error', status: 502 })
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByText(/^대기열 5개/)
+		const detail = container.querySelector('[data-detail]')! as HTMLElement
+		expect(await within(detail).findByRole('alert')).toHaveTextContent('HTTP 502')
+		expect(detail).toHaveTextContent('리스 만료70')
+	})
+
+	it('a detail the server could not read says so — not an empty queue', async () => {
+		const details = realDetails()
+		details[CLAUDE] = { ...details[CLAUDE], status: 'unknown', reasons: null, flow: null, oldest_waiting: null }
+		serveDetails(details)
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByText(/^대기열 5개/)
+		const detail = container.querySelector('[data-detail]')! as HTMLElement
+		expect(await within(detail).findByRole('alert')).toHaveTextContent('상세 읽기에 실패했습니다')
+		expect(detail).not.toHaveTextContent('기다리는 행이 없습니다')
+	})
+
+	it('drops a late answer for a queue no longer selected', async () => {
+		const details = realDetails()
+		let releaseClaude!: (v: QueueDetailResult) => void
+		api.fetchQueueDetail.mockImplementation((key: string) => key === CLAUDE ?
+			new Promise<QueueDetailResult>((r) => { releaseClaude = r }) :
+			Promise.resolve({ kind: 'ok', detail: details[key] }))
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		const detail = await open(container, 'lyrics_album_jobs')
+		await within(detail).findAllByText('카탈로그에 없는 앨범')
+		await act(async () => releaseClaude({ kind: 'ok', detail: details[CLAUDE] }))
+		expect(detail.getAttribute('data-detail')).toBe('lyrics_album_jobs')
+		expect(detail).not.toHaveTextContent('limelight')
+		expect(detail).toHaveTextContent('카탈로그에 없는 앨범')
+	})
+
+	it('never shows the previous queue\'s detail under a newly picked queue', async () => {
+		const details = realDetails()
+		api.fetchQueueDetail.mockImplementation((key: string) => key === CLAUDE ?
+			Promise.resolve({ kind: 'ok', detail: details[CLAUDE] }) :
+			new Promise<QueueDetailResult>(() => {}))
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByText(/^대기열 5개/)
+		expect(await screen.findByText('limelight')).toBeTruthy()
+		const detail = await open(container, 'lyrics_album_jobs')
+		expect(detail.getAttribute('data-detail')).toBe('lyrics_album_jobs')
+		expect(detail).not.toHaveTextContent('limelight')
+		expect(within(detail).getByRole('status')).toHaveTextContent('사유와 흐름을 불러오는 중')
+	})
+
+	it('renders a hostile title as text', async () => {
+		const details = realDetails()
+		const payload = '<img src=x onerror="window.__pwned=1">'
+		details[CLAUDE].oldest_waiting![0] = { ...details[CLAUDE].oldest_waiting![0], title: payload }
+		serveDetails(details)
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByText(payload)
+		expect(container.querySelector('.auto-oldest img')).toBeNull()
 	})
 })
 

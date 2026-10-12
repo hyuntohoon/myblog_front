@@ -1,8 +1,9 @@
 // FEAT-automation-admin Step 2c — the owner's read-only automation page.
 //
-// Renders `GET /api/admin/automation` (backend 2b) and nothing else: no job is
+// Renders `GET /api/admin/automation` (backend 2b) and, for the selected queue,
+// `GET /api/admin/automation/queue-detail` (2f). Nothing else: no job is
 // started, paused or retried from here (controls are Step 3, separately
-// approved). The 다시 읽기 button only re-issues the same GET.
+// approved). The 다시 읽기 button only re-issues the same GETs.
 //
 // Layout (owner's pick 2026-10-12, B+C): a 흐름 / 표 switch over the DB queues,
 // and one detail panel both views open. The full job catalog sits folded below.
@@ -12,19 +13,23 @@
 //   they cannot see yet. Job liveness keeps its own marks: only `fresh` gets a
 //   filled mark, `unknown` is 증거 없음 and never worded as healthy, and the
 //   inventory's `declared_state` is printed as the inventory's claim.
+// - The 2f detail shows reason CODES (the server never returns stored error
+//   text), 24 h flow where the table can measure it (null is 측정 불가, never 0),
+//   and the oldest waiting rows. Titles are catalog text, rendered as text.
 // - `heartbeats[].details` and `last_outcome` are written by local agents.
 //   They are rendered as React text children only — never through
 //   dangerouslySetInnerHTML or any markdown/HTML renderer (2b security-review).
-import type { AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, SnapshotResult } from './automation.api'
+import type { AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, QueueDetail as QueueDetailData, QueueDetailResult, ReasonCount, SnapshotResult } from './automation.api'
 import type { Flow, LivenessStatus, QueueVerdict, Tone } from './automationView'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
-import { fetchAutomationSnapshot } from './automation.api'
+import { fetchAutomationSnapshot, fetchQueueDetail } from './automation.api'
 import {
 	buildFlows,
 	consumersOf,
 	DECLARED_LABEL,
 	detailsText,
+	flowSentence,
 	groupJobsByLocation,
 	isIneligibleState,
 	judgeQueue,
@@ -35,17 +40,42 @@ import {
 	LOCATION_LABEL,
 	queueLabels,
 	readQueue,
+	reasonName,
 	relativeAge,
 	SOURCE_LABEL,
 	SOURCE_STATUS_LABEL,
 	TONE_LABEL,
 	TONE_ORDER,
 	toneTally,
+	untilText,
 	waitedFor,
 	worstTone,
 } from './automationView'
 
 type LoadState = { kind: 'loading' } | SnapshotResult
+type DetailState = { kind: 'loading' } | QueueDetailResult
+
+/**
+ * The selected queue's 2f detail. Re-read when the queue or the snapshot
+ * changes (다시 읽기), and an answer for a queue no longer selected is dropped.
+ */
+function useQueueDetail(key: string | null, snapshotAt: string): DetailState | null {
+	const [state, setState] = useState<{ key: string, at: string, value: DetailState } | null>(null)
+	useEffect(() => {
+		if (!key)
+			return
+		const ctl = new AbortController()
+		setState({ key, at: snapshotAt, value: { kind: 'loading' } })
+		void fetchQueueDetail(key, ctl.signal).then((value) => {
+			if (!ctl.signal.aborted)
+				setState({ key, at: snapshotAt, value })
+		})
+		return () => ctl.abort()
+	}, [key, snapshotAt])
+	if (!key || !state || state.key !== key || state.at !== snapshotAt)
+		return key ? { kind: 'loading' } : null
+	return state.value
+}
 type View = 'flow' | 'table'
 
 const VIEW_KEY = 'automation-view'
@@ -153,6 +183,7 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 	const [view, setView] = useState<View>(readView)
 	const detailRef = useRef<HTMLElement | null>(null)
 	const current = snapshot.queues.find(q => q.key === selected) ?? snapshot.queues.find(q => q.key === firstKey) ?? null
+	const detail = useQueueDetail(current?.key ?? null, snapshot.generated_at)
 
 	const switchView = (v: View) => {
 		setView(v)
@@ -221,7 +252,7 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 				</div>
 				<aside className="auto-detail" ref={detailRef} aria-label="대기열 상세">
 					{current ?
-							<QueueDetail queue={current} verdict={verdicts.get(current.key)!} jobs={snapshot.jobs} now={now} /> :
+							<QueueDetail queue={current} verdict={verdicts.get(current.key)!} jobs={snapshot.jobs} now={now} detail={detail} /> :
 							<p className="auto-lede">대기열이 없습니다.</p>}
 				</aside>
 			</div>
@@ -438,7 +469,7 @@ function StateBar({ queue }: { queue: AutomationQueue }) {
 	)
 }
 
-function QueueDetail({ queue, verdict, jobs, now }: { queue: AutomationQueue, verdict: QueueVerdict, jobs: AutomationJob[], now: number }) {
+function QueueDetail({ queue, verdict, jobs, now, detail }: { queue: AutomationQueue, verdict: QueueVerdict, jobs: AutomationJob[], now: number, detail: DetailState | null }) {
 	const r = readQueue(queue)
 	const consumers = consumersOf(queue.key, jobs)
 	const states = Object.entries(queue.counts ?? {}).sort((a, b) => b[1] - a[1])
@@ -525,7 +556,161 @@ function QueueDetail({ queue, verdict, jobs, now }: { queue: AutomationQueue, ve
 						)}
 			</div>
 
-			<p className="auto-d-next">기다리는 이유(사유별 건수), 최근 24시간 처리량, 가장 오래 기다린 항목은 다음 단계의 상세 API가 붙으면 여기에 나옵니다.</p>
+			<DetailSections detail={detail} />
+		</div>
+	)
+}
+
+function DetailSections({ detail }: { detail: DetailState | null }) {
+	if (!detail || detail.kind === 'loading')
+		return <p className="auto-lede" role="status">사유와 흐름을 불러오는 중…</p>
+	if (detail.kind === 'forbidden')
+		return <p className="auto-lede" role="alert">상세는 오너 계정만 볼 수 있습니다(403).</p>
+	if (detail.kind === 'error') {
+		return (
+			<p className="auto-lede" role="alert">
+				{detail.status == null ? '서버가 응답하지 않아 상세를 불러오지 못했습니다.' : `상세를 불러오지 못했습니다 (HTTP ${detail.status}).`}
+			</p>
+		)
+	}
+	const d = detail.detail
+	if (d.status !== 'ok')
+		return <p className="auto-lede" role="alert">상세 읽기에 실패했습니다. 사유와 흐름을 알 수 없습니다.</p>
+	const at = Date.parse(d.observed_at ?? '') || Date.now()
+	return (
+		<>
+			<Reasons detail={d} />
+			<FlowSection detail={d} />
+			<OldestSection detail={d} now={at} />
+		</>
+	)
+}
+
+function ReasonList({ rows, waiting }: { rows: ReasonCount[], waiting: boolean }) {
+	return (
+		<ul className="auto-reasons">
+			{rows.map(r => (
+				<li key={`${r.state}|${r.reason ?? ''}`}>
+					<span className="auto-reason-name">
+						{reasonName(r.reason)}
+						{r.reason != null && <code className="auto-reason-code">{r.reason}</code>}
+					</span>
+					<span className="auto-reason-state">{r.state}</span>
+					<span className="auto-reason-n">{r.count.toLocaleString('ko-KR')}</span>
+					{waiting && r.deferred != null && r.deferred > 0 && (
+						<span className="auto-reason-deferred">
+							{r.deferred === r.count ? '모두' : `${r.deferred.toLocaleString('ko-KR')}건`}
+							{' '}
+							재시도 시각 전
+						</span>
+					)}
+				</li>
+			))}
+		</ul>
+	)
+}
+
+function Reasons({ detail }: { detail: QueueDetailData }) {
+	const rows = detail.reasons ?? []
+	const waitingStates = new Set(detail.waiting_states)
+	const waiting = rows.filter(r => waitingStates.has(r.state))
+	const other = rows.filter(r => !waitingStates.has(r.state) && r.reason != null)
+	return (
+		<div className="auto-d-sec">
+			<h3 className="auto-d-h">기다리는 이유</h3>
+			{detail.reasons_note && (
+				<p className="auto-lede">
+					이 대기열은 사유 코드를 남기지 않습니다.
+					{' '}
+					<span className="auto-faded">{detail.reasons_note}</span>
+				</p>
+			)}
+			{waiting.length === 0 ?
+					<p className="auto-lede">기다리는 행이 없습니다.</p> :
+					<ReasonList rows={waiting} waiting />}
+			{other.length > 0 && (
+				<details className="auto-reasons-other">
+					<summary>다른 상태의 사유</summary>
+					<ReasonList rows={other} waiting={false} />
+				</details>
+			)}
+		</div>
+	)
+}
+
+function FlowSection({ detail }: { detail: QueueDetailData }) {
+	const f = detail.flow
+	if (!f)
+		return null
+	const cell = (v: number | null | undefined) => (v == null ? '측정 불가' : v.toLocaleString('ko-KR'))
+	return (
+		<div className="auto-d-sec">
+			<h3 className="auto-d-h">
+				최근
+				{' '}
+				{f.window_hours}
+				시간
+			</h3>
+			<dl className="auto-kv">
+				<div>
+					<dt>들어옴</dt>
+					<dd title={f.entered_basis}>{cell(f.entered)}</dd>
+				</div>
+				<div>
+					<dt>나감</dt>
+					<dd title={f.left_basis}>{cell(f.left)}</dd>
+				</div>
+			</dl>
+			<p className="auto-lede">{flowSentence(f.entered, f.left)}</p>
+			<ul className="auto-basis">
+				<li>
+					들어옴:
+					{' '}
+					{f.entered_basis}
+				</li>
+				<li>
+					나감:
+					{' '}
+					{f.left_basis}
+				</li>
+			</ul>
+		</div>
+	)
+}
+
+function OldestSection({ detail, now }: { detail: QueueDetailData, now: number }) {
+	const rows = detail.oldest_waiting ?? []
+	return (
+		<div className="auto-d-sec">
+			<h3 className="auto-d-h">
+				가장 오래 기다린
+				{' '}
+				{detail.oldest_limit}
+				개
+			</h3>
+			{rows.length === 0 ?
+					<p className="auto-lede">기다리는 행이 없습니다.</p> :
+					(
+						<ol className="auto-oldest">
+							{rows.map(r => (
+								<li key={r.id}>
+									<span className="auto-oldest-title">{r.title ?? <code>{r.id}</code>}</span>
+									<span className="auto-oldest-meta">
+										{waitedFor(r.waiting_since, now) && `${waitedFor(r.waiting_since, now)}째`}
+										{r.reason != null && ` · ${reasonName(r.reason)}`}
+										{r.attempts != null && ` · 시도 ${r.attempts}회`}
+										{r.next_attempt_at && ` · 다음 시도 ${untilText(r.next_attempt_at, now)}`}
+									</span>
+									{r.title != null && <code className="auto-oldest-id">{r.id}</code>}
+								</li>
+							))}
+						</ol>
+					)}
+			<p className="auto-faded">
+				기다린 시간 기준:
+				{' '}
+				{detail.wait_basis}
+			</p>
 		</div>
 	)
 }

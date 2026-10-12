@@ -2,7 +2,7 @@
 // (local backend 859815c against prod, read-only, 2026-10-12 10:31 UTC). Queue
 // counts are the real ones; the job list keeps one row per group. Heartbeats
 // are empty, as they are in prod until 2e.
-import type { AutomationJob, AutomationSnapshot } from './automation.api'
+import type { AutomationJob, AutomationSnapshot, QueueDetail } from './automation.api'
 
 export function job(over: Partial<AutomationJob> & Pick<AutomationJob, 'key'>): AutomationJob {
 	return {
@@ -42,5 +42,82 @@ export function realSnapshot(): AutomationSnapshot {
 			job({ key: 'verifier_drift', group: 'other_scheduler', name: 'Cognito verifier drift check', location: 'github', executor: 'GitHub Actions (myblog-workspace)' }),
 		],
 		heartbeats: [],
+	}
+}
+
+// 2f detail fixtures: the real `GET /api/admin/automation/queue-detail` answers
+// (local backend 2fbbe7d against prod, read-only, 2026-10-12 ~14:05 UTC),
+// trimmed to two oldest rows each.
+const OBSERVED = '2026-10-12T14:20:00Z'
+
+export function realDetails(): Record<string, QueueDetail> {
+	return {
+		'lyrics_translation_work:claude.sonnet/v2': {
+			key: 'lyrics_translation_work:claude.sonnet/v2',
+table: 'lyrics_translation_work',
+label: 'Claude demand translation (legacy)',
+frozen: true,
+waiting_states: ['ready', 'retryable_error'],
+status: 'ok',
+observed_at: OBSERVED,
+reasons_note: null,
+			reasons: [
+				{ state: 'done', reason: null, count: 1915, deferred: 0 },
+				{ state: 'retryable_error', reason: 'engine_validation', count: 169, deferred: 0 },
+				{ state: 'cancelled', reason: null, count: 93, deferred: 0 },
+				{ state: 'running', reason: null, count: 38, deferred: 0 },
+				{ state: 'running', reason: 'engine_validation', count: 32, deferred: 0 },
+			],
+			flow: { window_hours: 24, entered: 0, left: 0, entered_basis: 'Work rows created in the window.', left_basis: 'Approximate: work rows now done or cancelled whose last update is in the window.' },
+			wait_basis: 'Since the work row was created.',
+oldest_limit: 5,
+			oldest_waiting: [
+				{ id: '6b876d31-1de9-4a7c-9a52-1f0e2d3c4b5a', title: 'limelight', state: 'retryable_error', reason: 'engine_validation', attempts: 17, waiting_since: '2026-09-23T07:09:58Z', next_attempt_at: '2026-10-05T04:02:02Z' },
+				{ id: '48505620-cbfc-4f1e-8d2a-7c6b5a4f3e2d', title: 'Hood Politics', state: 'retryable_error', reason: 'engine_validation', attempts: 14, waiting_since: '2026-09-23T17:01:00Z', next_attempt_at: '2026-10-04T23:14:29Z' },
+			],
+		},
+		'lyrics_album_jobs': {
+			key: 'lyrics_album_jobs',
+table: 'lyrics_album_jobs',
+label: 'Lyrics album demand jobs',
+frozen: false,
+waiting_states: ['pending'],
+status: 'ok',
+observed_at: OBSERVED,
+reasons_note: null,
+			reasons: [
+				{ state: 'pending', reason: 'album_not_in_catalog', count: 848, deferred: 848 },
+				{ state: 'complete', reason: null, count: 628, deferred: 0 },
+				{ state: 'cancelled', reason: 'album_not_in_catalog', count: 8, deferred: 0 },
+				{ state: 'pending', reason: 'album_partially_ingested', count: 5, deferred: 5 },
+				{ state: 'pending', reason: 'album_has_no_tracks', count: 1, deferred: 1 },
+			],
+			flow: { window_hours: 24, entered: 14, left: 19, entered_basis: 'Jobs created in the window.', left_basis: 'Approximate: jobs now complete or cancelled whose last update is in the window.' },
+			wait_basis: 'Since the job was created.',
+oldest_limit: 5,
+			oldest_waiting: [
+				{ id: '0f3AAclv8NgV0jXxYz1234', title: null, state: 'pending', reason: 'album_not_in_catalog', attempts: null, waiting_since: '2026-09-10T23:54:03Z', next_attempt_at: '2026-10-12T22:37:25Z' },
+				{ id: '0CvwwhkzMUiDm8AbCd5678', title: null, state: 'pending', reason: 'album_not_in_catalog', attempts: null, waiting_since: '2026-09-19T03:39:07Z', next_attempt_at: '2026-10-13T03:07:25Z' },
+			],
+		},
+		'track_genius_annotations': {
+			key: 'track_genius_annotations',
+table: 'track_genius_annotations',
+label: 'Genius annotation translations',
+frozen: false,
+waiting_states: ['pending'],
+status: 'ok',
+observed_at: OBSERVED,
+			reasons_note: 'This table has no reason column.',
+			reasons: [
+				{ state: 'done', reason: null, count: 6596, deferred: null },
+				{ state: 'failed', reason: null, count: 23, deferred: null },
+				{ state: 'pending_ineligible', reason: null, count: 12, deferred: null },
+			],
+			flow: { window_hours: 24, entered: 0, left: 0, entered_basis: 'Annotations fetched in the window.', left_basis: 'Annotations translated in the window.' },
+			wait_basis: 'Since the annotation was fetched.',
+oldest_limit: 5,
+oldest_waiting: [],
+		},
 	}
 }

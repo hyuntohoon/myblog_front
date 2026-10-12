@@ -24,6 +24,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/automation/queue-detail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Automation Queue Detail
+         * @description Why one queue's rows wait, and whether it drains (FEAT-automation-admin 2f).
+         *
+         *     Reason codes only — never stored error text. Same read-only transaction
+         *     shape as the snapshot; opening it starts nothing.
+         */
+        get: operations["get_automation_queue_detail_api_admin_automation_queue_detail_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buckets": {
         parameters: {
             query?: never;
@@ -2247,6 +2270,61 @@ export interface components {
             /** Waiting States */
             waiting_states: string[];
         };
+        /** AutomationQueueDetail */
+        Backend_AutomationQueueDetail: {
+            flow?: components["schemas"]["Backend_AutomationQueueFlow"] | null;
+            /** Frozen */
+            frozen: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /** Oldest Limit */
+            oldest_limit: number;
+            /** Oldest Waiting */
+            oldest_waiting?: components["schemas"]["Backend_AutomationWaitingItem"][] | null;
+            /** Reasons */
+            reasons?: components["schemas"]["Backend_AutomationReasonCount"][] | null;
+            /** Reasons Note */
+            reasons_note?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unknown";
+            /** Table */
+            table: string;
+            /** Wait Basis */
+            wait_basis: string;
+            /** Waiting States */
+            waiting_states: string[];
+        };
+        /** AutomationQueueFlow */
+        Backend_AutomationQueueFlow: {
+            /** Entered */
+            entered?: number | null;
+            /** Entered Basis */
+            entered_basis: string;
+            /** Left */
+            left?: number | null;
+            /** Left Basis */
+            left_basis: string;
+            /** Window Hours */
+            window_hours: number;
+        };
+        /** AutomationReasonCount */
+        Backend_AutomationReasonCount: {
+            /** Count */
+            count: number;
+            /** Deferred */
+            deferred?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** State */
+            state: string;
+        };
         /** AutomationSnapshot */
         Backend_AutomationSnapshot: {
             /**
@@ -2284,6 +2362,23 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "unavailable" | "not_wired";
+        };
+        /** AutomationWaitingItem */
+        Backend_AutomationWaitingItem: {
+            /** Attempts */
+            attempts?: number | null;
+            /** Id */
+            id: string;
+            /** Next Attempt At */
+            next_attempt_at?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** State */
+            state: string;
+            /** Title */
+            title?: string | null;
+            /** Waiting Since */
+            waiting_since?: string | null;
         };
         /**
          * BucketItemExpansion
@@ -4739,6 +4834,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Backend_AutomationSnapshot"];
+                };
+            };
+        };
+    };
+    get_automation_queue_detail_api_admin_automation_queue_detail_get: {
+        parameters: {
+            query: {
+                /** @description A queue key from the snapshot */
+                key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AutomationQueueDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
             };
         };

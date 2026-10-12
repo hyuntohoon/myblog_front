@@ -490,12 +490,81 @@ button.auto-node[aria-current='true'] {
 	font-size: 12px;
 }
 .auto-consumer-name { font-weight: 500; }
-.auto-d-next {
+/* 2f detail: reasons, 24 h flow, oldest waiting rows */
+.auto-reasons,
+.auto-oldest,
+.auto-basis {
+	list-style: none;
 	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 6px;
+	font-size: 13px;
+}
+.auto-reasons li {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 2px 10px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--color-border-soft);
+	min-width: 0;
+}
+.auto-reason-name {
+	min-width: 0;
+	overflow-wrap: anywhere;
+	font-weight: 500;
+}
+.auto-reason-code,
+.auto-oldest-id {
+	margin-left: 6px;
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	font-weight: 400;
+	color: var(--color-faded);
+	overflow-wrap: anywhere;
+}
+.auto-reason-n {
+	grid-column: 2;
+	grid-row: 1;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.auto-reason-state,
+.auto-reason-deferred {
+	grid-column: 1 / -1;
+	font-size: 12px;
+	color: var(--color-faded);
+}
+.auto-reason-state { font-family: var(--font-mono); }
+.auto-reasons-other > summary {
+	cursor: pointer;
 	font-size: 12.5px;
+	color: var(--color-faded);
+	margin-bottom: 6px;
+}
+.auto-basis li {
+	font-size: 12px;
 	color: var(--color-faded);
 	line-height: var(--leading-normal);
 }
+.auto-oldest li {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--color-border-soft);
+}
+.auto-oldest-title {
+	min-width: 0;
+	overflow-wrap: anywhere;
+	font-weight: 500;
+}
+.auto-oldest-meta {
+	font-size: 12px;
+	color: var(--color-subtle);
+	font-variant-numeric: tabular-nums;
+}
+.auto-oldest-id { margin-left: 0; }
 
 /* ── sections below ────────────────────────────────────────────────── */
 .auto-section {
