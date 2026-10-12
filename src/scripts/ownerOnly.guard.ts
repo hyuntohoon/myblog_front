@@ -1,5 +1,5 @@
 // src/scripts/ownerOnly.guard.ts — the client gate on the owner-only authoring
-// pages (/write, /drafts).
+// pages (/write, /drafts, /admin/automation).
 //
 // FEAT-album-review-authoring Step 4 / audit E-5. Both pages used to check only
 // `isLoggedIn()`. That was true of `/write` before multi-user, and false after
@@ -54,6 +54,8 @@ import { isOwnerUser } from '../lib/owner'
 const OWNER_ONLY: Record<string, { forceLoginForm: boolean }> = {
 	'/write': { forceLoginForm: true },
 	'/drafts': { forceLoginForm: false },
+	// FEAT-automation-admin 2c: read-only ops view, server-gated by require_owner.
+	'/admin/automation': { forceLoginForm: false },
 }
 
 /** Where a signed-in non-owner goes. Not the login form — they ARE signed in. */

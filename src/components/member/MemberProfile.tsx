@@ -701,10 +701,22 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 							{tb.label}
 						</button>
 					))}
+					{/* FEAT-automation-admin 2c: the owner's only in-product entry to
+					    /admin/automation. Owner-gated like the 평론 tab; the page guard
+					    and require_owner are the real gates. */}
+					{isOwner && (
+						<a
+							href="/admin/automation/"
+							className="lf-tab-btn"
+							style={{ marginLeft: 'auto', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', color: 'var(--color-faded)', textDecoration: 'none', borderBottom: '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
+						>
+							자동화 ↗
+						</a>
+					)}
 					<a
 						href="/settings/"
 						className="lf-tab-btn"
-						style={{ marginLeft: 'auto', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', color: 'var(--color-faded)', textDecoration: 'none', borderBottom: '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
+						style={{ marginLeft: isOwner ? 0 : 'auto', padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', color: 'var(--color-faded)', textDecoration: 'none', borderBottom: '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
 					>
 						설정 ↗
 					</a>

@@ -1,0 +1,479 @@
+/* /admin/automation — FEAT-automation-admin Step 2c.
+   Imported by pages/admin/automation.astro only. Every rule is under `.auto`
+   so nothing leaks into the rest of the site. Site tokens only: the page reads
+   as part of the magazine, not as a bolted-on admin skin.
+
+   One deliberate rule: only `fresh` gets a filled mark. `stale` is the accent
+   (seen, then stopped — the case worth acting on). `unknown` is a hollow,
+   dashed ring in the faded ink: no evidence is shown as an absence, never as
+   a colour that could be read as "fine". */
+
+.auto {
+	max-width: var(--measure-wide, 1080px);
+	margin: 0 auto;
+	padding: 40px 20px 96px;
+	color: var(--color-text);
+}
+
+.auto-title {
+	font-family: var(--font-serif);
+	font-style: italic;
+	font-size: 32px;
+	font-weight: 500;
+	letter-spacing: -0.025em;
+	margin: 0;
+}
+
+.auto-status {
+	font-family: var(--font-serif);
+	font-size: var(--text-md);
+	line-height: var(--leading-relaxed);
+	color: var(--color-subtle);
+	margin: 24px 0 16px;
+	max-width: 62ch;
+}
+
+.auto-head {
+	padding-bottom: 24px;
+	border-bottom: 1px solid var(--color-text);
+}
+
+.auto-verdict {
+	font-family: var(--font-serif);
+	font-size: clamp(20px, 3.2vw, 26px);
+	line-height: var(--leading-snug);
+	margin: 18px 0 10px;
+	max-width: 34ch;
+}
+.auto-verdict strong {
+	font-weight: 600;
+}
+
+.auto-tally {
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+	color: var(--color-subtle);
+	margin: 0;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+.auto-sep {
+	display: inline-block;
+	width: 18px;
+}
+
+.auto-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 20px;
+	margin: 16px 0 0;
+	font-family: var(--font-sans);
+	font-size: var(--text-xs);
+	color: var(--color-faded);
+}
+
+.auto-button {
+	font-family: var(--font-sans);
+	font-size: var(--text-xs);
+	background: none;
+	color: var(--color-text);
+	border: 1px solid var(--color-border);
+	padding: 6px 12px;
+	cursor: pointer;
+	min-height: 32px;
+}
+.auto-button:hover:not(:disabled) {
+	border-color: var(--color-text);
+}
+.auto-button:disabled {
+	color: var(--color-faded);
+	cursor: default;
+}
+.auto-button:focus-visible,
+.auto a:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+
+.auto-link,
+.auto-job-queues a {
+	color: inherit;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+	text-decoration-color: var(--color-faded);
+}
+
+/* ── marks ─────────────────────────────────────────────────────────── */
+.auto-mark {
+	display: inline-block;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	flex-shrink: 0;
+	vertical-align: 0;
+}
+.auto-mark--fresh {
+	background: var(--color-text);
+}
+.auto-mark--stale {
+	background: var(--color-accent);
+	border-radius: 0;
+	clip-path: polygon(50% 0, 100% 100%, 0 100%);
+	width: 10px;
+	height: 9px;
+}
+.auto-mark--unknown {
+	border: 1.5px dashed var(--color-faded);
+	background: transparent;
+}
+
+/* ── sections ──────────────────────────────────────────────────────── */
+.auto-section {
+	margin-top: 48px;
+}
+.auto-h2 {
+	font-family: var(--font-serif);
+	font-size: 22px;
+	font-weight: 500;
+	margin: 0 0 6px;
+	letter-spacing: -0.01em;
+}
+.auto-h3 {
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+	font-weight: 600;
+	margin: 28px 0 0;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--color-border);
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+.auto-count {
+	font-weight: 400;
+	color: var(--color-faded);
+}
+.auto-lede {
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+	line-height: var(--leading-relaxed);
+	color: var(--color-subtle);
+	margin: 0 0 16px;
+	max-width: 68ch;
+}
+.auto-faded {
+	color: var(--color-faded);
+}
+.auto code {
+	font-family: var(--font-mono);
+	font-size: 0.92em;
+	overflow-wrap: anywhere;
+}
+.auto-tag {
+	font-family: var(--font-sans);
+	font-size: var(--text-2xs);
+	border: 1px solid var(--color-border);
+	padding: 1px 6px;
+	color: var(--color-subtle);
+	white-space: nowrap;
+}
+.auto-tag--warn {
+	border-color: var(--color-warn);
+	color: var(--color-warn);
+}
+
+/* ── sources ───────────────────────────────────────────────────────── */
+.auto-sources {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+	border-top: 1px solid var(--color-border);
+}
+.auto-source {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 12px 16px 12px 0;
+	border-bottom: 1px solid var(--color-border-soft);
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+	min-width: 0;
+}
+.auto-source-name {
+	font-weight: 600;
+}
+.auto-source-status {
+	color: var(--color-subtle);
+}
+.auto-source--unavailable .auto-source-status {
+	color: var(--color-accent);
+}
+.auto-source--not_wired .auto-source-status {
+	color: var(--color-warn);
+}
+.auto-source-detail {
+	font-size: var(--text-xs);
+	color: var(--color-faded);
+	overflow-wrap: anywhere;
+}
+
+/* ── queues ────────────────────────────────────────────────────────── */
+.auto-queues {
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+}
+.auto-qrow {
+	display: grid;
+	grid-template-columns: minmax(0, 2.2fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 2fr) minmax(0, 0.9fr);
+	gap: 12px;
+	padding: 12px 0;
+	border-bottom: 1px solid var(--color-border-soft);
+	align-items: baseline;
+	scroll-margin-top: 96px;
+}
+.auto-qrow:target {
+	background: var(--color-paper);
+}
+.auto-qhead {
+	font-size: var(--text-xs);
+	color: var(--color-faded);
+	border-bottom: 1px solid var(--color-border);
+	padding-top: 0;
+}
+.auto-qname {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 8px;
+	min-width: 0;
+}
+.auto-qlabel {
+	font-weight: 500;
+}
+.auto-qkey {
+	flex-basis: 100%;
+	font-size: var(--text-2xs) !important;
+	color: var(--color-faded);
+}
+.auto-qnum {
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+.auto-qrow [role='cell'] {
+	min-width: 0;
+	font-variant-numeric: tabular-nums;
+}
+.auto-qwarn {
+	color: var(--color-accent);
+	font-weight: 600;
+}
+.auto-qunknown {
+	grid-column: 2 / 6;
+	color: var(--color-warn);
+}
+.auto-qempty {
+	grid-column: 2 / 6;
+	color: var(--color-faded);
+}
+.auto-qstates {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 10px;
+	color: var(--color-subtle);
+}
+.auto-state {
+	white-space: nowrap;
+}
+.auto-state--ineligible {
+	color: var(--color-faded);
+	text-decoration: underline dotted;
+	text-underline-offset: 3px;
+}
+
+/* ── jobs ──────────────────────────────────────────────────────────── */
+.auto-jobs {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.auto-job {
+	display: grid;
+	grid-template-columns: minmax(0, 13rem) minmax(0, 1fr) minmax(0, 6.5rem);
+	gap: 8px 24px;
+	padding: 16px 0;
+	border-bottom: 1px solid var(--color-border-soft);
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+}
+.auto-live {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+.auto-live-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	font-weight: 600;
+}
+.auto-job--unknown .auto-live-label {
+	font-weight: 400;
+	color: var(--color-subtle);
+}
+.auto-job--stale .auto-live-label {
+	color: var(--color-accent);
+}
+.auto-live-seen {
+	font-size: var(--text-xs);
+	color: var(--color-subtle);
+}
+.auto-live-reason {
+	font-size: var(--text-xs);
+	color: var(--color-faded);
+	overflow-wrap: anywhere;
+}
+.auto-job-body {
+	min-width: 0;
+}
+.auto-job-body p {
+	margin: 0;
+	line-height: var(--leading-normal);
+}
+.auto-job-name {
+	font-family: var(--font-serif);
+	font-size: 17px;
+	font-weight: 500;
+	letter-spacing: -0.01em;
+}
+.auto-job-purpose {
+	color: var(--color-subtle);
+	margin-top: 2px !important;
+}
+.auto-job-trigger,
+.auto-job-exec,
+.auto-job-queues {
+	font-size: var(--text-xs);
+	color: var(--color-subtle);
+	margin-top: 6px !important;
+	overflow-wrap: anywhere;
+}
+.auto-job-exec,
+.auto-job-queues {
+	margin-top: 2px !important;
+}
+.auto-job-note {
+	font-size: var(--text-xs);
+	color: var(--color-faded);
+	font-style: italic;
+	margin-top: 6px !important;
+	max-width: 72ch;
+}
+.auto-declared {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	text-align: right;
+	font-size: var(--text-xs);
+}
+.auto-declared-label {
+	color: var(--color-faded);
+}
+.auto-declared-state {
+	color: var(--color-subtle);
+}
+.auto-declared--obsolete,
+.auto-declared--dropped {
+	text-decoration: line-through;
+	text-decoration-color: var(--color-faded);
+}
+
+/* ── heartbeats ────────────────────────────────────────────────────── */
+.auto-beats {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	border-top: 1px solid var(--color-border);
+}
+.auto-beat {
+	padding: 12px 0;
+	border-bottom: 1px solid var(--color-border-soft);
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+}
+.auto-beat p {
+	margin: 0;
+}
+.auto-beat-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px 12px;
+}
+.auto-beat-outcome {
+	color: var(--color-subtle);
+	margin-top: 4px !important;
+	overflow-wrap: anywhere;
+}
+.auto-beat-details {
+	font-family: var(--font-mono);
+	font-size: var(--text-2xs);
+	background: var(--color-paper);
+	padding: 8px 10px;
+	margin: 8px 0 0;
+	max-height: 16rem;
+	overflow: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+/* ── narrow screens: rows stack ────────────────────────────────────── */
+@media (max-width: 760px) {
+	.auto {
+		padding: 28px 16px 80px;
+	}
+	.auto-qhead {
+		display: none;
+	}
+	.auto-qrow {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 6px 16px;
+	}
+	.auto-qname,
+	.auto-qunknown,
+	.auto-qempty,
+	.auto-qstates {
+		grid-column: 1 / -1;
+	}
+	.auto-qrow [role='cell'][data-label]::before {
+		content: attr(data-label);
+		display: block;
+		font-size: var(--text-2xs);
+		color: var(--color-faded);
+	}
+	/* .auto-qstates is a flex row: the label must take its own line. */
+	.auto-qstates[data-label]::before {
+		flex-basis: 100%;
+	}
+	.auto-job {
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 8px 12px;
+	}
+	.auto-job-body {
+		grid-column: 1 / -1;
+		grid-row: 2;
+	}
+	.auto-live {
+		grid-column: 1;
+		grid-row: 1;
+	}
+	.auto-declared {
+		grid-column: 2;
+		grid-row: 1;
+	}
+}
