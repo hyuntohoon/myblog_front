@@ -40,3 +40,32 @@ export async function fetchAutomationSnapshot(signal?: AbortSignal): Promise<Sna
 		return { kind: 'error', status: res.status }
 	}
 }
+
+// ── 2f: one queue's detail (`GET /api/admin/automation/queue-detail?key=`) ──
+// Reason CODES only — the server cuts them in SQL and never returns stored
+// error text. Same owner gate: 403 for a member whatever the key.
+
+export type QueueDetail = components['schemas']['Backend_AutomationQueueDetail']
+export type ReasonCount = components['schemas']['Backend_AutomationReasonCount']
+export type WaitingItem = components['schemas']['Backend_AutomationWaitingItem']
+
+export type QueueDetailResult =
+	| { kind: 'ok', detail: QueueDetail } |
+	{ kind: 'forbidden' } |
+	{ kind: 'error', status: number | null }
+
+export async function fetchQueueDetail(key: string, signal?: AbortSignal): Promise<QueueDetailResult> {
+	const res = await apiFetch(`${BASE}/api/admin/automation/queue-detail?key=${encodeURIComponent(key)}`, { signal })
+	if (!res)
+		return { kind: 'error', status: null }
+	if (res.status === 403)
+		return { kind: 'forbidden' }
+	if (!res.ok)
+		return { kind: 'error', status: res.status }
+	try {
+		return { kind: 'ok', detail: (await res.json()) as QueueDetail }
+	}
+	catch {
+		return { kind: 'error', status: res.status }
+	}
+}

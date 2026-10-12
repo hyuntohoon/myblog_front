@@ -1,7 +1,7 @@
 // FEAT-automation-admin 2c — the page's honesty rules, as pure functions.
 import { describe, expect, it } from 'vitest'
 import { job, realSnapshot } from './automation.fixture'
-import { buildFlows, detailsText, groupJobsByLocation, judgeQueue, livenessTally, readQueue, relativeAge, toneTally, waitedFor, worstTone } from './automationView'
+import { buildFlows, detailsText, flowSentence, groupJobsByLocation, judgeQueue, livenessTally, readQueue, reasonName, relativeAge, toneTally, untilText, waitedFor, worstTone } from './automationView'
 
 function queue(key: string) {
 	const q = realSnapshot().queues.find(x => x.key === key)
@@ -141,7 +141,7 @@ describe('judgeQueue', () => {
 		const v = judge(queue('lyrics_album_jobs'))
 		expect(v).toMatchObject({ tone: 'warn', label: '1일 넘게 대기' })
 		expect(v.say).toContain('31일째')
-		expect(v.say).toContain('아직 이 화면에서 볼 수 없습니다')
+		expect(v.say).toContain('상세에서 봅니다')
 		expect(`${v.label}${v.say}`).not.toMatch(/막힘|막혔|stuck/i)
 	})
 
@@ -196,5 +196,34 @@ describe('buildFlows', () => {
 		const snap = realSnapshot()
 		const placed = buildFlows(snap).flatMap(f => f.steps.flatMap(s => (s.kind === 'queue' ? [s.queue.key] : [])))
 		expect(new Set(placed)).toEqual(new Set(snap.queues.map(q => q.key)))
+	})
+})
+
+describe('2f detail helpers', () => {
+	const now = Date.parse('2026-10-12T14:20:00Z')
+
+	it('untilText: future spans, and 지남 once passed', () => {
+		expect(untilText('2026-10-12T14:50:00Z', now)).toBe('30분 뒤')
+		expect(untilText('2026-10-12T22:37:25Z', now)).toBe('8시간 뒤')
+		expect(untilText('2026-10-16T14:20:00Z', now)).toBe('4일 뒤')
+		expect(untilText('2026-10-05T04:02:02Z', now)).toBe('지남')
+		expect(untilText(null, now)).toBeNull()
+		expect(untilText('garbage', now)).toBeNull()
+	})
+
+	it('flowSentence: no direction claimed when either side is unmeasured', () => {
+		expect(flowSentence(null, 285)).toContain('판단하지 않습니다')
+		expect(flowSentence(14, null)).toContain('판단하지 않습니다')
+		expect(flowSentence(0, 0)).toContain('없습니다')
+		expect(flowSentence(14, 19)).toContain('줄고 있습니다')
+		expect(flowSentence(19, 14)).toContain('늘고 있습니다')
+		expect(flowSentence(5, 5)).toBe('들어온 만큼 나갔습니다.')
+	})
+
+	it('reasonName: Korean for known codes, the code itself otherwise, and null is said aloud', () => {
+		expect(reasonName('album_not_in_catalog')).toBe('카탈로그에 없는 앨범')
+		expect(reasonName('brand_new_code')).toBe('brand_new_code')
+		expect(reasonName('unrecognized')).toContain('본문은 표시하지 않음')
+		expect(reasonName(null)).toBe('사유 기록 없음')
 	})
 })
