@@ -1,0 +1,23 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import AutomationBoard from '@components/admin/AutomationBoard'
+import '@styles/automation.css'
+
+// /admin/automation — FEAT-automation-admin Step 2c. The owner's read-only view
+// of every catalogued background job: GET /api/admin/automation (backend 2b,
+// require_owner). Entry: the 자동화 ↗ link in the owner's own dashboard tab bar
+// (MemberProfile). No controls — Step 3.
+---
+
+<Layout>
+  <Seo slot="seo" forceTitle="자동화 현황" description="백그라운드 작업 현황 (오너 전용)" noIndex />
+
+  <SkipNavContent>
+    <AutomationBoard client:only="react" />
+  </SkipNavContent>
+</Layout>
+
+{/* Same owner gate as /write and /drafts — one module, see its header. */}
+<script src="../../scripts/ownerOnly.guard.ts"></script>

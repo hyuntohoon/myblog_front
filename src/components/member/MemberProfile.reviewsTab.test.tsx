@@ -97,3 +97,24 @@ describe('the 평론 dashboard tab', () => {
 		await waitFor(() => expect(activeTabName()).toBe('평론'))
 	})
 })
+
+// FEAT-automation-admin 2c — the owner's only in-product entry to the
+// automation page sits in the same nav. Same gate as 평론, and the same
+// surgical-absence rule: 설정 must survive for a member.
+describe('the 자동화 ↗ entry link', () => {
+	function navLinks(nav: HTMLElement) {
+		return Array.from(nav.querySelectorAll('a')).map(a => ({ text: a.textContent?.trim(), href: a.getAttribute('href') }))
+	}
+
+	it('points the owner at /admin/automation/', async () => {
+		const nav = await mountSelf(OWNER_HANDLE)
+		expect(navLinks(nav)).toContainEqual({ text: '자동화 ↗', href: '/admin/automation/' })
+	})
+
+	it('is not offered to a member, who keeps 설정', async () => {
+		const nav = await mountSelf(MEMBER_HANDLE)
+		const links = navLinks(nav)
+		expect(links.map(l => l.href)).not.toContain('/admin/automation/')
+		expect(links).toContainEqual({ text: '설정 ↗', href: '/settings/' })
+	})
+})

@@ -36,7 +36,7 @@ beforeEach(() => {
 })
 
 describe('the owner-only page guard', () => {
-	it.each(['/write', '/drafts'])('sends a logged-out arrival at %s to login', async (path) => {
+	it.each(['/write', '/drafts', '/admin/automation', '/admin/automation/'])('sends a logged-out arrival at %s to login', async (path) => {
 		auth.isLoggedIn.mockReturnValue(false)
 		owner.isOwnerUser.mockResolvedValue(false)
 		const { replace } = await arriveAt(path)
@@ -45,7 +45,7 @@ describe('the owner-only page guard', () => {
 		expect(replace).not.toHaveBeenCalled()
 	})
 
-	it.each(['/write', '/drafts'])('bounces a signed-in NON-OWNER off %s', async (path) => {
+	it.each(['/write', '/drafts', '/admin/automation', '/admin/automation/'])('bounces a signed-in NON-OWNER off %s', async (path) => {
 		auth.isLoggedIn.mockReturnValue(true)
 		owner.isOwnerUser.mockResolvedValue(false)
 		const { replace } = await arriveAt(path)
@@ -55,7 +55,7 @@ describe('the owner-only page guard', () => {
 		expect(auth.goLogin).not.toHaveBeenCalled()
 	})
 
-	it.each(['/write', '/drafts'])('lets the owner stay on %s', async (path) => {
+	it.each(['/write', '/drafts', '/admin/automation', '/admin/automation/'])('lets the owner stay on %s', async (path) => {
 		auth.isLoggedIn.mockReturnValue(true)
 		owner.isOwnerUser.mockResolvedValue(true)
 		const { replace } = await arriveAt(path)
