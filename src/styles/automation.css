@@ -237,9 +237,11 @@
 	margin: 0;
 }
 .auto-lane {
+	/* Wrap, never scroll: a node past the fold is a verdict nobody sees. */
 	display: flex;
+	flex-wrap: wrap;
 	align-items: stretch;
-	overflow-x: auto;
+	row-gap: 10px;
 	padding: 2px 2px 6px;
 }
 .auto-step {
@@ -258,8 +260,8 @@
 	font: inherit;
 	color: inherit;
 	text-align: left;
-	width: 150px;
-	flex: 1 0 150px;
+	width: 132px;
+	flex: 1 0 132px;
 	border: 1px solid var(--color-border);
 	background: var(--color-bg);
 	padding: 9px 11px;
@@ -723,6 +725,22 @@ button.auto-node[aria-current='true'] {
 	}
 	.auto-seg {
 		margin-left: 0;
+	}
+	/* One step per line, read top to bottom. */
+	.auto-lane {
+		flex-direction: column;
+		row-gap: 0;
+	}
+	.auto-step {
+		flex-direction: column;
+	}
+	.auto-arrow {
+		flex: 0 0 22px;
+		transform: rotate(90deg);
+	}
+	.auto-node {
+		width: auto;
+		flex: 1 1 auto;
 	}
 	.auto-job {
 		grid-template-columns: minmax(0, 1fr) auto;

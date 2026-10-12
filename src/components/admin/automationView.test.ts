@@ -1,7 +1,7 @@
 // FEAT-automation-admin 2c — the page's honesty rules, as pure functions.
 import { describe, expect, it } from 'vitest'
 import { job, realSnapshot } from './automation.fixture'
-import { detailsText, groupJobsByLocation, livenessTally, readQueue, relativeAge } from './automationView'
+import { buildFlows, detailsText, groupJobsByLocation, judgeQueue, livenessTally, readQueue, relativeAge, toneTally, waitedFor, worstTone } from './automationView'
 
 function queue(key: string) {
 	const q = realSnapshot().queues.find(x => x.key === key)
@@ -90,5 +90,111 @@ describe('detailsText', () => {
 		expect(detailsText(undefined)).toBeNull()
 		expect(detailsText({})).toBeNull()
 		expect(detailsText({ saved: 41 })).toBe('{\n  "saved": 41\n}')
+	})
+})
+
+describe('waitedFor', () => {
+	const now = Date.parse('2026-10-12T10:31:33Z')
+	it('reads minutes, hours and days, without "전"', () => {
+		expect(waitedFor('2026-10-12T10:28:33Z', now)).toBe('3분')
+		expect(waitedFor('2026-10-10T10:31:34Z', now)).toBe('47시간')
+		expect(waitedFor('2026-09-10T23:54:03Z', now)).toBe('31일')
+		expect(waitedFor(null, now)).toBeNull()
+		expect(waitedFor('nope', now)).toBeNull()
+	})
+})
+
+describe('judgeQueue', () => {
+	const snap = realSnapshot()
+	const now = Date.parse(snap.generated_at)
+	const judge = (q: ReturnType<typeof queue>, jobs = snap.jobs) => judgeQueue(q, jobs, now)
+
+	it('a failed read is 읽기 실패, an empty table is 행 없음 — both "can\'t see", never ok', () => {
+		expect(judge({ ...queue('lyrics_album_jobs'), counts: null })).toMatchObject({ tone: 'none', label: '읽기 실패' })
+		expect(judge(queue('lyrics_translation_work:chatgpt/genius-ko-v1'))).toMatchObject({ tone: 'none', label: '행 없음' })
+	})
+
+	it('expired leases outrank frozen: the legacy queue is 손볼 것, and still says it is frozen', () => {
+		const v = judge(queue('lyrics_translation_work:claude.sonnet/v2'))
+		expect(v).toMatchObject({ tone: 'bad', label: '멈춘 실행 70' })
+		expect(v.say).toContain('동결')
+	})
+
+	it('frozen without expired leases is 동결', () => {
+		const q = { ...queue('lyrics_translation_work:claude.sonnet/v2'), stale_running: 0 }
+		expect(judge(q)).toMatchObject({ tone: 'frozen', label: '동결' })
+	})
+
+	it('waiting rows whose every consumer is switched off in the inventory warn 처리기 꺼짐', () => {
+		const q = queue('lyrics_translation_work:chatgpt/lyrics-ko-v1')
+		const jobs = snap.jobs.map(j => (j.key === 'gpt-translate-poller' ? { ...j, declared_state: 'disabled' as const } : j))
+		expect(judge(q, jobs)).toMatchObject({ tone: 'warn', label: '처리기 꺼짐' })
+	})
+
+	it('one active consumer is enough not to say 처리기 꺼짐', () => {
+		const q = queue('lyrics_translation_work:chatgpt/lyrics-ko-v1')
+		const jobs = [...snap.jobs, { ...snap.jobs[2], key: 'second', declared_state: 'disabled' as const }]
+		expect(judge(q, jobs).label).not.toBe('처리기 꺼짐')
+	})
+
+	it('a wait over one day is 1일 넘게 대기 — and never claims it is stuck', () => {
+		const v = judge(queue('lyrics_album_jobs'))
+		expect(v).toMatchObject({ tone: 'warn', label: '1일 넘게 대기' })
+		expect(v.say).toContain('31일째')
+		expect(v.say).toContain('아직 이 화면에서 볼 수 없습니다')
+		expect(`${v.label}${v.say}`).not.toMatch(/막힘|막혔|stuck/i)
+	})
+
+	it('a wait under one day is 대기 짧음', () => {
+		const q = { ...queue('lyrics_album_jobs'), oldest_waiting_at: '2026-10-11T11:00:00Z' }
+		expect(judge(q)).toMatchObject({ tone: 'ok', label: '대기 짧음' })
+	})
+
+	it('no waiting rows is 대기 없음, and ineligible rows are named but not counted as waiting', () => {
+		const v = judge(queue('track_genius_annotations'))
+		expect(v).toMatchObject({ tone: 'ok', label: '대기 없음' })
+		expect(v.say).toContain('처리 불가 12건')
+	})
+
+	it('the real snapshot tallies 손볼 것 1 · 지켜볼 것 2 · 볼 수 없음 1 · 문제 없음 1', () => {
+		const t = toneTally(snap.queues.map(q => judge(q)))
+		expect(t).toEqual({ bad: 1, warn: 2, frozen: 0, none: 1, ok: 1 })
+	})
+
+	it('worstTone picks the most urgent tone', () => {
+		expect(worstTone(['ok', 'none', 'warn'])).toBe('warn')
+		expect(worstTone(['ok', 'bad'])).toBe('bad')
+		expect(worstTone([])).toBe('none')
+	})
+})
+
+describe('buildFlows', () => {
+	it('skips keys the snapshot does not carry, and drops a flow with no queue left', () => {
+		const flows = buildFlows(realSnapshot())
+		const demand = flows.find(f => f.title === '회원 수요 가사')!
+		// lyrics_album_tracks is not in the trimmed fixture.
+		expect(demand.steps.map(s => (s.kind === 'queue' ? s.queue.key : s.job.key))).toEqual([
+			'lyrics_demand_source',
+			'lyrics_album_jobs',
+			'gpt-translate-poller',
+			'lyrics_translation_work:chatgpt/lyrics-ko-v1',
+		])
+		expect(flows.map(f => f.title)).not.toContain('디스코그래피 열거')
+		expect(flows.map(f => f.title)).not.toContain('요청형 (사이트 버튼 → Mac 폴러)')
+	})
+
+	it('shows a queue no flow names under 그 밖의 대기열 instead of hiding it', () => {
+		const snap = realSnapshot()
+		snap.queues.push({ ...snap.queues[0], key: 'brand_new_queue', label: 'Brand new' })
+		const flows = buildFlows(snap)
+		const rest = flows.at(-1)!
+		expect(rest.title).toBe('그 밖의 대기열')
+		expect(rest.steps.map(s => s.kind === 'queue' && s.queue.key)).toEqual(['brand_new_queue'])
+	})
+
+	it('places every snapshot queue in some flow', () => {
+		const snap = realSnapshot()
+		const placed = buildFlows(snap).flatMap(f => f.steps.flatMap(s => (s.kind === 'queue' ? [s.queue.key] : [])))
+		expect(new Set(placed)).toEqual(new Set(snap.queues.map(q => q.key)))
 	})
 })

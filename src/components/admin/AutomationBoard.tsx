@@ -300,7 +300,7 @@ function waitingText(queue: AutomationQueue, now: number): { big: string, sub: s
 	return { big: r.waiting.toLocaleString('ko-KR'), sub: w ? `가장 오래 ${w}째` : '대기 중' }
 }
 
-type PickProps = { verdicts: Map<string, QueueVerdict>, selected: string | null, now: number, onPick: (key: string) => void }
+interface PickProps { verdicts: Map<string, QueueVerdict>, selected: string | null, now: number, onPick: (key: string) => void }
 
 function FlowView({ flows, verdicts, selected, now, onPick }: { flows: Flow[] } & PickProps) {
 	return (
@@ -337,7 +337,8 @@ function QueueNode({ queue, verdict, active, now, onPick }: { queue: AutomationQ
 			<span className="auto-node-kind">대기열</span>
 			<span className="auto-node-name">{queue.label}</span>
 			<span className="auto-node-big">{w.big}</span>
-			<span className="auto-node-sub">{w.sub}</span>
+			{/* "대기 없음" / "행 없음" would just repeat the verdict pill. */}
+			{w.sub !== verdict.label && <span className="auto-node-sub">{w.sub}</span>}
 			<TonePill tone={verdict.tone} label={verdict.label} />
 		</button>
 	)
@@ -392,7 +393,8 @@ function TableView({ snapshot, flows, verdicts, selected, now, onPick }: { snaps
 						return (
 							<tr key={q.key} data-queue={q.key} aria-current={selected === q.key} onClick={() => onPick(q.key)}>
 								<td>
-									<button type="button" className="auto-rowpick" onClick={(e) => { e.stopPropagation(); onPick(q.key) }}>{q.label}</button>
+									{/* The row handles the click; the button is the keyboard target. */}
+									<button type="button" className="auto-rowpick">{q.label}</button>
 									<span className="auto-row-flow">{flowOf.get(q.key) ?? ''}</span>
 								</td>
 								<td>{r.kind === 'counted' ? <StateBar queue={q} /> : <span className="auto-faded">{r.kind === 'empty' ? '행 없음' : '읽기 실패'}</span>}</td>
