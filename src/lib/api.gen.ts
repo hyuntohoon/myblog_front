@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/admin/automation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Automation Snapshot
+         * @description Every catalogued job with its evidence; unwired sources render unknown.
+         */
+        get: operations["get_automation_snapshot_api_admin_automation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buckets": {
         parameters: {
             query?: never;
@@ -2115,6 +2135,155 @@ export interface components {
              * @constant
              */
             item_type: "artist";
+        };
+        /** AutomationHeartbeatView */
+        Backend_AutomationHeartbeatView: {
+            /** Age Seconds */
+            age_seconds: number;
+            /** Agent Key */
+            agent_key: string;
+            /** Catalogued */
+            catalogued: boolean;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Last Outcome */
+            last_outcome?: string | null;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+        };
+        /** AutomationJob */
+        Backend_AutomationJob: {
+            /** Ai Provider */
+            ai_provider?: string | null;
+            /** Controls */
+            controls?: string[];
+            /**
+             * Declared State
+             * @enum {string}
+             */
+            declared_state: "active" | "disabled" | "obsolete" | "manual_only" | "consumer_only" | "dropped";
+            /** Drains */
+            drains?: string[];
+            /** Executor */
+            executor: string;
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "aws_schedule" | "aws_scheduler" | "aws_queue_message" | "local_agent" | "other_scheduler";
+            /** Heartbeat Key */
+            heartbeat_key?: string | null;
+            /** Key */
+            key: string;
+            liveness: components["schemas"]["Backend_AutomationLiveness"];
+            /**
+             * Location
+             * @enum {string}
+             */
+            location: "aws" | "mac" | "github";
+            /** Name */
+            name: string;
+            /** Note */
+            note?: string | null;
+            /** Purpose */
+            purpose: string;
+            /** Queue Keys */
+            queue_keys?: string[];
+            /** Stale After Seconds */
+            stale_after_seconds?: number | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Trigger */
+            trigger: string;
+        };
+        /** AutomationLiveness */
+        Backend_AutomationLiveness: {
+            /** Age Seconds */
+            age_seconds?: number | null;
+            /** Observed At */
+            observed_at?: string | null;
+            /** Reason */
+            reason: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "fresh" | "stale" | "unknown";
+        };
+        /** AutomationQueue */
+        Backend_AutomationQueue: {
+            /** Counts */
+            counts?: {
+                [key: string]: number;
+            } | null;
+            /** Frozen */
+            frozen: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Last Update At */
+            last_update_at?: string | null;
+            /** Observed At */
+            observed_at?: string | null;
+            /** Oldest Waiting At */
+            oldest_waiting_at?: string | null;
+            /** Stale Running */
+            stale_running?: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unknown";
+            /** Table */
+            table: string;
+            /** Waiting States */
+            waiting_states: string[];
+        };
+        /** AutomationSnapshot */
+        Backend_AutomationSnapshot: {
+            /**
+             * Catalog As Of
+             * Format: date
+             */
+            catalog_as_of: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Heartbeats */
+            heartbeats: components["schemas"]["Backend_AutomationHeartbeatView"][];
+            /** Jobs */
+            jobs: components["schemas"]["Backend_AutomationJob"][];
+            /** Queues */
+            queues: components["schemas"]["Backend_AutomationQueue"][];
+            /** Sources */
+            sources: components["schemas"]["Backend_AutomationSource"][];
+        };
+        /** AutomationSource */
+        Backend_AutomationSource: {
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "catalog" | "db" | "heartbeat" | "aws";
+            /** Observed At */
+            observed_at?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unavailable" | "not_wired";
         };
         /**
          * BucketItemExpansion
@@ -4554,6 +4723,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_automation_snapshot_api_admin_automation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AutomationSnapshot"];
+                };
+            };
+        };
+    };
     list_buckets_api_buckets_get: {
         parameters: {
             query?: never;
