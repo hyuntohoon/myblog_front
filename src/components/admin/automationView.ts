@@ -10,7 +10,7 @@
 //   found no rows. They must not render alike.
 // - `*_ineligible` rows are rows the worker's filter can never pick up. They
 //   are not waiting, and are not added to the waiting total.
-import type { AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, Liveness } from './automation.api'
+import type { AutomationAwsAlarm, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, Liveness } from './automation.api'
 
 export type LivenessStatus = Liveness['status']
 export type Location = AutomationJob['location']
@@ -19,12 +19,14 @@ export type DeclaredState = AutomationJob['declared_state']
 export const LIVENESS_LABEL: Record<LivenessStatus, string> = {
 	fresh: '최근 확인',
 	stale: '멈춤',
+	failing: '실패 보고',
 	unknown: '증거 없음',
 }
 
 export const LIVENESS_HINT: Record<LivenessStatus, string> = {
 	fresh: '허용 간격 안에 실행 신호가 들어왔습니다.',
 	stale: '신호가 들어온 적은 있지만 허용 간격을 넘겼습니다.',
+	failing: 'AWS가 이 규칙의 전달 실패를 보고했습니다(최근 시도 실패, 허용 간격 안의 실패, 또는 알람).',
 	unknown: '실행 여부를 보여줄 신호가 아직 없습니다. 정상이라는 뜻이 아닙니다.',
 }
 
@@ -79,7 +81,7 @@ export function groupJobsByLocation(jobs: AutomationJob[]): LocationGroup[] {
 }
 
 export function livenessTally(jobs: AutomationJob[]): Record<LivenessStatus, number> {
-	const tally: Record<LivenessStatus, number> = { fresh: 0, stale: 0, unknown: 0 }
+	const tally: Record<LivenessStatus, number> = { fresh: 0, stale: 0, failing: 0, unknown: 0 }
 	for (const job of jobs) {
 		// Anything the page cannot name counts as unknown — never as fresh.
 		const s = job.liveness.status in tally ? job.liveness.status : 'unknown'
@@ -468,4 +470,45 @@ export function flowSentence(entered: number | null | undefined, left: number | 
 	if (left < entered)
 		return '들어온 행이 나간 행보다 많습니다. 이 기준으로는 늘고 있습니다.'
 	return '들어온 만큼 나갔습니다.'
+}
+
+// ── 2d: AWS evidence ──────────────────────────────────────────────────────────
+// Each item carries its own status; `unknown` items have null numbers and must
+// read as "읽지 못함", never as 0.
+
+/** Display order of the tally line: what needs attention first. */
+export const LIVENESS_ORDER: LivenessStatus[] = ['failing', 'stale', 'fresh', 'unknown']
+
+export function tallyLine(t: Record<LivenessStatus, number>): string {
+	return LIVENESS_ORDER.filter(s => t[s] > 0).map(s => `${LIVENESS_LABEL[s]} ${t[s]}`).join(' · ')
+}
+
+export interface AlarmSummary {
+	ok: number
+	/** Names of alarms in ALARM — the ones worth reading. */
+	firing: string[]
+	/** INSUFFICIENT_DATA or a state the page has not heard of. */
+	other: { name: string, state: string }[]
+	/** Not read: never folded into ok. */
+	unread: number
+}
+
+export function summarizeAlarms(alarms: AutomationAwsAlarm[]): AlarmSummary {
+	const out: AlarmSummary = { ok: 0, firing: [], other: [], unread: 0 }
+	for (const a of alarms) {
+		if (a.status !== 'ok' || a.state == null)
+			out.unread += 1
+		else if (a.state === 'OK')
+			out.ok += 1
+		else if (a.state === 'ALARM')
+			out.firing.push(a.name)
+		else
+			out.other.push({ name: a.name, state: a.state })
+	}
+	return out
+}
+
+/** "0" stays "0"; null (not read) is "?", never 0. */
+export function countText(n: number | null | undefined): string {
+	return n == null ? '?' : n.toLocaleString('ko-KR')
 }

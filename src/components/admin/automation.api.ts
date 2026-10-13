@@ -18,6 +18,11 @@ export type AutomationQueue = components['schemas']['Backend_AutomationQueue']
 export type AutomationHeartbeat = components['schemas']['Backend_AutomationHeartbeatView']
 export type AutomationSource = components['schemas']['Backend_AutomationSource']
 export type Liveness = components['schemas']['Backend_AutomationLiveness']
+// 2d: AWS evidence (names, counts and states only).
+export type AutomationAws = components['schemas']['Backend_AutomationAws']
+export type AutomationAwsQueue = components['schemas']['Backend_AutomationAwsQueue']
+export type AutomationAwsFunction = components['schemas']['Backend_AutomationAwsFunction']
+export type AutomationAwsAlarm = components['schemas']['Backend_AutomationAwsAlarm']
 
 export type SnapshotResult =
 	| { kind: 'ok', snapshot: AutomationSnapshot } |
