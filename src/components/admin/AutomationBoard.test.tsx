@@ -7,7 +7,7 @@
 import type { QueueDetailResult, SnapshotResult } from './automation.api'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { realDetails, realSnapshot } from './automation.fixture'
+import { awsSnapshot, realDetails, realSnapshot } from './automation.fixture'
 
 const api = vi.hoisted(() => ({ fetchAutomationSnapshot: vi.fn(), fetchQueueDetail: vi.fn() }))
 const auth = vi.hoisted(() => ({ isLoggedIn: vi.fn(() => true) }))
@@ -179,6 +179,72 @@ describe('the snapshot', () => {
 		serve({ kind: 'ok', snapshot: realSnapshot() })
 		render(<AutomationBoard />)
 		expect(await screen.findByText(/아직 하트비트를 기록한 로컬 에이전트가 없습니다/)).toBeTruthy()
+	})
+})
+
+describe('aws evidence (2d)', () => {
+	beforeEach(() => {
+		try {
+			localStorage.clear()
+		}
+		catch { /* jsdom without storage */ }
+	})
+
+	it('says plainly when no AWS reader is wired, instead of an empty panel', async () => {
+		serve({ kind: 'ok', snapshot: realSnapshot() })
+		render(<AutomationBoard />)
+		expect(await screen.findByText(/AWS를 읽는 경로가 연결되지 않았습니다/)).toBeTruthy()
+	})
+
+	it('renders queue depth, Lambda counts and the alarm summary AWS reported', async () => {
+		serve({ kind: 'ok', snapshot: awsSnapshot() })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByRole('heading', { name: 'AWS 상태' })
+		expect(container.querySelector('[data-aws-queue="blogSQS"]')).toHaveTextContent('대기 0 · 처리 중 0 · 지연 0')
+		expect(container.querySelector('[data-aws-queue="worker-cron-dlq"]')).toHaveTextContent('DLQ')
+		expect(container.querySelector('[data-aws-function="blogWorkerLambda"]')).toHaveTextContent('호출 590 · 오류 0 · 스로틀 0')
+		expect(container.querySelector('[data-aws-alarms]')).toHaveTextContent('OK 3 · 경보 0')
+	})
+
+	it('shows an unread queue as ? and 읽지 못함, never as 0', async () => {
+		const snap = awsSnapshot()
+		snap.aws!.queues[0] = { ...snap.aws!.queues[0], status: 'unknown', observed_at: null, visible: null, in_flight: null, delayed: null }
+		serve({ kind: 'ok', snapshot: snap })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByRole('heading', { name: 'AWS 상태' })
+		const row = container.querySelector('[data-aws-queue="blogSQS"]')!
+		expect(row).toHaveTextContent('대기 ? · 처리 중 ? · 지연 ?')
+		expect(row).toHaveTextContent('읽지 못함')
+		expect(row.classList.contains('auto-aws-item--unknown')).toBe(true)
+	})
+
+	it('names a firing alarm and counts unread alarms apart from OK', async () => {
+		const snap = awsSnapshot()
+		snap.aws!.alarms[1] = { ...snap.aws!.alarms[1], state: 'ALARM' }
+		snap.aws!.alarms[2] = { ...snap.aws!.alarms[2], status: 'unknown', observed_at: null, state: null }
+		serve({ kind: 'ok', snapshot: snap })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByRole('heading', { name: 'AWS 상태' })
+		expect(container.querySelector('[data-aws-alarms]')).toHaveTextContent('OK 1 · 경보 1 · 읽지 못함 1')
+		expect(screen.getByText('blogWorkerLambda-errors')).toBeTruthy()
+	})
+
+	it('labels a failing rule and leads the tally with it', async () => {
+		const snap = awsSnapshot()
+		snap.jobs = snap.jobs.map(j => j.key === 'lyrics_demand_source' ? { ...j, liveness: { status: 'failing', observed_at: null, age_seconds: null, reason: 'AWS reports failed deliveries: 95 delivered, 1 failed in 24 h; alarm OK.' } } : j)
+		serve({ kind: 'ok', snapshot: snap })
+		const { container } = render(<AutomationBoard />)
+		await screen.findByRole('heading', { name: 'AWS 상태' })
+		expect(container.querySelector('.auto-tally-line')).toHaveTextContent('실패 보고 1 · 증거 없음 3')
+		const row = container.querySelector('[data-job="lyrics_demand_source"]')!
+		expect(row).toHaveTextContent('실패 보고')
+		expect(row.classList.contains('auto-job--failing')).toBe(true)
+	})
+
+	it('counts a fresh AWS rule as evidence in the header', async () => {
+		serve({ kind: 'ok', snapshot: awsSnapshot() })
+		render(<AutomationBoard />)
+		expect(await screen.findByText(/실행 신호가 확인된 작업은/)).toHaveTextContent('작업 4개 가운데 실행 신호가 확인된 작업은 1개입니다. 최근 확인 1 · 증거 없음 3')
 	})
 })
 

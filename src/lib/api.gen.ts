@@ -2159,6 +2159,108 @@ export interface components {
              */
             item_type: "artist";
         };
+        /** AutomationAws */
+        Backend_AutomationAws: {
+            /** Alarms */
+            alarms: components["schemas"]["Backend_AutomationAwsAlarm"][];
+            /** Functions */
+            functions: components["schemas"]["Backend_AutomationAwsFunction"][];
+            /** Queues */
+            queues: components["schemas"]["Backend_AutomationAwsQueue"][];
+            /** Rules */
+            rules: components["schemas"]["Backend_AutomationAwsRule"][];
+        };
+        /** AutomationAwsAlarm */
+        Backend_AutomationAwsAlarm: {
+            /** Name */
+            name: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /** State */
+            state?: string | null;
+            /** State Updated At */
+            state_updated_at?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unknown";
+        };
+        /** AutomationAwsFunction */
+        Backend_AutomationAwsFunction: {
+            /** Errors 24H */
+            errors_24h?: number | null;
+            /** Invocations 24H */
+            invocations_24h?: number | null;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unknown";
+            /** Throttles 24H */
+            throttles_24h?: number | null;
+        };
+        /** AutomationAwsQueue */
+        Backend_AutomationAwsQueue: {
+            /** Delayed */
+            delayed?: number | null;
+            /** In Flight */
+            in_flight?: number | null;
+            /** Label */
+            label: string;
+            /** Name */
+            name: string;
+            /** Observed At */
+            observed_at?: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "work" | "dead_letter";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unknown";
+            /** Visible */
+            visible?: number | null;
+        };
+        /** AutomationAwsRule */
+        Backend_AutomationAwsRule: {
+            /** Alarm */
+            alarm?: string | null;
+            /** Delivered 24H */
+            delivered_24h?: number | null;
+            /** Failed 24H */
+            failed_24h?: number | null;
+            /** Job Key */
+            job_key: string;
+            /** Last Attempt Failed */
+            last_attempt_failed?: boolean | null;
+            /** Last Delivery At */
+            last_delivery_at?: string | null;
+            /** Lookback Hours */
+            lookback_hours?: number | null;
+            /** Observed At */
+            observed_at?: string | null;
+            /** Rule */
+            rule: string;
+            /** Schedule */
+            schedule?: string | null;
+            /** State */
+            state?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unknown";
+        };
         /** AutomationHeartbeatView */
         Backend_AutomationHeartbeatView: {
             /** Age Seconds */
@@ -2238,7 +2340,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "fresh" | "stale" | "unknown";
+            status: "fresh" | "stale" | "failing" | "unknown";
         };
         /** AutomationQueue */
         Backend_AutomationQueue: {
@@ -2327,6 +2429,7 @@ export interface components {
         };
         /** AutomationSnapshot */
         Backend_AutomationSnapshot: {
+            aws?: components["schemas"]["Backend_AutomationAws"] | null;
             /**
              * Catalog As Of
              * Format: date

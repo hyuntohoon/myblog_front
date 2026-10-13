@@ -121,3 +121,41 @@ oldest_waiting: [],
 		},
 	}
 }
+
+// 2d fixture: the AWS half of a real `GET /api/admin/automation` answer (local
+// backend at the 2d branch, AWS read as claude_aws_manager, 2026-10-13 03:13
+// UTC), trimmed. The DB half is realSnapshot()'s; prod read 0 everywhere, so
+// tests that need a failure change one item.
+const AWS_AT = '2026-10-13T03:13:11.384112Z'
+
+export function awsSnapshot(): AutomationSnapshot {
+	const base = realSnapshot()
+	return {
+		...base,
+		generated_at: '2026-10-13T03:13:14.541809Z',
+		sources: base.sources.map(s => s.key === 'aws' ? { key: 'aws', status: 'ok', observed_at: '2026-10-13T03:13:14.533343Z', detail: '4 of 4 reads succeeded.' } : s),
+		jobs: base.jobs.map(j => j.key === 'lyrics_demand_source' ?
+			{ ...j, liveness: { status: 'fresh', observed_at: '2026-10-13T12:05:00+09:00', age_seconds: 491, reason: 'Delivered within the 1800s bound; 96 delivered, 0 failed in 24 h; alarm OK. Delivery only: whether the handler succeeded is not per-rule evidence.' } } :
+			j),
+		aws: {
+			rules: [
+				{ job_key: 'lyrics_demand_source', rule: 'worker-lyrics-demand-source', status: 'ok', observed_at: AWS_AT, state: 'ENABLED', schedule: 'rate(15 minutes)', last_delivery_at: '2026-10-13T12:05:00+09:00', delivered_24h: 96, failed_24h: 0, lookback_hours: 24, alarm: 'worker-lyrics-demand-source-failed-invocations', last_attempt_failed: false },
+			],
+			queues: [
+				{ name: 'blogSQS', role: 'work', label: 'Worker job queue', status: 'ok', observed_at: AWS_AT, visible: 0, in_flight: 0, delayed: 0 },
+				{ name: 'album-sync-dlq', role: 'dead_letter', label: 'blogSQS dead letters (after 3 receives)', status: 'ok', observed_at: AWS_AT, visible: 0, in_flight: 0, delayed: 0 },
+				{ name: 'worker-cron-dlq', role: 'dead_letter', label: 'Failed async cron invocations', status: 'ok', observed_at: AWS_AT, visible: 0, in_flight: 0, delayed: 0 },
+			],
+			functions: [
+				{ name: 'ratemymusic-api', label: 'Backend API', status: 'ok', observed_at: AWS_AT, invocations_24h: 337, errors_24h: 0, throttles_24h: 0 },
+				{ name: 'musicApi', label: 'Music API', status: 'ok', observed_at: AWS_AT, invocations_24h: 301, errors_24h: 0, throttles_24h: 0 },
+				{ name: 'blogWorkerLambda', label: 'Worker (crons + blogSQS)', status: 'ok', observed_at: AWS_AT, invocations_24h: 590, errors_24h: 0, throttles_24h: 0 },
+			],
+			alarms: [
+				{ name: 'worker-lyrics-demand-source-failed-invocations', status: 'ok', observed_at: AWS_AT, state: 'OK', state_updated_at: '2026-06-04T19:18:03.434000+09:00' },
+				{ name: 'blogWorkerLambda-errors', status: 'ok', observed_at: AWS_AT, state: 'OK', state_updated_at: '2026-10-01T00:00:00Z' },
+				{ name: 'album-sync-dlq-messages', status: 'ok', observed_at: AWS_AT, state: 'OK', state_updated_at: '2026-10-01T00:00:00Z' },
+			],
+		},
+	}
+}

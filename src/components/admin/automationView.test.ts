@@ -1,7 +1,7 @@
 // FEAT-automation-admin 2c — the page's honesty rules, as pure functions.
 import { describe, expect, it } from 'vitest'
 import { job, realSnapshot } from './automation.fixture'
-import { buildFlows, detailsText, flowSentence, groupJobsByLocation, judgeQueue, livenessTally, readQueue, reasonName, relativeAge, toneTally, untilText, waitedFor, worstTone } from './automationView'
+import { buildFlows, countText, detailsText, flowSentence, groupJobsByLocation, judgeQueue, LIVENESS_LABEL, livenessTally, readQueue, reasonName, relativeAge, summarizeAlarms, tallyLine, toneTally, untilText, waitedFor, worstTone } from './automationView'
 
 function queue(key: string) {
 	const q = realSnapshot().queues.find(x => x.key === key)
@@ -39,12 +39,12 @@ describe('readQueue', () => {
 describe('livenessTally', () => {
 	it('never counts an unknown row as fresh', () => {
 		const t = livenessTally(realSnapshot().jobs)
-		expect(t).toEqual({ fresh: 0, stale: 0, unknown: 4 })
+		expect(t).toEqual({ fresh: 0, stale: 0, failing: 0, unknown: 4 })
 	})
 
 	it('counts an unrecognised status as unknown', () => {
 		const odd = job({ key: 'x', liveness: { status: 'healthy' as never, reason: '' } })
-		expect(livenessTally([odd])).toEqual({ fresh: 0, stale: 0, unknown: 1 })
+		expect(livenessTally([odd])).toEqual({ fresh: 0, stale: 0, failing: 0, unknown: 1 })
 	})
 
 	it('counts fresh and stale from liveness only, ignoring declared_state', () => {
@@ -53,7 +53,7 @@ describe('livenessTally', () => {
 			job({ key: 'b', declared_state: 'active', liveness: { status: 'stale', reason: '' } }),
 			job({ key: 'c', declared_state: 'active' }),
 		])
-		expect(t).toEqual({ fresh: 1, stale: 1, unknown: 1 })
+		expect(t).toEqual({ fresh: 1, stale: 1, failing: 0, unknown: 1 })
 	})
 })
 
@@ -225,5 +225,40 @@ describe('2f detail helpers', () => {
 		expect(reasonName('brand_new_code')).toBe('brand_new_code')
 		expect(reasonName('unrecognized')).toContain('본문은 표시하지 않음')
 		expect(reasonName(null)).toBe('사유 기록 없음')
+	})
+})
+
+describe('2d: AWS evidence', () => {
+	it('counts failing apart from stale and fresh', () => {
+		const t = livenessTally([
+			job({ key: 'a', liveness: { status: 'failing', reason: '' } }),
+			job({ key: 'b', liveness: { status: 'fresh', reason: '' } }),
+		])
+		expect(t).toEqual({ fresh: 1, stale: 0, failing: 1, unknown: 0 })
+		expect(LIVENESS_LABEL.failing).toBe('실패 보고')
+	})
+
+	it('puts what needs attention first in the tally line and drops zeros', () => {
+		expect(tallyLine({ fresh: 18, stale: 1, failing: 2, unknown: 22 })).toBe('실패 보고 2 · 멈춤 1 · 최근 확인 18 · 증거 없음 22')
+		expect(tallyLine({ fresh: 18, stale: 0, failing: 0, unknown: 0 })).toBe('최근 확인 18')
+	})
+
+	it('never folds an unread alarm into OK', () => {
+		const at = '2026-10-13T03:13:11Z'
+		const s = summarizeAlarms([
+			{ name: 'a', status: 'ok', observed_at: at, state: 'OK' },
+			{ name: 'b', status: 'ok', observed_at: at, state: 'ALARM' },
+			{ name: 'c', status: 'ok', observed_at: at, state: 'INSUFFICIENT_DATA' },
+			{ name: 'd', status: 'unknown', observed_at: null, state: null },
+			{ name: 'e', status: 'unknown', observed_at: null, state: 'OK' },
+		])
+		expect(s).toEqual({ ok: 1, firing: ['b'], other: [{ name: 'c', state: 'INSUFFICIENT_DATA' }], unread: 2 })
+	})
+
+	it('shows an unread count as ? and a real zero as 0', () => {
+		expect(countText(null)).toBe('?')
+		expect(countText(undefined)).toBe('?')
+		expect(countText(0)).toBe('0')
+		expect(countText(1234)).toBe('1,234')
 	})
 })

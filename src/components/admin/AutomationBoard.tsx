@@ -19,7 +19,7 @@
 // - `heartbeats[].details` and `last_outcome` are written by local agents.
 //   They are rendered as React text children only — never through
 //   dangerouslySetInnerHTML or any markdown/HTML renderer (2b security-review).
-import type { AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, QueueDetail as QueueDetailData, QueueDetailResult, ReasonCount, SnapshotResult } from './automation.api'
+import type { AutomationAws, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, QueueDetail as QueueDetailData, QueueDetailResult, ReasonCount, SnapshotResult } from './automation.api'
 import type { Flow, LivenessStatus, QueueVerdict, Tone } from './automationView'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
@@ -27,6 +27,7 @@ import { fetchAutomationSnapshot, fetchQueueDetail } from './automation.api'
 import {
 	buildFlows,
 	consumersOf,
+	countText,
 	DECLARED_LABEL,
 	detailsText,
 	flowSentence,
@@ -44,6 +45,8 @@ import {
 	relativeAge,
 	SOURCE_LABEL,
 	SOURCE_STATUS_LABEL,
+	summarizeAlarms,
+	tallyLine,
 	TONE_LABEL,
 	TONE_ORDER,
 	toneTally,
@@ -224,7 +227,10 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 					개 가운데 실행 신호가 확인된 작업은
 					{' '}
 					{jobTally.fresh}
-					개입니다. 나머지는 AWS 지표와 로컬 하트비트가 연결되기 전이라 볼 수 없습니다.
+					개입니다.
+					{' '}
+					<span className="auto-tally-line">{tallyLine(jobTally)}</span>
+					{jobTally.unknown > 0 && ' — 증거 없음은 볼 수 없다는 뜻이지 정상이라는 뜻이 아닙니다.'}
 				</p>
 				<div className="auto-meta">
 					<span>
@@ -292,6 +298,8 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 				</ul>
 			</section>
 
+			<AwsSection aws={snapshot.aws ?? null} now={now} />
+
 			<section className="auto-section" aria-labelledby="auto-heartbeats">
 				<h2 id="auto-heartbeats" className="auto-h2">로컬 하트비트</h2>
 				{snapshot.heartbeats.length === 0 ?
@@ -307,6 +315,115 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 						)}
 			</section>
 		</div>
+	)
+}
+
+function Seen({ at, now }: { at: string | null | undefined, now: number }) {
+	const seen = relativeAge(at, now)
+	if (!seen)
+		return <span className="auto-faded">읽지 못함</span>
+	return <time className="auto-faded" dateTime={at ?? undefined} title={`${kst(at)} KST`}>{seen}</time>
+}
+
+// 2d: what AWS itself reports — queue depth, Lambda errors, alarm states. The
+// EventBridge rules show up as job rows above (their liveness), not here.
+function AwsSection({ aws, now }: { aws: AutomationAws | null, now: number }) {
+	if (aws == null) {
+		return (
+			<section className="auto-section" aria-labelledby="auto-aws">
+				<h2 id="auto-aws" className="auto-h2">AWS 상태</h2>
+				<p className="auto-lede">AWS를 읽는 경로가 연결되지 않았습니다. AWS 작업은 모두 &lsquo;증거 없음&rsquo;입니다.</p>
+			</section>
+		)
+	}
+	const alarms = summarizeAlarms(aws.alarms)
+	return (
+		<section className="auto-section" aria-labelledby="auto-aws">
+			<h2 id="auto-aws" className="auto-h2">AWS 상태</h2>
+			<p className="auto-lede">
+				AWS가 직접 보고한 값입니다. 각 칸의 시각은 그 값을 읽은 때이고, 읽지 못한 칸은 0이 아니라 &lsquo;?&rsquo;로 표시됩니다.
+				EventBridge 규칙은 위 작업 목록에서 전달 기록으로 판정합니다(전달만 확인, 처리 성공은 아래 오류·DLQ로 봅니다).
+			</p>
+			<div className="auto-aws">
+				<div className="auto-aws-block">
+					<h3 className="auto-aws-h">SQS 대기열</h3>
+					<ul className="auto-aws-list">
+						{aws.queues.map(q => (
+							<li key={q.name} className={`auto-aws-item auto-aws-item--${q.status}`} data-aws-queue={q.name}>
+								<span className="auto-aws-name">
+									<code>{q.name}</code>
+									{q.role === 'dead_letter' && <span className="auto-tag">DLQ</span>}
+								</span>
+								<span className="auto-aws-label">{q.label}</span>
+								<span className="auto-aws-nums">
+									대기
+									{' '}
+									<b>{countText(q.visible)}</b>
+									{' · 처리 중 '}
+									<b>{countText(q.in_flight)}</b>
+									{' · 지연 '}
+									<b>{countText(q.delayed)}</b>
+								</span>
+								<Seen at={q.observed_at} now={now} />
+							</li>
+						))}
+					</ul>
+				</div>
+				<div className="auto-aws-block">
+					<h3 className="auto-aws-h">Lambda (최근 24시간)</h3>
+					<ul className="auto-aws-list">
+						{aws.functions.map(f => (
+							<li key={f.name} className={`auto-aws-item auto-aws-item--${f.status}`} data-aws-function={f.name}>
+								<span className="auto-aws-name"><code>{f.name}</code></span>
+								<span className="auto-aws-label">{f.label}</span>
+								<span className="auto-aws-nums">
+									호출
+									{' '}
+									<b>{countText(f.invocations_24h)}</b>
+									{' · 오류 '}
+									<b className={(f.errors_24h ?? 0) > 0 ? 'auto-aws-bad' : undefined}>{countText(f.errors_24h)}</b>
+									{' · 스로틀 '}
+									<b className={(f.throttles_24h ?? 0) > 0 ? 'auto-aws-bad' : undefined}>{countText(f.throttles_24h)}</b>
+								</span>
+								<Seen at={f.observed_at} now={now} />
+							</li>
+						))}
+					</ul>
+				</div>
+				<div className="auto-aws-block">
+					<h3 className="auto-aws-h">
+						CloudWatch 알람
+						{' '}
+						<span className="auto-count">{aws.alarms.length}</span>
+					</h3>
+					<p className="auto-aws-alarms" data-aws-alarms="">
+						OK
+						{' '}
+						<b>{alarms.ok}</b>
+						{' · 경보 '}
+						<b className={alarms.firing.length > 0 ? 'auto-aws-bad' : undefined}>{alarms.firing.length}</b>
+						{alarms.other.length > 0 && ` · 데이터 부족 등 ${alarms.other.length}`}
+						{alarms.unread > 0 && ` · 읽지 못함 ${alarms.unread}`}
+					</p>
+					{(alarms.firing.length > 0 || alarms.other.length > 0) && (
+						<ul className="auto-aws-list">
+							{alarms.firing.map(n => (
+								<li key={n} className="auto-aws-item">
+<code>{n}</code>
+<span className="auto-aws-bad">ALARM</span>
+        </li>
+							))}
+							{alarms.other.map(a => (
+								<li key={a.name} className="auto-aws-item">
+<code>{a.name}</code>
+<span className="auto-faded">{a.state}</span>
+        </li>
+							))}
+						</ul>
+					)}
+				</div>
+			</div>
+		</section>
 	)
 }
 
