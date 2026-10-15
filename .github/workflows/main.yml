@@ -153,6 +153,18 @@ jobs:
           role-session-name: gha-front-deploy-${{ github.run_id }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # OPS-ci-cd-optimization Step 2. A fresh build gives every file a new mtime, so the
+      # HTML sync below re-uploads all ~4,170 HTML objects on every deploy; at the CLI's
+      # default of 10 concurrent requests that was 157 s median (70 % of this job). Raise
+      # concurrency only — same objects, same size+mtime comparison, same --delete.
+      # Never --size-only: a page whose content changes without changing size would never
+      # reach S3. The setting lands in the [default] profile, which is the one the CLI reads
+      # here (credentials come from env vars, no AWS_PROFILE).
+      - name: Raise S3 transfer concurrency
+        run: |
+          aws configure set default.s3.max_concurrent_requests 64
+          aws configure set default.s3.max_queue_size 10000
+
       # 1) Hashed static assets — cache forever
       - name: Upload _astro/** (immutable)
         run: |
