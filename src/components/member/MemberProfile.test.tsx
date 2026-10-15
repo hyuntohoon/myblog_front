@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({
 	fetchMemberProfile: vi.fn(),
@@ -64,12 +64,42 @@ const PROFILE_RERATING = {
 	}],
 }
 
+// MemberProfile attaches its ENT_ALBUM_STATE_CHANGED listener in a passive effect
+// that runs after the commit rendering the dashboard nav, and React 19 schedules
+// that effect outside act(). findBy* can resolve before it runs (RTL waits one
+// setTimeout(0), which loses to React's scheduler under load), so a test that
+// dispatches the event -- or relies on this root consuming its own forwarded
+// event -- must first see the listener attached. Watching addEventListener is the
+// observable form of "the effect ran"; act() does not flush it.
+let addListener: ReturnType<typeof vi.spyOn>
+let mountedAt = 0
+
+function renderProfile() {
+	mountedAt = addListener.mock.calls.length
+	return render(<MemberProfile handle={HANDLE} />)
+}
+
+async function untilSelfViewSettled() {
+	await screen.findByRole('navigation', { name: '내 대시보드' })
+	await waitFor(() => expect(
+		addListener.mock.calls.slice(mountedAt).some(([type]) => type === ENT_ALBUM_STATE_CHANGED),
+	).toBe(true))
+}
+
 beforeEach(() => {
 	vi.clearAllMocks()
+	// clearAllMocks keeps queued mock*Once implementations; a test that fails
+	// before consuming its own would hand them to the next test.
+	api.fetchMemberProfile.mockReset()
+	addListener = vi.spyOn(window, 'addEventListener')
 	api.fetchMemberNowPlaying.mockResolvedValue(null)
 	api.fetchMyReratings.mockResolvedValue([])
 	api.cancelRerating.mockResolvedValue(false)
 	api.getMe.mockResolvedValue({ handle: HANDLE })
+})
+
+afterEach(() => {
+	addListener.mockRestore()
 })
 
 describe('memberProfile album-state synchronization', () => {
@@ -77,12 +107,12 @@ describe('memberProfile album-state synchronization', () => {
 		api.fetchMemberProfile
 			.mockResolvedValueOnce(PROFILE_WITH_RATING)
 			.mockResolvedValueOnce(PROFILE_WITHOUT_RATING)
-		render(<MemberProfile handle={HANDLE} />)
+		renderProfile()
 
 		await waitFor(() => expect(screen.getByText((_text, node) =>
 			node?.classList.contains('mono') === true && node.textContent?.includes('1개 평가') === true,
 		)).toBeInTheDocument())
-		await screen.findByRole('navigation', { name: '내 대시보드' })
+		await untilSelfViewSettled()
 
 		window.dispatchEvent(new CustomEvent(ENT_ALBUM_STATE_CHANGED, {
 			detail: { albumId: 'album-1', rating: null },
@@ -101,9 +131,9 @@ describe('memberProfile album-state synchronization', () => {
 			.mockResolvedValueOnce(PROFILE_WITH_RATING)
 			.mockImplementationOnce(() => new Promise((resolve) => { resolveOlder = resolve }))
 			.mockImplementationOnce(() => new Promise((resolve) => { resolveNewer = resolve }))
-		render(<MemberProfile handle={HANDLE} />)
+		renderProfile()
 
-		await screen.findByRole('navigation', { name: '내 대시보드' })
+		await untilSelfViewSettled()
 		window.dispatchEvent(new CustomEvent(ENT_ALBUM_STATE_CHANGED, {
 			detail: { albumId: 'album-1', rating: 4 },
 		}))
@@ -142,8 +172,8 @@ describe('memberProfile album-state synchronization', () => {
 		window.addEventListener(ENT_ALBUM_STATE_CHANGED, capture)
 
 		try {
-			render(<MemberProfile handle={HANDLE} />)
-			await screen.findByRole('navigation', { name: '내 대시보드' })
+			renderProfile()
+			await untilSelfViewSettled()
 			await screen.findByText('이전 4.5')
 
 			fireEvent.click(screen.getByRole('button', { name: '재평가 취소' }))
@@ -182,8 +212,8 @@ describe('memberProfile album-state synchronization', () => {
 		window.addEventListener(ENT_ALBUM_STATE_CHANGED, capture)
 
 		try {
-			render(<MemberProfile handle={HANDLE} />)
-			await screen.findByRole('navigation', { name: '내 대시보드' })
+			renderProfile()
+			await untilSelfViewSettled()
 			fireEvent.click(screen.getByRole('button', { name: '재평가 취소' }))
 
 			await waitFor(() => expect(events).toEqual([{ albumId: 'album-1', rating: 4.5 }]))
@@ -247,8 +277,8 @@ describe('memberProfile album-state synchronization', () => {
 		window.addEventListener(ENT_ALBUM_STATE_CHANGED, capture)
 
 		try {
-			render(<MemberProfile handle={HANDLE} />)
-			await screen.findByRole('navigation', { name: '내 대시보드' })
+			renderProfile()
+			await untilSelfViewSettled()
 			const firstCancel = await screen.findAllByRole('button', { name: '재평가 취소' })
 			fireEvent.click(firstCancel[0])
 			await waitFor(() => expect(api.fetchMemberProfile).toHaveBeenCalledTimes(2))
