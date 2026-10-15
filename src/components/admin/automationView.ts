@@ -10,7 +10,7 @@
 //   found no rows. They must not render alike.
 // - `*_ineligible` rows are rows the worker's filter can never pick up. They
 //   are not waiting, and are not added to the waiting total.
-import type { AutomationAwsAlarm, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, Liveness } from './automation.api'
+import type { AutomationAwsAlarm, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, ControlState, Liveness } from './automation.api'
 
 export type LivenessStatus = Liveness['status']
 export type Location = AutomationJob['location']
@@ -511,4 +511,41 @@ export function summarizeAlarms(alarms: AutomationAwsAlarm[]): AlarmSummary {
 /** "0" stays "0"; null (not read) is "?", never 0. */
 export function countText(n: number | null | undefined): string {
 	return n == null ? '?' : n.toLocaleString('ko-KR')
+}
+
+// ── 3b: a job's pause state, in the server's words ──
+
+export interface ControlStatus {
+	/** null = the control state could not be read; the page offers no action then. */
+	paused: boolean | null
+	tone: Tone
+	text: string
+}
+
+/**
+ * `confirmed` = the executor stamped a skip after this pause. Until one
+ * schedule interval has passed (`confirmation_overdue` false), waiting for that
+ * stamp is expected, not a fault. A local agent whose own switch is off never
+ * reads the flag, so its pause can never be confirmed — say why.
+ */
+export function controlStatus(control: ControlState | null, now: number, beat: AutomationHeartbeat | null): ControlStatus {
+	if (control == null || control.paused == null)
+		return { paused: null, tone: 'none', text: '일시정지 상태를 읽지 못했습니다. 실행 중이라는 뜻이 아닙니다.' }
+	if (!control.paused)
+		return { paused: false, tone: 'ok', text: '일시정지 안 함' }
+	if (control.confirmed) {
+		const at = relativeAge(control.honored_at, now)
+		return { paused: true, tone: 'warn', text: `일시정지됨 · 실행기가 확인함${at ? ` (마지막 건너뜀 ${at})` : ''}` }
+	}
+	const since = relativeAge(control.changed_at, now)
+	if (beat?.enabled === false)
+		return { paused: true, tone: 'warn', text: '일시정지됨 · 로컬 스위치가 꺼져 있어 실행기가 확인하지 않습니다' }
+	if (control.confirmation_overdue)
+		return { paused: true, tone: 'bad', text: `일시정지했지만 실행기가 아직 확인하지 않았습니다${since ? ` (요청 ${since})` : ''}` }
+	return { paused: true, tone: 'warn', text: `일시정지됨 · 다음 실행 때 실행기가 확인합니다${since ? ` (요청 ${since})` : ''}` }
+}
+
+/** Jobs paused right now, for the header — a pause must not hide in a folded list. */
+export function pausedJobs(jobs: AutomationJob[]): { job: AutomationJob, unconfirmed: boolean }[] {
+	return jobs.filter(j => j.control?.paused === true).map(j => ({ job: j, unconfirmed: !j.control!.confirmed }))
 }

@@ -823,6 +823,56 @@ button.auto-node[aria-current='true'] {
 .auto-aws-bad { color: var(--color-accent); font-weight: 600; }
 
 /* ── narrow screens ────────────────────────────────────────────────── */
+/* 3b: pause / resume */
+.auto-paused {
+	margin: 0;
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+	color: var(--color-warn);
+	background: var(--auto-warn-bg);
+	padding: 6px 10px;
+	width: fit-content;
+	max-width: 100%;
+	overflow-wrap: anywhere;
+}
+.auto-ctl {
+	display: grid;
+	gap: 6px;
+	justify-items: start;
+	margin-top: 6px;
+	min-width: 0;
+	font-family: var(--font-sans);
+}
+.auto-consumers .auto-ctl { grid-column: 1 / -1; }
+.auto-ctl-status,
+.auto-ctl-note,
+.auto-ctl-say {
+	margin: 0;
+	font-size: var(--text-xs);
+	line-height: var(--leading-relaxed);
+	overflow-wrap: anywhere;
+}
+.auto-ctl-status--ok,
+.auto-ctl-status--none { color: var(--color-faded); }
+.auto-ctl-status--warn { color: var(--color-warn); }
+.auto-ctl-status--bad { color: var(--color-accent); font-weight: 600; }
+.auto-ctl-confirm {
+	display: grid;
+	gap: 8px;
+	border-left: 2px solid var(--color-warn);
+	padding: 4px 0 4px 10px;
+	max-width: 46ch;
+}
+.auto-ctl-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.auto-button--strong {
+	border-color: var(--color-text);
+	font-weight: 600;
+}
+
 @media (max-width: 900px) {
 	.auto-grid {
 		grid-template-columns: minmax(0, 1fr);
