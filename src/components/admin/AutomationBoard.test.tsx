@@ -445,9 +445,19 @@ describe('3b pause controls', () => {
 		expect(document.querySelector('li[data-job="verifier_drift"] [data-control]')).toBeNull()
 		expect(within(document.querySelector('li[data-job="lyrics_demand_source"]') as HTMLElement).getByText(/아직 확인하지 않았습니다/)).toBeTruthy()
 		const calls = api.fetchAutomationSnapshot.mock.calls.length
+		// Hold the re-read, so the page is seen between the POST and the new snapshot.
+		let deliver: (r: SnapshotResult) => void = () => {}
+		api.fetchAutomationSnapshot.mockReturnValueOnce(new Promise<SnapshotResult>((r) => {
+			deliver = r
+		}))
 		fireEvent.click(within(row).getByRole('button', { name: '일시정지' }))
 		fireEvent.click(within(row).getByRole('button', { name: '일시정지 확인' }))
 		await waitFor(() => expect(api.fetchAutomationSnapshot.mock.calls.length).toBe(calls + 1))
 		expect(api.postAutomationControl).toHaveBeenCalledWith('gpt-translate-poller', 'pause', expect.any(String))
+		// Before the re-read lands, the header already reflects the POST's answer.
+		expect(document.querySelector('[data-paused]')).toHaveTextContent('일시정지 중 2개')
+		// The re-read is the server's word and replaces it, whatever it says.
+		await act(async () => deliver({ kind: 'ok', snapshot: withControls() }))
+		expect(document.querySelector('[data-paused]')).toHaveTextContent('일시정지 중 1개: Lyrics demand collection')
 	})
 })
