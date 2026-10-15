@@ -57,15 +57,27 @@ type StatusMapResponse = components['schemas']['Backend_ResearchStatusMapRespons
  * cover dots. Replaces the per-cover note GET fan-out (album-count concurrent
  * requests on board mount) that hit the Lambda concurrency ceiling → 503s.
  */
+// Ids per status GET. Each id costs ~39 URL bytes (36 + an encoded comma), and
+// CloudFront rejects URLs over 8,192 bytes — the board crossed ~210 ids once the
+// Spotify library's covers joined the poll (FEAT-spotify-library-autosync), so the
+// batch is split. 100 ids ≈ 3.9 KB, well inside the limit and the server's 500 cap.
+export const RESEARCH_STATUS_CHUNK = 100
+
 export async function fetchResearchStatusBatch(albumIds: string[]): Promise<Record<string, ResearchStatus>> {
 	const ids = [...new Set(albumIds.filter(Boolean))]
 	if (!ids.length)
 		return {}
-	const res = await apiFetch(`${BASE}/api/research/status?album_ids=${encodeURIComponent(ids.join(','))}`, { method: 'GET' })
-	if (!res || !res.ok)
-		throw new Error(`HTTP ${res?.status}`)
-	const data = await res.json() as StatusMapResponse
-	return (data.statuses ?? {}) as Record<string, ResearchStatus>
+	const chunks: string[][] = []
+	for (let i = 0; i < ids.length; i += RESEARCH_STATUS_CHUNK)
+		chunks.push(ids.slice(i, i + RESEARCH_STATUS_CHUNK))
+	const parts = await Promise.all(chunks.map(async (chunk) => {
+		const res = await apiFetch(`${BASE}/api/research/status?album_ids=${encodeURIComponent(chunk.join(','))}`, { method: 'GET' })
+		if (!res || !res.ok)
+			throw new Error(`HTTP ${res?.status}`)
+		const data = await res.json() as StatusMapResponse
+		return (data.statuses ?? {}) as Record<string, ResearchStatus>
+	}))
+	return Object.assign({}, ...parts) as Record<string, ResearchStatus>
 }
 
 /** POST a trigger — no body = first run; {mode:'restart'} redo; {mode:'refine',instruction} augment. */
@@ -209,8 +221,8 @@ export function useResearch(albumId: string | null, opts: { auto?: boolean } = {
 }
 
 /**
- * Batched research status for a whole board's covers in ONE request, polled
- * (still one request) only while some album is queued/running. Replaces the
+ * Batched research status for a whole board's covers (one request per
+ * RESEARCH_STATUS_CHUNK ids), polled only while some album is queued/running. Replaces the
  * per-cover GET that fired album-count concurrent note fetches on mount and
  * throttled the Lambda. Covers fall back to the bucket-payload seed when this
  * hasn't resolved (or the batch GET transiently fails), so it never blanks a dot.

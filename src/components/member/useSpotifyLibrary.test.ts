@@ -72,47 +72,124 @@ describe('useSpotifyLibrary — mount', () => {
   })
 })
 
-describe('useSpotifyLibrary — runLibrarySync', () => {
-  it('a debounced sync refetches state and does NOT call onSynced (no poll)', async () => {
+describe('useSpotifyLibrary — entry sync (FEAT-spotify-library-autosync)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  })
+
+  it('an active mount POSTs once; a debounced answer reads state once and never polls or repaints', async () => {
     api.getSpotifyLibraryState.mockResolvedValue(libState({ last_synced_at: '2026-01-01T00:00:00Z' }))
     api.listListenedAlbums.mockResolvedValue(listened())
     api.syncSpotifyLibrary.mockResolvedValue({ status: 'debounced' })
     const onSynced = vi.fn().mockResolvedValue(undefined)
 
     const { result } = renderHook(() => useSpotifyLibrary(onSynced, true))
+    await waitFor(() => expect(result.current.syncing).toBe(false))
     await waitFor(() => expect(result.current.libState).not.toBeNull())
 
-    await act(async () => {
-      await result.current.runLibrarySync()
-    })
-
     expect(api.syncSpotifyLibrary).toHaveBeenCalledTimes(1)
+    expect(api.getSpotifyLibraryState).toHaveBeenCalledTimes(1)
     expect(onSynced).not.toHaveBeenCalled()
-    expect(result.current.syncing).toBe(false)
   })
 
-  it('ignores a second sync while one is already in flight', async () => {
+  it('does not POST while inactive, and POSTs once when the board becomes active', async () => {
     api.getSpotifyLibraryState.mockResolvedValue(libState())
     api.listListenedAlbums.mockResolvedValue(listened())
-    // first sync hangs so `syncing` stays true across the second call
+    api.syncSpotifyLibrary.mockResolvedValue({ status: 'debounced' })
+
+    const { rerender } = renderHook(({ active }) => useSpotifyLibrary(vi.fn(), true, active), { initialProps: { active: false } })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(api.syncSpotifyLibrary).not.toHaveBeenCalled()
+
+    rerender({ active: true })
+    await waitFor(() => expect(api.syncSpotifyLibrary).toHaveBeenCalledTimes(1))
+  })
+
+  it('a hidden page waits for visibility before POSTing', async () => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    api.getSpotifyLibraryState.mockResolvedValue(libState())
+    api.listListenedAlbums.mockResolvedValue(listened())
+    api.syncSpotifyLibrary.mockResolvedValue({ status: 'debounced' })
+
+    renderHook(() => useSpotifyLibrary(vi.fn(), true))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(api.syncSpotifyLibrary).not.toHaveBeenCalled()
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await waitFor(() => expect(api.syncSpotifyLibrary).toHaveBeenCalledTimes(1))
+  })
+
+  it('in_flight polls until the server says done, and repaints only if the library changed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    api.listListenedAlbums.mockResolvedValue(listened())
+    api.syncSpotifyLibrary.mockResolvedValue({ status: 'in_flight' })
+    api.getSpotifyLibraryState
+      .mockResolvedValueOnce(libState({ sync_in_flight: true, last_synced_at: 'A' }))
+      .mockResolvedValueOnce(libState({ sync_in_flight: true, last_synced_at: 'A' }))
+      .mockResolvedValueOnce(libState({ sync_in_flight: false, last_synced_at: 'B' }))
+    const onSynced = vi.fn().mockResolvedValue(undefined)
+
+    renderHook(() => useSpotifyLibrary(onSynced, true))
+    await vi.advanceTimersByTimeAsync(5000)
+
+    await waitFor(() => expect(onSynced).toHaveBeenCalledTimes(1))
+    expect(api.getSpotifyLibraryState).toHaveBeenCalledTimes(3)
+    expect(api.syncSpotifyLibrary).toHaveBeenCalledTimes(1)
+  })
+
+  it('a finished pass that changed nothing does not repaint the board', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    api.listListenedAlbums.mockResolvedValue(listened())
+    api.syncSpotifyLibrary.mockResolvedValue({ status: 'queued' })
+    api.getSpotifyLibraryState
+      .mockResolvedValueOnce(libState({ sync_in_flight: true, last_synced_at: 'A' }))
+      .mockResolvedValueOnce(libState({ sync_in_flight: false, last_synced_at: 'A' }))
+    const onSynced = vi.fn().mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useSpotifyLibrary(onSynced, true))
+    await vi.advanceTimersByTimeAsync(3000)
+    await waitFor(() => expect(result.current.syncing).toBe(false))
+    expect(api.getSpotifyLibraryState).toHaveBeenCalledTimes(2)
+    expect(onSynced).not.toHaveBeenCalled()
+  })
+
+  it('unmounting mid-poll stops the poll', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    api.listListenedAlbums.mockResolvedValue(listened())
+    api.syncSpotifyLibrary.mockResolvedValue({ status: 'queued' })
+    api.getSpotifyLibraryState.mockResolvedValue(libState({ sync_in_flight: true }))
+
+    const { unmount } = renderHook(() => useSpotifyLibrary(vi.fn(), true))
+    await waitFor(() => expect(api.getSpotifyLibraryState).toHaveBeenCalledTimes(1))
+    unmount()
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(api.getSpotifyLibraryState).toHaveBeenCalledTimes(1)
+  })
+
+  it('a manual sync during an entry sync is ignored (one loop per hook)', async () => {
+    api.getSpotifyLibraryState.mockResolvedValue(libState())
+    api.listListenedAlbums.mockResolvedValue(listened())
     let release: () => void = () => {}
     api.syncSpotifyLibrary.mockReturnValue(new Promise((res) => {
-      release = () => res({ status: 'ok' })
+      release = () => res({ status: 'debounced' })
     }))
 
     const { result } = renderHook(() => useSpotifyLibrary(vi.fn(), true))
-    await waitFor(() => expect(result.current.libState).not.toBeNull())
-
-    act(() => {
-      void result.current.runLibrarySync()
-    })
     await waitFor(() => expect(result.current.syncing).toBe(true))
     act(() => {
       void result.current.runLibrarySync() // guarded — no second enqueue
     })
 
     expect(api.syncSpotifyLibrary).toHaveBeenCalledTimes(1)
-    act(() => release())
+    await act(async () => release())
   })
 })
 

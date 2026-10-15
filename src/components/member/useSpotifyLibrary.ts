@@ -1,35 +1,66 @@
 // FEAT-spotify-library-sync — the member board's Spotify-library surface, pulled
 // out of BucketBoard.tsx by REFACTOR-frontend-member-surface Step 4b. Owns the
 // special bucket's sync state (banners + per-album source/state map), the
-// listened-album archive (cover hint), and the manual-sync poll. Behavior
-// unchanged: same fetch-once-on-mount effects, same debounced-sync poll loop.
+// listened-album archive (cover hint), and the sync poll.
+//
+// FEAT-spotify-library-autosync: the sync now runs on every board ENTRY (mount
+// while active, or the tab becoming active again) instead of only from the 동기화
+// button. What keeps that from stacking Spotify reads is the server's run-row gate
+// (POST answers queued / in_flight / debounced — one outstanding job at a time,
+// and a POST right after a finish is a no-op); the client adds only what the
+// server cannot see: one loop per hook, no POST from a hidden page, a poll that
+// pauses while hidden, stops when the board leaves, and dies with the component.
 //
 // The board's tree refresh (bucketStore) is injected as `onSynced` so this hook
 // stays decoupled from the store — after a real sync advances last_synced_at, it
 // calls back to repaint the board with the newly pulled albums/badges.
 import type { SpotifyLibraryAlbumState, SpotifyLibraryState } from './spotify.api'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getSpotifyLibraryState, listListenedAlbums, syncSpotifyLibrary } from './spotify.api'
+
+// Poll cadence while the server reports the pass in flight. The cap only bounds
+// THIS loop; the server's 5-minute stale window is what frees a lost request.
+const POLL_MS = 2000
+const POLL_CAP = 45
 
 export interface SpotifyLibrarySurface {
   /** Sync state — banners (needs_reauth / writes_enabled) + the album source/state rows. */
   libState: SpotifyLibraryState | null
-  /** album_id → sync row, for the cover source/state badges (derived from libState). */
+  /** album_id → sync row, for the cover state badge + saved-time sort (derived from libState). */
   libAlbumMap: Map<string, SpotifyLibraryAlbumState>
   /** The member's cumulative listened-album set, for the "이미 들음 → 평론 가능" hint. */
   listenedAlbumIds: Set<string>
-  /** True while a manual sync is in flight (drives the 동기화 button spinner). */
+  /** True while a sync (automatic or manual) is being waited on. */
   syncing: boolean
-  /** Enqueue the worker reconcile, poll until it lands, then repaint via onSynced. */
+  /** Request a sync, poll until the server says it finished, then repaint via onSynced. */
   runLibrarySync: () => Promise<void>
 }
 
+/** Resolve after `ms`, then keep waiting while the page is hidden. */
+function sleepVisible(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        resolve()
+        return
+      }
+      const onVis = () => {
+        if (!document.hidden) {
+          document.removeEventListener('visibilitychange', onVis)
+          resolve()
+        }
+      }
+      document.addEventListener('visibilitychange', onVis)
+    }, ms)
+  })
+}
+
 /**
- * @param onSynced Repaints the board (bucketStore) after a real sync lands.
+ * @param onSynced Repaints the board (bucketStore) after a pass changed the library.
  * @param isOwner SEC-member-listening-data-boundary Step 1. Every read this hook
  * makes is owner-global: `GET /api/buckets/spotify-library/state` was already
  * `require_owner`, and `GET /api/library/listened-albums` became so in this step.
- * Both mount effects and the manual sync are refused for a non-owner.
+ * Both the entry sync and the manual sync are refused for a non-owner.
  *
  * This is the surface the RFC's own table missed. The comment below used to
  * reason "the board only ever mounts on the self-dashboard, so this is inherently
@@ -42,10 +73,10 @@ export interface SpotifyLibrarySurface {
  * Gating it here rather than leaning on the 403 is deliberate: the backend PR's
  * rollback is "revert the PR", and a client that still asks would silently resume
  * leaking the moment it were reverted.
+ * @param active The board is the visible dashboard tab. Becoming active is an
+ * "entry" and requests a sync; leaving stops the poll.
  */
-export function useSpotifyLibrary(onSynced: () => Promise<void>, isOwner: boolean): SpotifyLibrarySurface {
-  // The special bucket's sync state (banners + per-album source/state map) and
-  // whether a manual sync is in flight.
+export function useSpotifyLibrary(onSynced: () => Promise<void>, isOwner: boolean, active = true): SpotifyLibrarySurface {
   const [libState, setLibState] = useState<SpotifyLibraryState | null>(null)
   const [syncing, setSyncing] = useState(false)
 
@@ -57,28 +88,26 @@ export function useSpotifyLibrary(onSynced: () => Promise<void>, isOwner: boolea
   // a transient failure never blocks the board.
   const [listenedAlbumIds, setListenedAlbumIds] = useState<Set<string>>(() => new Set())
 
-  // album_id → Spotify-library sync row, for the cover source/state badges.
+  const mountedRef = useRef(true)
+  const activeRef = useRef(active)
+  const loopRef = useRef(false)
+  const onSyncedRef = useRef(onSynced)
+  activeRef.current = active
+  onSyncedRef.current = onSynced
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  // album_id → Spotify-library sync row, for the cover state badge + saved-time sort.
   const libAlbumMap = useMemo(() => {
     const m = new Map<string, SpotifyLibraryAlbumState>()
     for (const a of libState?.albums ?? [])
       m.set(a.album_id, a)
     return m
   }, [libState])
-
-  // Load the Spotify-library sync state (banners + per-album source/state map).
-  // Worker-fed; the GET never calls Spotify (rule #9). A transient failure just
-  // leaves the section unbadged — it never blocks the crate board.
-  useEffect(() => {
-    if (!isOwner)
-      return
-    let alive = true
-    getSpotifyLibraryState()
-      .then(s => alive && setLibState(s))
-      .catch(() => { /* non-fatal — board renders without badges */ })
-    return () => {
-      alive = false
-    }
-  }, [isOwner])
 
   // FEAT-bucket-identity Direction B — fetch the listened-album archive ONCE on
   // mount (no polling) for the "이미 들음 → 평론 가능" cover hint. Quiet no-op on
@@ -104,41 +133,69 @@ export function useSpotifyLibrary(onSynced: () => Promise<void>, isOwner: boolea
     }
   }, [isOwner])
 
-  // 동기화 — model on refreshRecent(): POST enqueues the worker reconcile (rule
-  // #9, no synchronous Spotify call), then POLL /spotify-library/state until
-  // last_synced_at advances past the pre-sync value (cap ~10 polls / ~20s), then
-  // refetch the board + state so the new badges/pulled albums paint. A
-  // 'debounced' response (a sync ran <30s ago) skips the poll. Best-effort: any
-  // failure just clears the spinner — the next mount/poll reconciles.
-  async function runLibrarySync(): Promise<void> {
+  // POST (enqueue only — rule #9, no synchronous Spotify call), read the state, and
+  // while the server says the pass is in flight, poll it. The board is repainted
+  // only when last_synced_at moved — it advances exclusively on rows a pass
+  // changed, so a steady library costs no tree refetch. Best-effort throughout:
+  // any failure clears the spinner and leaves the last good state in place.
+  const runLibrarySync = useCallback(async (): Promise<void> => {
     // Owner-only action (`POST /api/buckets/spotify-library/sync` is require_owner).
-    // The button is not rendered for a member, but the callback is exported, so it
-    // refuses here rather than relying on nobody calling it.
-    if (!isOwner || syncing)
+    if (!isOwner || loopRef.current)
       return
+    loopRef.current = true
     setSyncing(true)
-    const before = libState?.last_synced_at ?? null
     try {
-      const { status } = await syncSpotifyLibrary()
-      if (status === 'debounced') {
-        setLibState(await getSpotifyLibraryState())
+      let status: string | null = null
+      try {
+        status = (await syncSpotifyLibrary()).status
+      }
+      catch { /* still read the state below — the board needs it either way */ }
+      if (!mountedRef.current)
         return
+      let state = await getSpotifyLibraryState()
+      if (!mountedRef.current)
+        return
+      const changedBefore = state.last_synced_at
+      setLibState(state)
+      if (status === 'debounced' || status == null)
+        return
+      for (let i = 0; i < POLL_CAP && state.sync_in_flight; i++) {
+        await sleepVisible(POLL_MS)
+        if (!mountedRef.current || !activeRef.current)
+          return
+        state = await getSpotifyLibraryState()
+        if (!mountedRef.current)
+          return
+        setLibState(state)
       }
-      for (let i = 0; i < 10; i++) {
-        await new Promise(r => setTimeout(r, 2000))
-        const next = await getSpotifyLibraryState()
-        setLibState(next)
-        if (next.last_synced_at && next.last_synced_at !== before) {
-          await onSynced()
-          break
-        }
-      }
+      if (!state.sync_in_flight && state.last_synced_at !== changedBefore)
+        await onSyncedRef.current()
     }
     catch { /* non-fatal — clear the spinner, leave existing state in place */ }
     finally {
-      setSyncing(false)
+      loopRef.current = false
+      if (mountedRef.current)
+        setSyncing(false)
     }
-  }
+  }, [isOwner])
+
+  // Entry sync: once per entry (mount while active / the tab turning active). A
+  // hidden page does not POST until it is shown.
+  useEffect(() => {
+    if (!isOwner || !active)
+      return
+    if (typeof document !== 'undefined' && document.hidden) {
+      const onVis = () => {
+        if (!document.hidden) {
+          document.removeEventListener('visibilitychange', onVis)
+          void runLibrarySync()
+        }
+      }
+      document.addEventListener('visibilitychange', onVis)
+      return () => document.removeEventListener('visibilitychange', onVis)
+    }
+    void runLibrarySync()
+  }, [isOwner, active, runLibrarySync])
 
   return { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync }
 }
