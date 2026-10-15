@@ -24,6 +24,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/automation/controls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Automation Control
+         * @description Pause or resume one job (FEAT-automation-admin 3b).
+         *
+         *     Idempotent twice over: a resent `request_id` replays the stored result, and
+         *     pausing a paused job is `no_change`. Audited in `automation_control_events`.
+         *     Executors honour it at their next boundary; nothing in flight is cancelled.
+         */
+        post: operations["post_automation_control_api_admin_automation_controls_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/automation/queue-detail": {
         parameters: {
             query?: never;
@@ -2261,6 +2285,63 @@ export interface components {
              */
             status: "ok" | "unknown";
         };
+        /** AutomationControlRequest */
+        Backend_AutomationControlRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pause" | "resume";
+            /** Job Key */
+            job_key: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** AutomationControlResult */
+        Backend_AutomationControlResult: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pause" | "resume";
+            control: components["schemas"]["Backend_AutomationControlState"];
+            /** Job Key */
+            job_key: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "applied" | "no_change";
+            /** Replayed */
+            replayed: boolean;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** AutomationControlState */
+        Backend_AutomationControlState: {
+            /** Changed At */
+            changed_at?: string | null;
+            /**
+             * Confirmation Overdue
+             * @default false
+             */
+            confirmation_overdue: boolean;
+            /**
+             * Confirmed
+             * @default false
+             */
+            confirmed: boolean;
+            /** Honored At */
+            honored_at?: string | null;
+            /** Paused */
+            paused?: boolean | null;
+        };
         /** AutomationHeartbeatView */
         Backend_AutomationHeartbeatView: {
             /** Age Seconds */
@@ -2287,6 +2368,7 @@ export interface components {
         Backend_AutomationJob: {
             /** Ai Provider */
             ai_provider?: string | null;
+            control?: components["schemas"]["Backend_AutomationControlState"] | null;
             /** Controls */
             controls?: string[];
             /**
@@ -4938,6 +5020,67 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_AutomationSnapshot"];
                 };
+            };
+        };
+    };
+    post_automation_control_api_admin_automation_controls_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AutomationControlRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AutomationControlResult"];
+                };
+            };
+            /** @description Not the owner (answered before any body handling) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown control: the job has no pause control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description request_id already used for another job or action */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+            /** @description Database unavailable; resend with the SAME request_id */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
