@@ -360,9 +360,26 @@
 	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 	cursor: pointer;
 	padding: 0;
-	/* Explicit and above .bb-tile-mark (widgets.css, z-index:1) — see that
-	   rule's comment for why this needs to be intentional, not implicit. */
+	/* Above .bb-tile-mark (widgets.css, z-index:1) in case a future size change
+	   makes them touch again — but they must not share pixels: see below. */
 	z-index: 2;
+}
+/* FEAT-spotify-library-autosync Step 1 — the dot used to sit at the SAME
+   bottom-left corner as the ✎ 평론 쓸 것 mark, on top of it. The 16px dot covered
+   6–22px while the ✎'s centre is at 19px, so a click on the ✎ opened the research
+   note instead of toggling the mark. When a tile has the mark, the dot now sits
+   beside it (mark left 6 + width + 6 gap), vertically centred on it. A tile without
+   the mark keeps the corner position above. */
+.bb-tile:has(.bb-tile-mark) .rsh-cover-badge {
+	left: 38px;
+	bottom: 11px;
+}
+@media (hover: none), (pointer: coarse) {
+	/* the mark grows to 36px on coarse pointers (widgets.css) */
+	.bb-tile:has(.bb-tile-mark) .rsh-cover-badge {
+		left: 48px;
+		bottom: 16px;
+	}
 }
 .rsh-cover-check {
 	position: absolute;
