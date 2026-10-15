@@ -235,12 +235,15 @@ function findAlbumByAlbumId(buckets: BoardBucket[], albumId: string): BoardAlbum
 // labels). DnD stays live in every mode — dragging to reorder a bucket whose view
 // is non-default first BAKES the current display order into the persisted
 // `position` and resets that bucket to the manual/none view (so the drop lands
-// where it looks). The special Spotify-library bucket has no view controls.
-type SortMode = 'manual' | 'newest' | 'oldest' | 'popular'
+// where it looks). The special Spotify-library bucket gets its own sort set
+// (FEAT-spotify-library-autosync): Spotify saved time instead of manual order,
+// newest-saved first by default, and no drag-reorder to bake into.
+type SortMode = 'manual' | 'newest' | 'oldest' | 'popular' | 'saved_desc' | 'saved_asc'
 type GroupMode = 'none' | 'artist' | 'genre'
 interface BucketView { sort: SortMode, group: GroupMode, genreFilter: string[], typeFilter: string[] }
 const VIEW_KEY = 'lf_bucket_views'
 const DEFAULT_BUCKET_VIEW: BucketView = { sort: 'manual', group: 'none', genreFilter: [], typeFilter: [] }
+const DEFAULT_LIB_VIEW: BucketView = { sort: 'saved_desc', group: 'none', genreFilter: [], typeFilter: [] }
 // Group label shown when an album carries no high-confidence genre (OQ4) — it
 // sorts last and is never a filter chip.
 const NO_GENRE = '장르 없음'
@@ -250,6 +253,13 @@ const SORT_OPTS: { v: SortMode, l: string }[] = [
   { v: 'oldest', l: '오래된' },
   { v: 'popular', l: '인기' },
 ]
+const LIB_SORT_OPTS: { v: SortMode, l: string }[] = [
+  { v: 'saved_desc', l: '저장 최신' },
+  { v: 'saved_asc', l: '저장 오래된' },
+  { v: 'newest', l: '발매 최신' },
+  { v: 'oldest', l: '발매 오래된' },
+  { v: 'popular', l: '인기' },
+]
 const GROUP_OPTS: { v: GroupMode, l: string }[] = [
   { v: 'none', l: '끔' },
   { v: 'artist', l: '아티스트' },
@@ -257,7 +267,7 @@ const GROUP_OPTS: { v: GroupMode, l: string }[] = [
 ]
 
 function sanitizeView(p: Partial<BucketView> | undefined): BucketView {
-  const sort = SORT_OPTS.some(o => o.v === p?.sort) ? p!.sort! : 'manual'
+  const sort = [...SORT_OPTS, ...LIB_SORT_OPTS].some(o => o.v === p?.sort) ? p!.sort! : 'manual'
   const group = GROUP_OPTS.some(o => o.v === p?.group) ? p!.group! : 'none'
   const genreFilter = Array.isArray(p?.genreFilter) ?
     p!.genreFilter!.filter((g): g is string => typeof g === 'string') :
@@ -286,9 +296,13 @@ function readBucketViews(): Record<string, BucketView> {
   return {}
 }
 
-function isDefaultView(v: BucketView): boolean {
-  return v.sort === 'manual' && v.group === 'none' && v.genreFilter.length === 0 && v.typeFilter.length === 0
+function isDefaultView(v: BucketView, d: BucketView = DEFAULT_BUCKET_VIEW): boolean {
+  return v.sort === d.sort && v.group === d.group && v.genreFilter.length === 0 && v.typeFilter.length === 0
 }
+
+// Spotify saved time (ISO) of an album, for the library's saved_* sorts. Absent
+// outside the library bucket — those sorts are never offered there.
+type SavedAt = (a: BoardAlbum) => string | null
 
 // Primary artist for grouping: the first artist_names entry, falling back to the
 // first comma-token of the joined display string, then a neutral dash.
@@ -301,8 +315,9 @@ function primaryArtist(a: BoardAlbum): string {
 }
 
 // Stable sort by the active mode (original order preserved on ties / for 'manual').
-// Missing release dates / popularity sink to the end regardless of direction.
-function sortAlbums(albums: BoardAlbum[], sort: SortMode): BoardAlbum[] {
+// Missing release dates / popularity / saved times sink to the end regardless of
+// direction.
+function sortAlbums(albums: BoardAlbum[], sort: SortMode, savedAt?: SavedAt): BoardAlbum[] {
   if (sort === 'manual')
     return albums
   return albums
@@ -315,14 +330,17 @@ function sortAlbums(albums: BoardAlbum[], sort: SortMode): BoardAlbum[] {
           return (px == null ? 1 : 0) - (py == null ? 1 : 0) || x.i - y.i
         return py - px || x.i - y.i // higher popularity first
       }
-      const dx = x.a.releaseDate || ''
-      const dy = y.a.releaseDate || ''
+      const saved = sort === 'saved_desc' || sort === 'saved_asc'
+      const key = (a: BoardAlbum) => (saved ? (savedAt?.(a) ?? '') : a.releaseDate) || ''
+      const dx = key(x.a)
+      const dy = key(y.a)
       if (!dx || !dy)
         return (dx ? 0 : 1) - (dy ? 0 : 1) || x.i - y.i
       if (dx === dy)
         return x.i - y.i
-      // ISO date strings sort lexically; 'newest' = descending.
-      return sort === 'newest' ? (dx < dy ? 1 : -1) : (dx < dy ? -1 : 1)
+      // ISO date/time strings (all UTC from the server) sort lexically.
+      const desc = sort === 'newest' || sort === 'saved_desc'
+      return desc ? (dx < dy ? 1 : -1) : (dx < dy ? -1 : 1)
     })
     .map(w => w.a)
 }
@@ -330,7 +348,7 @@ function sortAlbums(albums: BoardAlbum[], sort: SortMode): BoardAlbum[] {
 // Per-artist groups over a (already deduped + filtered) flat album list. Groups
 // are ordered by size (largest first), then artist name; within a group the active
 // sort applies.
-function artistGroups(albums: BoardAlbum[], sort: SortMode): { artist: string, albums: BoardAlbum[] }[] {
+function artistGroups(albums: BoardAlbum[], sort: SortMode, savedAt?: SavedAt): { artist: string, albums: BoardAlbum[] }[] {
   const groups = new Map<string, BoardAlbum[]>()
   for (const a of albums) {
     const k = primaryArtist(a)
@@ -339,7 +357,7 @@ function artistGroups(albums: BoardAlbum[], sort: SortMode): { artist: string, a
     groups.set(k, arr)
   }
   return [...groups.entries()]
-    .map(([artist, gAlbums]) => ({ artist, albums: sortAlbums(gAlbums, sort) }))
+    .map(([artist, gAlbums]) => ({ artist, albums: sortAlbums(gAlbums, sort, savedAt) }))
     .sort((x, y) => y.albums.length - x.albums.length || x.artist.localeCompare(y.artist, 'ko'))
 }
 
@@ -361,7 +379,7 @@ function passesGenre(a: BoardAlbum, filter: string[]): boolean {
 
 // Per-genre groups (single home = primary genre, OQ5). Same sort-within-group as
 // artistGroups; the NO_GENRE group always sorts last.
-function genreGroups(albums: BoardAlbum[], sort: SortMode): { genre: string, albums: BoardAlbum[] }[] {
+function genreGroups(albums: BoardAlbum[], sort: SortMode, savedAt?: SavedAt): { genre: string, albums: BoardAlbum[] }[] {
   const groups = new Map<string, BoardAlbum[]>()
   for (const a of albums) {
     const k = primaryGenre(a) ?? NO_GENRE
@@ -370,7 +388,7 @@ function genreGroups(albums: BoardAlbum[], sort: SortMode): { genre: string, alb
     groups.set(k, arr)
   }
   return [...groups.entries()]
-    .map(([genre, gAlbums]) => ({ genre, albums: sortAlbums(gAlbums, sort) }))
+    .map(([genre, gAlbums]) => ({ genre, albums: sortAlbums(gAlbums, sort, savedAt) }))
     .sort((x, y) => {
       // NO_GENRE always last, regardless of size.
       if ((x.genre === NO_GENRE) !== (y.genre === NO_GENRE))
@@ -461,12 +479,9 @@ function CrStatus({ b }: { b: BoardBucket }) {
 }
 
 // ── spotify-library badge meta ───────────────────────────────────────────────
-// Per-album source + sync-state, joined to a cover by album_id from the
-// /spotify-library/state map. source → who put it there; state → the last
-// reconcile outcome (dot color). Rendered only inside the special library bucket.
-function slibSourceLabel(source: string): string {
-  return source === 'myblog_added' ? '내가 추가' : '기존'
-}
+// Per-album sync state, joined to a cover by album_id from the
+// /spotify-library/state map → the last reconcile outcome (dot color). Rendered
+// only inside the special library bucket.
 function slibStateColor(state: string): string {
   if (state === 'synced')
     return 'oklch(0.58 0.10 155)' // 녹 — Spotify matches intent
@@ -477,18 +492,15 @@ function slibStateColor(state: string): string {
   return 'var(--color-faded)' // 회 — pending (not yet reconciled)
 }
 
-// Source pill (top-left) + state dot (top-right) overlaid on a library cover.
+// State dot (top-right) overlaid on a library cover. FEAT-spotify-library-autosync
+// dropped the 내가 추가 / 기존 source pill with the section split — provenance still
+// decides what may be trashed (the trash dock names the reason on a refused drop).
 function SlibBadges({ row }: { row: SpotifyLibraryAlbumState }) {
   return (
-    <>
-      <span className="mono" style={{ position: 'absolute', left: 6, top: 6, fontSize: 9, letterSpacing: '0.06em', color: '#fff', background: 'rgba(11,61,31,0.82)', padding: '2px 5px', borderRadius: 3 }}>
-        {slibSourceLabel(row.source)}
-      </span>
-      <span
+    <span
 	title={`상태: ${row.state}${row.last_error ? ` · ${row.last_error}` : ''}`}
 	style={{ position: 'absolute', top: 6, right: 6, width: 10, height: 10, borderRadius: 10, background: slibStateColor(row.state), border: '1.5px solid var(--color-bg)' }}
-      />
-    </>
+    />
   )
 }
 
@@ -1179,10 +1191,14 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
   const isLib = bucket.kind === SLIB_KIND
 
   // This bucket's view + a functional setter (per-bucket; missing → default).
-  const view = bucketViews[bucket.id] ?? DEFAULT_BUCKET_VIEW
-  const viewActive = !isDefaultView(view)
+  const defaultView = isLib ? DEFAULT_LIB_VIEW : DEFAULT_BUCKET_VIEW
+  const view = bucketViews[bucket.id] ?? defaultView
+  const viewActive = !isDefaultView(view, defaultView)
   const updateView = (fn: (v: BucketView) => BucketView) =>
-    setBucketViews(prev => ({ ...prev, [bucket.id]: fn(prev[bucket.id] ?? DEFAULT_BUCKET_VIEW) }))
+    setBucketViews(prev => ({ ...prev, [bucket.id]: fn(prev[bucket.id] ?? defaultView) }))
+  const sortOpts = isLib ? LIB_SORT_OPTS : SORT_OPTS
+  // Library covers sort by Spotify saved time (V61 spotify_added_at via the sync state).
+  const savedAt: SavedAt | undefined = isLib ? a => libState.get(a.albumId ?? '')?.spotify_added_at ?? null : undefined
   const resetView = () => setBucketViews((prev) => {
     if (!prev[bucket.id])
       return prev
@@ -1228,7 +1244,7 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
 	setDragKind={setDragKind}
 	onTouchActions={() => openAlbumSheet({ album: a, bucketId: bucket.id, copySource: false, fromLib: isLib, source: isLib ? libState.get(a.albumId ?? '')?.source : undefined })}
 	onInsert={isLib ? undefined : handleInsert}
-	research={(isLib || a.itemType !== 'album') ?
+	research={a.itemType !== 'album' ?
 		undefined :
 		{
 			mode: bucket.researchMode,
@@ -1256,33 +1272,20 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
       ＋ 추가
     </button>
   )
-  // Library bucket: split covers into "내가 넣은" (myblog_added → pushed to Spotify) and
-  // "기존" (preexisting in the Library, non-deletable) with a boundary between the two.
-  const libMine = isLib ? bucket.albums.filter(a => (libState.get(a.albumId ?? '')?.source ?? 'myblog_added') !== 'preexisting') : []
-  const libExisting = isLib ? bucket.albums.filter(a => libState.get(a.albumId ?? '')?.source === 'preexisting') : []
-  const slibLabel = (divider: boolean): React.CSSProperties => ({
-    gridColumn: '1 / -1',
-    fontSize: 10,
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase',
-    color: 'var(--color-subtle)',
-    marginTop: divider ? 6 : 0,
-    paddingTop: divider ? 14 : 0,
-    borderTop: divider ? '1px solid var(--color-border)' : 'none',
-  })
-
   // This bucket's albums under its view: genre-filter, then either a flat sorted
   // list (group none) or per-artist / per-genre sections (each sorted within).
-  const filtered = isLib ? [] : bucket.albums.filter(a => passesGenre(a, view.genreFilter) && passesType(a, view.typeFilter))
-  const flatAlbums = view.group === 'none' ? sortAlbums(filtered, view.sort) : []
+  // FEAT-spotify-library-autosync: the library is ONE list under the same view
+  // machinery (no 내가 넣은 / 기존 split) — provenance still gates trashing.
+  const filtered = bucket.albums.filter(a => passesGenre(a, view.genreFilter) && passesType(a, view.typeFilter))
+  const flatAlbums = view.group === 'none' ? sortAlbums(filtered, view.sort, savedAt) : []
   const sections: { label: string, albums: BoardAlbum[] }[] =
     view.group === 'genre' ?
-      genreGroups(filtered, view.sort).map(g => ({ label: g.genre, albums: g.albums })) :
+      genreGroups(filtered, view.sort, savedAt).map(g => ({ label: g.genre, albums: g.albums })) :
       view.group === 'artist' ?
-        artistGroups(filtered, view.sort).map(g => ({ label: g.artist, albums: g.albums })) :
+        artistGroups(filtered, view.sort, savedAt).map(g => ({ label: g.artist, albums: g.albums })) :
         []
   const sectionLabelStyle: React.CSSProperties = { gridColumn: '1 / -1', fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-subtle)', marginTop: 2 }
-  const filteredEmpty = !isLib && bucket.albums.length > 0 && filtered.length === 0
+  const filteredEmpty = bucket.albums.length > 0 && filtered.length === 0
 
   return (
     <div
@@ -1381,7 +1384,6 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
           <button type="button" className="iconbtn" title="버킷 색상" onClick={() => setColoring(v => !v)} style={{ padding: 0 }}>
             <span style={{ width: 13, height: 13, borderRadius: 13, background: accent, border: '1px solid var(--color-border)', display: 'block' }} />
           </button>
-          {!isLib && (
             <button
 	type="button"
 	className="iconbtn"
@@ -1392,8 +1394,6 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
             >
               ⇅
             </button>
-          )}
-          {!isLib && (
             <button
 	type="button"
 	className="iconbtn"
@@ -1404,7 +1404,6 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
             >
               🔎
             </button>
-          )}
           {!isLib && (
             <button
 	type="button"
@@ -1470,7 +1469,7 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
       )}
 
       {/* auto-research scope (off / 전체 / 선택) */}
-      {researching && !isLib && (
+      {researching && (
         <div className="rsh-mode-row">
           <span className="meta">자동 조사</span>
           <div className="rsh-seg" role="group" aria-label="자동 조사 범위">
@@ -1511,13 +1510,13 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
       )}
 
       {/* per-bucket view controls — sort / group / genre filter (FEAT-bucket-organize) */}
-      {viewing && !isLib && (
+      {viewing && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, padding: '10px 12px', background: 'color-mix(in srgb, var(--color-paper) 60%, var(--color-bg))', border: '1px solid var(--color-border-soft)', borderRadius: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px 12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className="meta">정렬</span>
               <div className="rsh-seg" role="group" aria-label="정렬">
-                {SORT_OPTS.map(o => (
+                {sortOpts.map(o => (
                   <button key={o.v} type="button" className="rsh-seg-btn" aria-pressed={view.sort === o.v} onClick={() => updateView(v => ({ ...v, sort: o.v }))}>{o.l}</button>
                 ))}
               </div>
@@ -1588,19 +1587,6 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
         ) :
         (
       <div style={{ display: 'grid', gap: '14px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))' }}>
-        {isLib ?
-(
-          <>
-            <div className="mono" style={slibLabel(false)}>내가 넣은 · Spotify에 추가</div>
-            {libMine.map(renderChip)}
-            {addBtn}
-            <div className="mono" style={slibLabel(true)}>기존 · Spotify 라이브러리 (삭제 불가)</div>
-            {libExisting.length > 0 ?
-              libExisting.map(renderChip) :
-              <div className="mono" style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--color-faded)', padding: '4px 0', letterSpacing: '0.04em' }}>없음</div>}
-          </>
-        ) :
-(
           <>
             {view.group === 'none' ?
               flatAlbums.map(renderChip) :
@@ -1619,7 +1605,6 @@ function BucketInlineContent(props: InlineContentProps & { dropSurface: ReturnTy
             )}
             {addBtn}
           </>
-        )}
       </div>
         )}
 
@@ -2451,8 +2436,8 @@ export function BucketBoard({ isOwner, onOpen, reviews, active = true }: { isOwn
     () => (tree ?? []).filter(isManualAddTarget),
     [tree],
   )
-  // Every album id that shows a research dot (normal buckets — the library bucket
-  // has no research). One batched GET /api/research/status poll keeps all the
+  // Every album id that shows a research dot — normal buckets AND, since
+  // FEAT-spotify-library-autosync, the library bucket (auto-researched). One batched GET /api/research/status poll keeps all the
   // cover dots live; covers fall back to the bucket-payload seed meanwhile. This
   // replaces the per-cover note GET that fired album-count concurrent requests on
   // mount and throttled the Lambda → 503s ("조사 안 됨" until refresh).
@@ -2462,8 +2447,12 @@ export function BucketBoard({ isOwner, onOpen, reviews, active = true }: { isOwn
  if (a.albumId)
 ids.push(a.albumId)
 }))
+    for (const a of libBucket?.albums ?? []) {
+      if (a.albumId)
+        ids.push(a.albumId)
+    }
     return ids
-  }, [normalTree])
+  }, [normalTree, libBucket])
   // Pause the 4s research-status self-poll while this dashboard tab is hidden
   // (SelfDashboard keeps the board mounted). An empty id-set clears the map and
   // stops the poll; it re-arms with a fresh tick when the tab becomes active.
@@ -2571,7 +2560,7 @@ ids.push(a.albumId)
   // per-album badge map, listened-album hint, manual-sync poll) lives in a
   // dedicated hook (REFACTOR Step 4b). It repaints the board via `refresh` once a
   // real sync advances last_synced_at.
-  const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh, isOwner)
+  const { libState, libAlbumMap, listenedAlbumIds, syncing, runLibrarySync } = useSpotifyLibrary(refresh, isOwner, active)
 
   // FEAT-album-review-authoring Step 1 — my private "평론 쓸 것" marks.
   //
@@ -3319,8 +3308,10 @@ ids.push(a.albumId)
           <section className="bb-spotify-library-section" aria-label="Spotify 라이브러리">
             <div className="bb-inline-section-head">
               <span className="meta" style={{ color: 'var(--color-spotify)' }}>Spotify 라이브러리</span>
+              {/* Syncs by itself on every entry (FEAT-spotify-library-autosync); the
+                  button stays as a manual retry and shows the in-flight state. */}
               <button type="button" className="chip" disabled={syncing} onClick={() => void runLibrarySync()}>
-                {syncing ? '동기화 중…' : '동기화'}
+                {syncing ? '동기화 중…' : '다시 동기화'}
               </button>
             </div>
             {libState?.needs_reauth && (
@@ -3331,7 +3322,7 @@ ids.push(a.albumId)
             )}
             {libBucket ?
               <BucketInlineList items={[libBucket]} parentId={null} depth={0} expandedIds={expandedBucketIds} toggleExpanded={toggleExpanded} shared={shared} /> :
-              <div className="mono" style={{ padding: '10px 8px 4px', fontSize: 10.5, lineHeight: 1.5, color: 'var(--color-faded)' }}>동기화를 누르면 라이브러리를 불러옵니다</div>}
+              <div className="mono" style={{ padding: '10px 8px 4px', fontSize: 10.5, lineHeight: 1.5, color: 'var(--color-faded)' }}>{syncing ? '라이브러리를 불러오는 중…' : '라이브러리를 아직 불러오지 못했습니다'}</div>}
           </section>
 
           <section aria-label="내 버킷">

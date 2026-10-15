@@ -3927,6 +3927,8 @@ export interface components {
             last_error?: string | null;
             /** Source */
             source: string;
+            /** Spotify Added At */
+            spotify_added_at?: string | null;
             /** Spotify Id */
             spotify_id: string;
             /** State */
@@ -3945,6 +3947,15 @@ export interface components {
              * @default false
              */
             needs_reauth: boolean;
+            /** Sync Finished At */
+            sync_finished_at?: string | null;
+            /**
+             * Sync In Flight
+             * @default false
+             */
+            sync_in_flight: boolean;
+            /** Sync Requested At */
+            sync_requested_at?: string | null;
             /**
              * Writes Enabled
              * @default false

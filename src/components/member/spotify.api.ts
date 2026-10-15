@@ -50,7 +50,7 @@ export interface SpotifyConnection {
 /** Per-album sync row (one spotify_library_albums row joined to its album). */
 export type SpotifyLibraryAlbumState = components['schemas']['Backend_SpotifyLibraryAlbumState']
 
-/** POST /api/buckets/spotify-library/sync — { status: 'queued' | 'debounced' }. */
+/** POST /api/buckets/spotify-library/sync — { status: 'queued' | 'in_flight' | 'debounced' }. */
 export type SpotifyLibrarySyncResult = components['schemas']['Backend_SpotifyLibrarySyncResponse']
 
 /** Normalized GET /api/buckets/spotify-library/state view (optionals defaulted). */
@@ -61,6 +61,11 @@ export interface SpotifyLibraryState {
   needs_reauth: boolean
   /** backend mirror of SPOTIFY_LIBRARY_WRITES_ENABLED — false = review/plan-only */
   writes_enabled: boolean
+  /** FEAT-spotify-library-autosync — the run row: last request / last finished pass */
+  sync_requested_at: string | null
+  sync_finished_at: string | null
+  /** the server's verdict: a requested pass has not finished (and is not stale) */
+  sync_in_flight: boolean
   albums: SpotifyLibraryAlbumState[]
 }
 
@@ -131,7 +136,9 @@ export async function refreshRecent(): Promise<void> {
 /**
  * POST /api/buckets/spotify-library/sync — enqueue an async Spotify-library
  * reconcile (Cognito-JWT). Rule #9: this only ENQUEUES; the worker does the
- * Spotify reads/writes out of band. Returns { status: 'queued' | 'debounced' }.
+ * Spotify reads/writes out of band. Returns { status: 'queued' | 'in_flight' |
+ * 'debounced' } — the server's run-row gate decides, so calling it on every board
+ * entry never stacks jobs (FEAT-spotify-library-autosync).
  */
 export async function syncSpotifyLibrary(): Promise<SpotifyLibrarySyncResult> {
   const res = await apiFetch(`${BASE}/api/buckets/spotify-library/sync`, { method: 'POST' })
@@ -152,6 +159,9 @@ export async function getSpotifyLibraryState(): Promise<SpotifyLibraryState> {
     last_synced_at: data.last_synced_at ?? null,
     needs_reauth: Boolean(data.needs_reauth),
     writes_enabled: Boolean(data.writes_enabled),
+    sync_requested_at: data.sync_requested_at ?? null,
+    sync_finished_at: data.sync_finished_at ?? null,
+    sync_in_flight: Boolean(data.sync_in_flight),
     albums: data.albums ?? [],
   }
 }
