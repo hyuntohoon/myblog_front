@@ -1,9 +1,10 @@
 // FEAT-automation-admin Step 2c — the owner's read-only automation page.
 //
 // Renders `GET /api/admin/automation` (backend 2b) and, for the selected queue,
-// `GET /api/admin/automation/queue-detail` (2f). Nothing else: no job is
-// started, paused or retried from here (controls are Step 3, separately
-// approved). The 다시 읽기 button only re-issues the same GETs.
+// `GET /api/admin/automation/queue-detail` (2f). The one mutation is 3b's
+// pause / resume (./AutomationControl.tsx), offered only on jobs whose catalog
+// row lists the `pause` control; nothing is started or retried from here. The
+// 다시 읽기 button only re-issues the same GETs.
 //
 // Layout (owner's pick 2026-10-12, B+C): a 흐름 / 표 switch over the DB queues,
 // and one detail panel both views open. The full job catalog sits folded below.
@@ -19,11 +20,13 @@
 // - `heartbeats[].details` and `last_outcome` are written by local agents.
 //   They are rendered as React text children only — never through
 //   dangerouslySetInnerHTML or any markdown/HTML renderer (2b security-review).
-import type { AutomationAws, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, QueueDetail as QueueDetailData, QueueDetailResult, ReasonCount, SnapshotResult } from './automation.api'
+import type { AutomationAws, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, ControlState, QueueDetail as QueueDetailData, QueueDetailResult, ReasonCount, SnapshotResult } from './automation.api'
 import type { Flow, LivenessStatus, QueueVerdict, Tone } from './automationView'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { fetchAutomationSnapshot, fetchQueueDetail } from './automation.api'
+import { effectiveControl, JobControl } from './AutomationControl'
+import type { PostedControls } from './AutomationControl'
 import {
 	buildFlows,
 	consumersOf,
@@ -39,6 +42,7 @@ import {
 	LIVENESS_LABEL,
 	livenessTally,
 	LOCATION_LABEL,
+	pausedJobs,
 	queueLabels,
 	readQueue,
 	reasonName,
@@ -80,6 +84,12 @@ function useQueueDetail(key: string | null, snapshotAt: string): DetailState | n
 	return state.value
 }
 type View = 'flow' | 'table'
+
+interface ControlProps {
+	posted: PostedControls
+	onPosted: (key: string, control: ControlState, basis: AutomationJob['control']) => void
+	onChanged: () => void
+}
 
 const VIEW_KEY = 'automation-view'
 
@@ -171,6 +181,16 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 	const jobTally = livenessTally(snapshot.jobs)
 	const groups = groupJobsByLocation(snapshot.jobs)
 	const labels = queueLabels(snapshot)
+	const beats = useMemo(() => new Map(snapshot.heartbeats.map(h => [h.agent_key, h])), [snapshot])
+	// 3b: a POST's answer per job_key, until the re-read snapshot replaces it.
+	// One map for the whole page, so both copies of a job's control and the
+	// header line show the same state.
+	const [posted, setPosted] = useState<PostedControls>(() => new Map())
+	const onPosted = useCallback((key: string, control: ControlState, basis: AutomationJob['control']) => {
+		setPosted(m => new Map(m).set(key, { control, basis }))
+	}, [])
+	const ctl = { posted, onPosted, onChanged: onReload }
+	const paused = pausedJobs(snapshot.jobs.map(j => ({ ...j, control: effectiveControl(j, posted) })))
 
 	// Open on the most urgent queue, so the first thing in the detail panel is
 	// the thing worth reading.
@@ -232,6 +252,16 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 					<span className="auto-tally-line">{tallyLine(jobTally)}</span>
 					{jobTally.unknown > 0 && ' — 증거 없음은 볼 수 없다는 뜻이지 정상이라는 뜻이 아닙니다.'}
 				</p>
+				{paused.length > 0 && (
+					<p className="auto-paused" data-paused="">
+						일시정지 중
+						{' '}
+						{paused.length}
+						개:
+						{' '}
+						{paused.map(p => (p.unconfirmed ? `${p.job.name} (확인 전)` : p.job.name)).join(', ')}
+					</p>
+				)}
 				<div className="auto-meta">
 					<span>
 						스냅샷
@@ -258,7 +288,7 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 				</div>
 				<aside className="auto-detail" ref={detailRef} aria-label="대기열 상세">
 					{current ?
-							<QueueDetail queue={current} verdict={verdicts.get(current.key)!} jobs={snapshot.jobs} now={now} detail={detail} /> :
+							<QueueDetail queue={current} verdict={verdicts.get(current.key)!} jobs={snapshot.jobs} beats={beats} now={now} detail={detail} ctl={ctl} /> :
 							<p className="auto-lede">대기열이 없습니다.</p>}
 				</aside>
 			</div>
@@ -284,7 +314,7 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 							<span className="auto-count">{g.jobs.length}</span>
 						</h3>
 						<ul className="auto-jobs">
-							{g.jobs.map(j => <JobRow key={j.key} job={j} queueLabels={labels} now={now} onPick={k => pick(k, true)} />)}
+							{g.jobs.map(j => <JobRow key={j.key} job={j} beat={j.heartbeat_key ? beats.get(j.heartbeat_key) : null} queueLabels={labels} now={now} onPick={k => pick(k, true)} ctl={ctl} />)}
 						</ul>
 					</div>
 				))}
@@ -586,7 +616,7 @@ function StateBar({ queue }: { queue: AutomationQueue }) {
 	)
 }
 
-function QueueDetail({ queue, verdict, jobs, now, detail }: { queue: AutomationQueue, verdict: QueueVerdict, jobs: AutomationJob[], now: number, detail: DetailState | null }) {
+function QueueDetail({ queue, verdict, jobs, beats, now, detail, ctl }: { queue: AutomationQueue, verdict: QueueVerdict, jobs: AutomationJob[], beats: Map<string, AutomationHeartbeat>, now: number, detail: DetailState | null, ctl: ControlProps }) {
 	const r = readQueue(queue)
 	const consumers = consumersOf(queue.key, jobs)
 	const states = Object.entries(queue.counts ?? {}).sort((a, b) => b[1] - a[1])
@@ -667,6 +697,7 @@ function QueueDetail({ queue, verdict, jobs, now, detail }: { queue: AutomationQ
 											{' '}
 											{DECLARED_LABEL[j.declared_state] ?? j.declared_state}
 										</span>
+										<JobControl job={j} control={effectiveControl(j, ctl.posted)} beat={j.heartbeat_key ? beats.get(j.heartbeat_key) : null} now={now} onPosted={ctl.onPosted} onChanged={ctl.onChanged} />
 									</li>
 								))}
 							</ul>
@@ -842,7 +873,7 @@ function SourceItem({ source }: { source: AutomationSource }) {
 	)
 }
 
-function JobRow({ job, queueLabels, now, onPick }: { job: AutomationJob, queueLabels: Map<string, string>, now: number, onPick: (key: string) => void }) {
+function JobRow({ job, beat, queueLabels, now, onPick, ctl }: { job: AutomationJob, beat: AutomationHeartbeat | null | undefined, queueLabels: Map<string, string>, now: number, onPick: (key: string) => void, ctl: ControlProps }) {
 	const status = job.liveness.status
 	const seen = relativeAge(job.liveness.observed_at, now)
 	return (
@@ -904,6 +935,7 @@ function JobRow({ job, queueLabels, now, onPick }: { job: AutomationJob, queueLa
 					</p>
 				)}
 				{job.note && <p className="auto-job-note">{job.note}</p>}
+				<JobControl job={job} control={effectiveControl(job, ctl.posted)} beat={beat} now={now} onPosted={ctl.onPosted} onChanged={ctl.onChanged} />
 			</div>
 			<div className="auto-declared">
 				<span className="auto-declared-label">인벤토리</span>

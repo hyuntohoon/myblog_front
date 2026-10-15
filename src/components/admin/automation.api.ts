@@ -74,3 +74,44 @@ export async function fetchQueueDetail(key: string, signal?: AbortSignal): Promi
 		return { kind: 'error', status: res.status }
 	}
 }
+
+// ── 3b: pause / resume (`POST /api/admin/automation/controls`) ──
+// A mutation, so unlike the GETs it has its own Cognito-JWT route in
+// infra/apigateway.tf; `require_owner` in the Lambda is still the owner
+// boundary (a member's token passes the authorizer and gets 403 here).
+// The caller mints ONE request_id per confirmation and resends it unchanged
+// after a 503 or no answer: the server applies it once or replays the stored
+// result, so a retry can never act twice.
+
+export type ControlAction = components['schemas']['Backend_AutomationControlRequest']['action']
+export type ControlState = components['schemas']['Backend_AutomationControlState']
+export type ControlOutcome = components['schemas']['Backend_AutomationControlResult']
+
+export type ControlResult =
+	| { kind: 'ok', result: ControlOutcome } |
+	{ kind: 'forbidden' } |
+	/** The job has no pause control (404), or the request_id was used for another job/action (409). */
+	{ kind: 'rejected', status: 404 | 409 } |
+	/** Outcome unknown (503, timeout, network): resend with the SAME request_id. */
+	{ kind: 'error', status: number | null }
+
+export async function postAutomationControl(jobKey: string, action: ControlAction, requestId: string): Promise<ControlResult> {
+	const res = await apiFetch(`${BASE}/api/admin/automation/controls`, {
+		method: 'POST',
+		body: JSON.stringify({ job_key: jobKey, action, request_id: requestId }),
+	})
+	if (!res)
+		return { kind: 'error', status: null }
+	if (res.status === 403)
+		return { kind: 'forbidden' }
+	if (res.status === 404 || res.status === 409)
+		return { kind: 'rejected', status: res.status }
+	if (!res.ok)
+		return { kind: 'error', status: res.status }
+	try {
+		return { kind: 'ok', result: (await res.json()) as ControlOutcome }
+	}
+	catch {
+		return { kind: 'error', status: res.status }
+	}
+}

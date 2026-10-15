@@ -9,7 +9,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { awsSnapshot, realDetails, realSnapshot } from './automation.fixture'
 
-const api = vi.hoisted(() => ({ fetchAutomationSnapshot: vi.fn(), fetchQueueDetail: vi.fn() }))
+const api = vi.hoisted(() => ({ fetchAutomationSnapshot: vi.fn(), fetchQueueDetail: vi.fn(), postAutomationControl: vi.fn() }))
 const auth = vi.hoisted(() => ({ isLoggedIn: vi.fn(() => true) }))
 
 vi.mock('./automation.api', () => api)
@@ -406,5 +406,58 @@ describe('agent-written heartbeat text', () => {
 		serve({ kind: 'ok', snapshot: snap })
 		render(<AutomationBoard />)
 		expect(await screen.findByText('카탈로그에 없음')).toBeTruthy()
+	})
+})
+
+describe('3b pause controls', () => {
+	function withControls() {
+		const snap = realSnapshot()
+		snap.jobs = snap.jobs.map((j) => {
+			if (j.key === 'lyrics_demand_source')
+				return { ...j, controls: ['pause'], control: { paused: true, changed_at: '2026-10-12T10:00:00Z', honored_at: null, confirmed: false, confirmation_overdue: true } }
+			if (j.key === 'gpt-translate-poller')
+				return { ...j, controls: ['pause'], control: { paused: false, confirmed: false, confirmation_overdue: false } }
+			return j
+		})
+		return snap
+	}
+
+	it('names paused jobs in the header, so a pause never hides in the folded list', async () => {
+		serve({ kind: 'ok', snapshot: withControls() })
+		render(<AutomationBoard />)
+		const line = await waitFor(() => {
+			const el = document.querySelector('[data-paused]')
+			expect(el).not.toBeNull()
+			return el!
+		})
+		expect(line).toHaveTextContent('일시정지 중 1개: Lyrics demand collection (확인 전)')
+	})
+
+	it('puts the control on controllable job rows only, and a success re-reads the snapshot', async () => {
+		serve({ kind: 'ok', snapshot: withControls() })
+		api.postAutomationControl.mockResolvedValue({ kind: 'ok', result: { job_key: 'gpt-translate-poller', action: 'pause', outcome: 'applied', replayed: false, request_id: 'x', control: { paused: true, confirmed: false, confirmation_overdue: false } } })
+		render(<AutomationBoard />)
+		const row = await waitFor(() => {
+			const el = document.querySelector('li[data-job="gpt-translate-poller"]')
+			expect(el).not.toBeNull()
+			return el as HTMLElement
+		})
+		expect(document.querySelector('li[data-job="verifier_drift"] [data-control]')).toBeNull()
+		expect(within(document.querySelector('li[data-job="lyrics_demand_source"]') as HTMLElement).getByText(/아직 확인하지 않았습니다/)).toBeTruthy()
+		const calls = api.fetchAutomationSnapshot.mock.calls.length
+		// Hold the re-read, so the page is seen between the POST and the new snapshot.
+		let deliver: (r: SnapshotResult) => void = () => {}
+		api.fetchAutomationSnapshot.mockReturnValueOnce(new Promise<SnapshotResult>((r) => {
+			deliver = r
+		}))
+		fireEvent.click(within(row).getByRole('button', { name: '일시정지' }))
+		fireEvent.click(within(row).getByRole('button', { name: '일시정지 확인' }))
+		await waitFor(() => expect(api.fetchAutomationSnapshot.mock.calls.length).toBe(calls + 1))
+		expect(api.postAutomationControl).toHaveBeenCalledWith('gpt-translate-poller', 'pause', expect.any(String))
+		// Before the re-read lands, the header already reflects the POST's answer.
+		expect(document.querySelector('[data-paused]')).toHaveTextContent('일시정지 중 2개')
+		// The re-read is the server's word and replaces it, whatever it says.
+		await act(async () => deliver({ kind: 'ok', snapshot: withControls() }))
+		expect(document.querySelector('[data-paused]')).toHaveTextContent('일시정지 중 1개: Lyrics demand collection')
 	})
 })
