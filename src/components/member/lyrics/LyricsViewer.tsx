@@ -106,11 +106,13 @@ import { canControlPlayback } from '@lib/playback/ownership'
 import { PlaybackOwnerBanner } from '../playback/PlaybackOwnerBanner'
 import { MYBLOG_PLAYBACK_CHANGED } from '@lib/spotifyPlayback'
 import { useDismissable } from '@lib/useDismissable'
+import { isOwnerUser } from '@lib/owner'
 import { useScrollLock } from '@lib/useScrollLock'
 import { ArtistNames } from '../NowPlaying'
 import { readLivePlayback } from './playback.api'
 import { readQueue } from './queue.api'
 import { TR_REQUEST_FAILED, useLyricsDocument } from './useLyricsDocument'
+import { LyricsCandidatePanel } from './LyricsCandidatePanel'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
 const DRAG_STEP = 56
@@ -414,6 +416,25 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const settingsTriggerRef = useRef<HTMLButtonElement>(null)
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
   const isSettingsOpen = settingsOpen && settingsReady
+  // FEAT-lyrics-match-correction Step 3a: the owner's candidate panel ("다른 가사"). The
+  // server's require_owner is the gate; this only keeps a member's head free of a control
+  // that would 403. Offered on every loaded state — "가사 없음" and a wrong "unavailable"
+  // are exactly what the owner fixes from it. Closed on a track swap: it is per track.
+  const [isOwner, setIsOwner] = useState(false)
+  const [candidatesOpen, setCandidatesOpen] = useState(false)
+  useEffect(() => {
+    let live = true
+    void isOwnerUser().then((owner) => {
+      if (live)
+        setIsOwner(owner)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  useEffect(() => {
+    setCandidatesOpen(false)
+  }, [trackId])
   // Nested dismissable: ESC closes settings first, then the viewer on the next
   // press. Focus stays on the trigger while picking for live comparison.
   useDismissable(isSettingsOpen, closeSettings, settingsPopoverRef, { trapFocus: false, autoFocus: false })
@@ -1724,6 +1745,16 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               </button>
             )}
             {view === 'lyrics' && settingsReady && !trackable && <span className="lyv-manual-note mono">동기화 없음 — 수동</span>}
+            {view === 'lyrics' && isOwner && phase.k === 'ready' && (
+              <button
+	type="button"
+	className="lyv-btn lyv-full-btn mono"
+	onClick={() => setCandidatesOpen(true)}
+	aria-haspopup="dialog"
+              >
+                다른 가사
+              </button>
+            )}
             {view === 'lyrics' && canRefresh && (
               <button
 	type="button"
@@ -1985,6 +2016,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <span className="lyv-tbtn-label">대기열</span>
             </button>
           </div>
+        )}
+        {candidatesOpen && (
+          <LyricsCandidatePanel
+	spotifyTrackId={trackId}
+	onClose={() => setCandidatesOpen(false)}
+	onChanged={doc.reload}
+          />
         )}
       </div>
     </div>

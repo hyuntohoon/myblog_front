@@ -97,6 +97,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/lyrics/{spotify_track_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Candidates
+         * @description The stored candidate set with each candidate's verdict, what the track serves now and
+         *     its lock. Opening it starts nothing; `stale` says when a refresh is due.
+         */
+        get: operations["get_lyrics_candidates_api_admin_lyrics__spotify_track_id__candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/lyrics/{spotify_track_id}/candidates/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Lyrics Candidates
+         * @description Enqueue one re-check of this track now. The worker searches LRCLIB, re-judges the
+         *     track under the running matcher (a locked row is never rewritten) and stores the set.
+         */
+        post: operations["refresh_lyrics_candidates_api_admin_lyrics__spotify_track_id__candidates_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/lyrics/{spotify_track_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Lyrics Decision
+         * @description Apply the owner's decision. `pick` is enqueued (the worker re-fetches the body and
+         *     writes it locked); `no_lyrics` locks the track as having none; `reject` records a
+         *     candidate as never-again for this track and takes it down if it is the one served;
+         *     `unlock` hands the track back to the automatic jobs. Every decision is idempotent to
+         *     resend.
+         */
+        post: operations["post_lyrics_decision_api_admin_lyrics__spotify_track_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buckets": {
         parameters: {
             query?: never;
@@ -2042,6 +2108,115 @@ export interface components {
             added: number;
             /** Already Tracked */
             already_tracked: number;
+        };
+        /**
+         * AdminLyricsCandidate
+         * @description One LRCLIB candidate as the last explicit re-check judged it. Metadata and a short
+         *     preview only — never the lyric body.
+         */
+        Backend_AdminLyricsCandidate: {
+            /** Album */
+            album?: string | null;
+            /** Artist */
+            artist: string;
+            /** Cluster Size */
+            cluster_size?: number | null;
+            /** Current */
+            current: boolean;
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Has Plain */
+            has_plain: boolean;
+            /** Has Synced */
+            has_synced: boolean;
+            /** Instrumental */
+            instrumental: boolean;
+            /** Lrclib Id */
+            lrclib_id: number;
+            /** Preview */
+            preview?: string | null;
+            /** Rejected */
+            rejected: boolean;
+            /** Title */
+            title: string;
+            /** Verdict */
+            verdict: string;
+        };
+        /** AdminLyricsCandidates */
+        Backend_AdminLyricsCandidates: {
+            /** Candidates */
+            candidates?: components["schemas"]["Backend_AdminLyricsCandidate"][];
+            current: components["schemas"]["Backend_AdminLyricsCurrent"];
+            /** Duration Sec */
+            duration_sec?: number | null;
+            /** Fetched At */
+            fetched_at?: string | null;
+            /** Matcher Version */
+            matcher_version?: string | null;
+            /** Rejected Lrclib Ids */
+            rejected_lrclib_ids?: number[];
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /** Stale */
+            stale: boolean;
+            /** Track Artists */
+            track_artists?: string[];
+            /** Track Title */
+            track_title: string;
+        };
+        /**
+         * AdminLyricsCurrent
+         * @description What the track serves now, and whether the owner's lock is on it.
+         */
+        Backend_AdminLyricsCurrent: {
+            /** Lock */
+            lock?: ("manual" | "manual_fix") | null;
+            /** Lrclib Id */
+            lrclib_id?: number | null;
+            /** Match Basis */
+            match_basis?: string | null;
+            /** Match Status */
+            match_status?: ("matched" | "no_lyrics" | "not_found" | "ambiguous" | "review_required") | null;
+            /** Matcher Version */
+            matcher_version?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** AdminLyricsDecisionRequest */
+        Backend_AdminLyricsDecisionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pick" | "no_lyrics" | "reject" | "unlock";
+            /** Lrclib Id */
+            lrclib_id?: number | null;
+        };
+        /** AdminLyricsDecisionResult */
+        Backend_AdminLyricsDecisionResult: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pick" | "no_lyrics" | "reject" | "unlock";
+            current: components["schemas"]["Backend_AdminLyricsCurrent"];
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "applied" | "enqueued" | "no_change";
+            /**
+             * Recheck Enqueued
+             * @default false
+             */
+            recheck_enqueued: boolean;
+        };
+        /** AdminLyricsRefreshResult */
+        Backend_AdminLyricsRefreshResult: {
+            /** Enqueued */
+            enqueued: boolean;
         };
         /** AlbumBestNewResponse */
         Backend_AlbumBestNewResponse: {
@@ -5295,6 +5470,138 @@ export interface operations {
                 };
             };
             /** @description Database unavailable; resend with the SAME request_id */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lyrics_candidates_api_admin_lyrics__spotify_track_id__candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotify_track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AdminLyricsCandidates"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_lyrics_candidates_api_admin_lyrics__spotify_track_id__candidates_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotify_track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AdminLyricsRefreshResult"];
+                };
+            };
+            /** @description Unknown spotify track id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+            /** @description Queue unavailable; nothing was enqueued */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post_lyrics_decision_api_admin_lyrics__spotify_track_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotify_track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AdminLyricsDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AdminLyricsDecisionResult"];
+                };
+            };
+            /** @description Unknown spotify track id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description pick: not in the stored candidate set, or rejected for this track */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+            /** @description Database or queue unavailable; the decision may be resent */
             503: {
                 headers: {
                     [name: string]: unknown;

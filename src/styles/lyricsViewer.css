@@ -781,3 +781,110 @@
 	.lyv-settings-popover { animation: none; }
 }
 
+
+/* ── 가사 후보 패널 (FEAT-lyrics-match-correction Step 3a, owner only) ─────
+   A sheet over the whole viewer: every LRCLIB candidate the last re-check judged,
+   why it won or lost, and the owner's decisions. Same always-dark surface as the
+   settings popover; the list scrolls, the head and current state stay put. */
+.lyv-cand {
+	position: absolute;
+	inset: 0;
+	z-index: 8;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	box-sizing: border-box;
+	padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left));
+	color: #fff;
+	/* Opaque: a translucent sheet let the viewer's lyric lines and transport ghost through. */
+	background: #090909;
+	animation: lyv-settings-in 0.12s ease-out;
+}
+.lyv-cand-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+.lyv-cand-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lyv-cand-eyebrow { font-size: 11px; letter-spacing: 0.08em; color: rgba(255,255,255,0.55); }
+.lyv-cand-track { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.lyv-cand-artists { font-size: 13px; color: rgba(255,255,255,0.7); overflow-wrap: anywhere; }
+.lyv-cand-current,
+.lyv-cand-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 10px 12px;
+	border: 1px solid rgba(255,255,255,0.14);
+	border-radius: 10px;
+	font-size: 13px;
+}
+.lyv-cand-meta { padding: 0; border: 0; color: rgba(255,255,255,0.65); }
+.lyv-cand-current-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.lyv-cand-lock { color: rgba(255,255,255,0.6); }
+.lyv-cand-lock.is-locked { color: #ffd479; }
+.lyv-cand-stale { color: #ffd479; }
+.lyv-cand-status p { margin: 0; font-size: 13px; }
+.lyv-cand-error { color: #ff9a8f; }
+.lyv-cand-notice { color: rgba(255,255,255,0.8); }
+.lyv-cand-list {
+	flex: 1 1 auto;
+	min-height: 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.lyv-cand-empty { font-size: 13px; color: rgba(255,255,255,0.65); padding: 12px 0; }
+.lyv-cand-item {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px 12px;
+	border: 1px solid rgba(255,255,255,0.1);
+	border-radius: 10px;
+	min-width: 0;
+}
+.lyv-cand-item.is-current { border-color: rgba(255,255,255,0.45); }
+.lyv-cand-item.is-rejected { opacity: 0.55; }
+.lyv-cand-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+.lyv-cand-verdict { padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,0.1); }
+.lyv-cand-verdict.is-picked,
+.lyv-cand-verdict.is-same_body { background: rgba(120,220,150,0.18); }
+.lyv-cand-verdict.is-rejected { background: rgba(255,120,110,0.2); }
+.lyv-cand-badge { color: rgba(255,255,255,0.7); }
+.lyv-cand-id { margin-left: auto; color: rgba(255,255,255,0.45); }
+.lyv-cand-src { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.lyv-cand-src-title { font-size: 14px; overflow-wrap: anywhere; }
+.lyv-cand-src-sub { font-size: 12px; color: rgba(255,255,255,0.6); overflow-wrap: anywhere; }
+.lyv-cand-preview {
+	margin: 0;
+	font-size: 13px;
+	line-height: 1.45;
+	color: rgba(255,255,255,0.82);
+	overflow-wrap: anywhere;
+}
+.lyv-cand-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.lyv-cand-btn {
+	font: inherit;
+	font-size: 12px;
+	padding: 5px 10px;
+	color: #fff;
+	background: transparent;
+	border: 1px solid rgba(255,255,255,0.3);
+	border-radius: 999px;
+	cursor: pointer;
+}
+.lyv-cand-btn:disabled { opacity: 0.45; cursor: default; }
+.lyv-cand-btn.is-primary { background: rgba(255,255,255,0.14); }
+.lyv-cand-btn.is-danger { border-color: #ff9a8f; color: #ffb3aa; }
+@media (prefers-reduced-motion: reduce) {
+	.lyv-cand { animation: none; }
+}
