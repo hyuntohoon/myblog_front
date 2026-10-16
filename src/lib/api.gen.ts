@@ -71,6 +71,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/automation/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Automation Run
+         * @description Start one run of a worker cron now (FEAT-automation-admin 3c).
+         *
+         *     An async invoke of blogWorkerLambda with the cron's own input; the request never
+         *     waits on the run. A resent `request_id` replays the stored row and never invokes
+         *     again. A failed invoke is a 200 with outcome `invoke_failed`: final for that id,
+         *     and it starts no cooldown. Audited in `automation_control_events`; the worker
+         *     stamps the row's start and end.
+         */
+        post: operations["post_automation_run_api_admin_automation_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/buckets": {
         parameters: {
             query?: never;
@@ -2403,6 +2429,7 @@ export interface components {
             purpose: string;
             /** Queue Keys */
             queue_keys?: string[];
+            run?: components["schemas"]["Backend_AutomationRunState"] | null;
             /** Stale After Seconds */
             stale_after_seconds?: number | null;
             /** Timezone */
@@ -2508,6 +2535,92 @@ export interface components {
             reason?: string | null;
             /** State */
             state: string;
+        };
+        /** AutomationRunRejection */
+        Backend_AutomationRunRejection: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "job_paused" | "cooldown" | "request_id_conflict";
+            /** Cooldown Until */
+            cooldown_until?: string | null;
+            /** Retry After Seconds */
+            retry_after_seconds?: number | null;
+        };
+        /** AutomationRunRejectionBody */
+        Backend_AutomationRunRejectionBody: {
+            detail: components["schemas"]["Backend_AutomationRunRejection"];
+        };
+        /** AutomationRunRequest */
+        Backend_AutomationRunRequest: {
+            /** Job Key */
+            job_key: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** AutomationRunResult */
+        Backend_AutomationRunResult: {
+            /** Job Key */
+            job_key: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "requested" | "invoked" | "invoke_failed";
+            /** Replayed */
+            replayed: boolean;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            run: components["schemas"]["Backend_AutomationRunState"];
+        };
+        /** AutomationRunState */
+        Backend_AutomationRunState: {
+            /** Cooldown Until */
+            cooldown_until?: string | null;
+            last?: components["schemas"]["Backend_AutomationRunView"] | null;
+            /**
+             * Stalled
+             * @default false
+             */
+            stalled: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unknown";
+        };
+        /** AutomationRunView */
+        Backend_AutomationRunView: {
+            /** Finished At */
+            finished_at?: string | null;
+            /** Invoked At */
+            invoked_at?: string | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "requested" | "invoked" | "invoke_failed";
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Run Outcome */
+            run_outcome?: ("ok" | "error" | "skipped_paused") | null;
+            /** Started At */
+            started_at?: string | null;
         };
         /** AutomationSnapshot */
         Backend_AutomationSnapshot: {
@@ -5124,6 +5237,69 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
+            };
+        };
+    };
+    post_automation_run_api_admin_automation_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Backend_AutomationRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AutomationRunResult"];
+                };
+            };
+            /** @description Not the owner (answered before any body handling) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown job: it has no run control */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description job_paused, cooldown (with Retry-After), or request_id_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AutomationRunRejectionBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+            /** @description Database unavailable; resend with the SAME request_id */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

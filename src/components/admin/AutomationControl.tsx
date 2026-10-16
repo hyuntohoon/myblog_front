@@ -33,7 +33,7 @@ type Phase =
 	{ kind: 'sending', action: ControlAction, requestId: string } |
 	{ kind: 'failed', action: ControlAction, requestId: string, message: string, resend: boolean, basis: Basis }
 
-function newRequestId(): string {
+export function newRequestId(): string {
 	const c = globalThis.crypto
 	if (typeof c?.randomUUID === 'function')
 		return c.randomUUID()

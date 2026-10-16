@@ -115,3 +115,56 @@ export async function postAutomationControl(jobKey: string, action: ControlActio
 		return { kind: 'error', status: res.status }
 	}
 }
+
+// ── 3c: run now (`POST /api/admin/automation/runs`) ──
+// Same gate and idempotency as 3b: one request_id per confirmation, resent
+// unchanged only when the outcome is unknown (5xx or no answer). The server
+// invokes blogWorkerLambda asynchronously and never waits on the run, so a 200
+// says whether the run was STARTED (`invoked`) — not whether it succeeded; the
+// worker's own stamps arrive in later snapshots. A failed invoke is a 200 with
+// outcome `invoke_failed`: final for that id, and it starts no cooldown.
+
+export type RunState = components['schemas']['Backend_AutomationRunState']
+export type RunView = components['schemas']['Backend_AutomationRunView']
+export type RunOutcome = components['schemas']['Backend_AutomationRunResult']
+export type RunRejection = components['schemas']['Backend_AutomationRunRejection']
+
+export type RunResult =
+	| { kind: 'ok', result: RunOutcome } |
+	{ kind: 'forbidden' } |
+	/** The job has no run control. */
+	{ kind: 'unknown_job' } |
+	/** 409: paused, cooling down, or the request_id was used for something else. */
+	{ kind: 'rejected', rejection: RunRejection } |
+	/** Outcome unknown (5xx, timeout, network), or another 4xx (`status` < 500: never reached a commit). */
+	{ kind: 'error', status: number | null }
+
+export async function postAutomationRun(jobKey: string, requestId: string): Promise<RunResult> {
+	const res = await apiFetch(`${BASE}/api/admin/automation/runs`, {
+		method: 'POST',
+		body: JSON.stringify({ job_key: jobKey, request_id: requestId }),
+	})
+	if (!res)
+		return { kind: 'error', status: null }
+	if (res.status === 403)
+		return { kind: 'forbidden' }
+	if (res.status === 404)
+		return { kind: 'unknown_job' }
+	if (res.status === 409) {
+		try {
+			const body = (await res.json()) as { detail?: RunRejection }
+			if (body.detail?.code)
+				return { kind: 'rejected', rejection: body.detail }
+		}
+		catch {}
+		return { kind: 'error', status: 409 }
+	}
+	if (!res.ok)
+		return { kind: 'error', status: res.status }
+	try {
+		return { kind: 'ok', result: (await res.json()) as RunOutcome }
+	}
+	catch {
+		return { kind: 'error', status: res.status }
+	}
+}
