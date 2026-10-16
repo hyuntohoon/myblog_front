@@ -83,6 +83,19 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # OPS-ci-cd-optimization Step 8. `astro check` never builds, so a page that
+      # throws at render time or a bundling/PWA failure surfaced only in `deploy`,
+      # after merge. The two API URLs are required by astro.config.ts (env.schema),
+      # so they are set — to a refused local port, deliberately: every build-time
+      # fetch takes its existing fallback, the PR build loads no production API,
+      # and no secret is exposed to it. Divergence from the deploy build: member
+      # pages and catalog-only artist pages are not prerendered here.
+      - name: Build (API-free)
+        env:
+          PUBLIC_API_URL: http://127.0.0.1:9
+          PUBLIC_BACKEND_API_URL: http://127.0.0.1:9
+        run: pnpm build
+
   deploy:
     needs: check
     # Production deploy is main-only. push already filters to main (on.push.branches), but
