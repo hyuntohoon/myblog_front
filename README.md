@@ -82,6 +82,17 @@ GitHub Actions가 `main` 브랜치 push 시 자동으로 Astro 빌드 → S3 업
 
 ---
 
+## 패치 노트 (`/updates/`)
+
+`content/updates/YYYY-MM.md` 한 달에 한 파일. 사람이 쓰는 디렉터리이며 `content/blog/`(publish 경로)와 섞지 않는다. frontmatter: `title`, `period`(표시용 문자열), `published`(날짜, 최신순 정렬 키), `summary`(한 줄). 본문은 항목마다 `###` 제목 → 무엇이 바뀌었나(방문자 기준) → 왜(한 문장) → 숫자가 기록된 경우만 효과 → `<small>` PR 링크. 다음 달 첫 며칠 안에 쓴다. 근거 RFC: `myblog-workspace/docs/archive/done/rfcs/DOCS-patch-notes-from-history.md`.
+
+1. 그 달에 머지된 PR을 모은다(KST 경계, limit 명시):
+   `for r in myblog_front myblog_backend myblog_worker myblog_music myblog_shared_db; do gh pr list --repo hyuntohoon/$r --state merged --search "merged:<start>..<end>" --limit 500 --json number,title,mergedAt,url; done`
+2. `feat`/`fix`만이 아니라 제목을 전부 읽는다. 회원이나 방문자가 알아챌 만한 것은 PR 본문과 RFC 기록까지 연다.
+3. 공개 사이트나 회원 페이지에서 보이는 변화만 넣는다. 오너 전용(`/admin/*`, 자동화, 오너 전용 버킷), CI, 문서, 연구, 의존성 작업은 뺀다. PR이 아니라 기능 단위로 묶고, 같은 달 안에 뒤집힌 수정은 최종 상태로 합친다.
+4. `content/updates/YYYY-MM.md`를 쓴다. 이미 그 달 파일이 있으면(월중에 부분 발행) 이어서 쓰고 `period`를 고친다. 용어는 사이트 규칙을 따른다: 평가 = rating, 평론 = review, "리뷰"는 쓰지 않는다.
+5. front PR을 연다. **오너의 문구 승인은 그 PR의 검증 항목이다.** 체크되지 않으면 red 체크처럼 머지를 막는다.
+
 ## 관련 리포지토리
 
 | 리포                                                                   | 역할                                  |

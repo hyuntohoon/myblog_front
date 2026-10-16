@@ -143,4 +143,19 @@ const blog = defineCollection({
 		})),
 })
 
-export const collections = { blog }
+/** ---------- 업데이트(패치 노트) 컬렉션 ---------- */
+// DOCS-patch-notes-from-history: hand-written monthly notes, one file per month.
+// Kept apart from `content/blog/` on purpose — nothing machine-written lands here.
+const updates = defineCollection({
+	loader: glob({ pattern: '*.md', base: './content/updates' }),
+	schema: z.object({
+		title: z.string().min(1),
+		// display string, e.g. "2026년 10월"
+		period: z.string().min(1),
+		// sort key: newest first on /updates/
+		published: z.coerce.date(),
+		summary: z.string().min(1),
+	}),
+})
+
+export const collections = { blog, updates }
