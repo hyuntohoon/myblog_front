@@ -20,13 +20,15 @@
 // - `heartbeats[].details` and `last_outcome` are written by local agents.
 //   They are rendered as React text children only — never through
 //   dangerouslySetInnerHTML or any markdown/HTML renderer (2b security-review).
-import type { AutomationAws, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, ControlState, QueueDetail as QueueDetailData, QueueDetailResult, ReasonCount, SnapshotResult } from './automation.api'
+import type { AutomationAws, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, ControlState, QueueDetail as QueueDetailData, QueueDetailResult, ReasonCount, RunState, SnapshotResult } from './automation.api'
 import type { Flow, LivenessStatus, QueueVerdict, Tone } from './automationView'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isLoggedIn } from '@lib/auth'
 import { fetchAutomationSnapshot, fetchQueueDetail } from './automation.api'
 import { effectiveControl, JobControl } from './AutomationControl'
 import type { PostedControls } from './AutomationControl'
+import { effectiveRun, JobRun } from './AutomationRun'
+import type { PostedRuns } from './AutomationRun'
 import {
 	buildFlows,
 	consumersOf,
@@ -88,6 +90,9 @@ type View = 'flow' | 'table'
 interface ControlProps {
 	posted: PostedControls
 	onPosted: (key: string, control: ControlState, basis: AutomationJob['control']) => void
+	/** 3c: the run-now POST's answer per job_key, until the re-read snapshot replaces it. */
+	postedRuns: PostedRuns
+	onRunPosted: (key: string, run: RunState, basis: AutomationJob['run']) => void
 	onChanged: () => void
 }
 
@@ -189,7 +194,11 @@ function Snapshot({ snapshot, reloading, onReload }: { snapshot: AutomationSnaps
 	const onPosted = useCallback((key: string, control: ControlState, basis: AutomationJob['control']) => {
 		setPosted(m => new Map(m).set(key, { control, basis }))
 	}, [])
-	const ctl = { posted, onPosted, onChanged: onReload }
+	const [postedRuns, setPostedRuns] = useState<PostedRuns>(() => new Map())
+	const onRunPosted = useCallback((key: string, run: RunState, basis: AutomationJob['run']) => {
+		setPostedRuns(m => new Map(m).set(key, { run, basis }))
+	}, [])
+	const ctl = { posted, onPosted, postedRuns, onRunPosted, onChanged: onReload }
 	const paused = pausedJobs(snapshot.jobs.map(j => ({ ...j, control: effectiveControl(j, posted) })))
 
 	// Open on the most urgent queue, so the first thing in the detail panel is
@@ -698,6 +707,7 @@ function QueueDetail({ queue, verdict, jobs, beats, now, detail, ctl }: { queue:
 											{DECLARED_LABEL[j.declared_state] ?? j.declared_state}
 										</span>
 										<JobControl job={j} control={effectiveControl(j, ctl.posted)} beat={j.heartbeat_key ? beats.get(j.heartbeat_key) : null} now={now} onPosted={ctl.onPosted} onChanged={ctl.onChanged} />
+										<JobRun job={j} run={effectiveRun(j, ctl.postedRuns)} paused={effectiveControl(j, ctl.posted)?.paused ?? null} now={now} onPosted={ctl.onRunPosted} onChanged={ctl.onChanged} />
 									</li>
 								))}
 							</ul>
@@ -936,6 +946,7 @@ function JobRow({ job, beat, queueLabels, now, onPick, ctl }: { job: AutomationJ
 				)}
 				{job.note && <p className="auto-job-note">{job.note}</p>}
 				<JobControl job={job} control={effectiveControl(job, ctl.posted)} beat={beat} now={now} onPosted={ctl.onPosted} onChanged={ctl.onChanged} />
+				<JobRun job={job} run={effectiveRun(job, ctl.postedRuns)} paused={effectiveControl(job, ctl.posted)?.paused ?? null} now={now} onPosted={ctl.onRunPosted} onChanged={ctl.onChanged} />
 			</div>
 			<div className="auto-declared">
 				<span className="auto-declared-label">인벤토리</span>

@@ -10,7 +10,7 @@
 //   found no rows. They must not render alike.
 // - `*_ineligible` rows are rows the worker's filter can never pick up. They
 //   are not waiting, and are not added to the waiting total.
-import type { AutomationAwsAlarm, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, ControlState, Liveness } from './automation.api'
+import type { AutomationAwsAlarm, AutomationHeartbeat, AutomationJob, AutomationQueue, AutomationSnapshot, AutomationSource, ControlState, Liveness, RunState } from './automation.api'
 
 export type LivenessStatus = Liveness['status']
 export type Location = AutomationJob['location']
@@ -548,4 +548,54 @@ export function controlStatus(control: ControlState | null, now: number, beat: A
 /** Jobs paused right now, for the header — a pause must not hide in a folded list. */
 export function pausedJobs(jobs: AutomationJob[]): { job: AutomationJob, unconfirmed: boolean }[] {
 	return jobs.filter(j => j.control?.paused === true).map(j => ({ job: j, unconfirmed: !j.control!.confirmed }))
+}
+
+// ── 3c: run now ──────────────────────────────────────────────────────────────
+
+export interface RunStatus {
+	/** null = the run state was not read: offer no button. */
+	tone: 'ok' | 'warn' | 'bad' | 'none'
+	/** The last run, in words; null when the job was never run from this page. */
+	text: string | null
+	/** Why the button is unavailable right now, or null when it can be pressed. */
+	blocked: string | null
+}
+
+/**
+ * A job's run-now state, in the order the evidence arrives: the backend's
+ * outcome (requested → invoked | invoke_failed), then the worker's stamps.
+ * `stalled` (started, no end, one cooldown later) is a Lambda timeout and reads
+ * "unknown", never "running". A paused job cannot be run (the server answers 409).
+ */
+export function runStatus(run: RunState | null | undefined, paused: boolean | null, now: number): RunStatus {
+	if (run == null || run.status === 'unknown')
+		return { tone: 'none', text: '지금 실행 기록을 읽지 못했습니다.', blocked: '상태를 읽지 못해 실행할 수 없습니다.' }
+	const blocked = paused === true ?
+		'일시정지 중에는 실행할 수 없습니다. 먼저 재개하세요.' :
+		(paused == null ?
+			'일시정지 상태를 읽지 못해 실행할 수 없습니다.' :
+			(run.cooldown_until && Date.parse(run.cooldown_until) > now ?
+				`같은 작업은 10분에 한 번만 실행할 수 있습니다 (${untilText(run.cooldown_until, now)} 가능).` :
+				null))
+	const last = run.last
+	if (!last)
+		return { tone: 'none', text: null, blocked }
+	const asked = relativeAge(last.requested_at, now)
+	const head = `지금 실행 ${asked ?? ''}`.trim()
+	if (last.run_outcome === 'ok')
+		return { tone: 'ok', text: `${head} · 완료 (${relativeAge(last.finished_at, now) ?? '시각 미상'})`, blocked }
+	if (last.run_outcome === 'error')
+		return { tone: 'bad', text: `${head} · 오류로 끝남. Lambda가 최대 2번 자동 재시도합니다.`, blocked }
+	if (last.run_outcome === 'skipped_paused')
+		return { tone: 'warn', text: `${head} · 실행 직전에 일시정지돼 건너뜀`, blocked }
+	if (last.started_at) {
+		return run.stalled ?
+				{ tone: 'bad', text: `${head} · 시작했지만 끝난 기록이 없습니다 (시간 초과 가능). 결과를 알 수 없습니다.`, blocked } :
+				{ tone: 'warn', text: `${head} · 실행 중 (${relativeAge(last.started_at, now) ?? ''} 시작)`, blocked }
+	}
+	if (last.outcome === 'invoked')
+		return { tone: 'warn', text: `${head} · 요청됨, 워커가 아직 시작하지 않았습니다`, blocked }
+	if (last.outcome === 'invoke_failed')
+		return { tone: 'bad', text: `${head} · 호출 실패. 시작되지 않았습니다`, blocked }
+	return { tone: 'warn', text: `${head} · 요청은 기록됐지만 호출 결과를 모릅니다`, blocked }
 }
