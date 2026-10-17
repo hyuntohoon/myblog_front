@@ -94,7 +94,7 @@ function expectCopyAdd(container: HTMLElement, title: string, albumId: string) {
 }
 
 describe('albumCard Stage 5 adapters', () => {
-	it('migrates For You while keeping unmatched Spotify-only releases non-openable', () => {
+	it('migrates For You; an unmatched Spotify-only release opens via absorb but never copies', () => {
 		const { container, rerender } = render(<ForYouReleaseAlbumCardAdapter it={FOR_YOU} />)
 		fireEvent.click(screen.getByRole('button', { name: 'Lotus — Little Simz 앨범 보기' }))
 		expect(mocks.openAlbum).toHaveBeenCalledWith({
@@ -108,8 +108,9 @@ describe('albumCard Stage 5 adapters', () => {
 
 		rerender(<ForYouReleaseAlbumCardAdapter it={{ ...FOR_YOU, album_id: null }} />)
 		expect(screen.queryByRole('button', { name: 'Lotus — Little Simz 앨범 보기' })).toBeNull()
+		expect(screen.getByRole('button', { name: 'Lotus — Little Simz 앨범 불러와서 보기' })).toBeInTheDocument()
 		expect(screen.queryByRole('button', { name: 'Lotus 버킷에 담기' })).toBeNull()
-		expect(container.querySelector('[draggable]')).toBeNull()
+		expect(container.querySelector('[draggable="true"]')).toBeNull()
 		expect(screen.getByText('Lotus')).toBeInTheDocument()
 		expect(screen.getByText('08.01 발매 · EP')).toBeInTheDocument()
 		expect(screen.getByText('카탈로그 등록 후 담기 가능')).toBeInTheDocument()
