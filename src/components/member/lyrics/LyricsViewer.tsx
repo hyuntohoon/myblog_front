@@ -113,6 +113,8 @@ import { readLivePlayback } from './playback.api'
 import { readQueue } from './queue.api'
 import { TR_REQUEST_FAILED, useLyricsDocument } from './useLyricsDocument'
 import { LyricsCandidatePanel } from './LyricsCandidatePanel'
+import type { ReportOutcome } from './lyricsReport.api'
+import { reportLyrics } from './lyricsReport.api'
 
 /** Vertical drag distance (px) that advances the focus by one segment. */
 const DRAG_STEP = 56
@@ -333,6 +335,14 @@ async function readYouTubeLyricsPlayback(): Promise<LivePlayback> {
   }
 }
 
+// Step 3b confirmation lines. `error` keeps the button (as 다시 신고) next to its line.
+const REPORT_TEXT: Record<ReportOutcome, string> = {
+  reported: '알려 주셔서 고마워요. 오너가 확인할게요',
+  already_reported: '이미 신고한 가사예요',
+  limit: '오늘은 더 신고할 수 없어요',
+  error: '신고를 보내지 못했어요',
+}
+
 export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initialProgressAtMs = null, initialDurationMs = null, initialAlbumCoverUrl = null, initialTrack = null, initialArtist = null, initialArtists = [], canRefresh = false, onOpenFullLyrics, onClose }: {
   spotifyTrackId: string
   /** One-shot playback position from the dynamic entry; seeds the initial focus and continuous clock anchor. */
@@ -421,19 +431,39 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // that would 403. Offered on every loaded state — "가사 없음" and a wrong "unavailable"
   // are exactly what the owner fixes from it. Closed on a track swap: it is per track.
   const [isOwner, setIsOwner] = useState(false)
+  // Step 3b: until the owner check settles, neither the owner's nor a member's control shows,
+  // so the owner never flashes the member's "가사가 틀려요".
+  const [ownerKnown, setOwnerKnown] = useState(false)
   const [candidatesOpen, setCandidatesOpen] = useState(false)
   useEffect(() => {
     let live = true
     void isOwnerUser().then((owner) => {
-      if (live)
+      if (live) {
         setIsOwner(owner)
+        setOwnerKnown(true)
+      }
     })
     return () => {
       live = false
     }
   }, [])
+  // FEAT-lyrics-match-correction Step 3b: a member's one-tap "가사가 틀려요". It records a
+  // report for the owner and never changes the lyrics; the result is a confirmation line.
+  // Per track: reset on a track swap. `reportFor` drops a reply that lands after a swap.
+  const [report, setReport] = useState<'idle' | 'sending' | ReportOutcome>('idle')
+  const reportFor = useRef(trackId)
   useEffect(() => {
     setCandidatesOpen(false)
+    setReport('idle')
+    reportFor.current = trackId
+  }, [trackId])
+  const sendReport = useCallback(() => {
+    const target = trackId
+    setReport('sending')
+    void reportLyrics(target).then((outcome) => {
+      if (reportFor.current === target)
+        setReport(outcome)
+    })
   }, [trackId])
   // Nested dismissable: ESC closes settings first, then the viewer on the next
   // press. Focus stays on the trigger while picking for live comparison.
@@ -1745,6 +1775,21 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               </button>
             )}
             {view === 'lyrics' && settingsReady && !trackable && <span className="lyv-manual-note mono">동기화 없음 — 수동</span>}
+            {view === 'lyrics' && ownerKnown && !isOwner && settingsReady && (report === 'idle' || report === 'sending' || report === 'error') && (
+              <button
+	type="button"
+	className="lyv-btn lyv-full-btn mono"
+	onClick={sendReport}
+	disabled={report === 'sending'}
+              >
+                {report === 'error' ? '다시 신고' : '가사가 틀려요'}
+              </button>
+            )}
+            {view === 'lyrics' && ownerKnown && !isOwner && report !== 'idle' && report !== 'sending' && (
+              <span className="lyv-manual-note mono" role="status">
+                {REPORT_TEXT[report]}
+              </span>
+            )}
             {view === 'lyrics' && isOwner && phase.k === 'ready' && (
               <button
 	type="button"

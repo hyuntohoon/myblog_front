@@ -69,7 +69,7 @@ describe('lyricsCandidatePanel', () => {
 
   it('reject needs a second click, then reports the takedown', async () => {
     get.mockResolvedValue(snapshot())
-    decide.mockResolvedValue({ action: 'reject', outcome: 'applied', recheck_enqueued: true, current: { match_status: 'review_required', lock: null } })
+    decide.mockResolvedValue({ action: 'reject', outcome: 'applied', recheck_enqueued: true, reports_resolved: 0, current: { match_status: 'review_required', lock: null } })
     const onChanged = mount()
     await screen.findByText('다수 본문에 밀림')
     const rejectButtons = screen.getAllByRole('button', { name: '거부' })
@@ -86,7 +86,7 @@ describe('lyricsCandidatePanel', () => {
     get.mockResolvedValueOnce(snapshot())
     get.mockResolvedValueOnce(snapshot()) // first poll: not yet
     get.mockResolvedValue(snapshot({ current: { match_status: 'matched', lrclib_id: 34738767, lock: 'manual' } }))
-    decide.mockResolvedValue({ action: 'pick', outcome: 'enqueued', recheck_enqueued: false, current: { match_status: 'matched', lrclib_id: 8996695, lock: null } })
+    decide.mockResolvedValue({ action: 'pick', outcome: 'enqueued', recheck_enqueued: false, reports_resolved: 0, current: { match_status: 'matched', lrclib_id: 8996695, lock: null } })
     const onChanged = mount()
     await screen.findByText('자동 선택')
     fireEvent.click(screen.getAllByRole('button', { name: '이 가사로 고정' })[0])

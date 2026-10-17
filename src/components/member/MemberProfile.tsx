@@ -713,6 +713,17 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 							자동화 ↗
 						</a>
 					)}
+					{/* FEAT-lyrics-match-correction 3b: the owner's lyrics report queue. Same
+					    owner gating as 자동화 ↗; the page guard and require_owner are the gates. */}
+					{isOwner && (
+						<a
+							href="/admin/lyrics-reports/"
+							className="lf-tab-btn"
+							style={{ padding: '11px 14px', fontSize: 11.5, letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', color: 'var(--color-faded)', textDecoration: 'none', borderBottom: '2px solid transparent', marginBottom: -1, transition: 'color .14s' }}
+						>
+							가사 신고 ↗
+						</a>
+					)}
 					<a
 						href="/settings/"
 						className="lf-tab-btn"

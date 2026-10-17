@@ -198,6 +198,8 @@ export function LyricsCandidatePanel({ spotifyTrackId, onClose, onChanged }: {
           reject: res.recheck_enqueued ? '거부했어요. 내린 뒤 다시 찾는 중이에요.' : '거부했어요.',
           unlock: '잠금을 풀었어요. 자동으로 다시 확인해요.',
           pick: '',
+          // 3b: the panel offers no keep button (the report queue does); typed for exhaustiveness.
+          keep: '신고를 닫았어요.',
         }[action])
         await load()
       }

@@ -1,0 +1,24 @@
+---
+import Layout from '@layouts/layout.astro'
+import Seo from '@components/seo.astro'
+import SkipNavContent from '@components/a11y/skip-nav-content.astro'
+import LyricsReportsBoard from '@components/admin/LyricsReportsBoard'
+import '@styles/automation.css'
+import '@styles/lyricsViewer.css'
+import '@styles/lyricsReports.css'
+
+// /admin/lyrics-reports — FEAT-lyrics-match-correction Step 3b. The owner's queue of
+// member lyrics reports: GET /api/admin/lyrics/reports (require_owner). Each row opens
+// the 3a candidate panel. Entry: the 가사 신고 ↗ link in the owner's dashboard tab bar.
+---
+
+<Layout>
+  <Seo slot="seo" forceTitle="가사 신고" description="회원 가사 신고 (오너 전용)" noIndex />
+
+  <SkipNavContent>
+    <LyricsReportsBoard client:only="react" />
+  </SkipNavContent>
+</Layout>
+
+{/* Same owner gate as /admin/automation — one module, see its header. */}
+<script src="../../scripts/ownerOnly.guard.ts"></script>
