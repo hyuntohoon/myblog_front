@@ -21,6 +21,7 @@ import BrowseGenres from './BrowseGenres'
 import ByTheNumbers from './ByTheNumbers'
 import ForYouReleasesCard from './ForYouReleasesCard'
 import NewReleasesCard from './NewReleasesCard'
+import OwnerRatingsRail from './OwnerRatingsRail'
 import TodayAlbumBuckit from './TodayAlbumBuckit'
 import TodaySongBuckit from './TodaySongBuckit'
 import { Cover, SectionTitle, Stars } from './ui'
@@ -56,6 +57,8 @@ interface Props {
 	draftCount?: number
 	/** Build-time 새 앨범 snapshot (FIX-home-module-cls) — lets the strip SSR. */
 	newReleases?: components['schemas']['Music_NewReleaseItem'][]
+	/** Build-time snapshot of the owner's latest 평가 (public-surfaces Step 2). */
+	ownerRatings?: components['schemas']['Backend_MemberRatingResponse'][]
 }
 
 function pad(n: number) {
@@ -202,11 +205,15 @@ function Latest({ reviews, excludeSlug }: { reviews: ReviewCard[], excludeSlug?:
 	)
 }
 
-export default function EditorialHome({ bnm, reviews, stats, newReleases }: Props) {
+export default function EditorialHome({ bnm, reviews, stats, newReleases, ownerRatings }: Props) {
 	const feature = toFeature(bnm, reviews)
 	return (
 		<div className="bk-page">
 			{feature ? <Hero feature={feature} /> : <ColdStart />}
+			{/* FEAT-public-surfaces-before-first-review Step 2 — the owner's 평가,
+			    labelled as such; never feeds the hero / 최신 평론. Self-wrapping,
+			    build-seeded like 새 앨범. */}
+			<OwnerRatingsRail initial={ownerRatings} />
 			{/* FEAT-release-calendar A2 — self-wrapping (owns its Measure + top
 			    padding). Seeded with the build-time snapshot so it SSRs instead of
 			    inserting itself post-hydration (FIX-home-module-cls). */}
