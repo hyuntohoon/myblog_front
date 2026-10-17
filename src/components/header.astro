@@ -1,4 +1,7 @@
 ---
+import { buildReviewCards } from '@lib/reviews'
+import { HEADER_NAV, visibleLinks } from '@lib/siteNav'
+import { getCollection } from 'astro:content'
 import HeaderSearch from './search/HeaderSearch'
 
 const { pathname } = Astro.url
@@ -22,17 +25,7 @@ function isActive(url: string) {
   return pathOnly(pathname) === pathOnly(url) && url.includes('bnm=1') === search.includes('bnm=1')
 }
 
-const navLinks = [
-  { title: 'Reviews', url: '/reviews' },
-  // The public genre map (FEAT-genre-system) — a real route, not a filter.
-  { title: 'Genres', url: '/genres' },
-  // Best New Music is a filter on the reviews index (?bnm=1), not a route.
-  { title: 'Best New Music', url: '/reviews?bnm=1' },
-  // The ≥4.0★ canon hall (FEAT-home-redesign) — a real route, computed from reviews.
-  { title: 'Canon', url: '/canon' },
-  // The owner's public review buckets (FEAT-public-bucket-multiuser A4) — read-only.
-  { title: 'Collection', url: '/collection' },
-]
+const navLinks = visibleLinks(HEADER_NAV, buildReviewCards(await getCollection('blog')).length)
 ---
 
 <script src="../scripts/header.client.ts"></script>

@@ -21,11 +21,13 @@ export default function ByTheNumbers({ stats }: { stats: Stats }) {
 		{ value: String(stats.reviews), unit: '편', label: '평론', accent: true },
 		{ value: String(stats.genres), unit: '개', label: '장르', accent: false },
 		{ value: stats.lastUpdated, unit: '', label: '최근 업데이트', accent: false },
-	]
+	// "0개 장르" reads as a broken figure, not an honest count (audit #18) — drop
+	// the cell until a 평론 carries a genre.
+	].filter(c => c.label !== '장르' || stats.genres > 0)
 	return (
 		<section>
 			<SectionTitle kicker="BY THE NUMBERS · 정직한 카운트" title="숫자로 보는 평론지" />
-			<div className="lf-numbers" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--color-border)', border: '1px solid var(--color-border)' }}>
+			<div className="lf-numbers" style={{ display: 'grid', gridTemplateColumns: `repeat(${cells.length}, 1fr)`, gap: 1, background: 'var(--color-border)', border: '1px solid var(--color-border)' }}>
 				{cells.map(c => (
 					<div key={c.label} style={{ background: 'var(--color-bg)', padding: '26px 22px', display: 'flex', flexDirection: 'column', gap: 8 }}>
 						<span className="serif" style={{ fontSize: c.unit ? 40 : 26, fontWeight: 500, lineHeight: 0.95, letterSpacing: '-.02em', color: c.accent ? 'var(--color-accent)' : 'var(--color-text)' }}>
