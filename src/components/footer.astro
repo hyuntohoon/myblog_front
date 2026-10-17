@@ -11,13 +11,13 @@
  */
 import ThemeSelect from './theme-select.astro'
 import AccentSelect from './accent-select.astro'
+import { buildReviewCards } from '@lib/reviews'
+import { FOOTER_BROWSE, visibleLinks } from '@lib/siteNav'
+import { getCollection } from 'astro:content'
 
-const BROWSE = [
-	{ label: 'Reviews', ko: '평론', href: '/reviews' },
-	{ label: 'Genres', ko: '장르', href: '/genres' },
-	{ label: 'Canon', ko: '명반', href: '/canon' },
-	{ label: 'Collection', ko: '컬렉션', href: '/collection' },
-]
+// 평론-built links (Reviews, Canon, 전체 색인) hide while there are 0 평론 — see @lib/siteNav.
+const reviewCount = buildReviewCards(await getCollection('blog')).length
+const BROWSE = visibleLinks(FOOTER_BROWSE, reviewCount)
 
 const YEAR = new Date().getFullYear()
 ---
@@ -89,7 +89,7 @@ const YEAR = new Date().getFullYear()
 			{/* For a signed-in member, pocket.css lifts this row above the fixed Pocket
 			    stack. RSS lives in the 구독 column. */}
 			<a href="/updates/" class="meta ef-mini">업데이트</a>
-			<a href="/reviews" class="meta ef-mini">전체 색인</a>
+			{reviewCount > 0 && <a href="/reviews" class="meta ef-mini">전체 색인</a>}
 		</div>
 	</div>
 </footer>
