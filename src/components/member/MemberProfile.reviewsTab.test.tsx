@@ -111,10 +111,17 @@ describe('the 자동화 ↗ entry link', () => {
 		expect(navLinks(nav)).toContainEqual({ text: '자동화 ↗', href: '/admin/automation/' })
 	})
 
+	// FEAT-lyrics-match-correction 3b: the report queue sits next to it, same gate.
+	it('points the owner at /admin/lyrics-reports/ too', async () => {
+		const nav = await mountSelf(OWNER_HANDLE)
+		expect(navLinks(nav)).toContainEqual({ text: '가사 신고 ↗', href: '/admin/lyrics-reports/' })
+	})
+
 	it('is not offered to a member, who keeps 설정', async () => {
 		const nav = await mountSelf(MEMBER_HANDLE)
 		const links = navLinks(nav)
 		expect(links.map(l => l.href)).not.toContain('/admin/automation/')
+		expect(links.map(l => l.href)).not.toContain('/admin/lyrics-reports/')
 		expect(links).toContainEqual({ text: '설정 ↗', href: '/settings/' })
 	})
 })

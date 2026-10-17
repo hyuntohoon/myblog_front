@@ -11,6 +11,8 @@ export type AdminLyricsCandidate = components['schemas']['Backend_AdminLyricsCan
 export type AdminLyricsCurrent = components['schemas']['Backend_AdminLyricsCurrent']
 export type AdminLyricsDecisionResult = components['schemas']['Backend_AdminLyricsDecisionResult']
 export type AdminLyricsAction = components['schemas']['Backend_AdminLyricsDecisionRequest']['action']
+export type AdminLyricsReports = components['schemas']['Backend_AdminLyricsReports']
+export type AdminLyricsReport = components['schemas']['Backend_AdminLyricsReport']
 
 /** A failed panel request, with the backend's short reason when it gave one. */
 export class LyricsAdminError extends Error {
@@ -58,4 +60,9 @@ export async function decideLyrics(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }))
+}
+
+/** Step 3b: tracks with open member (or system) lyrics reports — the owner's queue. */
+export async function getLyricsReports(): Promise<AdminLyricsReports> {
+  return readJson(await apiFetch(`${BASE}/api/admin/lyrics/reports`, { method: 'GET' }))
 }

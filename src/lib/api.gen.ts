@@ -97,6 +97,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/lyrics/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lyrics Reports
+         * @description Tracks with open lyrics reports, most reported first, each with what was reported
+         *     and what it serves now. `auto_resolved` = it changed since; a panel decision closes
+         *     them. Reporter identities are never returned.
+         */
+        get: operations["get_lyrics_reports_api_admin_lyrics_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/lyrics/{spotify_track_id}/candidates": {
         parameters: {
             query?: never;
@@ -975,6 +997,31 @@ export interface paths {
         get: operations["get_lyrics_api_lyrics__spotify_track_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lyrics/{spotify_track_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Lyrics
+         * @description "가사가 틀려요" — any signed-in member (FEAT-lyrics-match-correction Step 3b).
+         *
+         *     Records the report and puts the track on the owner's queue; the first open report on a
+         *     track also enqueues a worker re-check. Never changes the lyrics. Resending while the
+         *     member's report is open is `already_reported` and costs nothing. Own explicit JWT route
+         *     in infra/apigateway.tf like the GET — it 404s at the edge until that route is applied.
+         */
+        post: operations["report_lyrics_api_lyrics__spotify_track_id__report_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2190,7 +2237,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "pick" | "no_lyrics" | "reject" | "unlock";
+            action: "pick" | "no_lyrics" | "reject" | "unlock" | "keep";
             /** Lrclib Id */
             lrclib_id?: number | null;
         };
@@ -2200,7 +2247,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "pick" | "no_lyrics" | "reject" | "unlock";
+            action: "pick" | "no_lyrics" | "reject" | "unlock" | "keep";
             current: components["schemas"]["Backend_AdminLyricsCurrent"];
             /**
              * Outcome
@@ -2212,11 +2259,64 @@ export interface components {
              * @default false
              */
             recheck_enqueued: boolean;
+            /**
+             * Reports Resolved
+             * @default 0
+             */
+            reports_resolved: number;
         };
         /** AdminLyricsRefreshResult */
         Backend_AdminLyricsRefreshResult: {
             /** Enqueued */
             enqueued: boolean;
+        };
+        /** AdminLyricsReport */
+        Backend_AdminLyricsReport: {
+            current: components["schemas"]["Backend_AdminLyricsCurrent"];
+            /**
+             * First Reported At
+             * Format: date-time
+             */
+            first_reported_at: string;
+            /**
+             * Last Reported At
+             * Format: date-time
+             */
+            last_reported_at: string;
+            /** Member Count */
+            member_count: number;
+            /** Report Count */
+            report_count: number;
+            reported: components["schemas"]["Backend_AdminLyricsReported"];
+            /** Spotify Track Id */
+            spotify_track_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "auto_resolved";
+            /** System Reasons */
+            system_reasons?: string[];
+            /** Track Artists */
+            track_artists?: string[];
+            /** Track Title */
+            track_title: string;
+        };
+        /** AdminLyricsReported */
+        Backend_AdminLyricsReported: {
+            /** Lrclib Id */
+            lrclib_id?: number | null;
+            /** Match Status */
+            match_status?: string | null;
+        };
+        /** AdminLyricsReports */
+        Backend_AdminLyricsReports: {
+            /** Items */
+            items?: components["schemas"]["Backend_AdminLyricsReport"][];
+            /** Total Tracks */
+            total_tracks: number;
+            /** Truncated */
+            truncated: boolean;
         };
         /** AlbumBestNewResponse */
         Backend_AlbumBestNewResponse: {
@@ -3322,6 +3422,14 @@ export interface components {
              * @default 0
              */
             votes_total: number;
+        };
+        /** LyricsReportResult */
+        Backend_LyricsReportResult: {
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "reported" | "already_reported";
         };
         /** LyricsResponse */
         Backend_LyricsResponse: {
@@ -5478,6 +5586,26 @@ export interface operations {
             };
         };
     };
+    get_lyrics_reports_api_admin_lyrics_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_AdminLyricsReports"];
+                };
+            };
+        };
+    };
     get_lyrics_candidates_api_admin_lyrics__spotify_track_id__candidates_get: {
         parameters: {
             query?: never;
@@ -7068,6 +7196,58 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Backend_HTTPValidationError"];
                 };
+            };
+        };
+    };
+    report_lyrics_api_lyrics__spotify_track_id__report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spotify_track_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_LyricsReportResult"];
+                };
+            };
+            /** @description Unknown spotify track id */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The track shows neither lyrics nor a no-lyrics verdict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Backend_HTTPValidationError"];
+                };
+            };
+            /** @description Daily report limit reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
