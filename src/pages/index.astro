@@ -3,8 +3,10 @@ import type { components } from '@lib/api.gen'
 import SkipNavContent from '@components/a11y/skip-nav-content.astro'
 import EditorialHome from '@components/home/EditorialHome'
 import { NRL_LIMIT, NRL_WINDOW_DAYS } from '@components/home/NewReleasesCard'
+import { ownerRatingItems } from '@components/home/OwnerRatingsRail'
 import Seo from '@components/seo.astro'
 import Layout from '@layouts/layout.astro'
+import { OWNER_HANDLE } from '@lib/member'
 import { allGenres, buildReviewCards } from '@lib/reviews'
 import { getCollection } from 'astro:content'
 
@@ -84,11 +86,28 @@ catch (err) {
   // but it must be loud in the build log — a silent miss un-ships the CLS fix.
   console.warn(`[home] build-time new-releases fetch failed (${err}) — strip will fall back to client-side insert`)
 }
+
+// FEAT-public-surfaces-before-first-review Step 2 — seed the owner's 최근 평가
+// rail the same way, so it SSRs; the island re-fetches so a new 평가 lands
+// without a redeploy. A miss leaves the prop empty (client-side insert).
+type MemberRating = components['schemas']['Backend_MemberRatingResponse']
+let ownerRatings: MemberRating[] = []
+try {
+  const base = import.meta.env.PUBLIC_BACKEND_API_URL as string
+  const res = await fetch(`${base}/api/members/${encodeURIComponent(OWNER_HANDLE)}`, { signal: AbortSignal.timeout(20_000) })
+  if (res.ok)
+    ownerRatings = ownerRatingItems(await res.json()) ?? []
+  else
+    console.warn(`[home] build-time owner-ratings fetch got ${res.status} — rail will fall back to client-side insert`)
+}
+catch (err) {
+  console.warn(`[home] build-time owner-ratings fetch failed (${err}) — rail will fall back to client-side insert`)
+}
 ---
 
 <Layout>
   <Seo slot="seo" forceTitle="buckit" />
   <SkipNavContent>
-    <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} newReleases={newReleases} />
+    <EditorialHome client:load bnm={bnm} reviews={reviews} stats={stats} draftCount={draftCount} newReleases={newReleases} ownerRatings={ownerRatings} />
   </SkipNavContent>
 </Layout>
