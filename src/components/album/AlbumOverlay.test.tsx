@@ -14,7 +14,9 @@ vi.mock('@lib/useDismissable', () => ({ useDismissable: vi.fn() }))
 vi.mock('@lib/useScrollLock', () => ({ useScrollLock: vi.fn() }))
 vi.mock('./AlbumDetailView', () => ({
 	AlbumDetailView: ({ albumId, openRating, interactive }: { albumId: string, openRating?: boolean, interactive?: boolean }) => (
-		<div data-testid="detail" data-album={albumId} data-open-rating={String(!!openRating)} data-interactive={String(interactive !== false)} />
+		<div data-testid="detail" data-album={albumId} data-open-rating={String(!!openRating)} data-interactive={String(interactive !== false)}>
+			<a href="/artist/a-1/">Radiohead</a>
+		</div>
 	),
 	Header: () => null,
 }))
@@ -88,6 +90,39 @@ it('ignores an open with no album id', async () => {
 
 // Owner decision D2 (front UI/UX audit 2026-10-16): Back closes the overlay
 // through a history entry with no URL change.
+describe('clicks inside the overlay', () => {
+	// ClientRouter intercepts link clicks with one listener on `document`; a
+	// click the card swallows on the way up never reaches it and the browser
+	// does a full page load instead of a swap.
+	it('lets a link click reach document, where the router listens', async () => {
+		render(<AlbumOverlay />)
+		act(() => openAlbum({ albumId: 'album-1' }))
+		await screen.findByTestId('detail')
+		const seen = vi.fn((e: Event) => e.preventDefault())
+		document.addEventListener('click', seen)
+		try {
+			fireEvent.click(screen.getByRole('link', { name: 'Radiohead' }))
+		}
+		finally {
+			document.removeEventListener('click', seen)
+		}
+
+		expect(seen).toHaveBeenCalledTimes(1)
+		// Reaching the scrim on the way up must not close it: the swap closes it.
+		expect(screen.getByTestId('detail')).toBeInTheDocument()
+	})
+
+	it('closes on the scrim itself', async () => {
+		render(<AlbumOverlay />)
+		act(() => openAlbum({ albumId: 'album-1' }))
+		await screen.findByTestId('detail')
+
+		fireEvent.click(screen.getByRole('presentation'))
+
+		expect(screen.queryByTestId('detail')).toBeNull()
+	})
+})
+
 describe('back closes the overlay', () => {
 	// layout.astro's inline head script, the first popstate listener on the page.
 	const claimBridge = (e: PopStateEvent) => {
