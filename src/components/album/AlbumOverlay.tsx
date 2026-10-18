@@ -6,22 +6,112 @@
 // (public review, home tiles, search) dispatches it via openAlbum(). Member
 // surfaces keep their own writable AlbumDetail modal (SelfDashboard's onOpen) — this
 // overlay is read-only: no lyrics affordance (onOpenLyrics omitted = privacy),
-// no memo/edit. Closes on ESC/scrim/✕ and on SPA navigation.
+// no memo/edit. Closes on ESC/scrim/✕, on Back, and on SPA navigation.
+//
+// Back closes it (front UI/UX audit 2026-10-16, owner decision D2): opening
+// pushes a history entry with NO URL change — not an album URL, which D2 kept
+// closed (2026-07-08, 2026-08-04). The rule is that the entry IS the overlay:
+// the overlay shows exactly when the current entry carries `albumOverlay`, so
+// Back, Forward and ✕ can never disagree about whether it is open.
+//   - ✕/ESC/scrim consume the entry (history.back()); leaving it in place would
+//     make the next Back a dead press that only removes an invisible entry.
+//   - Opening another album while one is showing replaces the entry: one Back
+//     always closes, it does not walk back through albums.
+//   - A pop between this overlay's entry and the one beneath it is a same-page
+//     state change, so it must not reach ClientRouter — the router treats any
+//     traverse with a non-null state as a navigation and would re-fetch and
+//     swap the page underneath the reader. The router's popstate listener is
+//     registered before any island exists, and listeners on `window` run in
+//     registration order whatever their capture flag (measured in Chrome;
+//     jsdom runs capture first and hid this), so this component cannot get in
+//     front of it. layout.astro's inline head script can: it is the first
+//     popstate listener and asks, via POPSTATE_CLAIM, whether this overlay
+//     wants the pop; claiming it stops the router.
 import type { OpenAlbumDetail } from '@lib/entityEvents'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { isLoggedIn } from '@lib/auth'
-import { consumeLatchedOpenAlbum, ENT_OPEN_ALBUM } from '@lib/entityEvents'
+import { consumeLatchedOpenAlbum, ENT_OPEN_ALBUM, POPSTATE_CLAIM } from '@lib/entityEvents'
 import { playbackSession } from '@lib/playback/session'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import { AlbumDetailView } from './AlbumDetailView'
 
+const ENTRY_KEY = 'albumOverlay'
+
+/** What this overlay keeps in `history.state[ENTRY_KEY]`. */
+interface OverlayEntry {
+  /**
+   * The document that pushed it. A pop is ours to absorb only inside the same
+   * document; an entry from an earlier page (Back from the page a link inside
+   * the overlay led to) has to go through the router first.
+   */
+  doc: string
+  href: string
+  detail: OpenAlbumDetail
+}
+
+function newDocToken(): string {
+  return Math.random().toString(36).slice(2)
+}
+
+function readEntry(state: unknown): OverlayEntry | null {
+  const entry = (state as Record<string, unknown> | null)?.[ENTRY_KEY] as OverlayEntry | undefined
+  return entry?.detail?.albumId ? entry : null
+}
+
+function writeEntry(entry: OverlayEntry, mode: 'push' | 'replace') {
+  // Spread the router's own fields ({ index, scrollX, scrollY }) so it keeps
+  // counting this as the same page; `''` leaves the URL as it is.
+  const state = { ...(window.history.state as object | null), [ENTRY_KEY]: entry }
+  if (mode === 'push')
+    window.history.pushState(state, '')
+  else
+    window.history.replaceState(state, '')
+}
+
 export default function AlbumOverlay() {
   const [target, setTarget] = useState<OpenAlbumDetail | null>(null)
+  const doc = useRef(newDocToken())
+  // The entry this overlay pushed and is showing; null whenever it is closed.
+  const own = useRef<OverlayEntry | null>(null)
+
+  const currentEntry = () => {
+    const entry = readEntry(window.history.state)
+    return entry?.doc === doc.current ? entry : null
+  }
+
+  // ✕ / ESC / scrim. Back arrives through the popstate listener instead.
+  const close = () => {
+    setTarget(null)
+    if (own.current && currentEntry())
+      window.history.back() // the pop it produces clears `own`
+    else
+      own.current = null
+  }
 
   useEffect(() => {
+    const show = (detail: OpenAlbumDetail) => {
+      // openRating is a one-shot (the post-login resume); a Forward or a reload
+      // that brings the overlay back must not reopen the rating editor too.
+      const { openRating: _oneShot, ...kept } = detail
+      const entry: OverlayEntry = { doc: doc.current, href: window.location.href, detail: kept }
+      writeEntry(entry, currentEntry() ? 'replace' : 'push')
+      own.current = entry
+      setTarget(detail)
+    }
+    // Arriving on an entry this overlay wrote in another document — a reload,
+    // or Back to the page a link inside the overlay left — re-adopts it.
+    const adopt = () => {
+      const entry = readEntry(window.history.state)
+      if (!entry)
+        return
+      const adopted: OverlayEntry = { ...entry, doc: doc.current, href: window.location.href }
+      writeEntry(adopted, 'replace')
+      own.current = adopted
+      setTarget(entry.detail)
+    }
     const onOpen = (e: Event) => {
       const detail = (e as CustomEvent<OpenAlbumDetail>).detail
       // The latch is for an open dispatched before this listener existed; an
@@ -29,26 +119,58 @@ export default function AlbumOverlay() {
       // rather than leave a stale one for a later remount to replay.
       consumeLatchedOpenAlbum()
       if (detail?.albumId)
-        setTarget(detail)
+        show(detail)
     }
-    const onNav = () => setTarget(null)
+    const onPop = (e: Event) => {
+      const arriving = readEntry((e as CustomEvent<unknown>).detail)
+      if (arriving?.doc === doc.current && arriving.href === window.location.href) {
+        // Forward onto an entry this overlay pushed in this document.
+        e.preventDefault()
+        own.current = arriving
+        setTarget(arriving.detail)
+        return
+      }
+      const leaving = own.current
+      if (!leaving)
+        return
+      own.current = null
+      setTarget(null)
+      // Back onto the page beneath: nothing but the overlay changed. A pop that
+      // lands on another URL (a long-press jump) is a real navigation — let the
+      // router run it.
+      if (window.location.href === leaving.href)
+        e.preventDefault()
+    }
+    const onNav = () => {
+      own.current = null
+      setTarget(null)
+    }
+    const onSwapped = () => {
+      doc.current = newDocToken()
+      adopt()
+    }
     window.addEventListener(ENT_OPEN_ALBUM, onOpen)
+    window.addEventListener(POPSTATE_CLAIM, onPop)
+    adopt()
     // A sibling island (the post-login resume) may have fired its open from its
     // own mount effect, before this one ran — see openAlbumLatched.
     const latched = consumeLatchedOpenAlbum()
     if (latched?.albumId)
-      setTarget(latched)
+      show(latched)
     // Close across ClientRouter view transitions (the overlay is not per-page state).
     document.addEventListener('astro:before-swap', onNav)
+    document.addEventListener('astro:after-swap', onSwapped)
     return () => {
       window.removeEventListener(ENT_OPEN_ALBUM, onOpen)
+      window.removeEventListener(POPSTATE_CLAIM, onPop)
       document.removeEventListener('astro:before-swap', onNav)
+      document.removeEventListener('astro:after-swap', onSwapped)
     }
   }, [])
 
   if (!target)
     return null
-  return <OverlayCard target={target} onClose={() => setTarget(null)} />
+  return <OverlayCard target={target} onClose={close} />
 }
 
 function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: () => void }) {

@@ -62,6 +62,16 @@ export function openAlbumUnresolved(
 
 export const ENT_OPEN_ALBUM = 'ent:open-album'
 
+/**
+ * Owner decision D2 (front UI/UX audit 2026-10-16) — dispatched on `window` by
+ * layout.astro's inline head script for every popstate, before ClientRouter
+ * sees it; `detail` is the popstate's state. A listener that calls
+ * preventDefault() claims the pop, and the router never runs for it. Only the
+ * album overlay listens: Back between its history entry and the page beneath
+ * is not a navigation. See AlbumOverlay for why this has to run first.
+ */
+export const POPSTATE_CLAIM = 'ent:popstate-claim'
+
 /** Open the app-wide read-only album detail overlay. No-op server-side. */
 export function openAlbum(detail: OpenAlbumDetail): void {
   if (typeof window === 'undefined')
