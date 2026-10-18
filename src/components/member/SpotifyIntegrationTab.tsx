@@ -2,7 +2,7 @@
 // integrations contract; this surface reports the stored grant generation and
 // session-only capability probes without adding a capability API or polling.
 import { useEffect, useState } from 'react'
-import { capabilityRows } from '@lib/playerCapabilityMatrix'
+import { capabilityRows, standingLine } from '@lib/playerCapabilityMatrix'
 import { readSpotifyCapabilityStanding } from '@lib/spotifyCapability'
 import { buildSpotifyAuthorizeUrl, getIntegrations, spotifyConnectAvailable, spotifyGrantLacksFollowScope, spotifyGrantLacksLibraryScopes, spotifyGrantNeedsReconsent, spotifyScopeGeneration } from './integrations.api'
 import type { Integration, SpotifyScopeGeneration } from './integrations.api'
@@ -44,14 +44,6 @@ function relTime(iso: string | null): string | null {
   if (hr < 24)
     return `${hr}시간 전`
   return `${Math.floor(hr / 24)}일 전`
-}
-
-const GENERATION_COPY: Record<SpotifyScopeGeneration, string> = {
-  none: '없음',
-  legacy: '구스코프(재생 스코프 이전)',
-  playback: '재생 스코프 세대',
-  library: '좋아요 스코프 세대',
-  follow: '팔로우 스코프 세대',
 }
 
 function Powers({ connected, generation }: { connected: boolean, generation: SpotifyScopeGeneration }) {
@@ -106,8 +98,6 @@ export function SpotifyIntegrationTab() {
   // them to re-consent "for 좋아요" when 좋아요 already works reads as a bug.
   const needsFollowReconsent = connected && spotifyGrantLacksFollowScope(conn?.scope)
   const scopes = (conn?.scope ?? '').split(/\s+/).filter(Boolean)
-  const probe = readSpotifyCapabilityStanding()
-  const probeCopy = `컨트롤 ${probe.transport === 'available' ? '사용 가능' : probe.transport === 'no-capability' ? '제한 응답' : '확인 전'} · 좋아요 ${probe.library === 'available' ? '사용 가능' : probe.library === 'scope-missing' ? '권한 부족 응답' : '확인 전'}`
 
   const stamp = relTime(conn?.last_synced_at ?? null)
 
@@ -142,7 +132,7 @@ export function SpotifyIntegrationTab() {
           <div style={{ borderTop: '1px solid var(--color-border-soft)', paddingTop: 16 }}>
             <div className="kicker" style={{ marginBottom: 8 }}>이 연동으로 열리는 기능</div>
             <div className="mono" style={{ marginBottom: 11, fontSize: 10.5, letterSpacing: '0.03em', color: 'var(--color-faded)' }}>
-              {`현재 상태 · ${connected ? '연결됨' : '연결 안 됨'} · 스코프 세대 ${GENERATION_COPY[generation]} · 마지막 probe ${probeCopy}`}
+              {standingLine({ connected, generation, probe: readSpotifyCapabilityStanding() })}
             </div>
             <Powers connected={connected} generation={generation} />
             {/* /help/player shipped with no inbound link at all (7c). This is the

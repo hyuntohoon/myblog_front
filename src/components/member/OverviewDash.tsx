@@ -253,7 +253,7 @@ function widgetTitle(id: string, isOwner: boolean): string {
  *
  * A non-owner does not get an empty card — the widget is absent from the registry
  * entirely, so it is not in the default layout, not restorable from a saved
- * layout, and not offered by ＋ 컴포넌트 추가. Omitted silently: a non-owner has no
+ * layout, and not offered by ＋ 위젯 추가. Omitted silently: a non-owner has no
  * reason to be told what they are not seeing (owner decision on the RFC's OQ1).
  *
  * The backend's `require_owner` is the real gate; this keeps the UI honest and
@@ -748,7 +748,7 @@ function Widget({ id, ctx, onRemove, handleProps, dragging }: { id: string, ctx:
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {id === 'nowplaying' && <Seg value={ctx.npStyle} onChange={v => ctx.setNpStyle(v as NpStyle)} options={[{ v: 'banner', label: '배너' }, { v: 'full', label: '플레이어' }, { v: 'list', label: '리스트' }]} />}
           {hasView && <ViewToggle value={ctx.views[id]} onChange={v => ctx.setView(id, v)} />}
-          <button type="button" className="iconbtn danger" title="컴포넌트 제거" onClick={() => onRemove(id)}>✕</button>
+          <button type="button" className="iconbtn danger" title="위젯 제거" onClick={() => onRemove(id)}>✕</button>
         </div>
       </div>
       <WidgetBody id={id} ctx={ctx} />
@@ -840,7 +840,7 @@ export function OverviewDash({ isOwner, npStyle, setNpStyle, onOpen, goBucket, r
 	title="개요"
 	right={(
           <div style={{ position: 'relative' }}>
-            <button ref={addTriggerRef} type="button" className="btn" onClick={() => setAddOpen(o => !o)} disabled={!available.length} aria-haspopup="menu" aria-expanded={addOpen}>＋ 컴포넌트 추가</button>
+            <button ref={addTriggerRef} type="button" className="btn" onClick={() => setAddOpen(o => !o)} disabled={!available.length} aria-haspopup="menu" aria-expanded={addOpen}>＋ 위젯 추가</button>
             {addOpen && available.length > 0 && (
               <div ref={addMenuRef} role="menu" className="panel" style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 30, padding: 6, minWidth: 180, background: 'var(--color-bg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.4)' }}>
                 {available.map(w => (
@@ -855,7 +855,7 @@ export function OverviewDash({ isOwner, npStyle, setNpStyle, onOpen, goBucket, r
         )}
       />
       {flat.length === 0 ?
-        <div className="panel" style={{ padding: 40, textAlign: 'center' }}><span className="meta">컴포넌트 없음</span></div> :
+        <div className="panel" style={{ padding: 40, textAlign: 'center' }}><span className="meta">위젯 없음</span></div> :
         <RowsBoard rows={rows} setRows={setRows} render={(id, handleProps, dragging) => <Widget id={id} ctx={ctx} onRemove={remove} handleProps={handleProps} dragging={dragging} />} />}
     </div>
   )

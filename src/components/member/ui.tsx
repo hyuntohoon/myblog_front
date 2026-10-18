@@ -187,12 +187,11 @@ export function BucketShortcut({ count, onGo }: { count: number, onGo: () => voi
       <span style={{ width: 4, background: 'var(--color-accent)', flex: '0 0 auto' }} />
       <span style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 18, flex: 1 }}>
         <span style={{ flex: 1 }}>
-          <span className="kicker" style={{ color: 'var(--color-accent)', display: 'block', marginBottom: 6 }}>평론 대기열</span>
+          <span className="kicker" style={{ color: 'var(--color-accent)', display: 'block', marginBottom: 6 }}>담아 둔 앨범</span>
           <span className="serif" style={{ fontSize: 21, fontWeight: 500, display: 'block' }}>My Buckit으로 이동</span>
           <span className="sans" style={{ fontSize: 12.5, color: 'var(--color-subtle)' }}>
-아직 평론을 쓰지 않은 앨범
 {count}
-장이 대기 중
+장이 기다리고 있어요
           </span>
         </span>
         <span className="serif" style={{ fontSize: 40, fontWeight: 500, color: 'var(--color-accent)', lineHeight: 1 }}>{count}</span>

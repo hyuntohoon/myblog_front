@@ -178,7 +178,7 @@ export function typeLabel(t: string | null | undefined): string | null {
 	return null
 }
 
-export const SOURCE_LABEL: Record<string, string> = { musicbrainz: 'MB', itunes: 'iTunes', spotify: 'SP' }
+export const SOURCE_LABEL: Record<string, string> = { musicbrainz: 'MusicBrainz', itunes: 'iTunes', spotify: 'Spotify' }
 
 export function sourcesLabel(sources: string[] | undefined): string {
 	return (sources ?? []).map(s => SOURCE_LABEL[s] ?? s).join(' · ')

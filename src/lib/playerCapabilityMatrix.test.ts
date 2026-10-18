@@ -121,7 +121,7 @@ describe('whyNoControls — the 7b answer', () => {
 
   it('points a legacy grant at re-connect rather than blaming Premium', () => {
     const why = whyNoControls({ connected: true, generation: 'legacy', probe: probe('unknown') })
-    expect(why?.reason).toContain('예전 스코프')
+    expect(why?.reason).toContain('예전 권한')
     expect(why?.href).toBe('/settings/')
   })
 

@@ -43,11 +43,11 @@ export interface CapabilityRow {
 }
 
 export const SCOPE_GENERATION_COPY: Record<SpotifyScopeGeneration, string> = {
-  none: '없음',
-  legacy: '구스코프(재생 스코프 이전)',
-  playback: '재생 스코프 세대',
-  library: '좋아요 스코프 세대',
-  follow: '팔로우 스코프 세대',
+  none: '권한 없음',
+  legacy: '예전 연결(재생 권한 없음)',
+  playback: '재생 권한',
+  library: '재생·좋아요 권한',
+  follow: '재생·좋아요·팔로우 권한',
 }
 
 /**
@@ -171,10 +171,10 @@ export function capabilityRows(situation: CapabilitySituation | null): Capabilit
 /** One line naming the member's standing, shared by both integration surfaces. */
 export function standingLine(situation: CapabilitySituation): string {
   const probeCopy = [
-    `컨트롤 ${situation.probe.transport === 'available' ? '사용 가능' : situation.probe.transport === 'no-capability' ? '제한 응답' : '확인 전'}`,
-    `좋아요 ${situation.probe.library === 'available' ? '사용 가능' : situation.probe.library === 'scope-missing' ? '권한 부족 응답' : '확인 전'}`,
+    `재생 조작 ${situation.probe.transport === 'available' ? '가능' : situation.probe.transport === 'no-capability' ? '제한됨' : '확인 전'}`,
+    `좋아요 ${situation.probe.library === 'available' ? '가능' : situation.probe.library === 'scope-missing' ? '권한 없음' : '확인 전'}`,
   ].join(' · ')
-  return `현재 상태 · ${situation.connected ? '연결됨' : '연결 안 됨'} · 스코프 세대 ${SCOPE_GENERATION_COPY[situation.generation]} · 마지막 probe ${probeCopy}`
+  return `${situation.connected ? '연결됨' : '연결 안 됨'} · ${SCOPE_GENERATION_COPY[situation.generation]} · 최근 확인: ${probeCopy}`
 }
 
 /**
@@ -189,7 +189,7 @@ export function whyNoControls(situation: CapabilitySituation): { reason: string,
   if (!situation.connected)
     return { reason: 'Spotify가 연동되어 있지 않아요.', action: '설정에서 연동하기', href: '/settings/' }
   if (!modernPlayback)
-    return { reason: '지금 권한으로는 재생을 조작할 수 없어요. 예전 스코프로 연결되어 있어요.', action: '설정에서 다시 연결하기', href: '/settings/' }
+    return { reason: '지금 권한으로는 재생을 조작할 수 없어요. 예전 권한으로 연결되어 있어요.', action: '설정에서 다시 연결하기', href: '/settings/' }
   if (situation.probe.transport === 'no-capability') {
     return {
       reason: 'Spotify가 컨트롤을 거절했어요. 보통 Premium이 아니거나, 조작할 수 있는 기기가 없을 때예요.',
