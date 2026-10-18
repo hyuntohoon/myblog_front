@@ -60,10 +60,21 @@ beforeEach(() => {
 })
 
 describe('logged-out CTA', () => {
-	it('parks a rate-album intent with the album display identity before handing off', async () => {
+	it('opens the login-intent sheet first and parks nothing until a provider is chosen', async () => {
+		render(<AlbumRatingBlock albumId={ALBUM} display={{ title: 'Kid A' }} />)
+
+		fireEvent.click(await screen.findByRole('button', { name: '로그인하고 평가 남기기' }))
+
+		expect(screen.getByRole('dialog', { name: '로그인하고 평가 남기기' })).toBeInTheDocument()
+		expect(intent.writePostLoginIntent).not.toHaveBeenCalled()
+		expect(auth.goLogin).not.toHaveBeenCalled()
+	})
+
+	it('parks a rate-album intent with the album display identity before handing off to the chosen provider', async () => {
 		render(<AlbumRatingBlock albumId={ALBUM} display={{ title: 'Kid A', artist: 'Radiohead', cover: 'c.jpg', year: 2000 }} />)
 
 		fireEvent.click(await screen.findByRole('button', { name: '로그인하고 평가 남기기' }))
+		fireEvent.click(screen.getByRole('button', { name: '카카오로 계속하기' }))
 
 		expect(intent.writePostLoginIntent).toHaveBeenCalledWith({
 			kind: 'rate-album',
@@ -73,13 +84,34 @@ describe('logged-out CTA', () => {
 			cover: 'c.jpg',
 			year: 2000,
 		})
-		expect(auth.goLogin).toHaveBeenCalledWith(true)
+		expect(auth.goLogin).toHaveBeenCalledWith(false, 'Kakao')
+	})
+
+	it('falls through to the hosted UI for email', async () => {
+		render(<AlbumRatingBlock albumId={ALBUM} />)
+
+		fireEvent.click(await screen.findByRole('button', { name: '로그인하고 평가 남기기' }))
+		fireEvent.click(screen.getByRole('button', { name: '이메일로 계속하기' }))
+
+		expect(auth.goLogin).toHaveBeenCalledWith(false, undefined)
+	})
+
+	it('leaves nothing parked when the sheet is dismissed', async () => {
+		render(<AlbumRatingBlock albumId={ALBUM} />)
+
+		fireEvent.click(await screen.findByRole('button', { name: '로그인하고 평가 남기기' }))
+		fireEvent.click(screen.getByRole('button', { name: '닫기' }))
+
+		await waitFor(() => expect(screen.queryByRole('dialog', { name: '로그인하고 평가 남기기' })).toBeNull())
+		expect(intent.writePostLoginIntent).not.toHaveBeenCalled()
+		expect(auth.goLogin).not.toHaveBeenCalled()
 	})
 
 	it('parks something usable even with no display identity to hand it', async () => {
 		render(<AlbumRatingBlock albumId={ALBUM} />)
 
 		fireEvent.click(await screen.findByRole('button', { name: '로그인하고 평가 남기기' }))
+		fireEvent.click(screen.getByRole('button', { name: 'Google로 계속하기' }))
 
 		expect(intent.writePostLoginIntent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'rate-album', albumId: ALBUM, artist: null, cover: null, year: null }))
 	})
