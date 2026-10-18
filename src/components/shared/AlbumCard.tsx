@@ -6,6 +6,7 @@ import { useState } from 'react'
 import type { DragPayload } from '@lib/entityDrag'
 import { artistHref } from '@lib/entityLinks'
 import { PB_BOARD_DND_END_EVENT, PB_BOARD_DND_START_EVENT, PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
+import { CoverImage } from './CoverImage'
 import '@styles/album-card.css'
 
 /** Display-only album fields. Bucket-item and surface state never belong here. */
@@ -119,18 +120,16 @@ function CoverArt({ title, cover, loading, badge, actions }: {
 	actions?: ReactNode
 }) {
 	return (
-		<div
-			className={`album-card__cover cover${loading ? ' album-card__cover--loading' : ''}`}
-			data-cover-state={loading ? 'loading' : cover ? 'image' : 'fallback'}
+		<CoverImage
+			src={cover}
+			label={title}
+			loading={loading}
+			className={`album-card__cover${loading ? ' album-card__cover--loading' : ''}`}
+			skeletonClassName="album-card__skeleton-cover"
 		>
-			{loading ?
-				<span className="album-card__skeleton-cover" aria-hidden="true" /> :
-				cover ?
-					<img src={cover} alt={title} loading="lazy" decoding="async" /> :
-					<span className="cover-ph" aria-hidden="true">{(title || '?').slice(0, 2).toUpperCase()}</span>}
 			{!loading && badge != null && <span className="album-card__badge">{badge}</span>}
 			{actions}
-		</div>
+		</CoverImage>
 	)
 }
 

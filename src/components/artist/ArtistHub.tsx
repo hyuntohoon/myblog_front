@@ -5,13 +5,17 @@
 // Honesty rules (load-bearing): albums are the only rated unit — NO artist score,
 // NO similar artists, NO aggregation. followers/popularity are a tiny footnote,
 // never a hero metric. Numeric rating is never shown (stars only, owner decision).
+import type { AlbumCardData } from '@components/shared/AlbumCard'
 import { useEffect, useState } from 'react'
 import type { ArtistReviewCard } from '../../lib/artistReviews'
 import type { AlbumListItem, ArtistHero, TopTrackItem } from '../../scripts/write/artistApi'
 import { fetchArtistAlbums, fetchArtistHero, fetchArtistTopTracks } from '../../scripts/write/artistApi'
 import { openAlbum, openTrackAlbum, reviewHref } from '@lib/entityLinks'
 import { genreMapHref } from '@lib/genres'
-import { Cover, SectionTitle, Stars } from '../home/ui'
+import { unresolvedAlbumCardData } from '@components/shared/AlbumCard'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
+import { CoverImage } from '@components/shared/CoverImage'
+import { SectionTitle, Stars } from '../home/ui'
 import TrackArtistButton from './TrackArtistButton'
 
 interface Props {
@@ -40,6 +44,56 @@ function fmtFollowers(n: number | null | undefined): string | null {
 	if (n >= 1_000)
 		return `${(n / 1_000).toFixed(1)}K`
 	return String(n)
+}
+
+const SQUARE_COVER = { width: '100%', aspectRatio: '1 / 1', borderRadius: 3 } as const
+const SQUARE_COVER_PH = { fontSize: 'clamp(20px, 4vw, 40px)' } as const
+
+function releaseYear(date: string | null | undefined): number | null {
+	if (!date)
+		return null
+	const year = Number.parseInt(date.slice(0, 4), 10)
+	return Number.isFinite(year) ? year : null
+}
+
+/**
+ * Catalog row → canonical album identity. The artist name is left out on
+ * purpose: every card here is this artist's, so the byline carries the year
+ * only. A Spotify-only row goes through the smart constructor.
+ */
+export function artistDiscographyCardData(al: AlbumListItem): AlbumCardData {
+	const display = {
+		title: al.title,
+		artist: null,
+		artistId: null,
+		cover: al.cover_url ?? null,
+		year: releaseYear(al.release_date),
+	}
+	if (al.id)
+		return { ...display, catalogAlbumId: al.id, spotifyAlbumId: null }
+	if (al.spotify_id)
+		return unresolvedAlbumCardData(al.spotify_id, display)
+	return { ...display, catalogAlbumId: null, spotifyAlbumId: null }
+}
+
+// Front UI/UX audit S1 — the discography composes the canonical card through
+// the shared catalog adapter, like /search: the same album now has the same
+// open + ＋담기 (+ copy-drag when logged in) on both pages. Before this it was a
+// bespoke tile with open only.
+function ArtistDiscographyCard({ al, artistName }: { al: AlbumListItem, artistName: string }) {
+	const data = artistDiscographyCardData(al)
+	const albumId = data.catalogAlbumId
+	return (
+		<CatalogAlbumCardAdapter
+			data={data}
+			layout="grid"
+			titleAs="h3"
+			secondaryLine={al.album_type ? <span className="art-disco-type">{al.album_type}</span> : undefined}
+			capabilities={albumId ?
+				{ open: () => openAlbum({ albumId, title: al.title, artist: artistName, cover: al.cover_url, year: data.year }) } :
+				{}}
+		/>
+	)
 }
 
 function LetterTile({ label }: { label: string }) {
@@ -214,7 +268,7 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 							{reviews.map(r => (
 								<a key={r.slug} className="art-rev-card" href={reviewHref(r.slug)}>
 									<div className="art-rev-cover">
-										<Cover label={r.album} src={r.cover} square />
+										<CoverImage src={r.cover} label={r.album} style={SQUARE_COVER} placeholderStyle={SQUARE_COVER_PH} />
 										{r.bestNew && <span className="art-rev-bnm">베스트 뉴 뮤직</span>}
 									</div>
 									<div className="art-rev-body">
@@ -255,43 +309,7 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 						catalog.length > 0 ?
 							(
 								<div className={`art-disco-grid${hasReviews ? '' : ' is-foreground'}`}>
-									{catalog.map((al) => {
-										const body = (
-											<>
-												<div className="art-disco-cover">
-													<Cover label={al.title} src={al.cover_url} square />
-												</div>
-												<div className="art-disco-title">{al.title}</div>
-												<div className="art-disco-meta">
-													<span>
-														{al.release_date ? al.release_date.slice(0, 4) : ''}
-														{al.album_type ? ` · ${al.album_type}` : ''}
-													</span>
-													<span className="art-disco-unrated">아직 평론 없음</span>
-												</div>
-											</>
-										)
-										// ARCH-entity-interaction-unify Step 2: a catalog album is now
-										// clickable → the app-wide read-only album overlay (openAlbum).
-										// id-less catalog rows (Spotify-only, no DB album) stay static.
-										return al.id ?
-											(
-												<button
-													key={al.id}
-													type="button"
-													className="art-disco-item is-clickable"
-													onClick={() => openAlbum({ albumId: al.id!, title: al.title, artist: name, cover: al.cover_url, year: al.release_date ? Number.parseInt(al.release_date.slice(0, 4), 10) : null })}
-													aria-label={`${al.title} 앨범 상세 보기`}
-												>
-													{body}
-												</button>
-											) :
-											(
-												<div key={al.title} className="art-disco-item">
-													{body}
-												</div>
-											)
-									})}
+									{catalog.map(al => <ArtistDiscographyCard key={al.id ?? al.title} al={al} artistName={name} />)}
 								</div>
 							) :
 							<p className="art-cov-empty-sub">등록된 앨범이 없습니다.</p>}
