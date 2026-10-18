@@ -2,6 +2,7 @@
 // album detail surface. Renders on BOTH the app-wide public overlay and the
 // authed member modal (via AlbumDetailView.topSlot). Reads are public; the write
 // panel appears only when signed in. Everything here is public-bundle-safe.
+import type { IdentityProvider } from '@lib/auth'
 import type { MyRerating } from './reratings.api'
 import type { AlbumRatingAggregate, MyAlbumState } from './reviews.api'
 import { useEffect, useRef, useState } from 'react'
@@ -10,6 +11,7 @@ import { isPlaceholderIdentity } from '@lib/member'
 import { notifyAlbumStateChanged } from '@lib/entityEvents'
 import { isOwnerUser } from '@lib/owner'
 import { writePostLoginIntent } from '@lib/postLoginIntent'
+import { LoginIntentSheet } from '../auth/LoginIntentSheet'
 import { Stars } from '../member/ui'
 import HalfStarInput from './HalfStarInput'
 import { cancelRerating, fetchMyReratings, startRerating } from './reratings.api'
@@ -75,6 +77,7 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 	 */
 	const [markDraft, setMarkDraft] = useState<boolean | null>(null)
 	const [err, setErr] = useState<string | null>(null)
+	const [loginOpen, setLoginOpen] = useState(false)
 	// Owner-only affordance (isOwnerUser is fail-closed — a member never sees
 	// this even briefly). Resolved separately from `authed` since any signed-in
 	// member passes that check post multi-user.
@@ -481,12 +484,22 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 			    enough on its own — the overlay this panel lives in is client state
 			    and is gone after the round trip, so the click still ended nowhere.
 			    Parking a `rate-album` intent is what makes the return land back on
-			    this editor. */}
+			    this editor. Front UI/UX audit (S5 follow-up): the button opens the
+			    same login-intent sheet as a logged-out ＋, and the intent is parked
+			    only once a provider is chosen, so dismissing it leaves nothing behind. */}
 			{!authed && (
 				<div className="album-rating__login">
 					<button
 						type="button"
-						onClick={() => {
+						onClick={() => setLoginOpen(true)}
+						className="album-modal__button album-modal__button--quiet"
+					>
+						로그인하고 평가 남기기
+					</button>
+					<LoginIntentSheet
+						open={loginOpen}
+						heading="로그인하고 평가 남기기"
+						onChoose={(idp: IdentityProvider | undefined) => {
 							writePostLoginIntent({
 								kind: 'rate-album',
 								albumId,
@@ -495,12 +508,12 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 								cover: display?.cover ?? null,
 								year: display?.year ?? null,
 							})
-							void goLogin(true)
+							void goLogin(false, idp)
 						}}
-						className="album-modal__button album-modal__button--quiet"
+						onClose={() => setLoginOpen(false)}
 					>
-						로그인하고 평가 남기기
-					</button>
+						평가는 회원 기능이에요. 로그인하면 이 앨범으로 돌아와 바로 평가를 남길 수 있어요.
+					</LoginIntentSheet>
 				</div>
 			)}
 
