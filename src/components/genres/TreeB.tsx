@@ -177,7 +177,7 @@ export default function TreeB({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 					<div className="gm-b-colhead mono">
 						장르 · Genre
 						{' '}
-						<span className="gm-b-colhead-sub">containment</span>
+						<span className="gm-b-colhead-sub">포함 관계</span>
 					</div>
 					<div className="gm-b-collist">
 						{tops.map((g, i) => (

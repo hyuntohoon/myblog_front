@@ -155,7 +155,7 @@ export default function TreeA({ doc, selId, onSelect, onNavigate }: { doc: GmDoc
 			<div className="gm-a-col" style={{ maxWidth: colW }}>
 				<div className="gm-a-toolrow">
 					<span className="mono gm-a-toolhint">
-						{`${tops.length}개 최상위 장르 · ${gmCount(total)}장 수록 · 부모→자식 containment`}
+						{`${tops.length}개 최상위 장르 · ${gmCount(total)}장 수록 · 상위 → 하위 장르`}
 					</span>
 					<button type="button" className="gm-a-expandall" onClick={toggleAll}>
 						{allOpen ? '모두 접기' : '모두 펼치기'}

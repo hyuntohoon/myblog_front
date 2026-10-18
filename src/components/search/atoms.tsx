@@ -62,11 +62,11 @@ export function SourceTag() {
 
 /**
  * Partial-fill stars from a 0–5 rating (never numeric). Reuses the global
- *  `.stars` classes. null → "미평론".
+ *  `.stars` classes. null → "별점 없음".
  */
 export function GStars({ rating, size = 14 }: { rating: number | null, size?: number }) {
 	if (rating == null)
-		return <span className="gs-unrated mono">미평론</span>
+		return <span className="gs-unrated mono">별점 없음</span>
 	const pct = (Math.max(0, Math.min(5, rating)) / 5) * 100
 	return (
 		<span

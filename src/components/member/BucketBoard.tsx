@@ -648,8 +648,8 @@ function BucketAlbumBadges({ album, rated, score, copySource, libRow, listened, 
       )}
       {listened && (
         <span
-	title="이미 들음 → 평론 가능"
-	aria-label="이미 들음 — 평론 가능"
+	title="이미 들은 앨범"
+	aria-label="이미 들은 앨범"
 	style={{ position: 'absolute', bottom: 6, right: 6, width: 10, height: 10, borderRadius: '50%', background: 'var(--color-bg)', border: '2px solid oklch(0.62 0.10 155)', boxShadow: '0 0 0 1px var(--color-bg)' }}
         />
       )}

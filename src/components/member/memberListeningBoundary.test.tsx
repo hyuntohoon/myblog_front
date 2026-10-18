@@ -117,11 +117,11 @@ describe('overviewDash owner-global listening cards', () => {
 		expect(spotifyApi.listRecentlyListened).not.toHaveBeenCalled()
 	})
 
-	it('does not offer them in ＋ 컴포넌트 추가 for a member', () => {
+	it('does not offer them in ＋ 위젯 추가 for a member', () => {
 		localStorage.setItem('lf_ov_rows', JSON.stringify([['bucket']]))
 		overview(false)
 
-		fireEvent.click(screen.getByRole('button', { name: /컴포넌트 추가/ }))
+		fireEvent.click(screen.getByRole('button', { name: /위젯 추가/ }))
 		for (const title of OWNER_ONLY_TITLES)
 			expect(screen.queryByRole('menuitem', { name: new RegExp(title) })).toBeNull()
 	})

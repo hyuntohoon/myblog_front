@@ -414,7 +414,7 @@ export default function SearchPage() {
 			<div className="gs-rhead">
 				<div className="gs-rhead-top">
 					<span className="mono gs-rhead-kicker">{empty ? '전역 검색' : '검색 결과'}</span>
-					<h1 className="serif gs-rhead-q">{empty ? '무엇을 평론하시겠어요?' : `‘${query}’`}</h1>
+					<h1 className="serif gs-rhead-q">{empty ? '무엇을 찾으시나요?' : `‘${query}’`}</h1>
 					{/*
 					  The result summary is the only thing that can announce "the results
 					  changed": /search never navigates, the heading is the query the

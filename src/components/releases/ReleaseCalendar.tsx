@@ -73,7 +73,7 @@ function monthRange(ym: string): { from: string, to: string } {
 }
 
 function EmptyMonth() {
-	return <p className="rcal-note mono">이 달엔 관측된 발매가 없습니다.</p>
+	return <p className="rcal-note mono">이 달엔 알려진 발매가 없습니다.</p>
 }
 
 // ── 장부 (ledger) view ──────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ function LedgerView({ month, days, today }: { month: string, days: CalendarDay[]
 	if (!ruleShown)
 		rows.push(<TodayRule key="today-rule" today={today} />)
 	return (
-		<section aria-label={`${m}월 발매 장부`}>
+		<section aria-label={`${m}월 발매 목록`}>
 			<div className="rcal-month">
 				<span className="m-num serif italic">{`${m}월`}</span>
 				<span className="m-meta mono">{`${MONTH_EN[m - 1]} · ${total} RELEASES`}</span>
@@ -273,12 +273,12 @@ export default function ReleaseCalendar() {
 	return (
 		<div className="rcal-wrap">
 			<style>{RELEASE_BASE_CSS}</style>
-			<p className="rcal-kicker mono">Release Calendar · 관측 기반</p>
+			<p className="rcal-kicker mono">Release Calendar</p>
 			<h1 className="rcal-h1 serif italic">발매 캘린더</h1>
 			<p className="rcal-lede mono">
-				MusicBrainz · iTunes에서 관측한 발매 예고와 Spotify로 확정된 발매를 한 곳에.
+				곧 나올 앨범 소식과 이미 나온 앨범을 한 곳에.
 				<br />
-				발매 전 정보는 예고 시점의 관측이며, 카탈로그 확인 후 ★ 확정으로 표시됩니다.
+				발매 전 정보는 예고 기준이라 바뀔 수 있어요. 발매가 확인되면 ★ 확정으로 표시합니다.
 				<br />
 				<a href="/radar/">내가 추적하는 아티스트만 보려면 → 발매 레이더</a>
 			</p>
@@ -291,7 +291,7 @@ export default function ReleaseCalendar() {
 						<button type="button" onClick={() => nav(1)}>다음 ›</button>
 					</nav>
 					<div className="rcal-toggle mono" role="group" aria-label="보기 전환">
-						<button type="button" aria-pressed={view === 'ledger'} onClick={() => setView('ledger')}>장부</button>
+						<button type="button" aria-pressed={view === 'ledger'} onClick={() => setView('ledger')}>목록</button>
 						<button type="button" aria-pressed={view === 'grid'} onClick={() => setView('grid')}>달력</button>
 					</div>
 				</div>
@@ -300,7 +300,7 @@ export default function ReleaseCalendar() {
 			{status === 'loading' && <p className="rcal-note mono">불러오는 중…</p>}
 			{status === 'error' && (
 				<div className="rcal-err">
-					<p className="mono">발매 장부를 불러오지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.</p>
+					<p className="mono">발매 목록을 불러오지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.</p>
 					<button type="button" className="mono" onClick={() => setRetryTick(t => t + 1)}>다시 시도</button>
 				</div>
 			)}
@@ -311,7 +311,7 @@ export default function ReleaseCalendar() {
 			)}
 
 			<p className="rcal-foot mono">
-				관측 소스 — MB: MusicBrainz 릴리스 그룹 · iTunes: 프리오더 룩업 · SP: Spotify 카탈로그 확정.
+				출처 — MusicBrainz · iTunes 예약 판매 · Spotify(발매 확정)
 				<br />
 				★ 확정은 카탈로그 확인 상태이며, 연결된 항목은 앨범 상세로 열립니다. 아티스트명은 아티스트 허브로 이동합니다.
 			</p>

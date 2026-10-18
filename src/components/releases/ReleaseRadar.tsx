@@ -468,7 +468,7 @@ export default function ReleaseRadar() {
 			<p className="rcal-lede mono">
 				내가 추적하는 아티스트의 발매만 모아 보는 개인 피드.
 				<br />
-				예정 정보는 관측 시점의 발표이며, 카탈로그 확인 후 ★ 확정으로 표시됩니다.
+				예정 정보는 예고 기준이라 바뀔 수 있어요. 발매가 확인되면 ★ 확정으로 표시합니다.
 				<br />
 				<a href="/releases/">전체 발매 캘린더 →</a>
 			</p>
@@ -562,7 +562,7 @@ export default function ReleaseRadar() {
 			)}
 
 			<p className="rcal-foot mono">
-				관측 소스 — MusicBrainz 릴리스 그룹 · iTunes 프리오더 · Spotify 카탈로그 확정.
+				출처 — MusicBrainz · iTunes 예약 판매 · Spotify(발매 확정)
 				<br />
 				예정/불확실 배지는 아직 카탈로그로 확인되지 않은 발표라는 뜻입니다. ★ 확정은 카탈로그 확인 상태이며, 연결된 항목은 앨범 상세로 열립니다.
 			</p>
