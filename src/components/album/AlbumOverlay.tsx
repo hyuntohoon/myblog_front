@@ -267,13 +267,19 @@ function OverlayCard({ target, onClose }: { target: OpenAlbumDetail, onClose: ()
       <div
 	className="scrim"
 	style={{ justifyContent: 'center', alignItems: 'center', padding: 24 }}
-	onClick={onClose}
+	// Close only on the scrim itself. The card must not stopPropagation to keep
+	// its clicks from reaching here: that also stops them before `document`,
+	// where ClientRouter listens, so a link inside the overlay (the artist
+	// link) became a full page load instead of a swap (front UI/UX audit).
+	onClick={(e) => {
+          if (e.target === e.currentTarget)
+            onClose()
+        }}
 	role="presentation"
       >
       <div
 	ref={cardRef}
 	className="lf-modal-card album-modal"
-	onClick={e => e.stopPropagation()}
 	role="dialog"
 	aria-modal="true"
 	aria-label="앨범 상세"
