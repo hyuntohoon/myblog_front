@@ -76,6 +76,20 @@ GitHub Actions가 `main` 브랜치 push 시 자동으로 Astro 빌드 → S3 업
 
 ---
 
+## 골든 E2E (`e2e/`)
+
+`e2e/*.spec.ts`는 Playwright로 실제 Chromium에서 핵심 여정(헤더 검색 → `/search`, 결과 필터, 검색 실패 상태와 다시 시도, 앨범 오버레이, `/write` 오너 가드)을 돌립니다. 대상은 PR `check`와 같은 API-free 빌드이고, 외부로 나가는 요청은 모두 `e2e/fixtures.ts`가 받습니다. `/api/*`는 테스트별 mock으로 응답하고(등록 안 된 경로는 503), 나머지는 차단합니다. 그래서 실제 backend·music·Spotify에는 닿지 않습니다.
+
+```bash
+pnpm exec playwright install --only-shell chromium   # 최초 1회
+PUBLIC_API_URL=http://127.0.0.1:9 PUBLIC_BACKEND_API_URL=http://127.0.0.1:9 pnpm build
+pnpm test:e2e                                        # astro preview를 127.0.0.1:4391에 띄운다
+```
+
+PR CI의 `e2e` job은 **required가 아니다.** 반복된 PR 실행으로 안정성이 확인될 때까지 advisory로 둔다(SEC-system-hardening Step 5 follow-up 5). `retries: 0`이라 플레이크는 재시도에 묻히지 않고 red로 드러난다.
+
+---
+
 ## 왜 분리했는가
 
 읽기 트래픽은 CDN 캐시로 대부분 처리되므로 프론트는 **정적·저비용·고가용**이 핵심입니다. UI/콘텐츠 변경 주기가 가장 빠른 영역이라 독립 배포가 필요했습니다.
