@@ -6,6 +6,7 @@
  * (owner decision 2026-06-14; matches partial-stars.astro).
  */
 import type { CSSProperties, ReactNode } from 'react'
+import { CoverImage } from '../shared/CoverImage'
 
 export function Cover({ label, src, size = 56, radius = 3, square = false }: {
 	label: string
@@ -19,11 +20,7 @@ export function Cover({ label, src, size = 56, radius = 3, square = false }: {
 		{ width: size, height: size }
 	const fs = square ? 'clamp(20px, 4vw, 40px)' : Math.max(12, size * 0.34)
 	return (
-		<div className="cover" style={{ ...dim, borderRadius: radius }}>
-			{src ?
-				<img src={src} alt={label} loading="lazy" /> :
-				<span className="cover-ph" style={{ fontSize: fs }}>{(label || '?').slice(0, 2).toUpperCase()}</span>}
-		</div>
+		<CoverImage src={src} label={label} style={{ ...dim, borderRadius: radius }} placeholderStyle={{ fontSize: fs }} />
 	)
 }
 

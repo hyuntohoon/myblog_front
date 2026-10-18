@@ -6,6 +6,7 @@
 // add. Add those slots back the way AlbumCard did (paired, type-enforced)
 // once a real caller needs them.
 import type { ReactNode } from 'react'
+import { CoverImage } from './CoverImage'
 import '@styles/track-card.css'
 
 /** Display-only track fields. Bucket-item and playback state never belong here. */
@@ -61,18 +62,16 @@ function CoverArt({ title, cover, loading, badge, actions }: {
 	actions?: ReactNode
 }) {
 	return (
-		<div
-			className={`track-card__cover cover${loading ? ' track-card__cover--loading' : ''}`}
-			data-cover-state={loading ? 'loading' : cover ? 'image' : 'fallback'}
+		<CoverImage
+			src={cover}
+			label={title}
+			loading={loading}
+			className={`track-card__cover${loading ? ' track-card__cover--loading' : ''}`}
+			skeletonClassName="track-card__skeleton-cover"
 		>
-			{loading ?
-				<span className="track-card__skeleton-cover" aria-hidden="true" /> :
-				cover ?
-					<img src={cover} alt={title} loading="lazy" decoding="async" /> :
-					<span className="cover-ph" aria-hidden="true">{(title || '?').slice(0, 2).toUpperCase()}</span>}
 			{!loading && badge != null && <span className="track-card__badge">{badge}</span>}
 			{actions}
-		</div>
+		</CoverImage>
 	)
 }
 
