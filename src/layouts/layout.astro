@@ -12,12 +12,22 @@ import AlbumOverlay from '@components/album/AlbumOverlay'
 import PostLoginResume from '@components/auth/PostLoginResume'
 import WriteSheet from '@components/write/WriteSheet'
 import { pwaInfo } from 'virtual:pwa-info'
+import { POPSTATE_CLAIM } from '@lib/entityEvents'
 
 import '../styles/global.css'
 // The header search island (FEAT-global-search) renders site-wide; its dropdown
 // styles live in search.css. Importing here (not just on /search) styles the
 // header field + dropdown on every page.
-import '../styles/search.css';
+import '../styles/search.css'
+
+// The first popstate listener on the page (see the comment where it is
+// rendered). Built from the constant so the overlay and this script cannot
+// drift on the event name.
+const popstateClaimBridge = `addEventListener('popstate', (e) => {
+	const claim = new CustomEvent(${JSON.stringify(POPSTATE_CLAIM)}, { cancelable: true, detail: e.state })
+	if (!dispatchEvent(claim))
+		e.stopImmediatePropagation()
+})`
 ---
 
 <!doctype html>
@@ -46,6 +56,16 @@ import '../styles/search.css';
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500;1,6..72,600&family=Noto+Serif+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 		<ThemeProvider />
+		<!--
+			Owner decision D2 (front UI/UX audit 2026-10-16): the album overlay owns a
+			history entry with no URL change, and Back between it and the page entry
+			must not reach ClientRouter, which re-fetches and swaps the page on any
+			traverse with a state. Listeners on `window` run in registration order, so
+			only a listener registered before the router's (a classic inline script
+			runs before every module script) can stop it. It asks the overlay through
+			POPSTATE_CLAIM (lib/entityEvents) whether the overlay wants this pop.
+		-->
+		<script is:inline set:html={popstateClaimBridge} />
 		<!--
 			FEAT-mobile-web-app Step 3: SPA-style navigation with cross-page fade.
 			Unsupported browsers fall back to normal MPA loads (the router still
