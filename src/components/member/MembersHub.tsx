@@ -93,8 +93,10 @@ function Directory() {
 export default function MembersHub() {
 	// Resolved once from the URL on mount (client:only island — no SSR pass).
 	const [view, setView] = useState<
-		{ kind: 'directory' } | { kind: 'profile', handle: string } | { kind: 'resolving' } | { kind: 'login' } | null
+		{ kind: 'directory' } | { kind: 'profile', handle: string } | { kind: 'resolving' } | { kind: 'login' } | { kind: 'unavailable' } | null
 	>(null)
+	// Bumped by the retry button to re-run the `?me` resolution below.
+	const [attempt, setAttempt] = useState(0)
 
 	useEffect(() => {
 		const params = new URLSearchParams(window.location.search)
@@ -117,9 +119,11 @@ export default function MembersHub() {
 		setView({ kind: 'resolving' })
 		void getMe().then((me) => {
 			if (me == null) {
-				// 401/transport — token stale; goLogin captures this URL as returnTo.
-				setView({ kind: 'login' })
-				void goLogin(true)
+				// NOT a login redirect. A real auth failure (refresh rejected) has already
+				// navigated to login inside apiFetch; what reaches here otherwise is a
+				// 5xx / throttle / timeout, and sending a still-signed-in member to the
+				// login form over one of those read as "I got logged out".
+				setView({ kind: 'unavailable' })
 				return
 			}
 			const url = new URL(window.location.href)
@@ -128,8 +132,20 @@ export default function MembersHub() {
 			window.history.replaceState(null, '', url)
 			setView({ kind: 'profile', handle: me.handle })
 		})
-	}, [])
+	}, [attempt])
 
+	if (view?.kind === 'unavailable') {
+		return (
+			<div style={{ maxWidth: 760, margin: '0 auto', padding: '48px 20px' }}>
+				<p className="sans" style={{ fontSize: 13.5, color: 'var(--color-subtle)' }}>
+					내 페이지를 불러오지 못했어요.
+				</p>
+				<button type="button" className="mono" onClick={() => setAttempt(n => n + 1)}>
+					다시 시도
+				</button>
+			</div>
+		)
+	}
 	if (view == null || view.kind === 'resolving' || view.kind === 'login') {
 		return (
 			<div style={{ maxWidth: 760, margin: '0 auto', padding: '48px 20px' }}>

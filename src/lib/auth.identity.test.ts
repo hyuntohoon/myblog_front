@@ -248,4 +248,40 @@ describe('logout', () => {
     expect(localStorage.getItem('pb:auth-generation')).not.toBeNull()
     expect(assign).toHaveBeenCalledOnce()
   })
+
+  it('revokes the refresh token server-side, so a lifted copy stops working', async () => {
+    localStorage.setItem('id_token', idTokenFor('user-a'))
+    localStorage.setItem('access_token', 'at-a')
+    localStorage.setItem('refresh_token', 'rt-a')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('location', { ...window.location, assign: vi.fn(), hostname: 'blog.test' })
+    const { logout } = await import('./auth')
+
+    logout()
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://auth.blog.test/oauth2/revoke')
+    expect(init.keepalive).toBe(true)
+    const body = new URLSearchParams(init.body as URLSearchParams)
+    expect(body.get('token')).toBe('rt-a')
+    expect(body.get('client_id')).toBe('client-1')
+  })
+
+  it('still signs out locally when the revoke request fails', async () => {
+    localStorage.setItem('access_token', 'at-a')
+    localStorage.setItem('refresh_token', 'rt-a')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
+    const assign = vi.fn()
+    vi.stubGlobal('location', { ...window.location, assign, hostname: 'blog.test' })
+    const { logout } = await import('./auth')
+
+    logout()
+    await Promise.resolve()
+
+    expect(localStorage.getItem('refresh_token')).toBeNull()
+    expect(localStorage.getItem('access_token')).toBeNull()
+    expect(assign).toHaveBeenCalledOnce()
+  })
 })
