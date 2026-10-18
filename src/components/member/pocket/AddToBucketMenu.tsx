@@ -11,15 +11,18 @@
 // the member pages.
 //
 // Auth split: when logged out there are no buckets and every write is 401/403, so
-// it parks a thin pending-intent (album, track or review) and hands off to Cognito
-// PKCE; the layout-mounted `PostLoginResume` completes the add wherever the
+// it opens the in-site LoginIntentSheet (front UI/UX audit S5 — it used to jump
+// straight to the hosted UI); picking a provider there parks a thin pending-intent
+// (album, track or review) and hands off to Cognito PKCE; the layout-mounted `PostLoginResume` completes the add wherever the
 // callback lands (see lib/postLoginIntent.ts). It used to say "the home resume",
 // which had not been true since the callback started returning to the page the
 // visitor was on — FIX-auth-identity-lifecycle Step 2.
+import type { IdentityProvider } from '@lib/auth'
 import type { BoardBucket, SnapshotCapture } from '@lib/buckets'
 import type { CSSProperties, ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { LoginIntentSheet } from '@components/auth/LoginIntentSheet'
 import { goLogin, isLoggedIn } from '@lib/auth'
 import { addBucketItem, addBucketPlayback, addBucketReview, addBucketSnapshot, addBucketTrack, deleteBucketItem, expandAlbumTracks, isManualAddTarget, listBuckets, PLAYBACK_TYPE } from '@lib/buckets'
 import { bucketStore } from '@lib/pocketBuckit/bucketStore'
@@ -74,6 +77,7 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
 }) {
   const [tree, setTree] = useState<BoardBucket[] | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
   // Track-only queue mode: pick() posts item_type='playback' (duplicate-allowed
@@ -111,18 +115,11 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
   }, [])
 
   const open = useCallback(() => {
-    // Anonymous: park the intent + hand off to Cognito PKCE. Never attempts a write
-    // that would 401/403; `PostLoginResume` finishes the add after sign-in. A
-    // snapshot has no intent path (logged-in-only surface + a frozen payload is not
-    // a thin descriptor) — it just routes to login.
+    // Anonymous: explain first (LoginIntentSheet); never attempts a write that
+    // would 401/403. The intent is parked only once a provider is chosen, so
+    // dismissing the sheet leaves nothing for `PostLoginResume` to pick up.
     if (!isLoggedIn()) {
-      if (trackId)
-        writePostLoginIntent({ kind: 'bucket-add', itemType: 'track', trackId, title })
-      else if (reviewTargetId)
-        writePostLoginIntent({ kind: 'bucket-add', itemType: 'review', reviewTargetId, title })
-      else if (albumId)
-        writePostLoginIntent({ kind: 'bucket-add', itemType: 'album', albumId, title })
-      void goLogin()
+      setLoginOpen(true)
       return
     }
     setAsQueue(false)
@@ -142,6 +139,21 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
     if (autoOpen)
       open()
   }, [autoOpen, open])
+
+  // Park the intent + hand off to Cognito PKCE; `PostLoginResume` finishes the add
+  // after sign-in. A snapshot has no intent path (logged-in-only surface + a frozen
+  // payload is not a thin descriptor) — it just routes to login.
+  const loginWith = useCallback((idp: IdentityProvider | undefined) => {
+    if (trackId)
+      writePostLoginIntent({ kind: 'bucket-add', itemType: 'track', trackId, title })
+    else if (reviewTargetId)
+      writePostLoginIntent({ kind: 'bucket-add', itemType: 'review', reviewTargetId, title })
+    else if (albumId)
+      writePostLoginIntent({ kind: 'bucket-add', itemType: 'album', albumId, title })
+    void goLogin(false, idp)
+  }, [trackId, albumId, reviewTargetId, title])
+
+  const closeLogin = useCallback(() => setLoginOpen(false), [])
 
   const cancel = useCallback(() => {
     setSheetOpen(false)
@@ -291,6 +303,15 @@ export function AddToBucketMenu({ item, label = '버킷에 담기', autoOpen = f
         </div>,
         document.body,
       )}
+
+      <LoginIntentSheet open={loginOpen} heading="로그인하고 담기" onChoose={loginWith} onClose={closeLogin}>
+        «
+        {title}
+        »
+        {' '}
+        버킷에 담기는 회원 기능이에요.
+        {!isSnapshot && ' 로그인하면 이 페이지로 돌아와 담을 버킷을 바로 고를 수 있어요.'}
+      </LoginIntentSheet>
 
       {toast && createPortal(
         <div style={TOAST} role="status">
