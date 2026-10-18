@@ -10,6 +10,11 @@ node_modules/
 # matches a real directory, so a symlink — e.g. in a git worktree — slips past)
 node_modules
 
+# Playwright e2e output (SEC-system-hardening Step 5 follow-up 5)
+test-results/
+playwright-report/
+blob-report/
+
 # logs
 npm-debug.log*
 yarn-debug.log*

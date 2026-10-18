@@ -96,6 +96,69 @@ jobs:
           PUBLIC_BACKEND_API_URL: http://127.0.0.1:9
         run: pnpm build
 
+  # SEC-system-hardening Step 5 follow-up 5 — golden E2E journeys (e2e/*.spec.ts)
+  # in a real Chromium against the same API-free build `check` makes, with every
+  # API call answered by a per-test mock. NOT a required check, and `deploy`
+  # does not need it: it stays advisory until repeated PR runs show it is stable,
+  # and promoting it is the owner's call. It runs in parallel with `check` and
+  # on pull requests only — a red advisory job on a main push would read as a
+  # failed deploy. Playwright runs with retries: 0, so a flake shows up as a red
+  # run instead of hiding in a retry; the HTML report + traces are uploaded when
+  # it fails.
+  e2e:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 10
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - run: pnpm install --frozen-lockfile
+
+      # Headless shell only (no headed Chromium, no other browsers); --with-deps
+      # installs the system libraries it links against.
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps --only-shell chromium
+
+      # Same env as `check`'s build step, so the journeys run against the
+      # artifact that job verifies (no production API reachable at build time).
+      - name: Build (API-free)
+        env:
+          PUBLIC_API_URL: http://127.0.0.1:9
+          PUBLIC_BACKEND_API_URL: http://127.0.0.1:9
+        run: pnpm build
+
+      - name: Golden E2E
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
   deploy:
     needs: check
     # Production deploy is main-only. push already filters to main (on.push.branches), but

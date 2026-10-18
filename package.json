@@ -13,6 +13,7 @@
 		"lint:fix": "eslint --fix",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"test:e2e": "playwright test",
 		"assistant": "tsx ./scripts/assistant.ts",
 		"generate:types": "openapi-typescript ../docs/contracts/openapi.json -o src/lib/api.gen.ts"
 	},
@@ -45,6 +46,7 @@
 		"@antfu/eslint-config": "^5.1.0",
 		"@astrojs/check": "^0.9.9",
 		"@clack/prompts": "^0.11.0",
+		"@playwright/test": "1.63.0",
 		"@tailwindcss/typography": "^0.5.16",
 		"@testing-library/dom": "^10.4.1",
 		"@testing-library/jest-dom": "^7.0.0",
