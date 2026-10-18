@@ -36,7 +36,9 @@ export default defineConfig({
 	webServer: {
 		command: `pnpm exec astro preview --host 127.0.0.1 --port ${PORT}`,
 		url: `http://127.0.0.1:${PORT}/`,
-		reuseExistingServer: !CI,
+		// Never reuse: another worktree's preview on this port would serve its
+		// own branch's dist and the run would test the wrong build.
+		reuseExistingServer: false,
 		timeout: 60_000,
 	},
 })

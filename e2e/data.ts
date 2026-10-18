@@ -1,9 +1,13 @@
 import type { AlbumDetail } from '../src/lib/albumDetail'
 import type { components } from '../src/lib/api.gen'
+import { OWNER_HANDLE } from '../src/lib/member'
 
-// Fixture payloads, typed against the generated contract so a schema change
-// that would break the real response shape fails `astro check` here too,
-// instead of leaving the journeys green against a shape the API no longer sends.
+// Fixture payloads. The search and /api/me payloads are typed against the
+// generated contract (api.gen.ts), so a schema change that would break the real
+// response shape fails `astro check` here too, instead of leaving the journeys
+// green against a shape the API no longer sends. The album detail is typed
+// against the client's own `AlbumDetail` (src/lib/albumDetail.ts), which is
+// what the overlay reads; it is hand-written, not generated.
 
 type Unified = components['schemas']['Music_UnifiedSearchResult']
 
@@ -63,6 +67,6 @@ export const kindOfBlueDetail: AlbumDetail = {
 type Me = components['schemas']['Backend_MeResponse']
 
 const meBase = { id: '00000000-0000-4000-8000-0000000000d1', display_name: 'e2e', created_at: '2026-01-01T00:00:00Z' }
-/** The handle `isOwnerUser()` compares against — OWNER_HANDLE in src/lib/member.ts. */
-export const meOwner = { ...meBase, handle: 'user-0468fd3c' } satisfies Me
+/** The handle `isOwnerUser()` compares against. */
+export const meOwner = { ...meBase, handle: OWNER_HANDLE } satisfies Me
 export const meMember = { ...meBase, handle: 'user-e2e00000' } satisfies Me

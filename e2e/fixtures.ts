@@ -12,6 +12,8 @@ import { test as base, expect } from '@playwright/test'
 //     test, so a new background call added to a page does not break a journey
 //     that is not about it.
 //   · anything else (fonts, cover images, Spotify, analytics) — aborted.
+//     (`<link rel=preconnect>` still opens a bare DNS/TLS connection to the
+//     font host, which page.route cannot see; no HTTP request is sent on it.)
 //
 // An uncaught exception in the page fails the test at teardown. It is the one
 // check every journey gets for free, and it is the regression class unit tests
@@ -20,8 +22,6 @@ import { test as base, expect } from '@playwright/test'
 export interface MockResponse {
 	status?: number
 	json?: unknown
-	/** Hold the response this long — lets a test observe an in-flight state. */
-	delayMs?: number
 }
 
 type Responder = MockResponse | ((req: Request, url: URL) => MockResponse)
@@ -60,15 +60,15 @@ export class ApiMock {
 			if (!url.pathname.startsWith('/api/'))
 				return route.abort()
 
-			this.calls.push({ method: req.method(), path: url.pathname, search: url.searchParams })
-			// CORS preflight — the build points the API at another origin.
+			// CORS preflight — the build points the API at another origin. Not
+			// recorded: `callsTo()` counts the requests the app made, not the
+			// browser's preflights for them.
 			if (req.method() === 'OPTIONS')
 				return route.fulfill({ status: 204, headers: corsHeaders() })
+			this.calls.push({ method: req.method(), path: url.pathname, search: url.searchParams })
 
 			const responder = this.routes.get(`${req.method()} ${url.pathname}`)
 			const res = typeof responder === 'function' ? responder(req, url) : responder
-			if (res?.delayMs)
-				await new Promise(r => setTimeout(r, res.delayMs))
 			return route.fulfill({
 				status: res ? (res.status ?? 200) : 503,
 				headers: { ...corsHeaders(), 'content-type': 'application/json' },

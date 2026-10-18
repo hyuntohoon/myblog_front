@@ -8,10 +8,13 @@ import { expect, test } from './fixtures'
 
 test('the owner stays on /write', async ({ page, api }) => {
 	api.on('GET', '/api/me', { json: meOwner })
+	const me = page.waitForResponse(r => new URL(r.url()).pathname === '/api/me' && r.request().method() === 'GET')
 	await page.goto('/write/')
-	await expect.poll(() => api.callsTo('/api/me').length).toBeGreaterThan(0)
-	// Give a wrong redirect the same window the negative cases below need.
-	await page.waitForTimeout(1500)
+	await me
+	// The guard decides within microtasks of this response (json → compare →
+	// location.replace). Absence of a redirect cannot be polled for, so wait out
+	// the same 5 s window the negative cases below get to redirect in.
+	await page.waitForTimeout(5000)
 	await expect(page).toHaveURL(/\/write\/$/)
 })
 
