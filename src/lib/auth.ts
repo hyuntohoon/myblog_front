@@ -216,7 +216,8 @@ localStorage.setItem(LS_REFRESH, json.refresh_token)
 }
 
 /**
- * Cognito access tokens have a 60-min TTL. Refresh tokens last 5 days.
+ * Cognito access tokens have a 60-min TTL. Refresh tokens last 90 days from the
+ * first sign-in — Cognito never extends that window (infra/cognito.tf).
  * Call this when an authed request returns 401: it exchanges the stored
  * refresh_token for a new access_token. Returns the new token on success,
  * null on failure (caller should goLogin() in that case).
@@ -330,6 +331,22 @@ export function logout() {
 	// commit at this line, before the tokens it would have overwritten are gone, and
 	// before the navigation below starts tearing this document down.
 	invalidateAuthGeneration()
+
+	// Clearing storage only forgets the refresh token on THIS device; a copy lifted
+	// earlier (XSS, a shared machine's backup) would keep minting access tokens for
+	// the whole 90-day window. Revoke it server-side as well. `keepalive` lets the
+	// request outlive the navigation below; form-encoded is a CORS-simple request, so
+	// there is no preflight to lose. Fire-and-forget: a failed revoke must not keep
+	// the user signed in locally.
+	const refresh = localStorage.getItem(LS_REFRESH)
+	if (refresh) {
+		void fetch(`https://${COGNITO_DOMAIN}/oauth2/revoke`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ token: refresh, client_id: CLIENT_ID }),
+			keepalive: true,
+		}).catch(() => {})
+	}
 
 	localStorage.removeItem(LS_ACCESS)
 	localStorage.removeItem(LS_ID)
