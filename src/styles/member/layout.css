@@ -465,11 +465,9 @@
 	.lf-drag-handle.lf-is-dragging { cursor: grabbing; }
 }
 
-/* tab-nav-tap-target — profile tab buttons are ~36px tall (11px padding + small
-   font). Bump the hit area to 44px on phones; padding stays so the underline
-   indicator keeps its position. */
+/* tab-nav-tap-target lives in MemberProfile's TAB_NAV_CSS: this file only loads
+   once SelfDashboard mounts, so a rule here never reached the default 평가 view. */
 @media (max-width: 640px) {
-	.lf-tab-btn { min-height: 44px; }
 	/* lf-chip-action-buttons — chips (보기/수정/삭제, type filters) are ~28px tall;
 	   give them a ~40px tap target on phones. inline-flex centers the label. */
 	.lf-chip {
