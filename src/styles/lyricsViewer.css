@@ -984,3 +984,19 @@
 	background: rgba(246, 210, 90, 0.9);
 	border-radius: var(--radius-pill);
 }
+
+/* Touch tap targets — desktop untouched. The head controls stay 30px plates:
+   six of them at 44×44 run ~395px, wider than a 390px phone's 358px row, and
+   the extra wrapped row would come out of the lyric area. Instead an invisible
+   ::after grows each hit box to 44px tall; sideways it grows only into half the
+   8px gap, so neighbours never overlap. Wrapped rows get a 14px gap for the
+   same reason. */
+@media (pointer: coarse) {
+	.lyv-btn,
+	.lyv-tr-btn { position: relative; }
+	/* insets are from the padding edge, inside the 1px border: 30 + 2×7 = 44. */
+	.lyv-btn::after,
+	.lyv-tr-btn::after { content: ''; position: absolute; inset: -8px -5px; }
+	.lyv-head-actions { row-gap: 14px; }
+	.lyv-anno-chip { min-height: 44px; }
+}

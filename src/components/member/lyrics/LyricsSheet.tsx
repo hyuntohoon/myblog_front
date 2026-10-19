@@ -342,18 +342,20 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 			{mode === 'doc' && annotations.length > 0 && (
 				<label className="lys-anno-pick mono">
 					<span>해설 표시</span>
-					<select
-						value={annoStyleIsAuto ? 'auto' : annoStyle}
-						onChange={(e) => {
-							const v = e.target.value
-							pickAnnoStyle(v === 'auto' ? null : v as AnnoStyle)
-						}}
-					>
-						<option value="auto">{`자동 (${ANNO_STYLE_LABEL[autoStyle]})`}</option>
-						{(Object.keys(ANNO_STYLE_LABEL) as AnnoStyle[]).map(k => (
-							<option key={k} value={k}>{ANNO_STYLE_LABEL[k]}</option>
-						))}
-					</select>
+					<span className="lys-anno-pick-box">
+						<select
+							value={annoStyleIsAuto ? 'auto' : annoStyle}
+							onChange={(e) => {
+								const v = e.target.value
+								pickAnnoStyle(v === 'auto' ? null : v as AnnoStyle)
+							}}
+						>
+							<option value="auto">{`자동 (${ANNO_STYLE_LABEL[autoStyle]})`}</option>
+							{(Object.keys(ANNO_STYLE_LABEL) as AnnoStyle[]).map(k => (
+								<option key={k} value={k}>{ANNO_STYLE_LABEL[k]}</option>
+							))}
+						</select>
+					</span>
 				</label>
 			)}
 			{/* A member cannot queue a translation (the POST is owner-only), so the
