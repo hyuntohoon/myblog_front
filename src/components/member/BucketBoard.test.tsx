@@ -697,3 +697,21 @@ describe('bucketBoard 최근 들은 앨범 owner boundary', () => {
 		expect(screen.queryByText('오너의 앨범')).toBeNull()
 	})
 })
+
+// Audit #14: the library mirror is owner-only end to end, so a member's board
+// never gets the bucket — the section could only show a failure and a dead button.
+describe('bucketBoard Spotify 라이브러리 owner boundary', () => {
+	it('does not render the library section for a member', async () => {
+		render(<BucketBoard isOwner={false} onOpen={vi.fn()} reviews={[]} />)
+		await screen.findByText('버킷 없음')
+		expect(screen.queryByRole('region', { name: 'Spotify 라이브러리' })).toBeNull()
+		expect(screen.queryByText('라이브러리를 아직 불러오지 못했습니다')).toBeNull()
+		expect(screen.queryByRole('button', { name: '다시 동기화' })).toBeNull()
+	})
+
+	it('keeps the library section for the owner', async () => {
+		render(<BucketBoard isOwner onOpen={vi.fn()} reviews={[]} />)
+		expect(await screen.findByRole('region', { name: 'Spotify 라이브러리' })).toBeTruthy()
+		expect(screen.getByRole('button', { name: '다시 동기화' })).toBeTruthy()
+	})
+})
