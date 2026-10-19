@@ -2,7 +2,7 @@
 // row overflows and nothing said so. The nav now fades whichever edge still has
 // tabs past it. jsdom has no layout, so the widths are pinned on the element and
 // a scroll event drives the same update a real swipe does.
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({
@@ -47,6 +47,20 @@ function scrollTo(nav: HTMLElement, left: number) {
 	fireEvent.scroll(nav)
 }
 
+/**
+ * The first scroll after mount. The nav appears on the commit that flips isSelf,
+ * but the scroll listener is attached in a passive effect React may flush after
+ * findByRole has already resolved, and a scroll fired before then is lost
+ * (~3% of runs). Re-fire until the listener has answered: every position on the
+ * overflowing row fades at least one edge.
+ */
+async function firstScrollTo(nav: HTMLElement, left: number) {
+	await waitFor(() => {
+		scrollTo(nav, left)
+		expect(nav.hasAttribute('data-fade-l') || nav.hasAttribute('data-fade-r')).toBe(true)
+	})
+}
+
 beforeEach(() => {
 	vi.clearAllMocks()
 	api.fetchMemberNowPlaying.mockResolvedValue(null)
@@ -62,7 +76,7 @@ describe('dashboard tab row overflow fade', () => {
 
 	it('fades only the right edge at the start of an overflowing row', async () => {
 		const nav = await mountNav()
-		scrollTo(nav, 0)
+		await firstScrollTo(nav, 0)
 		expect(nav).toHaveAttribute('data-fade-r')
 		expect(nav).not.toHaveAttribute('data-fade-l')
 		expect(nav.style.getPropertyValue('--fade-r')).toBe('28px')
@@ -71,7 +85,7 @@ describe('dashboard tab row overflow fade', () => {
 
 	it('fades both edges mid-row and only the left edge at the end', async () => {
 		const nav = await mountNav()
-		scrollTo(nav, 100)
+		await firstScrollTo(nav, 100)
 		expect(nav).toHaveAttribute('data-fade-l')
 		expect(nav).toHaveAttribute('data-fade-r')
 		scrollTo(nav, 210)
