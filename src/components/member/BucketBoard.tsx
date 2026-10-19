@@ -3305,6 +3305,11 @@ ids.push(a.albumId)
 
       {tree != null && (
         <main className="bb-inline-board" aria-label="인라인 버킷">
+          {/* Owner-only, like every read and sync behind it (useSpotifyLibrary,
+              `provisioned_owner_id` on both routes): a member never gets a library
+              bucket, so the section would only show a failure line and a dead
+              다시 동기화 — whether or not they connected Spotify (audit #14). */}
+          {isOwner && (
           <section className="bb-spotify-library-section" aria-label="Spotify 라이브러리">
             <div className="bb-inline-section-head">
               <span className="meta" style={{ color: 'var(--color-spotify)' }}>Spotify 라이브러리</span>
@@ -3324,6 +3329,7 @@ ids.push(a.albumId)
               <BucketInlineList items={[libBucket]} parentId={null} depth={0} expandedIds={expandedBucketIds} toggleExpanded={toggleExpanded} shared={shared} /> :
               <div className="mono" style={{ padding: '10px 8px 4px', fontSize: 10.5, lineHeight: 1.5, color: 'var(--color-faded)' }}>{syncing ? '라이브러리를 불러오는 중…' : '라이브러리를 아직 불러오지 못했습니다'}</div>}
           </section>
+          )}
 
           <section aria-label="내 버킷">
             <div className="meta bb-inline-section-label">버킷</div>
