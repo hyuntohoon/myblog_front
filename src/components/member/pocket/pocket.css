@@ -202,6 +202,16 @@
   padding: calc(2px * var(--pb-scale)) calc(5px * var(--pb-scale)); border-radius: 3px; }
 .pb-scope .pb-card-minus { position: absolute; right: calc(6px * var(--pb-scale)); top: calc(6px * var(--pb-scale)); z-index: 2;
   box-shadow: 0 1px 4px rgba(26,26,26,.3); }
+/* Front UI/UX audit S1 — album tiles render the canonical AlbumCard; its type is
+   scaled with the tray like the bespoke tile it replaced (precedent: `.bb-tile`
+   overrides in member/widgets.css). The badge slot spans the cover so the edit −
+   anchors top-right of the artwork, as it did before. */
+.pb-scope .pb-card .cover-ph { font-size: calc(19px * var(--pb-scale)); }
+.pb-scope .pb-card .album-card { gap: calc(6px * var(--pb-scale)); }
+.pb-scope .pb-card .album-card__title { font-size: calc(12.5px * var(--pb-scale)); line-height: 1.2; }
+.pb-scope .pb-card .album-card__byline { margin-top: calc(2px * var(--pb-scale)); font-size: calc(9.5px * var(--pb-scale));
+  letter-spacing: .06em; text-transform: uppercase; }
+.pb-scope .pb-card .album-card__badge { inset: 0; width: 100%; height: 100%; max-width: none; }
 
 /* ── drawer open animation (connected-to-tray, not modal) ─────────────────────
    Quick opacity + subtle scale + small lift; no bounce / long / heavy modal feel

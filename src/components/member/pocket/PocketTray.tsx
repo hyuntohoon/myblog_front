@@ -29,6 +29,9 @@ import { play } from '@lib/playback/provider'
 import { openYouTubeMapping } from '@lib/playback/youtubeEvents'
 import { openPlaybackLyrics } from '../playback/playbackEntryActions'
 import { PlaybackMini } from '../playback/PlaybackMini'
+import { AlbumCard } from '@components/shared/AlbumCard'
+import { CoverImage } from '@components/shared/CoverImage'
+import { AddToBucketMenu } from './AddToBucketMenu'
 import { usePocket } from './PocketBuckitProvider'
 
 // ── scale helper — every inline px scales with the --pb-scale CSS var ──────────
@@ -79,6 +82,72 @@ function playbackTargetFor(a: BoardAlbum): PlaybackTarget | null {
   if (a.albumId)
     return { kind: 'album', albumId: a.albumId, title: a.title }
   return null
+}
+
+// ARCH-entity-interaction-v2 E2 — a tray member's drag payload: the same `DragPayload`
+// the board's own AlbumChip builds, so the two islands share the contract rather than
+// each keeping a copy of the other's shape.
+function memberDragPayload(a: BoardAlbum, bucketId: string): DragPayload {
+  return { ref: memberRef(a), origin: { kind: 'internal', itemId: a.itemId, fromBucketId: bucketId, itemType: a.itemType } }
+}
+
+// Front UI/UX audit S1 — the Card Viewer's album tile on the canonical card. Pocket's
+// counterpart of the board's `BucketAlbumCardAdapter`: the bucket-item identity stays
+// closed over here and AlbumCard receives display data and capabilities only. Not the
+// board's adapter itself — that would pull BucketBoard into the site-wide Pocket bundle,
+// and its props are board state (detail modal, drag bookkeeping, kebab sheet).
+// open → the shared read-only overlay; drag → the internal member payload (move); the
+// paired tap path (Rule #14) is ＋ AddToBucketMenu, which copies into another bucket.
+function PocketAlbumCardAdapter({ album: a, bucketId, onRemove }: { album: BoardAlbum, bucketId: string, onRemove?: () => void }) {
+  const albumId = a.albumId
+  const data = {
+    spotifyAlbumId: null,
+    title: a.title,
+    artist: a.artist,
+    artistId: null,
+    cover: a.cover,
+    // Pocket cards historically show title + artist only (as the board's do).
+    year: null,
+  }
+  const badge = onRemove && (
+    <button
+	type="button"
+	className="pb-minus pb-card-minus"
+	title="버킷에서 제거 (원본은 유지)"
+	aria-label={`${a.title} 버킷에서 제거`}
+	draggable={false}
+	onPointerDown={e => e.stopPropagation()}
+	onClick={(e) => {
+        e.stopPropagation()
+        onRemove()
+      }}
+    >
+      −
+    </button>
+  )
+  return (
+    <div className="pb-card" title={`${a.title} — ${a.artist}`}>
+      {albumId ?
+        (
+            <AddToBucketMenu
+	item={{ itemType: 'album', albumId, title: a.title }}
+	render={({ open }) => (
+                <AlbumCard
+	data={{ ...data, catalogAlbumId: albumId }}
+	layout="grid"
+	capabilities={{
+                    open: () => openAlbum({ albumId, title: a.title, artist: a.artist ?? undefined, cover: a.cover ?? null }),
+                    add: { fire: open, label: `${a.title} 다른 버킷에 담기`, content: '＋', className: 'catalog-album-card__add' },
+                    drag: memberDragPayload(a, bucketId),
+                  }}
+	badge={badge}
+                />
+              )}
+            />
+          ) :
+        <AlbumCard data={{ ...data, catalogAlbumId: null }} layout="grid" badge={badge} />}
+    </div>
+  )
 }
 
 // FEAT-pocket-buckit-viewers Track B — `url` + `square` added for the Card Viewer
@@ -448,23 +517,15 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
   }
 
   // FEAT-my-buckit-artist Step 6 / viewers Track B — a member is draggable onto a
-  // visible board bucket (Pocket→board). Shared by the list rows AND the Card Viewer
-  // tiles so the drag-out works in either viewer; the payload mirrors the board's
-  // AlbumChip DndItem so the board reuses its routing (move/expand) verbatim.
+  // visible board bucket (Pocket→board). Shared by the list rows AND the Card Viewer's
+  // non-album tiles; the Card Viewer's album tiles hand the same payload to AlbumCard.
+  // Front audit S1: this used to send a hand-rolled legacy shape that the board's
+  // `toDndItem` cannot read, so a Card Viewer drag-out threw on the board's dragover.
   const dragBind = (a: BoardAlbum) => ({
     draggable: true,
     onDragStart: (e: React.DragEvent) => {
       e.dataTransfer.effectAllowed = 'move'
-      window.dispatchEvent(new CustomEvent(PB_DND_START_EVENT, {
-        detail: {
-          itemId: a.itemId,
-          fromBucketId: bucket.id,
-          albumId: a.albumId ?? null,
-          trackId: a.trackId ?? null,
-          artistId: a.artistId ?? null,
-          srcItemType: a.itemType,
-        },
-      }))
+      window.dispatchEvent(new CustomEvent<DragPayload>(PB_DND_START_EVENT, { detail: memberDragPayload(a, bucket.id) }))
     },
     onDragEnd: () => window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT)),
   })
@@ -586,34 +647,38 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
       {viewMode === 'card' ?
         (
         // FEAT-pocket-buckit-viewers Track B — Card Viewer: the same members as a board-style
-        // square-cover grid (album=cover, artist=square photo + 아티스트 badge). Reads the same
+        // square-cover grid (album=AlbumCard, artist=square photo + 아티스트 badge). Reads the same
         // provider `bucket.albums` as the list → any change (board, reverse DnD, edit −) repaints
         // here too. No slice cap (open-Q 1 default); the scroll area holds a large bucket.
         <div className="pb-cardgrid">
           {bucket.albums.map((a) => {
+            if (a.itemType === 'album') {
+              return (
+                <PocketAlbumCardAdapter
+	key={a.itemId}
+	album={a}
+	bucketId={bucket.id}
+	onRemove={editMode ? () => void removeItem(bucket.id, a.itemId, a.albumId, a.title) : undefined}
+                />
+              )
+            }
+            // Non-album members are not album cards (board precedent: AlbumChipRenderer
+            // keeps them bespoke). Artist → its hub; other kinds have no detail target.
             const isArtist = a.itemType === 'artist'
-            const isAlbum = a.itemType === 'album'
             const typeLabel = ITEM_TYPE_LABEL[a.itemType] ?? a.itemType
             // const (not a.artistId) so the narrowing survives into the onClick closure
             const artistId = isArtist ? a.artistId : null
-            const albumId = isAlbum ? a.albumId : null
             return (
               <div
 	key={a.itemId}
 	className="pb-card"
 	data-artist={isArtist || undefined}
 	{...dragBind(a)}
-                // Surface rule: album → shared read-only overlay; artist → hub.
-	onClick={artistId != null ?
-                  () => window.location.assign(artistHref(artistId)) :
-                  albumId != null ?
-                    () => openAlbum({ albumId, title: a.title, artist: a.artist ?? undefined, cover: a.cover ?? null }) :
-                    undefined}
-	title={isAlbum ? `${a.title} — ${a.artist}` : a.title}
+	onClick={artistId != null ? () => window.location.assign(artistHref(artistId)) : undefined}
+	title={a.title}
               >
-                <div style={{ position: 'relative' }}>
-                  <Cover label={a.title} url={a.cover} square size={56} />
-                  {!isAlbum && <span className="pb-card-badge">{typeLabel}</span>}
+                <CoverImage src={a.cover} label={a.title}>
+                  <span className="pb-card-badge">{typeLabel}</span>
                   {editMode && (
                     <button
 	type="button"
@@ -628,9 +693,9 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
                       −
                     </button>
                   )}
-                </div>
+                </CoverImage>
                 <div className="pb-card-title">{a.title}</div>
-                <div className="pb-card-meta">{isAlbum ? a.artist : typeLabel}</div>
+                <div className="pb-card-meta">{typeLabel}</div>
               </div>
             )
           })}
@@ -655,8 +720,7 @@ function DrawerPanel({ bucketId, z, index, design, editMode, onExpandPlayback }:
               // ARCH-entity-interaction-v2 E2 — the same `DragPayload` the board's own
               // AlbumChip builds, so the two islands share the contract rather than each
               // keeping a copy of the other's shape.
-              const payload: DragPayload = { ref: memberRef(a), origin: { kind: 'internal', itemId: a.itemId, fromBucketId: bucket.id, itemType: a.itemType } }
-              window.dispatchEvent(new CustomEvent<DragPayload>(PB_DND_START_EVENT, { detail: payload }))
+              window.dispatchEvent(new CustomEvent<DragPayload>(PB_DND_START_EVENT, { detail: memberDragPayload(a, bucket.id) }))
             }}
 	onDragEnd={() => window.dispatchEvent(new CustomEvent(PB_DND_END_EVENT))}
 	style={{ display: 'flex', alignItems: 'center', gap: sc(9), cursor: 'grab' }}
