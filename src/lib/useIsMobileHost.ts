@@ -4,10 +4,17 @@
 // rather than being copy-pasted a second time.
 import { useEffect, useState } from 'react'
 
+export const MOBILE_HOST_QUERY = '(max-width: 767px)'
+
+/** Synchronous read for one-shot initial state (the hook itself starts at false). */
+export function isMobileHostNow(): boolean {
+	return typeof window !== 'undefined' && window.matchMedia(MOBILE_HOST_QUERY).matches
+}
+
 export function useIsMobileHost(): boolean {
 	const [mobile, setMobile] = useState(false)
 	useEffect(() => {
-		const mq = window.matchMedia('(max-width: 767px)')
+		const mq = window.matchMedia(MOBILE_HOST_QUERY)
 		const on = () => setMobile(mq.matches)
 		on()
 		mq.addEventListener('change', on)

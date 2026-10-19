@@ -37,7 +37,7 @@ import { PB_DND_END_EVENT, PB_DND_START_EVENT } from '@lib/pocketBuckit/events'
 import { rememberSpotifyTransportProbe } from '@lib/spotifyCapability'
 import { clampSurfacePosition, readStoredRect, resizeSurfaceRect, SURFACE_RESIZE_EDGES, useMovableSurface, useResizableSurface, writeStoredRect } from '@lib/surfaceGeometry'
 import { useDismissable } from '@lib/useDismissable'
-import { useIsMobileHost } from '@lib/useIsMobileHost'
+import { isMobileHostNow, useIsMobileHost } from '@lib/useIsMobileHost'
 import { useScrollLock } from '@lib/useScrollLock'
 import HalfStarInput from '../album/HalfStarInput'
 import { fetchMyAlbumStates, putMyAlbumState, RATING_COMMENT_MAX, RatingRateLimitError } from '../album/reviews.api'
@@ -252,24 +252,30 @@ function memoConstraints(): SizeConstraints {
 	}
 }
 
-function defaultMemoRect(): Rect {
-	const width = 1140
+const MEMO_DEFAULT_OUTER_WIDTH = 1320
+
+function memoDockWidth(contentWidth: number): number {
+	return Math.max(360, Math.min(600, contentWidth * 0.5))
+}
+
+// The research note opens docked by default, so the default footprint is sized
+// for memo + dock together: the outer width stays at most 1320 and the memo
+// content gives up the dock's share instead of the window growing past it.
+function defaultMemoRect(withDock: boolean): Rect {
+	const outer = Math.min(window.innerWidth - 64, MEMO_DEFAULT_OUTER_WIDTH)
+	const width = withDock ? outer - memoDockWidth(outer / 1.5) : outer
 	const height = Math.min(window.innerHeight - 96, 860)
 	return {
-		left: (window.innerWidth - width) / 2,
+		left: (window.innerWidth - outer) / 2,
 		top: Math.max(24, (window.innerHeight - height) / 2),
 		width,
 		height,
 	}
 }
 
-function initialMemoRect(): Rect {
-	const initial = { ...defaultMemoRect(), ...readStoredRect(MEMO_GEOMETRY_KEY) }
+function initialMemoRect(withDock: boolean): Rect {
+	const initial = { ...defaultMemoRect(withDock), ...readStoredRect(MEMO_GEOMETRY_KEY) }
 	return resizeSurfaceRect(initial, 'se', { dx: 0, dy: 0 }, memoConstraints(), { width: window.innerWidth, height: window.innerHeight })
-}
-
-function memoDockWidth(contentWidth: number): number {
-	return Math.max(320, Math.min(560, contentWidth * 0.39))
 }
 
 // PATCH-backed memo state: text → note, grow → prep_tonight. Each edit resets a
@@ -708,14 +714,21 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
       alive = false
     }
   }, [])
-  const [panelOpen, setPanelOpen] = useState(album.focusResearch ?? false)
-  const [tab, setTab] = useState<ContextPanelTab>(album.focusResearch ? 'research' : 'lyrics')
+  // Research is open by default on desktop (docked). On a phone the panel is a
+  // floating modal that would cover the memo, so it opens only on request there.
+  // Read the media query synchronously: useIsMobileHost starts at false.
+  const [panelOpen, setPanelOpen] = useState(() => Boolean(album.focusResearch) || (Boolean(album.albumId) && !isMobileHostNow()))
+  const [tab, setTab] = useState<ContextPanelTab>('research')
+  // A panel opened by an explicit click takes focus; the default-open one must
+  // leave it on the memo textarea.
+  const panelFocus = useRef(album.focusResearch ?? false)
   const [track, setTrack] = useState<ContextPanelTrack | null>(null)
   const [dock, setDock] = useState<DockState>(INITIAL_DOCK)
   const patchDock = useCallback((p: Partial<DockState>) => setDock(d => ({ ...d, ...p })), [])
   const openLyrics = useCallback((trackId: string, meta?: LyricsSheetMeta) => {
     setTrack({ trackId, meta })
     setTab('lyrics')
+    panelFocus.current = true
     setPanelOpen((open) => {
       if (!open)
         setDock(INITIAL_DOCK)
@@ -724,6 +737,7 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   }, [])
   const openResearch = useCallback(() => {
     setTab('research')
+    panelFocus.current = true
     setPanelOpen((open) => {
       if (!open)
         setDock(INITIAL_DOCK)
@@ -733,7 +747,7 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   const closePanel = () => setPanelOpen(false)
   const dockCapable = panelOpen && !mobile
   const slotReserved = dockCapable && (dock.docked || dock.dragging)
-  const [contentRect, setContentRect] = useState<Rect>(initialMemoRect)
+  const [contentRect, setContentRect] = useState<Rect>(() => initialMemoRect(panelOpen))
   const [surfaceMounted, setSurfaceMounted] = useState(false)
   const dockWidth = memoDockWidth(contentRect.width)
   const outerWidth = contentRect.width + (slotReserved ? dockWidth : 0)
@@ -741,6 +755,17 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   useLayoutEffect(() => {
 	setSurfaceMounted(!mobile)
   }, [mobile])
+
+  // Opening the dock widens the window to the right; pull it back inside the
+  // viewport instead of letting the docked panel run off-screen.
+  useLayoutEffect(() => {
+	if (mobile)
+		return
+	setContentRect((current) => {
+		const position = clampSurfacePosition(current, { width: outerWidth, height: current.height }, { width: window.innerWidth, height: window.innerHeight })
+		return position.left === current.left && position.top === current.top ? current : { ...current, ...position }
+	})
+  }, [mobile, outerWidth])
 
   useEffect(() => {
 	if (mobile)
@@ -819,14 +844,6 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
   }, [])
   const dragPassthrough = useDragScrimPassthrough()
 
-  const focusResearchOnMount = useRef(album.focusResearch).current
-  useEffect(() => {
-    if (focusResearchOnMount)
-      openResearch()
-    // Intentionally once on mount: focusResearch is a one-shot open intent from
-    // the click that opened this modal, not a value to keep re-syncing against.
-  }, [focusResearchOnMount, openResearch])
-
   return (
     <div
 	className="scrim"
@@ -849,7 +866,7 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
 			width: outerWidth,
 			height: contentRect.height,
 			maxHeight: 'none',
-			overflowY: 'auto',
+			overflowY: 'hidden',
 			animation: 'none',
 			pointerEvents: 'auto',
 			'--lys-dock-w': `${dockWidth}px`,
@@ -883,11 +900,14 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
 
           {/* right — the memo (쓰레기통) */}
           <section className="memo-main">
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+            <div className="memo-main-head">
               <span className="kicker">버킷 · 메모</span>
-              <span className="serif italic" style={{ fontSize: 12.5, color: 'var(--color-faded)' }}>떠오른 대로 던져두는 곳</span>
+              <span className="memo-main-sub serif italic">떠오른 대로 던져두는 곳</span>
+              {album.albumId && (
+                <button type="button" className="memo-context-open mono" onClick={openResearch}>리서치 노트 열기</button>
+              )}
             </div>
-            <MemoBody value={text} onChange={onText} autoFocus minHeight={300} />
+            <MemoBody value={text} onChange={onText} autoFocus minHeight={180} />
             <GrowEmptyHint show={grow && empty} />
             <div className="memo-modal-foot">
               <GrowToggle on={grow} onToggle={onToggle} />
@@ -902,9 +922,6 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
               <div className="memo-write-link">
                 <a href={`/write?album=${album.albumId}`}>전체 에디터에서 작성 →</a>
               </div>
-            )}
-            {album.albumId && (
-              <button type="button" className="memo-context-open mono" onClick={openResearch}>리서치 노트 열기</button>
             )}
           </section>
         </div>
@@ -943,6 +960,7 @@ function MemoWindow({ album, onClose, onMemoSaved, published }: { album: DetailT
 	dock={dock}
 	patch={patchDock}
 	mobile={mobile}
+	focusOnOpen={panelFocus.current}
           />
         </>
       )}

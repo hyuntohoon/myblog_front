@@ -2,7 +2,7 @@ import type { RefObject } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useCallback, useRef, useState } from 'react'
 import { beforeEach, describe, expect, it } from 'vitest'
-import {  useDockTear } from './dockTear'
+import { dockDragClass, useDockTear } from './dockTear'
 import type { DockState } from './dockTear'
 
 const FLOATING: DockState = { docked: false, dragging: false, expect: false, freePos: null }
@@ -28,7 +28,7 @@ function Harness({ initialDock = FLOATING, geometryKey }: { initialDock?: DockSt
 	return (
 		<>
 			<div ref={hostRef} />
-			<div ref={panelRef} data-testid="panel" {...handlers} />
+			<div ref={panelRef} data-testid="panel" className={`panel ${dock.docked ? 'is-docked' : 'is-float'}${dockDragClass(dock)}`} {...handlers} />
 			<output data-testid="placement">{dock.docked ? 'docked' : 'floating'}</output>
 			<output data-testid="expect">{String(dock.expect)}</output>
 			<output data-testid="free-pos">{dock.freePos ? `${dock.freePos.left},${dock.freePos.top}` : 'none'}</output>
@@ -80,5 +80,47 @@ describe('useDockTear re-arm gate', () => {
 		render(<Harness geometryKey="dock-geometry" initialDock={{ ...FLOATING, docked: true }} />)
 		fireEvent.click(screen.getByRole('button', { name: 'toggle' }))
 		expect(screen.getByTestId('free-pos')).toHaveTextContent('290,120')
+	})
+})
+
+describe('useDockTear tear', () => {
+	beforeEach(() => sessionStorage.clear())
+
+	function trackOffsets(panel: HTMLElement) {
+		Object.defineProperties(panel, {
+			offsetLeft: { configurable: true, get: () => Number.parseFloat(panel.style.left) || 0 },
+			offsetTop: { configurable: true, get: () => Number.parseFloat(panel.style.top) || 0 },
+			offsetWidth: { configurable: true, get: () => 100 },
+			offsetHeight: { configurable: true, get: () => 100 },
+		})
+	}
+
+	it('keeps the drag classes when the host re-renders is-docked → is-float at the tear', () => {
+		render(<Harness initialDock={{ ...FLOATING, docked: true }} />)
+		const panel = screen.getByTestId('panel')
+		trackOffsets(panel)
+		fireEvent.pointerDown(panel, { button: 0, pointerId: 4, clientX: 50, clientY: 50 })
+		expect(panel).toHaveClass('is-docked', 'is-grabbed', 'is-straining')
+		fireEvent.pointerMove(panel, { pointerId: 4, clientX: 95, clientY: 50 })
+		expect(screen.getByTestId('placement')).toHaveTextContent('floating')
+		expect(panel).toHaveClass('is-float', 'is-grabbed', 'is-lifted')
+		expect(panel).not.toHaveClass('is-straining')
+		fireEvent.pointerUp(panel, { pointerId: 4, clientX: 95, clientY: 50 })
+		expect(panel).not.toHaveClass('is-grabbed')
+	})
+
+	it('continues from the resisting position instead of jumping at the tear', () => {
+		render(<Harness initialDock={{ ...FLOATING, docked: true }} />)
+		const panel = screen.getByTestId('panel')
+		trackOffsets(panel)
+		fireEvent.pointerDown(panel, { button: 0, pointerId: 5, clientX: 50, clientY: 50 })
+		fireEvent.pointerMove(panel, { pointerId: 5, clientX: 80, clientY: 50 })
+		expect(panel.style.left).toBe('15px')
+		// 45px ≥ the 40px threshold: tears where the panel already is (0 + 45 × 0.5)
+		fireEvent.pointerMove(panel, { pointerId: 5, clientX: 95, clientY: 50 })
+		expect(panel.style.left).toBe('22.5px')
+		fireEvent.pointerMove(panel, { pointerId: 5, clientX: 195, clientY: 50 })
+		expect(panel.style.left).toBe('122.5px')
+		fireEvent.pointerUp(panel, { pointerId: 5, clientX: 195, clientY: 50 })
 	})
 })

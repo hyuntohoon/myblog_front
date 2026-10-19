@@ -42,9 +42,10 @@ beforeAll(() => {
 	}))
 })
 
-function Harness({ initialTrack = { trackId: 'track-1', meta: { track: 'Track one', artist: 'Artist' } }, initialDock = INITIAL_DOCK }: {
+function Harness({ initialTrack = { trackId: 'track-1', meta: { track: 'Track one', artist: 'Artist' } }, initialDock = INITIAL_DOCK, focusOnOpen }: {
 	initialTrack?: ContextPanelTrack | null
 	initialDock?: DockState
+	focusOnOpen?: boolean
 }) {
 	const hostRef = useRef<HTMLDivElement>(null)
 	const [track, setTrack] = useState<ContextPanelTrack | null>(initialTrack)
@@ -82,6 +83,7 @@ function Harness({ initialTrack = { trackId: 'track-1', meta: { track: 'Track on
 				dock={dock}
 				patch={patch}
 				mobile={false}
+				focusOnOpen={focusOnOpen}
 			/>
 		</>
 	)
@@ -151,5 +153,36 @@ describe('contextPanel', () => {
 		unmount()
 		const docked = render(<Harness initialTrack={null} />)
 		expect(docked.container.querySelector('[data-resize-edge]')).not.toBeInTheDocument()
+	})
+
+	it('leaves focus where it is when opened docked by default, and takes it on an explicit open', () => {
+		// jsdom has no layout, so every element reads as hidden to the focusable scan
+		const offsetParent = vi.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockReturnValue(document.body)
+		const outside = document.createElement('textarea')
+		document.body.appendChild(outside)
+		outside.focus()
+		const quiet = render(<Harness initialTrack={null} focusOnOpen={false} />)
+		expect(outside).toHaveFocus()
+		quiet.unmount()
+
+		outside.focus()
+		render(<Harness initialTrack={null} />)
+		expect(screen.getByRole('tab', { name: '가사' })).toHaveFocus()
+		outside.remove()
+		offsetParent.mockRestore()
+	})
+
+	it('does not trap Tab while docked', () => {
+		const offsetParent = vi.spyOn(HTMLElement.prototype, 'offsetParent', 'get').mockReturnValue(document.body)
+		const { container } = render(<Harness initialTrack={null} />)
+		const tabs = screen.getAllByRole('tab')
+		const focusables = container.querySelectorAll<HTMLElement>('.ctx-panel button, .ctx-panel input')
+		const last = focusables[focusables.length - 1]
+		last.focus()
+		const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+		document.dispatchEvent(tab)
+		expect(tab.defaultPrevented).toBe(false)
+		expect(tabs[0]).not.toHaveFocus()
+		offsetParent.mockRestore()
 	})
 })

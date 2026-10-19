@@ -3,7 +3,7 @@ import type { DockRect, DockState } from '@lib/dockTear'
 import type { Rect, SizeConstraints } from '@lib/surfaceGeometry'
 import type { HeadHandlers, LyricsSheetMeta } from '../lyrics/LyricsSheet'
 import { useCallback, useRef, useState } from 'react'
-import { useDockTear } from '@lib/dockTear'
+import { dockDragClass, useDockTear } from '@lib/dockTear'
 import { readStoredRect, SURFACE_RESIZE_EDGES, useResizableSurface, writeStoredRect } from '@lib/surfaceGeometry'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
@@ -27,6 +27,8 @@ export interface ContextPanelProps {
 	dock: DockState
 	patch: (patch: Partial<DockState>) => void
 	mobile: boolean
+	/** Move focus into the panel when it mounts (an explicit open, not a default one). */
+	focusOnOpen?: boolean
 }
 
 const DOCK_W = 320
@@ -128,9 +130,14 @@ function ContextPanelHeader({ tab, onTabChange, onClose, handlers, placementCont
 }
 
 function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
-	const { albumId, track, tab, onTabChange, onClose, hostRef, dock, patch } = props
+	const { albumId, track, tab, onTabChange, onClose, hostRef, dock, patch, focusOnOpen = true } = props
 	const panelRef = useRef<HTMLDivElement>(null)
-	useDismissable(true, onClose, panelRef, { trapFocus: dock.docked, autoFocus: dock.docked })
+	// Never a focus trap: docked it is a column of the memo window, so Tab has to
+	// be able to move between the memo and the panel. Focus moves in only on an
+	// explicit open, captured once — a changing autoFocus would re-run the focus
+	// effect and bounce focus through its restore.
+	const [focusOnMount] = useState(focusOnOpen)
+	useDismissable(true, onClose, panelRef, { trapFocus: false, autoFocus: focusOnMount })
 	const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 	const dockW = useCallback(() => {
@@ -248,7 +255,7 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 	return (
 		<div
 			ref={panelRef}
-			className={`lys-sheet ctx-panel is-mounted ${dock.docked ? 'is-docked' : 'is-float'}`}
+			className={`lys-sheet ctx-panel is-mounted ${dock.docked ? 'is-docked' : 'is-float'}${dockDragClass(dock)}`}
 			role="dialog"
 			aria-modal="true"
 			aria-label="앨범 컨텍스트"
@@ -270,7 +277,7 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 	)
 }
 
-function MobileContextPanel(props: Omit<ContextPanelProps, 'mobile' | 'hostRef' | 'dock' | 'patch'>) {
+function MobileContextPanel(props: Omit<ContextPanelProps, 'mobile' | 'hostRef' | 'dock' | 'patch' | 'focusOnOpen'>) {
 	const { albumId, track, tab, onTabChange, onClose } = props
 	const panelRef = useRef<HTMLDivElement>(null)
 	useDismissable(true, onClose, panelRef, { inertBackground: true })
