@@ -25,6 +25,10 @@ export const HEADER_NAV: NavLink[] = [
   { title: 'Reviews', url: '/reviews', reviewBuilt: true },
   // The public genre map (FEAT-genre-system) — a real route, not a filter.
   { title: 'Genres', url: '/genres' },
+  // The public release calendar (FEAT-release-calendar Step 7) — client-fetched, so
+  // never empty at build time. Audit #16: it had no nav entry. /radar stays reachable
+  // from inside /releases and the home for-you card; /search from the header field.
+  { title: 'Releases', url: '/releases' },
   // Best New Music is a filter on the reviews index (?bnm=1), not a route.
   { title: 'Best New Music', url: '/reviews?bnm=1', reviewBuilt: true },
   // The ≥4.0★ canon hall (FEAT-home-redesign) — a real route, computed from reviews.
@@ -36,6 +40,7 @@ export const HEADER_NAV: NavLink[] = [
 export const FOOTER_BROWSE: FooterLink[] = [
   { label: 'Reviews', ko: '평론', href: '/reviews', reviewBuilt: true },
   { label: 'Genres', ko: '장르', href: '/genres' },
+  { label: 'Releases', ko: '발매', href: '/releases' },
   { label: 'Canon', ko: '명반', href: '/canon', reviewBuilt: true },
   { label: 'Collection', ko: '컬렉션', href: '/collection' },
 ]
