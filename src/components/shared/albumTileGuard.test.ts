@@ -32,7 +32,7 @@ const BASELINE: Record<string, Counts> = {
 	'src/components/member/MemberProfile.tsx': { usage: 1 },
 	'src/components/member/NowPlaying.tsx': { usage: 1, definition: 1 },
 	'src/components/member/ReviewsTab.tsx': { usage: 2 },
-	'src/components/member/pocket/PocketTray.tsx': { usage: 4, placeholder: 1, definition: 1 },
+	'src/components/member/pocket/PocketTray.tsx': { usage: 3, placeholder: 1, definition: 1 },
 	'src/components/member/ui.tsx': { usage: 1, placeholder: 1, definition: 2 },
 	'src/components/reviews/ReviewsIndex.tsx': { usage: 10, definition: 1 },
 	'src/components/search/atoms.tsx': { placeholder: 1, definition: 1 },
@@ -117,6 +117,15 @@ describe('album tile / cover ratchet (front audit S1 + S2)', () => {
 		const miniReview = text.slice(text.indexOf('function MiniReview('), text.indexOf('/** How many 최근 들은 앨범'))
 		expect(miniReview).toMatch(/<CatalogAlbumCardAdapter\b/)
 		expect(text).not.toMatch(/<AlbumArt\b/)
+	})
+
+	it('pocket card viewer album tiles stay on the canonical card', () => {
+		const text = readFileSync(join(root, 'src/components/member/pocket/PocketTray.tsx'), 'utf8')
+		const adapter = text.slice(text.indexOf('function PocketAlbumCardAdapter('), text.indexOf('// FEAT-pocket-buckit-viewers Track B — `url` + `square`'))
+		expect(adapter).toMatch(/<AlbumCard\b/)
+		const cardViewer = text.slice(text.indexOf('<div className="pb-cardgrid">'), text.indexOf('{bucket.albums.slice(0, 8)'))
+		expect(cardViewer).toMatch(/<PocketAlbumCardAdapter\b/)
+		expect(cardViewer).not.toMatch(/<Cover\b/)
 	})
 
 	// Not a ratchet to lower: a canon card is a published review, which RFC
