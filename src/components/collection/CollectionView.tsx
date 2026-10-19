@@ -4,11 +4,17 @@
 // unauthenticated GET /api/buckets/public on the client (so it reflects the
 // owner's current public toggles, A3) and renders each public bucket as a
 // section of album covers. Graceful loading / error / empty states.
+//
+// Front UI/UX audit S1 — each album is the canonical AlbumCard through
+// CatalogAlbumCardAdapter, like /search and /artist. "No edit" means the
+// owner's shelf can't be changed from here; ＋ / drag copy the album into the
+// viewer's own Pocket. The public projection's album_id is the catalog id.
 import type { PublicCollection } from '@lib/buckets'
 import { useEffect, useState } from 'react'
 import { listPublicBuckets } from '@lib/buckets'
 import { publicMemberLabel } from '@lib/member'
-import { AlbumArt, SectionTitle } from '@components/member/ui'
+import { SectionTitle } from '@components/member/ui'
+import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
 import { openAlbum } from '@lib/entityLinks'
 
 function Notice({ title, sub }: { title: string, sub?: string }) {
@@ -28,7 +34,7 @@ function CollectionSkeleton() {
       {[0, 1].map(s => (
         <section key={s}>
           <div className="lf-skeleton" style={{ height: 22, width: 180, marginBottom: 18 }} />
-          <div style={{ display: 'grid', gap: '16px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+          <div className="cl-grid">
             {Array.from({ length: 10 }, (_, i) => (
               <div key={i} className="lf-skeleton" style={{ aspectRatio: '1 / 1' }} />
             ))}
@@ -101,30 +107,15 @@ export default function CollectionView() {
 	</span>
 	)}
           />
-          <div style={{ display: 'grid', gap: '16px 12px', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))' }}>
+          <div className="cl-grid">
             {c.albums.map(a => (
-              <figure key={a.albumId} style={{ margin: 0, minWidth: 0 }}>
-                <button
-	type="button"
-	onClick={() => openAlbum({ albumId: a.albumId, title: a.title, artist: a.artist, cover: a.cover, year: a.year })}
-	title={`${a.title} · 앨범 보기`}
-	aria-label={`${a.title} — ${a.artist} 앨범 보기`}
-	style={{ display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer' }}
-                >
-                  <AlbumArt url={a.cover} label={a.title} />
-                  <div style={{ marginTop: 7 }}>
-                    <div
-	className="serif"
-	style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--color-text)', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
-                    >
-                      {a.title}
-                    </div>
-                    <div className="meta" style={{ marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {a.year ? `${a.artist} · ${a.year}` : a.artist}
-                    </div>
-                  </div>
-                </button>
-              </figure>
+              <CatalogAlbumCardAdapter
+	key={a.albumId}
+	data={{ catalogAlbumId: a.albumId, spotifyAlbumId: null, title: a.title, artist: a.artist, artistId: null, cover: a.cover, year: a.year }}
+	layout="grid"
+	titleAs="h3"
+	capabilities={{ open: () => openAlbum({ albumId: a.albumId, title: a.title, artist: a.artist, cover: a.cover, year: a.year }) }}
+              />
             ))}
           </div>
         </section>

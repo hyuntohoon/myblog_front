@@ -1,0 +1,16 @@
+/* /collection — public bucket shelves (pages/collection.astro).
+   Same track shape as the /artist discography (artist.css .art-disco-grid):
+   the canonical AlbumCard ellipsizes titles instead of wrapping, so tracks are
+   wider than the old 120px bespoke tile, capped and start-aligned so a short
+   shelf doesn't stretch across the row. The skeleton shares the class so the
+   load doesn't jump. */
+.cl-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 190px));
+	justify-content: start;
+	gap: clamp(22px, 2.6vw, 30px) clamp(16px, 2vw, 22px);
+}
+
+@media (max-width: 640px) {
+	.cl-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}

@@ -24,7 +24,6 @@ interface Counts { usage?: number, placeholder?: number, definition?: number }
 const BASELINE: Record<string, Counts> = {
 	'src/components/album/AlbumDetailView.tsx': { usage: 3 },
 	'src/components/canon/CanonPage.tsx': { usage: 2 },
-	'src/components/collection/CollectionView.tsx': { usage: 1 },
 	'src/components/home/EditorialHome.tsx': { usage: 4 },
 	'src/components/home/TodayPickHistory.tsx': { usage: 1 },
 	'src/components/home/TodaySongBuckit.tsx': { usage: 1 },
@@ -101,6 +100,12 @@ describe('album tile / cover ratchet (front audit S1 + S2)', () => {
 		const text = readFileSync(join(root, 'src/components/artist/ArtistHub.tsx'), 'utf8')
 		expect(text).toMatch(/<CatalogAlbumCardAdapter\b/)
 		expect(text).not.toMatch(/art-disco-cover|art-disco-item/)
+	})
+
+	it('collection shelves stay on the canonical card', () => {
+		const text = readFileSync(join(root, 'src/components/collection/CollectionView.tsx'), 'utf8')
+		expect(text).toMatch(/<CatalogAlbumCardAdapter\b/)
+		expect(text).not.toMatch(/<AlbumArt\b/)
 	})
 
 	it('counts a bespoke tile built from a legacy cover', () => {
