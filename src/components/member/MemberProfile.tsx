@@ -63,9 +63,13 @@ const TAB_EDGE_PX = 4
 const TAB_FADE_PX = 28
 // Ships with the nav itself: styles/member.css only loads once SelfDashboard
 // mounts, so the default 평가 view would never see a rule placed there.
+// tab-nav-tap-target (audit, found in #491): the tabs are ~36px tall (11px
+// padding + small font); phones get a 44px hit area. Padding stays, so the
+// underline indicator keeps its position.
 const TAB_NAV_CSS = `
 .lf-tab-nav{scroll-snap-type:x proximity;mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent);-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent)}
 .lf-tab-nav>.lf-tab-btn{scroll-snap-align:start}
+@media (max-width:640px){.lf-tab-nav>.lf-tab-btn{min-height:44px;display:inline-flex;align-items:center}}
 `
 
 /** The dashboard tabs this viewer may actually use. */

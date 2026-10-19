@@ -79,3 +79,15 @@ describe('dashboard tab row overflow fade', () => {
 		expect(nav).not.toHaveAttribute('data-fade-r')
 	})
 })
+
+// tab-nav-tap-target (audit, found in #491) — the phone 44px rule used to live in
+// styles/member.css, which only loads once SelfDashboard mounts, so the default
+// 평가 view never got it. It must ship in the <style> rendered with the nav.
+describe('dashboard tab row tap target', () => {
+	it('ships the phone 44px rule with the nav, not with the lazy dashboard CSS', async () => {
+		const nav = await mountNav()
+		const css = [...document.querySelectorAll('style')].map(s => s.textContent ?? '').join('\n')
+		expect(nav.parentElement?.querySelector('style')).not.toBeNull()
+		expect(css).toMatch(/@media \(max-width:640px\)\{\.lf-tab-nav>\.lf-tab-btn\{[^}]*min-height:44px/)
+	})
+})
