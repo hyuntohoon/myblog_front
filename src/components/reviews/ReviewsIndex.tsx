@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { openAlbum, reviewHref } from '@lib/entityLinks'
 import { allTags, allYears, selectFeatured } from '@lib/reviews'
 import type { ReviewCard } from '@lib/reviews'
+import { CoverImage } from '@components/shared/CoverImage'
 
 /**
  * /reviews interactive island (RFC FEAT-reviews-redesign, Steps 2–3).
@@ -99,20 +100,14 @@ function Stars({ value, size }: { value: number | null, size: number }) {
   )
 }
 
+/** Front UI/UX audit S2 — the review cover is the shared CoverImage; the BNM badge rides as an overlay. */
 function Cover({ r, badge, ph }: { r: ReviewCard, badge: 'full' | 'mini' | null, ph: number }) {
   return (
-    <div className="rev-cover">
+    <CoverImage src={r.cover} label={r.album} className="rev-cover" placeholderStyle={{ fontSize: ph }}>
       {r.bestNew && badge != null && (
         <span className="rev-badge">{badge === 'mini' ? 'BNM' : 'Best New'}</span>
       )}
-      {r.cover != null ?
-        <img src={r.cover} alt={r.album} className="rev-cover-img" loading="lazy" decoding="async" /> :
-        (
-            <span className="rev-placeholder" style={{ fontSize: ph }}>
-              {r.album.slice(0, 2).toUpperCase()}
-            </span>
-          )}
-    </div>
+    </CoverImage>
   )
 }
 
