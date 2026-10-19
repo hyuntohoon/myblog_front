@@ -11,6 +11,7 @@
 // every viewer. PRIVACY: isSelf comes only from the authed response — token
 // presence merely gates the attempt (and avoids apiFetch's login redirect for
 // anonymous visitors); any error/401 leaves the page fully public.
+import type { CSSProperties, ReactNode } from 'react'
 import type { RatingSortKey } from '@lib/ratingStats'
 import type { MemberRerating } from '../album/reratings.api'
 import type { MemberNowPlaying, MemberRating, MyAlbumState, MemberProfile as Profile } from '../album/reviews.api'
@@ -27,7 +28,8 @@ import { fetchMemberNowPlaying, fetchMemberProfile, putMyAlbumState, RATING_COMM
 import { boardTabHref } from './dashboardLinks'
 import { getMe } from './me.api'
 import { RatingStats } from './RatingStats'
-import { AlbumArt, Cover, SectionTitle, Seg, Stars } from './ui'
+import { CatalogAlbumCardAdapter } from '../shared/CatalogAlbumCardAdapter'
+import { Cover, SectionTitle, Seg, Stars } from './ui'
 
 // Bundle guard: the dashboard (and everything it drags in — BucketBoard,
 // OverviewDash, LikedBoard, member.css …) loads only after isSelf is confirmed
@@ -293,6 +295,48 @@ function RatingEditPanel({ r, onCancel, onSaved, onRerated }: {
 	)
 }
 
+// Front UI/UX audit S1: a 평가 row is an album, so it is the canonical AlbumCard
+// (row layout) through the catalog adapter — the same composition as the home
+// 평가 rail. Only display content goes in the card's slots; the author's edit
+// controls (inputs, the edit panel) sit below it, because the slots are
+// open-hit content that only lets links and buttons through.
+const ROW_COVER_GAP = 12
+
+function coverSizeVar(px: number): CSSProperties {
+	return { '--album-card-cover-size': `${px}px` } as CSSProperties
+}
+
+/** Lines the controls under a row up with the card's text column. */
+const ROW_CONTROLS: CSSProperties = { paddingLeft: `calc(var(--album-card-cover-size) + ${ROW_COVER_GAP}px)`, marginTop: 4 }
+
+function RatedAlbumCard({ row, badge, secondaryLine }: {
+	row: Pick<MemberRating, 'album_id' | 'album_title' | 'album_cover_url' | 'artist_id' | 'artist_name'>
+	badge?: ReactNode
+	secondaryLine?: ReactNode
+}) {
+	const artistId = row.artist_id ?? null
+	return (
+		<CatalogAlbumCardAdapter
+			data={{
+				catalogAlbumId: row.album_id,
+				spotifyAlbumId: null,
+				title: row.album_title,
+				artist: row.artist_name ?? null,
+				artistId,
+				cover: row.album_cover_url ?? null,
+				year: null,
+			}}
+			layout="row"
+			capabilities={{
+				open: () => openAlbum({ albumId: row.album_id, title: row.album_title, cover: row.album_cover_url }),
+				...(artistId ? { artistOpen: () => window.location.assign(artistHref(artistId)) } : {}),
+			}}
+			badge={badge}
+			secondaryLine={secondaryLine}
+		/>
+	)
+}
+
 /**
  * 재평가 중 — albums whose 평가 was withdrawn and is being redone
  * (FEAT-album-rerating).
@@ -323,65 +367,45 @@ function ReratingSection({ reratings, mine, isSelf, onCancelled }: {
 			<SectionTitle title="재평가 중" />
 			<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
 				{reratings.map(r => (
-					<li key={r.album_id} style={{ display: 'flex', gap: 14 }}>
-						<button
-							type="button"
-							onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
-							title={r.album_title}
-							style={{ width: 48, flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
-						>
-							<AlbumArt url={r.album_cover_url} label={r.album_title} size={48} />
-						</button>
-						<div style={{ minWidth: 0, flex: 1 }}>
-							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+					<li key={r.album_id} style={coverSizeVar(48)}>
+						<RatedAlbumCard
+							row={r}
+							secondaryLine={(
+								<>
+									{/* Author-only: the withdrawn score never reaches a visitor. */}
+									{isSelf && mine.has(r.album_id) && (
+										<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)', marginRight: 8 }}>
+											이전
+											{' '}
+											{mine.get(r.album_id)!.toFixed(1)}
+										</span>
+									)}
+									<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+								</>
+							)}
+						/>
+						{isSelf && (
+							<div style={ROW_CONTROLS}>
 								<button
 									type="button"
-									onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
-									className="serif italic"
-									style={{ fontSize: 'var(--text-base)', fontWeight: 500, padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+									disabled={busy !== null}
+									onClick={async () => {
+										setBusy(r.album_id)
+										if (await cancelRerating(r.album_id)) {
+											await onCancelled(r.album_id)
+										}
+										setBusy(null)
+									}}
+									className="sans"
+									style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}
 								>
-									{r.album_title}
+									재평가 취소
 								</button>
-								{/* Author-only: the withdrawn score never reaches a visitor. */}
-								{isSelf && mine.has(r.album_id) && (
-									<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>
-										이전
-										{' '}
-										{mine.get(r.album_id)!.toFixed(1)}
-									</span>
-								)}
-								<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
-								{isSelf && (
-									<button
-										type="button"
-										disabled={busy !== null}
-										onClick={async () => {
-											setBusy(r.album_id)
-											if (await cancelRerating(r.album_id)) {
-												await onCancelled(r.album_id)
-											}
-											setBusy(null)
-										}}
-										className="sans"
-										style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}
-									>
-										재평가 취소
-									</button>
-								)}
-							</div>
-							{r.artist_name && (
-								<div className="sans" style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--color-subtle)' }}>
-									{r.artist_id ?
-										<a href={artistHref(r.artist_id)} style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)' }}>{r.artist_name}</a> :
-										r.artist_name}
-								</div>
-							)}
-							{isSelf && (
 								<div className="sans" style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--color-faded)' }}>
 									다시 듣고 앨범을 열어 새로 평가하세요.
 								</div>
-							)}
-						</div>
+							</div>
+						)}
 					</li>
 				))}
 			</ul>
@@ -822,61 +846,42 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 
 						<ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
 							{sortedReviews.map(r => (
-								<li key={r.id} style={{ display: 'flex', gap: 14 }}>
-									<button
-										type="button"
-										onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
-										title={r.album_title}
-										style={{ position: 'relative', width: 64, flex: '0 0 auto', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}
-									>
-										<AlbumArt url={r.album_cover_url} label={r.album_title} size={64} />
-										{/* 한줄 감상 유무 마커 — BucketBoard의 평론함/미평가 배지와 같은
-										    상호배타 패턴(항상 둘 중 하나만 뜬다). */}
-										<span
-											aria-hidden="true"
-											title={r.comment ? '한 줄 감상 있음' : '한 줄 감상 없음'}
-											style={{
-												position: 'absolute',
-												top: 4,
-												right: 4,
-												width: 8,
-												height: 8,
-												borderRadius: '50%',
-												boxShadow: '0 0 0 1px var(--color-bg)',
-												background: r.comment ? 'var(--color-accent)' : 'transparent',
-												border: r.comment ? 'none' : '1px solid var(--color-border)',
-											}}
-										/>
-									</button>
-									<div style={{ minWidth: 0, flex: 1 }}>
-										<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+								<li key={r.id} style={coverSizeVar(64)}>
+									<RatedAlbumCard
+										row={r}
+										// 한줄 감상 유무 마커 — BucketBoard의 평론함/미평가 배지와 같은
+										// 상호배타 패턴(항상 둘 중 하나만 뜬다).
+										badge={(
+											<span
+												aria-hidden="true"
+												style={{
+													display: 'block',
+													width: 8,
+													height: 8,
+													borderRadius: '50%',
+													boxShadow: '0 0 0 1px var(--color-bg)',
+													background: r.comment ? 'var(--color-accent)' : 'transparent',
+													border: r.comment ? 'none' : '1px solid var(--color-border)',
+												}}
+											/>
+										)}
+										secondaryLine={(
+											<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+												{editingId !== r.id && <Stars score={Number(r.rating)} size={14} />}
+												<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
+											</span>
+										)}
+									/>
+									<div style={ROW_CONTROLS}>
+										{isSelf && editingId !== r.id && (
 											<button
 												type="button"
-												onClick={() => openAlbum({ albumId: r.album_id, title: r.album_title, cover: r.album_cover_url })}
-												className="serif italic"
-												style={{ fontSize: 'var(--text-md)', fontWeight: 500, lineHeight: 'var(--leading-snug)', padding: 0, border: 'none', background: 'none', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+												onClick={() => setEditingId(r.id)}
+												className="sans"
+												style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}
 											>
-												{r.album_title}
+												수정
 											</button>
-											{editingId !== r.id && <Stars score={Number(r.rating)} size={14} />}
-											<span className="mono" style={{ fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}>{fmtDate(r.created_at)}</span>
-											{isSelf && editingId !== r.id && (
-												<button
-													type="button"
-													onClick={() => setEditingId(r.id)}
-													className="sans"
-													style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', fontSize: 'var(--text-2xs)', color: 'var(--color-faded)' }}
-												>
-													수정
-												</button>
-											)}
-										</div>
-										{r.artist_name && (
-											<div className="sans" style={{ marginTop: 4, fontSize: 'var(--text-xs)', color: 'var(--color-subtle)' }}>
-												{r.artist_id ?
-													<a href={artistHref(r.artist_id)} style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: 'var(--color-faded)' }}>{r.artist_name}</a> :
-													r.artist_name}
-											</div>
 										)}
 										{editingId === r.id ?
 											(

@@ -20,7 +20,7 @@ const api = vi.hoisted(() => ({
 	getMe: vi.fn(),
 }))
 
-vi.mock('@lib/auth', () => ({ isLoggedIn: () => true }))
+vi.mock('@lib/auth', () => ({ isLoggedIn: () => true, goLogin: vi.fn() }))
 vi.mock('./me.api', () => ({ getMe: api.getMe }))
 vi.mock('../album/reviews.api', () => ({
 	RATING_COMMENT_MAX: 60,
