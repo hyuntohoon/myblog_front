@@ -585,6 +585,34 @@
 }
 .lys-place:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
+/* Touch tap targets — desktop untouched. Same approach as the live viewer: the
+   toolbar keeps its 26–28px pills and an invisible ::after grows each hit box
+   to 44px tall, sideways only into half the 6px gap. .lys-seg drops its clip so
+   the halves' boxes are not cut off, and rounds its own ends instead. A <select>
+   cannot carry ::after, so it becomes the 44px box itself and the visible pill
+   moves to its wrapper's ::before. Wrapped rows get an 18px gap so one row's
+   box never covers the edge of the row above. */
+@media (pointer: coarse) {
+	.lys-actions { row-gap: 18px; }
+	.lys-btn,
+	.lys-x,
+	.lys-seg button { position: relative; }
+	/* insets are from the padding edge: .lys-btn has a 1px border, the .lys-seg
+	   halves and .lys-x have none. */
+	.lys-btn::after { content: ''; position: absolute; inset: -9px -4px; }
+	.lys-seg button::after { content: ''; position: absolute; inset: -10px -3px; }
+	.lys-x::after { content: ''; position: absolute; inset: -11px; }
+	.lys-seg { overflow: visible; }
+	.lys-seg button:first-child { border-radius: var(--radius-pill) 0 0 var(--radius-pill); }
+	.lys-seg button:last-child { border-radius: 0 var(--radius-pill) var(--radius-pill) 0; }
+	.lys-anno-pick-box { position: relative; display: inline-flex; }
+	.lys-anno-pick-box::before {
+		content: ''; position: absolute; inset: 9px 0; pointer-events: none;
+		border: 1px solid var(--color-border); border-radius: var(--radius-pill);
+	}
+	.lys-anno-pick select { position: relative; min-height: 44px; border-color: transparent; }
+}
+
 /* narrow (mobile float, no dock) — the header can't fit identity + all controls
    on one row, so stack them (same remedy as the docked column). */
 @media (max-width: 767px) {
