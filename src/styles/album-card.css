@@ -197,10 +197,38 @@
 	color: var(--color-faded);
 }
 
-.catalog-album-card__add {
-	font-size: 14px;
+/* Front UI/UX audit #11 — the ＋ sits on artwork, not on the page, so the
+   theme's transparent .btn (border alpha 0.18) vanished on light covers.
+   A fixed dark scrim with light ink reads on both light and dark artwork in
+   either theme; the light ring keeps its edge on near-black covers. */
+.album-card__action.catalog-album-card__add {
+	min-width: 28px;
+	min-height: 26px;
+	font-size: 15px;
 	line-height: 1;
 	padding: 4px 7px;
+	color: #f5f3ee;
+	background: rgba(20, 19, 18, 0.68);
+	border-color: rgba(245, 243, 238, 0.45);
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+}
+
+/* Keep .btn's coarse-pointer tap target, which the min-height above outranks. */
+@media (pointer: coarse) {
+	.album-card__action.catalog-album-card__add {
+		min-height: 44px;
+	}
+}
+
+.album-card__action.catalog-album-card__add:hover {
+	background: rgba(20, 19, 18, 0.86);
+	border-color: #f5f3ee;
+}
+
+.album-card__action.catalog-album-card__add:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
 }
 
 .album-card__actions {

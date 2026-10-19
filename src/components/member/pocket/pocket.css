@@ -395,9 +395,10 @@
   padding-bottom: var(--global-player-h, 0px);
   transition: margin-right .32s cubic-bezier(.22,.85,.25,1), padding-bottom .2s ease;
 }
-/* The closed Pocket stack (pill + the 34px gear at bottom 60px, unscaled) covers
-   the bottom-right 94px of the viewport. While the island is mounted, pad the
-   footer so its last row clears that stack at full scroll. Sized for the closed
+/* The closed Pocket entry (the scaled pill alone; the design-settings gear only
+   shows while the tray is open) covers the bottom-right ~70px of the viewport.
+   While the island is mounted, pad the footer so its last row clears it at full
+   scroll. Sized for the closed
    state only: the open tray covers the footer by design, and the page does not
    shift when it opens. */
 body:has(.pb-scope) .site-shell > footer { padding-bottom: 76px; }

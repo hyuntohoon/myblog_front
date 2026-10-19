@@ -91,6 +91,11 @@ function PocketBuckitInner() {
 	onOpenLyrics={openPlaybackLyrics}
         />
       )}
+      {/* Front UI/UX audit #13 — design settings belong to the open tray. While
+          closed, the gear stacked over the Pocket pill doubled the bottom-right
+          footprint that covers cards on mobile, and its fixed offset ignored
+          --pb-scale, so it clipped the scaled pill on desktop. */}
+      {open && (
       <button
 	type="button"
 	aria-label="Pocket 디자인 설정"
@@ -99,7 +104,7 @@ function PocketBuckitInner() {
 	style={{
           position: 'fixed',
           right: 22,
-          bottom: `calc(var(--global-player-h, 0px) + ${open ? 152 : 60}px)`,
+          bottom: 'calc(var(--global-player-h, 0px) + 152px)',
           zIndex: 72,
           width: 34,
           height: 34,
@@ -111,7 +116,6 @@ function PocketBuckitInner() {
           border: '1px solid var(--color-border)',
           boxShadow: '0 4px 14px rgba(26,26,26,.16)',
           cursor: 'pointer',
-          transition: 'bottom .2s',
         }}
       >
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -119,6 +123,7 @@ function PocketBuckitInner() {
           <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1" />
         </svg>
       </button>
+      )}
       {settings && <PocketDesignSettings onClose={() => setSettings(false)} />}
       {liveLyrics && (
         <LyricsViewer

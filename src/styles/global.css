@@ -224,6 +224,11 @@ body {
 	font-family: var(--font-serif);
 	background-color: var(--color-bg);
 	color: var(--color-text);
+	/* Front UI/UX audit #12 — Korean wraps between words, not mid-word.
+	   break-word only splits a word that cannot fit a line on its own, and
+	   unlike `anywhere` it leaves min-content sizing alone. */
+	word-break: keep-all;
+	overflow-wrap: break-word;
 	transition: background-color 0.3s ease, color 0.3s ease;
 }
 
