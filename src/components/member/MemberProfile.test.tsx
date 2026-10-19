@@ -9,7 +9,7 @@ const api = vi.hoisted(() => ({
 	getMe: vi.fn(),
 }))
 
-vi.mock('@lib/auth', () => ({ isLoggedIn: () => true }))
+vi.mock('@lib/auth', () => ({ isLoggedIn: () => true, goLogin: vi.fn() }))
 vi.mock('./me.api', () => ({ getMe: api.getMe }))
 vi.mock('../album/reviews.api', () => ({
 	RATING_COMMENT_MAX: 60,
@@ -306,5 +306,36 @@ describe('memberProfile album-state synchronization', () => {
 		finally {
 			window.removeEventListener(ENT_ALBUM_STATE_CHANGED, capture)
 		}
+	})
+})
+
+describe('memberProfile 평가 rows on the canonical album card (front audit S1)', () => {
+	it('renders each rating as an AlbumCard row with ＋, and keeps edit controls outside the card', async () => {
+		api.fetchMemberProfile.mockResolvedValue({ ...PROFILE_WITH_RATING, reviews: [{ ...RATING, comment: '좋다' }] })
+		renderProfile()
+		await untilSelfViewSettled()
+
+		const add = await screen.findByRole('button', { name: 'Kind of Blue 버킷에 담기' })
+		const card = add.closest('.album-card')!
+		expect(card).toHaveAttribute('data-album-card-layout', 'row')
+		expect(card.querySelector('.stars')).not.toBeNull()
+
+		const edit = screen.getByRole('button', { name: '수정' })
+		expect(edit.closest('.album-card')).toBeNull()
+		fireEvent.click(edit)
+		for (const input of document.querySelectorAll('input, textarea'))
+			expect(input.closest('.album-card')).toBeNull()
+		// The stars hide while the edit panel holds the score.
+		expect(card.querySelector('.stars')).toBeNull()
+	})
+
+	it('renders 재평가 중 rows as AlbumCard rows with 재평가 취소 outside the card', async () => {
+		api.fetchMemberProfile.mockResolvedValue(PROFILE_RERATING)
+		renderProfile()
+		await untilSelfViewSettled()
+
+		const cancel = await screen.findByRole('button', { name: '재평가 취소' })
+		expect(cancel.closest('.album-card')).toBeNull()
+		expect(screen.getByRole('button', { name: 'Kind of Blue 버킷에 담기' }).closest('.album-card')).not.toBeNull()
 	})
 })

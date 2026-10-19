@@ -29,7 +29,7 @@ const BASELINE: Record<string, Counts> = {
 	'src/components/member/BucketBoard.tsx': { usage: 2 },
 	'src/components/member/LastfmNowPlaying.tsx': { usage: 1, definition: 1 },
 	'src/components/member/LikedBoard.tsx': { usage: 1, definition: 1 },
-	'src/components/member/MemberProfile.tsx': { usage: 3 },
+	'src/components/member/MemberProfile.tsx': { usage: 1 },
 	'src/components/member/NowPlaying.tsx': { usage: 1, definition: 1 },
 	'src/components/member/OverviewDash.tsx': { usage: 1 },
 	'src/components/member/ReviewsTab.tsx': { usage: 2 },
@@ -103,6 +103,12 @@ describe('album tile / cover ratchet (front audit S1 + S2)', () => {
 
 	it('collection shelves stay on the canonical card', () => {
 		const text = readFileSync(join(root, 'src/components/collection/CollectionView.tsx'), 'utf8')
+		expect(text).toMatch(/<CatalogAlbumCardAdapter\b/)
+		expect(text).not.toMatch(/<AlbumArt\b/)
+	})
+
+	it('member profile 평가 rows stay on the canonical card', () => {
+		const text = readFileSync(join(root, 'src/components/member/MemberProfile.tsx'), 'utf8')
 		expect(text).toMatch(/<CatalogAlbumCardAdapter\b/)
 		expect(text).not.toMatch(/<AlbumArt\b/)
 	})
