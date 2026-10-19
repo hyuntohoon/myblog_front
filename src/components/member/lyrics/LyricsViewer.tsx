@@ -1742,7 +1742,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
 	title="번역이 끝났는지 다시 확인"
 	onClick={doc.recheckTr}
                       >
-                        {checkingTr ? '확인 중…' : '요청됨 · 확인'}
+                        {checkingTr ? '확인 중…' : '번역 대기 중 · 확인'}
                       </button>
                     ) :
                     (

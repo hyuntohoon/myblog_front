@@ -26,11 +26,13 @@ import { useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import {
+  autoAnnoStyle,
   buildLineMarks,
   drawerItems,
   drawerMark,
+  isAnchored,
   lineClasses,
-  readAnnoStyle,
+  readStoredAnnoStyle,
   spanLength,
   writeAnnoStyle,
 } from './annotations'
@@ -97,7 +99,7 @@ function MarkTail({ mark }: { mark: LineMark }) {
 	return (
 		<>
 			{n > 1 && <span className="lys-tail mono">{`${n}행`}</span>}
-			{repeats && <span className="lys-echo mono">{`×${mark.anno.occurrences}`}</span>}
+			{repeats && <span className="lys-echo mono" title="같은 구절이 곡에서 반복됩니다 — 해설은 첫 등장에만 붙습니다">{`곡에서 ${mark.anno.occurrences}번`}</span>}
 			{mark.sharedBy > 1 && <span className="lys-dual mono">{`해설 ${mark.sharedBy}`}</span>}
 		</>
 	)
@@ -148,6 +150,29 @@ function AnnoNote({ anno, paired }: { anno: LyricsAnnotation, paired: boolean })
 	)
 }
 
+/** What a drawer row says in Korean — the same withheld wording the note uses. */
+function annoKoPreview(anno: LyricsAnnotation): string {
+	if (anno.translation_status === 'done' && anno.body_ko)
+		return anno.body_ko
+	return anno.translation_status === 'stale' ? '원문이 바뀌어 한국어 해설을 다시 만들어야 합니다.' : '한국어 해설이 아직 준비되지 않았습니다.'
+}
+
+/** The treatments, in the words a reader would use for them. */
+const ANNO_STYLE_LABEL: Record<AnnoStyle, string> = {
+	m0: '노란 칠',
+	m1: '밑줄',
+	m2: '왼쪽 괄호만',
+	m3: '연 해설만 칠',
+}
+
+/** The hint's name for the mark, per treatment — "노란 줄" is wrong under 밑줄. */
+const ANNO_HINT_MARK: Record<AnnoStyle, string> = {
+	m0: '노란 줄',
+	m1: '밑줄 친 줄',
+	m2: '왼쪽 괄호가 붙은 줄',
+	m3: '흐린 밑줄 친 줄',
+}
+
 /** Split segments into stanzas on gap (empty-text) rows, for the liner layout. */
 function toStanzas(segs: LyricsSegment[]): LyricsSegment[][] {
 	const out: LyricsSegment[][] = []
@@ -190,7 +215,10 @@ function stanzaKo(st: LyricsSegment[]): string {
 export function useLyricsSheetState(spotifyTrackId: string) {
 	const doc = useLyricsDocument(spotifyTrackId)
 	const [mode, setMode] = useState<Mode>(readMode)
-	const [annoStyle, setAnnoStyle] = useState<AnnoStyle>(readAnnoStyle)
+	// The reader's explicit choice; null = never chosen, and the track's density
+	// decides (`autoAnnoStyle`). Density is known only after the load, so the
+	// effective treatment is derived below rather than read once at mount.
+	const [storedAnnoStyle, setStoredAnnoStyle] = useState<AnnoStyle | null>(readStoredAnnoStyle)
 	const [openIds, setOpenIds] = useState<number[]>([])
 	const [copied, setCopied] = useState(false)
 	const [notice, setNotice] = useState<string | null>(null)
@@ -208,9 +236,14 @@ export function useLyricsSheetState(spotifyTrackId: string) {
 	const stanzas = useMemo(() => toStanzas(segs), [segs])
 	const lineMarks = useMemo(() => buildLineMarks(annotations), [annotations])
 	const drawer = useMemo(() => drawerItems(annotations), [annotations])
+	const inTextCount = useMemo(() => annotations.filter(a => isAnchored(a) && a.status !== 'section').length, [annotations])
+	const lyricLines = useMemo(() => segs.filter(s => s.text !== '').length, [segs])
+	const autoStyle = autoAnnoStyle(lineMarks.size, lyricLines)
+	const annoStyle: AnnoStyle = storedAnnoStyle ?? autoStyle
 
-	const pickAnnoStyle = (v: AnnoStyle) => {
-		setAnnoStyle(v)
+	/** `null` = 자동: forget the choice and let each track's density decide again. */
+	const pickAnnoStyle = (v: AnnoStyle | null) => {
+		setStoredAnnoStyle(v)
 		writeAnnoStyle(v)
 	}
 
@@ -258,6 +291,9 @@ export function useLyricsSheetState(spotifyTrackId: string) {
 		phase: doc.phase,
 		mode,
 		annoStyle,
+		annoStyleIsAuto: storedAnnoStyle == null,
+		autoStyle,
+		inTextCount,
 		openIds,
 		showKo,
 		requesting: doc.requesting,
@@ -295,6 +331,8 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 		mode,
 		annotations,
 		annoStyle,
+		annoStyleIsAuto,
+		autoStyle,
 		phase,
 		n,
 		translation,
@@ -315,20 +353,31 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 	return (
 		<>
 			<span className="lys-seg" role="group" aria-label="조판 모드">
-				<button type="button" className={mode === 'doc' ? 'on' : ''} aria-pressed={mode === 'doc'} onClick={() => pickMode('doc')}>문서</button>
-				<button type="button" className={mode === 'liner' ? 'on' : ''} aria-pressed={mode === 'liner'} onClick={() => pickMode('liner')}>라이너</button>
+				<button type="button" className={mode === 'doc' ? 'on' : ''} aria-pressed={mode === 'doc'} onClick={() => pickMode('doc')} title="한 줄마다 번역을 바로 아래에 — 해설도 여기서 열립니다">문서</button>
+				<button type="button" className={mode === 'liner' ? 'on' : ''} aria-pressed={mode === 'liner'} onClick={() => pickMode('liner')} title="연 단위로 원문과 번역을 나란히">라이너</button>
 			</span>
 			{/* Highlight treatment is the ONE annotation axis exposed. Marker density
 			    runs 9.5%–64.7% per track, so no fixed treatment is right across it;
 			    long spans and overlap have single answers and stay fixed rules.
-			    Shown only when this track actually has annotations. */}
+			    Shown only when this track actually has annotations. A select with
+			    plain words replaced the 칠/밑줄/여백/열림 chips, which read as jargon;
+			    자동 hands the choice back to the track's density. */}
 			{mode === 'doc' && annotations.length > 0 && (
-				<span className="lys-seg" role="group" aria-label="주석 강조">
-					<button type="button" className={annoStyle === 'm0' ? 'on' : ''} aria-pressed={annoStyle === 'm0'} onClick={() => pickAnnoStyle('m0')} title="칠하기">칠</button>
-					<button type="button" className={annoStyle === 'm1' ? 'on' : ''} aria-pressed={annoStyle === 'm1'} onClick={() => pickAnnoStyle('m1')} title="밑줄 — 밀집한 곡에 적합">밑줄</button>
-					<button type="button" className={annoStyle === 'm2' ? 'on' : ''} aria-pressed={annoStyle === 'm2'} onClick={() => pickAnnoStyle('m2')} title="여백만 — 가사를 가장 방해하지 않음">여백</button>
-					<button type="button" className={annoStyle === 'm3' ? 'on' : ''} aria-pressed={annoStyle === 'm3'} onClick={() => pickAnnoStyle('m3')} title="열었을 때만 — 강조를 희소하게">열림</button>
-				</span>
+				<label className="lys-anno-pick mono">
+					<span>해설 표시</span>
+					<select
+						value={annoStyleIsAuto ? 'auto' : annoStyle}
+						onChange={(e) => {
+							const v = e.target.value
+							pickAnnoStyle(v === 'auto' ? null : v as AnnoStyle)
+						}}
+					>
+						<option value="auto">{`자동 (${ANNO_STYLE_LABEL[autoStyle]})`}</option>
+						{(Object.keys(ANNO_STYLE_LABEL) as AnnoStyle[]).map(k => (
+							<option key={k} value={k}>{ANNO_STYLE_LABEL[k]}</option>
+						))}
+					</select>
+				</label>
 			)}
 			{/* A member cannot queue a translation (the POST is owner-only), so the
 			    request states render only for the owner; done and requested are
@@ -364,7 +413,7 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 										title="번역이 끝났는지 다시 확인"
 										onClick={recheckTr}
 									>
-										{checkingTr ? '확인 중…' : '요청됨 · 확인'}
+										{checkingTr ? '확인 중…' : '번역 대기 중 · 확인'}
 									</button>
 							) :
 							(
@@ -396,11 +445,13 @@ export function LyricsSheetBody({ state, meta }: { state: LyricsSheetState, meta
 		stanzas,
 		lineMarks,
 		drawer,
+		inTextCount,
 		emptyText,
 		toggleAnno,
 		setOpenIds,
 		retry,
 	} = state
+	const drawerRef = useRef<HTMLDivElement>(null)
 	return (
 		<>
 			{notice && <div className="lys-note mono" role="status">{notice}</div>}
@@ -415,6 +466,23 @@ export function LyricsSheetBody({ state, meta }: { state: LyricsSheetState, meta
 				)}
 
 				{phase.k === 'ready' && n === 0 && <div className="lys-status">{emptyText}</div>}
+
+				{/* The one sentence that says what the marks are for. It names the mark
+				    the reader is actually looking at, so it follows the treatment. */}
+				{phase.k === 'ready' && mode === 'doc' && (inTextCount > 0 || drawer.length > 0) && (
+					<p className="lys-anno-hint">
+						{inTextCount > 0 && `${ANNO_HINT_MARK[annoStyle]}을 누르면 Genius 해설이 한국어로 열립니다 · 해설 ${inTextCount}개`}
+						{drawer.length > 0 && (
+							<button
+								type="button"
+								className="lys-anno-hint-jump"
+								onClick={() => drawerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+							>
+								{`가사에 못 붙은 해설 ${drawer.length}개 ↓`}
+							</button>
+						)}
+					</p>
+				)}
 
 				{phase.k === 'ready' && n > 0 && mode === 'doc' && (
 					<div className={`lys-doc lys-anno-${annoStyle}`}>
@@ -444,8 +512,13 @@ export function LyricsSheetBody({ state, meta }: { state: LyricsSheetState, meta
 										})}
 									>
 										{mark && <span className="lys-brk" aria-hidden="true" />}
-										<span className="lys-orig serif">{s.text}</span>
-										{mark && mark.pos !== 'middle' && mark.pos !== 'start' && <MarkTail mark={mark} />}
+										{/* The tail rides INSIDE the original line: `.lys-orig` is a
+										    block, so a sibling after it opened a line of its own
+										    between the lyric and its translation. */}
+										<span className="lys-orig serif">
+											{s.text}
+											{mark && mark.pos !== 'middle' && mark.pos !== 'start' && <MarkTail mark={mark} />}
+										</span>
 										{showKo && s.text_ko && s.text_ko !== s.text && <span className="lys-ko">{s.text_ko}</span>}
 									</p>
 									{/* The note opens inline under its own range: this column is 320–560px,
@@ -460,8 +533,8 @@ export function LyricsSheetBody({ state, meta }: { state: LyricsSheetState, meta
 				)}
 
 				{phase.k === 'ready' && mode === 'doc' && drawer.length > 0 && (
-					<div className="lys-anno-drawer">
-						<h3 className="mono">가사에 못 붙은 주석</h3>
+					<div className="lys-anno-drawer" ref={drawerRef}>
+						<h3 className="mono">가사에 못 붙은 해설</h3>
 						<p className="lys-anno-why">
 							Genius 원문에는 있지만 우리 가사에는 없는 구절입니다. 가사가 다시 매칭되면
 							저절로 본문에 붙습니다.
@@ -475,7 +548,11 @@ export function LyricsSheetBody({ state, meta }: { state: LyricsSheetState, meta
 										onClick={() => setOpenIds(openIds.includes(a.id) ? [] : [a.id])}
 									>
 										<span className="mk mono">{drawerMark(idx)}</span>
-										<span className="tx">{a.fragment}</span>
+										<span className="tx">
+											{a.fragment}
+											{/* Opened, the full note sits right below — the preview would repeat it. */}
+											{!openIds.includes(a.id) && <span className="tx-ko">{annoKoPreview(a)}</span>}
+										</span>
 									</button>
 									{openIds.includes(a.id) && <AnnoNote anno={a} paired={false} />}
 								</li>

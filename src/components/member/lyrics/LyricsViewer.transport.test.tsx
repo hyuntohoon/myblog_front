@@ -692,7 +692,7 @@ describe('the viewer reads the same document lifecycle as the sheet (G3/G4)', ()
       }
       mocks.getLyrics.mockResolvedValueOnce(pending).mockResolvedValue(done)
       await open()
-      expect(screen.getByText('요청됨 · 확인')).toBeTruthy()
+      expect(screen.getByText('번역 대기 중 · 확인')).toBeTruthy()
       expect(screen.queryByText('first line (ko)')).toBeNull()
 
       await act(async () => {
@@ -727,7 +727,7 @@ describe('the viewer reads the same document lifecycle as the sheet (G3/G4)', ()
 
       const region = document.querySelector('.lyv-tr-cluster')
       expect(region?.getAttribute('aria-live')).toBe('polite')
-      expect(region?.textContent).toContain('요청됨')
+      expect(region?.textContent).toContain('번역 대기 중')
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(TRANSLATION_RETRY_MS[0] + 100)

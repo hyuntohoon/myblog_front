@@ -5,7 +5,7 @@
 //   * a long span is filled at its ends only, not straight through
 import { describe, expect, it } from 'vitest'
 import type { LyricsAnnotation } from './lyrics.api'
-import { buildLineMarks, drawerItems, drawerMark, lineClasses, LONG_SPAN, spanLength } from './annotations'
+import { autoAnnoStyle, buildLineMarks, drawerItems, drawerMark, lineClasses, LONG_SPAN, readStoredAnnoStyle, spanLength, writeAnnoStyle } from './annotations'
 
 function anno(partial: Partial<LyricsAnnotation> & { id: number }): LyricsAnnotation {
   return {
@@ -156,5 +156,30 @@ describe('drawer', () => {
 
   it('marks entries ㄱ ㄴ ㄷ', () => {
     expect([0, 1, 2].map(drawerMark)).toEqual(['ㄱ', 'ㄴ', 'ㄷ'])
+  })
+})
+
+describe('autoAnnoStyle — the default for a reader who never picked one', () => {
+  // The design record called M0 density-blind: at 65% marked the yellow becomes
+  // the ground. Helmet (Steve Lacy) is 20 of 31 lines.
+  it('keeps the fill on a sparse track and switches to the rule on a dense one', () => {
+    expect(autoAnnoStyle(10, 31)).toBe('m0') // 32%, near the album average
+    expect(autoAnnoStyle(20, 31)).toBe('m1') // Helmet, 65%
+  })
+
+  it('treats exactly 40% as sparse and an empty lyric as sparse', () => {
+    expect(autoAnnoStyle(4, 10)).toBe('m0')
+    expect(autoAnnoStyle(0, 0)).toBe('m0')
+  })
+})
+
+describe('the stored treatment', () => {
+  it('is null until the reader chooses, and null again after 자동', () => {
+    localStorage.removeItem('lys:anno-style')
+    expect(readStoredAnnoStyle()).toBeNull()
+    writeAnnoStyle('m2')
+    expect(readStoredAnnoStyle()).toBe('m2')
+    writeAnnoStyle(null)
+    expect(readStoredAnnoStyle()).toBeNull()
   })
 })
