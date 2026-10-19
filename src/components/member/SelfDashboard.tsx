@@ -58,7 +58,7 @@ function toMemberReview(r: PublicMemberReview): MemberReview {
 		// 리뷰 on a member's own rating in the overview's 최근 평가 card.
 		type: '평가',
 		album: r.album_title,
-		artist: '',
+		artist: r.artist_name ?? '',
 		genre: '',
 		year: null,
 		rating: Number(r.rating),
