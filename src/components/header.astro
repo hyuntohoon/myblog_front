@@ -456,6 +456,24 @@ const navLinks = visibleLinks(HEADER_NAV, buildReviewCards(await getCollection('
   }
 
   /* ── responsive ── */
+  /* Tablet / narrow desktop: the full link row (6 once 평론 exist) needs ~1150px
+     beside the centered wordmark — below that it wrapped and ran under it (audit
+     #16 measured 5 links breaking under ~980px, 6 under ~1150px). The masthead nav
+     still shows at the top; once scrolled, the bar offers the drawer instead. */
+  @media (min-width: 768px) and (max-width: 1199px) {
+    .hdr-bar-nav { display: none; }
+    .hdr-bar.is-scrolled .hdr-menu-btn {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      margin-left: -10px;
+      background: none;
+      border: none;
+      color: var(--color-subtle);
+      cursor: pointer;
+    }
+  }
   @media (max-width: 767px) {
     .hdr-nav-center { gap: 20px; font-size: var(--text-2xs); flex-wrap: wrap; row-gap: 6px; }
     /* Grow nav-link tap targets (was 3px → ~22px tall) without moving the baseline. */
