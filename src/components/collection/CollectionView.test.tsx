@@ -6,15 +6,22 @@
 // every rating byline. This shelf was the one surface that named a member and
 // then dead-ended on them.
 import type { PublicCollection } from '@lib/buckets'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CollectionView from './CollectionView'
 
 const buckets = vi.hoisted(() => ({ listPublicBuckets: vi.fn() }))
+const mocks = vi.hoisted(() => ({ openAlbum: vi.fn(), loggedIn: false }))
 
 vi.mock('@lib/buckets', async importOriginal => ({
 	...await importOriginal<typeof import('@lib/buckets')>(),
 	listPublicBuckets: buckets.listPublicBuckets,
+}))
+// jsdom serves from localhost, where isLoggedIn() is always true — pin it.
+vi.mock('@lib/auth', () => ({ isLoggedIn: () => mocks.loggedIn, goLogin: vi.fn() }))
+vi.mock('@lib/entityLinks', async () => ({
+	...await vi.importActual<typeof import('@lib/entityLinks')>('@lib/entityLinks'),
+	openAlbum: mocks.openAlbum,
 }))
 
 function collection(owner: PublicCollection['owner']): PublicCollection {
@@ -37,6 +44,7 @@ function collection(owner: PublicCollection['owner']): PublicCollection {
 
 beforeEach(() => {
 	buckets.listPublicBuckets.mockReset()
+	mocks.loggedIn = false
 })
 
 afterEach(() => {
@@ -81,5 +89,43 @@ describe('/collection attribution', () => {
 			expect(screen.getByText('9월의 발견')).toBeTruthy()
 		})
 		expect(document.body.innerHTML).not.toContain('/members/?u=')
+	})
+})
+
+// Front UI/UX audit S1 — a shelf album is the canonical AlbumCard through
+// CatalogAlbumCardAdapter: the same open + ＋ as on /search and /artist.
+describe('/collection album cards', () => {
+	const OWNER = { handle: 'user-a4f83dcc', displayName: 'Smoke User' }
+
+	it('opens the album with the payload the old tile sent', async () => {
+		buckets.listPublicBuckets.mockResolvedValue([collection(OWNER)])
+		render(<CollectionView />)
+
+		fireEvent.click(await screen.findByRole('button', { name: 'Kind of Blue — Miles Davis 앨범 보기' }))
+		expect(mocks.openAlbum).toHaveBeenCalledWith({ albumId: 'album-1', title: 'Kind of Blue', artist: 'Miles Davis', cover: null, year: 1959 })
+	})
+
+	it('renders the canonical card with ＋ and the artist · year byline', async () => {
+		buckets.listPublicBuckets.mockResolvedValue([collection(OWNER)])
+		render(<CollectionView />)
+
+		const article = (await screen.findByRole('button', { name: 'Kind of Blue — Miles Davis 앨범 보기' })).closest('article') as HTMLElement
+		expect(article.className).toContain('album-card--grid')
+		expect(screen.getByRole('heading', { level: 3, name: 'Kind of Blue' })).toBeTruthy()
+		expect(article.querySelector('.album-card__byline')?.textContent).toBe('Miles Davis · 1959')
+		expect(screen.getByRole('button', { name: 'Kind of Blue 버킷에 담기' })).toBeTruthy()
+	})
+
+	it('drags only when logged in', async () => {
+		buckets.listPublicBuckets.mockResolvedValue([collection(OWNER)])
+		const { unmount } = render(<CollectionView />)
+		const anon = (await screen.findByRole('button', { name: 'Kind of Blue — Miles Davis 앨범 보기' })).closest('article') as HTMLElement
+		expect(anon.getAttribute('draggable')).toBeNull()
+		unmount()
+
+		mocks.loggedIn = true
+		render(<CollectionView />)
+		const member = (await screen.findByRole('button', { name: 'Kind of Blue — Miles Davis 앨범 보기' })).closest('article') as HTMLElement
+		expect(member.getAttribute('draggable')).toBe('true')
 	})
 })
