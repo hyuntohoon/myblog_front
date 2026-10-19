@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { deleteBucketItem, reorderItems } from '@lib/buckets'
 import { fetchAlbumDetail, getCachedAlbumDetail } from '@lib/albumDetail'
 import { useClockEstimate } from '@lib/clockEstimate'
-import { INITIAL_DOCK, useDockTear } from '@lib/dockTear'
+import { dockDragClass, INITIAL_DOCK, useDockTear } from '@lib/dockTear'
 import { openAlbum } from '@lib/entityEvents'
 import { playbackQueue, withoutQueueItems, withReorderedQueueItems } from '@lib/playback/queue'
 import { nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
@@ -638,7 +638,7 @@ function DesktopPlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { on
       <div ref={slotRef} className="pbp-dock-slot" aria-hidden="true">
         <div className={`pbp-dock-hint${dock.dragging && !dock.docked ? ' is-shown' : ''}${dock.expect ? ' is-expect' : ''}`}>여기에 도킹</div>
       </div>
-      <section id={GLOBAL_PLAYBACK_PANEL_ID} ref={panelRef} className={`pbp-panel${dock.docked ? ' is-docked' : ' is-float'}`} role="region" aria-label="재생 대기열 플레이어">
+      <section id={GLOBAL_PLAYBACK_PANEL_ID} ref={panelRef} className={`pbp-panel${dock.docked ? ' is-docked' : ' is-float'}${dockDragClass(dock)}`} role="region" aria-label="재생 대기열 플레이어">
         <div className="pbp-head" {...handlers}>
           <span className="pbp-head-title">재생 대기열</span>
           <span className="pbp-head-actions">

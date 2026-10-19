@@ -67,14 +67,26 @@ beforeEach(() => {
 })
 
 describe('memoWindow surface geometry', () => {
-	it('mounts at the centred default rect when the session has no stored geometry', () => {
+	it('mounts with research docked inside the centred 1320px default footprint', () => {
 		const { container } = renderMemo()
 		const modal = container.querySelector('.memo-modal-lg') as HTMLElement
 		expect(modal).toHaveClass('is-surface-mounted')
-		expect(modal.style.left).toBe('230px')
+		expect(screen.getByRole('button', { name: '테스트 분리' })).toBeInTheDocument()
+		// memo content 880 + dock 440 = the 1320 outer width, centred in 1600
+		expect(modal.style.left).toBe('140px')
 		expect(modal.style.top).toBe('70px')
-		expect(modal.style.width).toBe('1140px')
+		expect(modal.style.width).toBe('1320px')
+		expect(modal.style.getPropertyValue('--lys-dock-w')).toBe('440px')
 		expect(modal.style.height).toBe('860px')
+		expect(screen.getByRole('textbox', { name: '메모' })).toHaveFocus()
+	})
+
+	it('pulls a stored position back inside the viewport when the dock widens the window', () => {
+		sessionStorage.setItem('lf_memo_geo', JSON.stringify({ left: 700, top: 70, width: 880, height: 860 }))
+		const { container } = renderMemo()
+		const modal = container.querySelector('.memo-modal-lg') as HTMLElement
+		expect(modal.style.width).toBe('1320px')
+		expect(modal.style.left).toBe('272px')
 	})
 
 	it('moves from its header and clamps the modal to the viewport margin', () => {
@@ -94,23 +106,23 @@ describe('memoWindow surface geometry', () => {
 		const handle = container.querySelector('[data-resize-edge="se"]') as HTMLElement
 		fireEvent.pointerDown(handle, { button: 0, pointerId: 3, clientX: 0, clientY: 0 })
 		fireEvent.pointerMove(handle, { pointerId: 3, clientX: 100, clientY: 50 })
-		expect(modal.style.width).toBe('1240px')
+		// content 880 → 980 while the docked column stays frozen at 440
+		expect(modal.style.width).toBe('1420px')
 		expect(modal.style.height).toBe('910px')
 		fireEvent.pointerUp(handle, { pointerId: 3, clientX: 100, clientY: 50 })
-		expect(JSON.parse(sessionStorage.getItem('lf_memo_geo')!)).toMatchObject({ width: 1240, height: 910 })
+		expect(JSON.parse(sessionStorage.getItem('lf_memo_geo')!)).toMatchObject({ width: 980, height: 910 })
 	})
 
 	it('shrinks the outer modal by the reserved dock width when the panel detaches', () => {
 		const { container } = renderMemo()
 		const modal = container.querySelector('.memo-modal-lg') as HTMLElement
-		fireEvent.click(screen.getByRole('button', { name: '리서치 노트 열기' }))
 		const dockedWidth = Number.parseFloat(modal.style.width)
-		expect(dockedWidth).toBeCloseTo(1584.6)
+		expect(dockedWidth).toBe(1320)
 
 		fireEvent.click(screen.getByRole('button', { name: '테스트 분리' }))
 		const floatingWidth = Number.parseFloat(modal.style.width)
-		expect(floatingWidth).toBe(1140)
-		expect(dockedWidth - floatingWidth).toBeCloseTo(444.6)
+		expect(floatingWidth).toBe(880)
+		expect(dockedWidth - floatingWidth).toBe(440)
 	})
 
 	it('keeps the original centred, handle-free modal path on mobile', async () => {
@@ -124,5 +136,8 @@ describe('memoWindow surface geometry', () => {
 		expect(modal.style.width).toBe('')
 		expect(modal.style.height).toBe('')
 		expect(container.querySelector('[data-resize-edge]')).not.toBeInTheDocument()
+		// the phone panel is a modal over the memo, so it waits for an explicit open
+		expect(screen.queryByRole('button', { name: '테스트 분리' })).not.toBeInTheDocument()
+		expect(screen.getByRole('button', { name: '리서치 노트 열기' })).toBeInTheDocument()
 	})
 })

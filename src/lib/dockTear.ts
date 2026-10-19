@@ -2,8 +2,10 @@ import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { readStoredRect, writeStoredRect } from './surfaceGeometry'
 
-export const DOCK_TEAR_PX = 70
-export const DOCK_TEAR_RESIST = 0.35
+export const DOCK_TEAR_PX = 40
+export const DOCK_TEAR_RESIST = 0.5
+/** Smallest distance kept between the grab point and the floating panel's edges. */
+export const DOCK_TEAR_GRAB_INSET = 24
 export const DOCK_TEAR_TILT_MAX = 2
 
 export interface DockPoint { left: number, top: number }
@@ -44,6 +46,19 @@ interface DragState {
   lastX: number
   lastT: number
   tilt: number
+}
+
+/**
+ * Drag-state classes derived from host-owned state. They used to be added with
+ * classList, but the hosts flip `is-docked`/`is-float` in their className at the
+ * tear, React rewrote the attribute and dropped them mid-drag — re-enabling the
+ * top/left glide so the panel trailed the pointer and settled wherever the
+ * transition happened to be on release.
+ */
+export function dockDragClass(dock: DockState): string {
+  if (!dock.dragging)
+    return ''
+  return dock.docked ? ' is-grabbed is-lifted is-straining' : ' is-grabbed is-lifted'
 }
 
 export interface DockTearHandlers {
@@ -136,14 +151,6 @@ export function useDockTear<T extends HTMLElement>({
     }
   }, [dock.docked, hostRef, placeResting])
 
-  const setClass = useCallback((add: string[], remove: string[]) => {
-    const el = panelRef.current
-    if (!el)
-      return
-    el.classList.add(...add)
-    el.classList.remove(...remove)
-  }, [panelRef])
-
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
     if (e.button !== 0 || dragRef.current)
       return
@@ -168,7 +175,6 @@ export function useDockTear<T extends HTMLElement>({
       lastT: performance.now(),
       tilt: 0,
     }
-    setClass(['is-grabbed', 'is-lifted', ...(docked ? ['is-straining'] : [])], [])
     patch({ dragging: true })
   }
 
@@ -186,11 +192,16 @@ export function useDockTear<T extends HTMLElement>({
       }
       d.torn = true
       d.wasOutsideSlot = false
-      setClass([], ['is-straining'])
       patch({ docked: false })
+      // Continue from where the resisting panel is now, keeping the grab point
+      // under the pointer — no jump to a fixed offset at the tear. Only the
+      // float size may differ, so clamp the offset inside the new width/height.
       const s = floatSize()
-      d.sx = e.clientX - s.width * 0.4
-      d.sy = e.clientY - 24
+      const left = d.sx + dx * DOCK_TEAR_RESIST
+      const top = d.sy + dy * DOCK_TEAR_RESIST
+      const clampOffset = (v: number, size: number) => Math.max(DOCK_TEAR_GRAB_INSET, Math.min(size - DOCK_TEAR_GRAB_INSET, v))
+      d.sx = e.clientX - clampOffset(e.clientX - left, s.width)
+      d.sy = e.clientY - clampOffset(e.clientY - top, s.height)
       d.p0x = e.clientX
       d.p0y = e.clientY
       apply({ left: d.sx, top: d.sy, ...s })
@@ -224,7 +235,6 @@ export function useDockTear<T extends HTMLElement>({
     const wasTorn = d.torn
     const overSlot = wasTorn && d.wasOutsideSlot && inSlot(e.clientX, e.clientY)
     dragRef.current = null
-    setClass([], ['is-grabbed', 'is-lifted', 'is-straining'])
     if (panelRef.current)
       panelRef.current.style.transform = ''
 

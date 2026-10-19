@@ -327,10 +327,12 @@
 }
 .memo-write-link a:hover { color: var(--color-text); }
 
+.memo-main-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; white-space: nowrap; }
+.memo-main-sub { font-size: 12.5px; color: var(--color-faded); }
 .memo-context-open {
-  display: block;
-  margin: 18px 0 0 auto;
-  padding: 7px 12px;
+  align-self: center;
+  margin-left: auto;
+  padding: 5px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: none;
@@ -341,24 +343,6 @@
   transition: color .15s, border-color .15s;
 }
 .memo-context-open:hover { color: var(--color-accent); border-color: var(--color-accent); }
-
-/* ARCH-bucket-album-modal-unification Step 1 — 리서치 노트 section: collapsed by
-   default, expanded inline rather than a separate rsh-modal. */
-.memo-research { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--color-border-soft); }
-.memo-research-toggle {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: inherit;
-}
-.memo-research-chevron { transition: transform .18s; color: var(--color-faded); }
-.memo-research-chevron.is-open { transform: rotate(180deg); }
-.memo-research .rsh { margin-top: 10px; }
 
 /* narrow — stack album info above the memo; compact the identity column so the
    memo textarea (the point) stays reachable without scrolling past everything */
@@ -376,6 +360,7 @@
   .memo-album-card .album-card__byline { font-size: 20px; }
   .memo-album-card .album-card__secondary { grid-column: 1 / -1; }
   .memo-tracks { max-height: 120px; }
+  .memo-main-sub { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .memo-grow, .memo-grow-knob, .memo-grow-ico, .memo-modal { transition: none; }
@@ -581,6 +566,21 @@
 	will-change: top, left, width, height;
 }
 .memo-modal-lg.is-surface-mounted:is(.is-moving, .is-resizing) { transition: none; }
+/* The window itself never scrolls: the album column scrolls inside itself and
+   the memo fills what is left, so the foot controls stay on screen. */
+.memo-modal-lg.is-surface-mounted { display: flex; padding: 0; align-items: stretch; }
+.memo-modal-lg.is-surface-mounted .memo-dock-main {
+	display: flex;
+	flex-direction: column;
+	position: relative;
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+	padding: 26px 34px 28px;
+}
+.memo-modal-lg.is-surface-mounted .memo-lg-grid { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.memo-modal-lg.is-surface-mounted .memo-info { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.memo-modal-lg.is-surface-mounted .memo-main { min-height: 0; overflow-y: auto; }
 .memo-modal-lg.is-surface-mounted .memo-lg-bar { cursor: grab; touch-action: none; }
 .memo-modal-lg.is-surface-mounted.is-moving .memo-lg-bar { cursor: grabbing; }
 
