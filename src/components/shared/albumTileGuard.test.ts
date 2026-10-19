@@ -23,7 +23,6 @@ interface Counts { usage?: number, placeholder?: number, definition?: number }
 /** Measured on the S1/S2 ArtistHub branch (main b2e018e had ArtistHub usage 2, home/ui · AlbumCard · TrackCard placeholder 1 each). */
 const BASELINE: Record<string, Counts> = {
 	'src/components/album/AlbumDetailView.tsx': { usage: 3 },
-	'src/components/canon/CanonPage.tsx': { usage: 2 },
 	'src/components/home/EditorialHome.tsx': { usage: 4 },
 	'src/components/home/TodayPickHistory.tsx': { usage: 1 },
 	'src/components/home/TodaySongBuckit.tsx': { usage: 1 },
@@ -106,6 +105,15 @@ describe('album tile / cover ratchet (front audit S1 + S2)', () => {
 		const text = readFileSync(join(root, 'src/components/collection/CollectionView.tsx'), 'utf8')
 		expect(text).toMatch(/<CatalogAlbumCardAdapter\b/)
 		expect(text).not.toMatch(/<AlbumArt\b/)
+	})
+
+	// Not a ratchet to lower: a canon card is a published review, which RFC
+	// ARCH-album-card-contract §12 keeps on its document renderer. S1 is met here
+	// by S2 (the cover goes through CoverImage), as for ArtistHub's review cards.
+	it('canon cards stay document cards with the shared cover', () => {
+		const text = readFileSync(join(root, 'src/components/canon/CanonPage.tsx'), 'utf8')
+		expect(text).toMatch(/<CoverImage\b/)
+		expect(text).not.toMatch(/<AlbumCard\b|AlbumCardAdapter\b/)
 	})
 
 	it('counts a bespoke tile built from a legacy cover', () => {

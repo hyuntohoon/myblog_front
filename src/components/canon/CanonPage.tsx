@@ -10,10 +10,16 @@
  * — the year-end pick is a hand-written editorial later, not auto-curation.
  */
 import type { ReviewCard } from '@lib/reviews'
-import { Cover, SectionTitle, Stars } from '@components/home/ui'
+import { SectionTitle, Stars } from '@components/home/ui'
+import { CoverImage } from '@components/shared/CoverImage'
 import { openAlbum, reviewHref } from '@lib/entityLinks'
 
 const THRESHOLD = 4.0
+// A canon card is a published review (a document), not an album tile, so it
+// stays off AlbumCard (ARCH-album-card-contract §12) and only its cover uses
+// the shared primitive (front audit S2), like ArtistHub's review cards.
+const SQUARE_COVER = { width: '100%', aspectRatio: '1 / 1', borderRadius: 4 } as const
+const SQUARE_COVER_PH = { fontSize: 'clamp(20px, 4vw, 40px)' } as const
 
 function CanonCard({ item }: { item: ReviewCard }) {
 	const albumId = item.albumIds[0]
@@ -30,12 +36,12 @@ function CanonCard({ item }: { item: ReviewCard }) {
 						aria-label={`${item.album} 앨범 정보 보기`}
 						onClick={() => openAlbum({ albumId, title: item.album, artist: item.artist || undefined, cover: item.cover, year: item.year })}
 					>
-						<Cover label={item.album} src={item.cover} square radius={4} />
+						<CoverImage src={item.cover} label={item.album} style={SQUARE_COVER} placeholderStyle={SQUARE_COVER_PH} />
 					</button>
 				) :
 				(
 					<div className="canon-cover">
-						<Cover label={item.album} src={item.cover} square radius={4} />
+						<CoverImage src={item.cover} label={item.album} style={SQUARE_COVER} placeholderStyle={SQUARE_COVER_PH} />
 					</div>
 				)}
 			<a href={reviewHref(item.slug)} style={{ display: 'block', marginTop: 13, minWidth: 0, textDecoration: 'none', color: 'inherit' }}>
