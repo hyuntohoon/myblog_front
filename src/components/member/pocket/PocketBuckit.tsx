@@ -14,7 +14,7 @@ import { LyricsViewer } from '../lyrics/LyricsViewer'
 import { YouTubeSurfaces } from '../playback/YouTubeSurfaces'
 import { GlobalPlaybackBar } from '../playback/GlobalPlaybackBar'
 import { PlaybackPanel } from '../playback/PlaybackPanel'
-import { openPlaybackLyrics } from '../playback/playbackEntryActions'
+import { openPlaybackLyrics, reopenPlaybackLyrics } from '../playback/playbackEntryActions'
 import { PocketBuckitProvider, usePocket } from './PocketBuckitProvider'
 import { PocketDesignSettings } from './PocketDesignSettings'
 import { PocketTray } from './PocketTray'
@@ -46,7 +46,8 @@ function PocketBuckitInner() {
   // — which is all of them (`SelfDashboard` wires its own dashboard-internal
   // pair the same way). `LyricsSheet` self-supplies its CSS since Step 4, which
   // is what makes mounting it outside the dashboard legal at all.
-  const [fullLyrics, setFullLyrics] = useState<{ trackId: string, meta: LyricsSheetMeta } | null>(null)
+  // `fromViewer`: opened by the viewer's 전체 가사, so closing it returns there.
+  const [fullLyrics, setFullLyrics] = useState<{ trackId: string, meta: LyricsSheetMeta, fromViewer: boolean } | null>(null)
   useEffect(() => {
     const onOpen = (e: Event) => setLiveLyrics((e as CustomEvent<OpenLiveLyricsDetail>).detail)
     window.addEventListener(ENT_OPEN_LIVE_LYRICS, onOpen)
@@ -139,7 +140,7 @@ function PocketBuckitInner() {
 	canRefresh
 	onOpenFullLyrics={(trackId, meta) => {
           setLiveLyrics(null)
-          setFullLyrics({ trackId, meta: { track: meta.track, artist: meta.artist, cover: meta.cover } })
+          setFullLyrics({ trackId, meta: { track: meta.track, artist: meta.artist, cover: meta.cover }, fromViewer: true })
         }}
 	onClose={() => setLiveLyrics(null)}
         />
@@ -149,7 +150,12 @@ function PocketBuckitInner() {
 	key={fullLyrics.trackId}
 	spotifyTrackId={fullLyrics.trackId}
 	meta={fullLyrics.meta}
-	onClose={() => setFullLyrics(null)}
+	onClose={() => {
+          const back = fullLyrics.fromViewer
+          setFullLyrics(null)
+          if (back)
+            reopenPlaybackLyrics()
+        }}
         />
       )}
     </div>

@@ -644,7 +644,8 @@ describe('the handoff to the full reading sheet (G5)', () => {
     await screen.findByText('아직 연결된 가사가 없어요')
     await settle()
 
-    expect(screen.getByText('전체 가사')).toBeTruthy()
+    // The handoff names what is waiting on the sheet (2026-10-19 UX pass).
+    expect(screen.getByRole('button', { name: '전체 가사, 해설 1개' })).toBeTruthy()
   })
 
   it('does not offer it when there is nothing at all to read', async () => {
@@ -786,5 +787,45 @@ describe('provider-safe live lyrics refresh', () => {
       finish({ state: 'paused', trackId: 'old-spotify-song', progressMs: 0, readAtMs: 0, durationMs: 180_000, artists: [] })
     })
     expect(mocks.getLyrics).not.toHaveBeenCalledWith('old-spotify-song')
+  })
+})
+
+describe('genius commentary in the listening screen (owner decision 2026-10-19)', () => {
+  const ANNOTATED = {
+    ...LYRICS,
+    annotations: [
+      { id: 7, ordinal: 1, status: 'unique', start_i: 1, end_i: 1, occurrences: 1, fragment: 'second line', body_ko: '둘째 줄의 해설', translation_status: 'done', votes_total: 12, disputed: false, genius_url: 'https://genius.test/x' },
+    ],
+  } as unknown as LyricsResponse
+
+  it('marks the annotated line and offers its commentary once that line is focused', async () => {
+    mocks.getLyrics.mockResolvedValue(ANNOTATED)
+    await open()
+
+    // Marked, but the focused line (first) has nothing — no chip yet.
+    expect(screen.getByText('second line').closest('.lyv-line')?.className).toContain('has-anno')
+    expect(screen.getByText('first line').closest('.lyv-line')?.className).not.toContain('has-anno')
+    expect(screen.queryByText('이 줄 해설 보기')).toBeNull()
+
+    fireEvent.click(screen.getByText('second line'))
+    fireEvent.click(await screen.findByText('이 줄 해설 보기'))
+
+    expect(screen.getByRole('dialog', { name: 'Genius 해설' })).toBeTruthy()
+    expect(screen.getByText('둘째 줄의 해설')).toBeTruthy()
+    expect(screen.getByText('+12표')).toBeTruthy()
+
+    fireEvent.click(screen.getByLabelText('해설 닫기'))
+    expect(screen.queryByText('둘째 줄의 해설')).toBeNull()
+  })
+
+  it('keeps the open commentary when the song moves on under it', async () => {
+    mocks.getLyrics.mockResolvedValue(ANNOTATED)
+    await open()
+    fireEvent.click(screen.getByText('second line'))
+    fireEvent.click(await screen.findByText('이 줄 해설 보기'))
+
+    fireEvent.click(screen.getByText('third line'))
+    await waitFor(() => expect(focusedText()).toBe('third line'))
+    expect(screen.getByText('둘째 줄의 해설')).toBeTruthy()
   })
 })

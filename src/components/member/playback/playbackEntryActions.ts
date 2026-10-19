@@ -71,6 +71,18 @@ export const openPlaybackLyrics: PlaybackEntryHandler = (row, state) => {
   })()
 }
 
+/**
+ * Back to the listening screen after reading the 전체 가사 sheet that was opened
+ * from it (lyrics UX pass, 2026-10-19). The handoff used to be one-way: closing
+ * the sheet left the member on the page with no viewer. This is the ordinary 가사
+ * press, so it reads where playback is NOW — the song may have moved on while
+ * the member read — instead of reviving the position the viewer had when it
+ * closed.
+ */
+export function reopenPlaybackLyrics(): void {
+  openPlaybackLyrics(playbackSession.currentRow(), playbackSession.getSnapshot())
+}
+
 /** The entry as it was before finding A5: the session's stored identity. */
 async function openFromSession(...[row, state]: Parameters<PlaybackEntryHandler>): Promise<void> {
   const started = playbackSession.getSnapshot()
