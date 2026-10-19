@@ -67,16 +67,16 @@ beforeEach(() => {
 })
 
 describe('memoWindow surface geometry', () => {
-	it('mounts with research docked inside the centred 1320px default footprint', () => {
+	it('mounts with research docked inside the centred 1120px default footprint', () => {
 		const { container } = renderMemo()
 		const modal = container.querySelector('.memo-modal-lg') as HTMLElement
 		expect(modal).toHaveClass('is-surface-mounted')
 		expect(screen.getByRole('button', { name: '테스트 분리' })).toBeInTheDocument()
-		// memo content 880 + dock 440 = the 1320 outer width, centred in 1600
-		expect(modal.style.left).toBe('140px')
+		// memo content ≈747 + dock ≈373 (½ of content) = the 1120 outer width, centred in 1600
+		expect(modal.style.left).toBe('240px')
 		expect(modal.style.top).toBe('70px')
-		expect(modal.style.width).toBe('1320px')
-		expect(modal.style.getPropertyValue('--lys-dock-w')).toBe('440px')
+		expect(Number.parseFloat(modal.style.width)).toBeCloseTo(1120, 5)
+		expect(Number.parseFloat(modal.style.getPropertyValue('--lys-dock-w'))).toBeCloseTo(1120 / 3, 5)
 		expect(modal.style.height).toBe('860px')
 		expect(screen.getByRole('textbox', { name: '메모' })).toHaveFocus()
 	})
@@ -106,23 +106,25 @@ describe('memoWindow surface geometry', () => {
 		const handle = container.querySelector('[data-resize-edge="se"]') as HTMLElement
 		fireEvent.pointerDown(handle, { button: 0, pointerId: 3, clientX: 0, clientY: 0 })
 		fireEvent.pointerMove(handle, { pointerId: 3, clientX: 100, clientY: 50 })
-		// content 880 → 980 while the docked column stays frozen at 440
-		expect(modal.style.width).toBe('1420px')
+		// content ≈747 → ≈847 while the docked column stays frozen at ≈373
+		expect(Number.parseFloat(modal.style.width)).toBeCloseTo(1220, 5)
 		expect(modal.style.height).toBe('910px')
 		fireEvent.pointerUp(handle, { pointerId: 3, clientX: 100, clientY: 50 })
-		expect(JSON.parse(sessionStorage.getItem('lf_memo_geo')!)).toMatchObject({ width: 980, height: 910 })
+		const stored = JSON.parse(sessionStorage.getItem('lf_memo_geo')!)
+		expect(stored.width).toBeCloseTo(2240 / 3 + 100, 5)
+		expect(stored.height).toBe(910)
 	})
 
 	it('shrinks the outer modal by the reserved dock width when the panel detaches', () => {
 		const { container } = renderMemo()
 		const modal = container.querySelector('.memo-modal-lg') as HTMLElement
 		const dockedWidth = Number.parseFloat(modal.style.width)
-		expect(dockedWidth).toBe(1320)
+		expect(dockedWidth).toBeCloseTo(1120, 5)
 
 		fireEvent.click(screen.getByRole('button', { name: '테스트 분리' }))
 		const floatingWidth = Number.parseFloat(modal.style.width)
-		expect(floatingWidth).toBe(880)
-		expect(dockedWidth - floatingWidth).toBe(440)
+		expect(floatingWidth).toBeCloseTo(2240 / 3, 5)
+		expect(dockedWidth - floatingWidth).toBeCloseTo(1120 / 3, 5)
 	})
 
 	it('keeps the original centred, handle-free modal path on mobile', async () => {

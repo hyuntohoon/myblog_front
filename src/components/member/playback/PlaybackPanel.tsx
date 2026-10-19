@@ -578,7 +578,6 @@ function DesktopPlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { on
   const panelRef = useRef<HTMLElement>(null)
   const [dock, setDock] = useState(INITIAL_DOCK)
   const patchDock = useCallback((patch: Partial<typeof INITIAL_DOCK>) => setDock(value => ({ ...value, ...patch })), [])
-  const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   useDismissable(true, onClose, panelRef, { trapFocus: false, autoFocus: false })
 
   const dockRect = useCallback(() => {
@@ -615,7 +614,6 @@ function DesktopPlaybackPanel({ onClose, ...entries }: PlaybackEntryProps & { on
     restRect,
     clampPos,
     inSlot,
-    reducedMotion: reduced,
   })
 
   // Same `astro:after-swap` restore as `GlobalPlaybackBar`'s `--global-player-h` —

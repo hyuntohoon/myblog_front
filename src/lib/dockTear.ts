@@ -6,7 +6,6 @@ export const DOCK_TEAR_PX = 40
 export const DOCK_TEAR_RESIST = 0.5
 /** Smallest distance kept between the grab point and the floating panel's edges. */
 export const DOCK_TEAR_GRAB_INSET = 24
-export const DOCK_TEAR_TILT_MAX = 2
 
 export interface DockPoint { left: number, top: number }
 export interface DockSize { width: number, height: number }
@@ -32,7 +31,6 @@ interface DockTearOptions<T extends HTMLElement> {
   restRect: () => DockRect
   clampPos: (left: number, top: number, width: number, height: number) => DockPoint
   inSlot: (x: number, y: number) => boolean
-  reducedMotion: boolean
   geometryKey?: string
 }
 
@@ -43,9 +41,6 @@ interface DragState {
   sy: number
   torn: boolean
   wasOutsideSlot: boolean
-  lastX: number
-  lastT: number
-  tilt: number
 }
 
 /**
@@ -69,7 +64,8 @@ export interface DockTearHandlers {
 }
 
 /**
- * Shared grab → resist → tear → glide → dock state machine.
+ * Shared grab → resist → tear → glide → dock state machine. No tilt while
+ * dragging: the owner found the velocity wobble excessive (2026-10-19).
  *
  * Hosts supply only geometry because the lyrics seam belongs to a memo modal while
  * the playback seam belongs to the page edge. Keeping those measurements outside
@@ -85,7 +81,6 @@ export function useDockTear<T extends HTMLElement>({
   restRect,
   clampPos,
   inSlot,
-  reducedMotion,
   geometryKey,
 }: DockTearOptions<T>): { handlers: DockTearHandlers, togglePlacement: () => void } {
   const { docked, freePos } = dock
@@ -171,9 +166,6 @@ export function useDockTear<T extends HTMLElement>({
       sy: el.offsetTop,
       torn: !docked,
       wasOutsideSlot: false,
-      lastX: e.clientX,
-      lastT: performance.now(),
-      tilt: 0,
     }
     patch({ dragging: true })
   }
@@ -208,16 +200,6 @@ export function useDockTear<T extends HTMLElement>({
       return
     }
 
-    if (!reducedMotion) {
-      const now = performance.now()
-      const vx = (e.clientX - d.lastX) / Math.max(1, now - d.lastT)
-      d.lastX = e.clientX
-      d.lastT = now
-      const target = Math.max(-DOCK_TEAR_TILT_MAX, Math.min(DOCK_TEAR_TILT_MAX, vx * 3))
-      d.tilt = d.tilt * 0.7 + target * 0.3
-      if (panelRef.current)
-        panelRef.current.style.transform = `rotate(${d.tilt.toFixed(2)}deg)`
-    }
     const el = panelRef.current
     if (!el)
       return
@@ -235,8 +217,6 @@ export function useDockTear<T extends HTMLElement>({
     const wasTorn = d.torn
     const overSlot = wasTorn && d.wasOutsideSlot && inSlot(e.clientX, e.clientY)
     dragRef.current = null
-    if (panelRef.current)
-      panelRef.current.style.transform = ''
 
     if (!wasTorn) {
       patch({ dragging: false, expect: false })

@@ -170,6 +170,11 @@
 .ctx-pane.is-active { display: flex; }
 .ctx-pane-research { overflow-y: auto; padding: 20px 24px 28px; }
 .ctx-pane-research > .rsh { width: 100%; }
+/* The section pills scroll away with the note here (owner, 2026-10-19): in a
+   ~370px column they wrap to several rows, and pinned they ate the reading
+   space. /write keeps its sticky nav. */
+.ctx-pane-research .rsh-nav { position: static; }
+.ctx-pane-research .rsh-notebody [data-sec] { scroll-margin-top: 12px; }
 .ctx-lyrics { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .ctx-track-id { display: flex; min-width: 0; flex-direction: column; gap: 3px; padding: 14px 24px 8px; }
 .ctx-lyrics-actions {
@@ -279,7 +284,7 @@
    Docking isn't a panel, it's a 봉합: while docked the sheet is the SAME paper
    as the memo window (no border/shadow, only the perforation seam), and the
    header can be grabbed to tear it off into a free-floating sheet. Constants
-   (TEAR_PX 70 · RESIST .35 · tilt ±2°) live in dockTear.ts.
+   (TEAR_PX 40 · RESIST .5, no tilt) live in dockTear.ts.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* the sheet once it is JS-positioned (fixed) by the dock mount — resets the
@@ -300,7 +305,7 @@
 	will-change: top, left, width, height, transform;
 	z-index: 2;
 }
-/* while grabbed: top/left follow the pointer raw (no glide); size/shadow/tilt
+/* while grabbed: top/left follow the pointer raw (no glide); size/shadow
    stay smooth. */
 .lys-sheet.is-mounted.is-grabbed {
 	transition: width 0.38s cubic-bezier(0.22, 0.85, 0.25, 1), height 0.38s cubic-bezier(0.22, 0.85, 0.25, 1), box-shadow 0.3s, transform 0.25s ease;

@@ -22,7 +22,6 @@ function Harness({ initialDock = FLOATING, geometryKey }: { initialDock?: DockSt
 		restRect: () => ({ left: 150, top: 0, width: 100, height: 100 }),
 		clampPos: (left, top) => ({ left, top }),
 		inSlot: (x, y) => x >= 0 && x <= 100 && y >= 0 && y <= 100,
-		reducedMotion: true,
 		geometryKey,
 	})
 	return (
@@ -122,5 +121,17 @@ describe('useDockTear tear', () => {
 		fireEvent.pointerMove(panel, { pointerId: 5, clientX: 195, clientY: 50 })
 		expect(panel.style.left).toBe('122.5px')
 		fireEvent.pointerUp(panel, { pointerId: 5, clientX: 195, clientY: 50 })
+	})
+
+	it('never tilts the torn panel, however fast the pointer moves', () => {
+		render(<Harness initialDock={{ ...FLOATING, docked: true }} />)
+		const panel = screen.getByTestId('panel')
+		trackOffsets(panel)
+		fireEvent.pointerDown(panel, { button: 0, pointerId: 6, clientX: 50, clientY: 50 })
+		fireEvent.pointerMove(panel, { pointerId: 6, clientX: 95, clientY: 50 })
+		fireEvent.pointerMove(panel, { pointerId: 6, clientX: 400, clientY: 50 })
+		fireEvent.pointerMove(panel, { pointerId: 6, clientX: 20, clientY: 50 })
+		expect(panel.style.transform).toBe('')
+		fireEvent.pointerUp(panel, { pointerId: 6, clientX: 20, clientY: 50 })
 	})
 })
