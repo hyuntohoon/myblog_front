@@ -473,17 +473,7 @@ function NowPlayingStrip({ np }: { np: MemberNowPlaying }) {
 			aria-label="지금 듣는 중"
 			style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', border: '1px solid var(--color-border-soft)', borderRadius: 6 }}
 		>
-			{np.image_url ?
-				(
-					<img
-						src={np.image_url}
-						alt={np.album ?? np.track ?? 'Last.fm'}
-						loading="lazy"
-						decoding="async"
-						style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4, display: 'block', flex: '0 0 auto', border: '1px solid var(--color-border)' }}
-					/>
-				) :
-				<Cover label={np.album ?? np.track ?? 'Last.fm'} size={56} radius={4} />}
+			<Cover src={np.image_url} label={np.album ?? np.track ?? 'Last.fm'} size={56} radius={4} />
 			<div style={{ minWidth: 0, flex: 1 }}>
 				<div className="kicker" style={{ marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--color-accent)' }}>
 					● 지금 듣는 중

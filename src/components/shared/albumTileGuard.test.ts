@@ -7,9 +7,11 @@
 // change and the baseline never goes slack.
 //
 // Counters, per non-test .tsx file under src/:
-// - usage: JSX `<Cover` / `<AlbumArt` — the legacy cover components a bespoke
-//   tile is built from (`home/ui`, `member/ui`, or a local copy). A surface on
-//   `AlbumCard` / `CoverImage` has none.
+// - usage: JSX `<Cover` / `<AlbumArt` — the cover components a bespoke tile is
+//   built from (`home/ui`, `member/ui`, or a local copy). A surface on
+//   `AlbumCard` / `CoverImage` has none. The shared ones are now `CoverImage`
+//   delegates, so this counts call sites, not copies: replacing a local copy
+//   with the shared `Cover` can raise it (S2, NowPlaying and LikedBoard).
 // - placeholder: the `cover-ph` class — hand-rolled placeholder markup. Its
 //   only legitimate home is `shared/CoverImage.tsx`.
 // - definition: a local `function *Cover` / `AlbumArt` / `CoverArt`. The
@@ -20,20 +22,24 @@ import { describe, expect, it } from 'vitest'
 
 interface Counts { usage?: number, placeholder?: number, definition?: number }
 
-/** Measured on the S1/S2 ArtistHub branch (main b2e018e had ArtistHub usage 2, home/ui · AlbumCard · TrackCard placeholder 1 each). */
+/**
+ * Measured on the S1/S2 ArtistHub branch (main b2e018e had ArtistHub usage 2, home/ui · AlbumCard · TrackCard placeholder 1 each).
+ * S2 member copies (main 4bb823d): member/ui `Cover` became a re-export of home/ui's and `AlbumArt` a delegate; LfCover, NpCover
+ * and LkCover were removed for the shared `Cover`, so LastfmNowPlaying / NowPlaying / LikedBoard lost a definition and the last two
+ * gained a call site; PocketTray's list-mode `Cover` is a delegate.
+ */
 const BASELINE: Record<string, Counts> = {
 	'src/components/album/AlbumDetailView.tsx': { usage: 3 },
 	'src/components/home/EditorialHome.tsx': { usage: 4 },
 	'src/components/home/TodayPickHistory.tsx': { usage: 1 },
 	'src/components/home/TodaySongBuckit.tsx': { usage: 1 },
 	'src/components/member/BucketBoard.tsx': { usage: 2 },
-	'src/components/member/LastfmNowPlaying.tsx': { usage: 1, definition: 1 },
-	'src/components/member/LikedBoard.tsx': { usage: 1, definition: 1 },
+	'src/components/member/LastfmNowPlaying.tsx': { usage: 1 },
+	'src/components/member/LikedBoard.tsx': { usage: 2 },
 	'src/components/member/MemberProfile.tsx': { usage: 1 },
-	'src/components/member/NowPlaying.tsx': { usage: 1, definition: 1 },
+	'src/components/member/NowPlaying.tsx': { usage: 2 },
 	'src/components/member/ReviewsTab.tsx': { usage: 2 },
-	'src/components/member/pocket/PocketTray.tsx': { usage: 3, placeholder: 1, definition: 1 },
-	'src/components/member/ui.tsx': { usage: 1, placeholder: 1, definition: 2 },
+	'src/components/member/pocket/PocketTray.tsx': { usage: 3 },
 	'src/components/reviews/ReviewsIndex.tsx': { usage: 10, definition: 1 },
 	'src/components/search/atoms.tsx': { placeholder: 1, definition: 1 },
 }
@@ -41,6 +47,8 @@ const BASELINE: Record<string, Counts> = {
 /** Wrappers that delegate to CoverImage (file → function name). */
 const DELEGATES: Record<string, string> = {
 	'src/components/home/ui.tsx': 'Cover',
+	'src/components/member/pocket/PocketTray.tsx': 'Cover',
+	'src/components/member/ui.tsx': 'AlbumArt',
 	'src/components/shared/AlbumCard.tsx': 'CoverArt',
 	'src/components/shared/TrackCard.tsx': 'CoverArt',
 }
@@ -126,6 +134,12 @@ describe('album tile / cover ratchet (front audit S1 + S2)', () => {
 		const cardViewer = text.slice(text.indexOf('<div className="pb-cardgrid">'), text.indexOf('{bucket.albums.slice(0, 8)'))
 		expect(cardViewer).toMatch(/<PocketAlbumCardAdapter\b/)
 		expect(cardViewer).not.toMatch(/<Cover\b/)
+	})
+
+	it('member/ui keeps no cover copy of its own', () => {
+		const text = readFileSync(join(root, 'src/components/member/ui.tsx'), 'utf8')
+		expect(text).toMatch(/export \{ Cover \} from '\.\.\/home\/ui'/)
+		expect(text).not.toMatch(/function Cover\b/)
 	})
 
 	// Not a ratchet to lower: a canon card is a published review, which RFC

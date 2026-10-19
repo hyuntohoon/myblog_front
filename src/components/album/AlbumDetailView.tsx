@@ -43,7 +43,7 @@ export function Header({ cover, title, artist, meta, kicker, actions, modalPlate
   if (!modalPlate) {
     return (
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', paddingRight: 28 }}>
-        <div style={{ width: 110, flex: '0 0 auto' }}><AlbumArt url={cover} label={title} size={110} /></div>
+        <div style={{ width: 110, flex: '0 0 auto' }}><AlbumArt url={cover} label={title} /></div>
         <div style={{ minWidth: 0, flex: 1, paddingTop: 2 }}>
           <div className="kicker" style={{ marginBottom: 5 }}>{kicker}</div>
           <h2 className="serif italic" style={{ fontSize: 25, fontWeight: 500, lineHeight: 1.14, margin: 0 }}>{title}</h2>
@@ -55,7 +55,7 @@ export function Header({ cover, title, artist, meta, kicker, actions, modalPlate
   }
   return (
     <header className="album-modal__header">
-      <div className="album-modal__cover"><AlbumArt url={cover} label={title} size={196} /></div>
+      <div className="album-modal__cover"><AlbumArt url={cover} label={title} /></div>
       <div className="album-modal__identity">
         <div className="kicker album-modal__kicker">{kicker}</div>
         <h2 className="serif italic album-modal__title">{title}</h2>
@@ -132,7 +132,7 @@ function Artists({ artists }: { artists: MusicArtist[] }) {
       <div className="album-modal__artist-list">
         {artists.map(ar => (
           <div key={ar.id} className="album-modal__artist-row">
-            <div className="album-modal__artist-photo"><AlbumArt url={ar.photo_url} label={ar.name} size={40} /></div>
+            <div className="album-modal__artist-photo"><AlbumArt url={ar.photo_url} label={ar.name} /></div>
             <div className="album-modal__artist-copy">
               {/* name links to the artist hub — the canonical artist detail surface. */}
               <div className="serif album-modal__artist-name">

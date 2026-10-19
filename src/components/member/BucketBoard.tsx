@@ -1937,7 +1937,7 @@ export function TrashDrawer({ trash, onRestore, onPurge, onEmpty, onClose }: { t
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {trash.map(t => (
             <div key={t.tid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--color-paper)', border: '1px solid var(--color-border-soft)', borderRadius: 6 }}>
-              <div style={{ flex: '0 0 42px', width: 42 }}><AlbumArt url={t.album.cover} label={t.album.title} size={42} /></div>
+              <div style={{ flex: '0 0 42px', width: 42 }}><AlbumArt url={t.album.cover} label={t.album.title} /></div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.album.title}</div>
                 <div className="meta" style={{ textTransform: 'none', letterSpacing: 0, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
