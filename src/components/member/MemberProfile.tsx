@@ -58,6 +58,15 @@ const DASH_TABS = [
 	{ id: 'integration', label: '연동' },
 ] as const
 const RATINGS_TAB = 'ratings'
+// A tab-row edge within this many px of the end counts as "at the edge" (no fade).
+const TAB_EDGE_PX = 4
+const TAB_FADE_PX = 28
+// Ships with the nav itself: styles/member.css only loads once SelfDashboard
+// mounts, so the default 평가 view would never see a rule placed there.
+const TAB_NAV_CSS = `
+.lf-tab-nav{scroll-snap-type:x proximity;mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent);-webkit-mask-image:linear-gradient(to right,transparent,#000 var(--fade-l),#000 calc(100% - var(--fade-r)),transparent)}
+.lf-tab-nav>.lf-tab-btn{scroll-snap-align:start}
+`
 
 /** The dashboard tabs this viewer may actually use. */
 function dashTabsFor(isOwner: boolean) {
@@ -635,6 +644,31 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 			setDashSeen(true)
 	}, [dashActive])
 
+	// Audit #17: on a phone the tab row overflows with nothing saying so. Fade
+	// whichever edge still has tabs past it (same mask as HomeStrip). Children are
+	// observed too — webfont swap changes their width, not the nav's.
+	const tabNavRef = useRef<HTMLElement>(null)
+	const [tabFade, setTabFade] = useState({ l: false, r: false })
+	useEffect(() => {
+		const nav = tabNavRef.current
+		if (!nav)
+			return
+		const update = () => setTabFade({
+			l: nav.scrollLeft > TAB_EDGE_PX,
+			r: nav.scrollLeft < nav.scrollWidth - nav.clientWidth - TAB_EDGE_PX,
+		})
+		update()
+		const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null
+		observer?.observe(nav)
+		for (const child of nav.children)
+			observer?.observe(child)
+		nav.addEventListener('scroll', update, { passive: true })
+		return () => {
+			observer?.disconnect()
+			nav.removeEventListener('scroll', update)
+		}
+	}, [isSelf])
+
 	// Dashboard URL sync uses replaceState so the active tab is shareable and
 	// reload-stable. The public list is the default view → no ?tab= param.
 	const selectTab = (id: string) => {
@@ -712,8 +746,16 @@ export default function MemberProfile({ handle, displayName, avatarUrl }: { hand
 			</header>
 
 			{/* Self-only dashboard tab nav. */}
+			{isSelf && <style>{TAB_NAV_CSS}</style>}
 			{isSelf && (
-				<nav className="mono" style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginTop: 26, overflowX: 'auto' }} aria-label="내 대시보드">
+				<nav
+					ref={tabNavRef}
+					className="mono lf-tab-nav"
+					style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-text)', marginTop: 26, overflowX: 'auto', ['--fade-l' as any]: tabFade.l ? `${TAB_FADE_PX}px` : '0px', ['--fade-r' as any]: tabFade.r ? `${TAB_FADE_PX}px` : '0px' }}
+					data-fade-l={tabFade.l || undefined}
+					data-fade-r={tabFade.r || undefined}
+					aria-label="내 대시보드"
+				>
 					{[{ id: RATINGS_TAB, label: '평가' }, ...visibleDashTabs].map(tb => (
 						<button
 							key={tb.id}
