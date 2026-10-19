@@ -68,6 +68,59 @@ beforeEach(() => {
   mocks.isOwner = false
 })
 
+function annotated(marked: number[], unmatched = 0): LyricsResponse {
+  const segments = Array.from({ length: 5 }, (_, i) => ({ i, text: `line ${i}`, start_ms: i * 1000, text_ko: `줄 ${i}` }))
+  const base = { ordinal: 1, status: 'unique', occurrences: 1, votes_total: 1, disputed: false, translation_status: 'done', body_source_lang: 'en', genius_url: null }
+  const annotations = [
+    ...marked.map((i, k) => ({ ...base, id: 100 + k, ordinal: k + 1, start_i: i, end_i: i, fragment: `line ${i}`, body_ko: `해설 ${i}` })),
+    ...Array.from({ length: unmatched }, (_, k) => ({ ...base, id: 200 + k, ordinal: 50 + k, start_i: null, end_i: null, fragment: `lost ${k}`, body_ko: `못 붙은 해설 ${k}` })),
+  ]
+  return { availability: 'ok', normalizer_version: 1, trackable: true, source_kind: 'synced', segments, translation: { status: 'done', lang: 'ko', origin: 'poller' }, annotations } as unknown as LyricsResponse
+}
+
+describe('the annotation treatment and the hint (2026-10-19 UX pass)', () => {
+  beforeEach(() => localStorage.removeItem('lys:anno-style'))
+
+  it('a dense track defaults to the rule, a sparse one to the fill', async () => {
+    mocks.getLyrics.mockResolvedValue(annotated([0, 1, 2]))
+    const { container, unmount } = render(<LyricsSheet spotifyTrackId="dense" onClose={() => {}} />)
+    await screen.findByText('line 0')
+    expect(container.querySelector('.lys-doc')?.className).toContain('lys-anno-m1')
+    expect(screen.getByText(/밑줄 친 줄을 누르면/)).toBeTruthy()
+    unmount()
+
+    mocks.getLyrics.mockResolvedValue(annotated([0]))
+    const sparse = render(<LyricsSheet spotifyTrackId="sparse" onClose={() => {}} />)
+    await screen.findByText('line 0')
+    expect(sparse.container.querySelector('.lys-doc')?.className).toContain('lys-anno-m0')
+    expect(screen.getByText(/노란 줄을 누르면/)).toBeTruthy()
+  })
+
+  it('an explicit choice wins over the density', async () => {
+    localStorage.setItem('lys:anno-style', 'm0')
+    mocks.getLyrics.mockResolvedValue(annotated([0, 1, 2]))
+    const { container } = render(<LyricsSheet spotifyTrackId="dense" onClose={() => {}} />)
+    await screen.findByText('line 0')
+    expect(container.querySelector('.lys-doc')?.className).toContain('lys-anno-m0')
+  })
+
+  it('the 행 tail sits inside the original line, not between it and the translation', async () => {
+    const d = annotated([])
+    d.annotations = [{ id: 1, ordinal: 1, status: 'unique', occurrences: 1, votes_total: 0, disputed: false, translation_status: 'done', start_i: 1, end_i: 2, fragment: 'x', body_ko: 'y' }] as unknown as LyricsResponse['annotations']
+    mocks.getLyrics.mockResolvedValue(d)
+    const { container } = render(<LyricsSheet spotifyTrackId="t" onClose={() => {}} />)
+    await screen.findByText('2행')
+    expect(container.querySelector('.lys-tail')?.closest('.lys-orig')).not.toBeNull()
+  })
+
+  it('names the unmatched count and previews each drawer row in Korean', async () => {
+    mocks.getLyrics.mockResolvedValue(annotated([0], 2))
+    render(<LyricsSheet spotifyTrackId="t" onClose={() => {}} />)
+    await screen.findByText('가사에 못 붙은 해설 2개 ↓')
+    expect(screen.getByText('못 붙은 해설 0')).toBeTruthy()
+  })
+})
+
 describe('who is offered a translation request', () => {
   // The POST is require_owner. A member who was offered 번역 요청 / 실패 · 재요청
   // could only ever get 번역 요청에 실패했어요 — found in the 2026-10-19 lyrics UX
@@ -91,7 +144,7 @@ describe('who is offered a translation request', () => {
   it('a member still sees a pending row and a finished translation — both are reads', async () => {
     mocks.getLyrics.mockResolvedValue(doc('requested', false))
     await openSheet()
-    expect(screen.getByText('요청됨 · 확인')).toBeTruthy()
+    expect(screen.getByText('번역 대기 중 · 확인')).toBeTruthy()
   })
 })
 
@@ -104,7 +157,7 @@ describe('a translation that finishes while the screen is open (G3)', () => {
         .mockResolvedValue(doc('done', true))
       await openSheet()
       // Before: the row is pending and there is no Korean on screen at all.
-      expect(screen.getByText('요청됨 · 확인')).toBeTruthy()
+      expect(screen.getByText('번역 대기 중 · 확인')).toBeTruthy()
       expect(screen.queryByText('첫째 줄')).toBeNull()
 
       await act(async () => {
@@ -114,7 +167,7 @@ describe('a translation that finishes while the screen is open (G3)', () => {
       // The translation is ON SCREEN, not merely "status: done". A finished
       // translation shows by default, which is the whole point of arriving.
       await waitFor(() => expect(screen.getByText('첫째 줄')).toBeTruthy())
-      expect(screen.queryByText('요청됨 · 확인')).toBeNull()
+      expect(screen.queryByText('번역 대기 중 · 확인')).toBeNull()
     }
     finally {
       vi.useRealTimers()
@@ -178,7 +231,7 @@ describe('a translation that finishes while the screen is open (G3)', () => {
     await openSheet()
 
     await act(async () => {
-      fireEvent.click(screen.getByText('요청됨 · 확인'))
+      fireEvent.click(screen.getByText('번역 대기 중 · 확인'))
     })
     await waitFor(() => expect(screen.getByText('첫째 줄')).toBeTruthy())
   })
@@ -188,14 +241,14 @@ describe('a translation that finishes while the screen is open (G3)', () => {
     await openSheet()
 
     await act(async () => {
-      fireEvent.click(screen.getByText('요청됨 · 확인'))
+      fireEvent.click(screen.getByText('번역 대기 중 · 확인'))
     })
     // A background refresh that fails is not a document error: the lyric the
     // member is reading stays exactly where it was, and 다시 시도 — the failed-
     // LOAD affordance — must not appear.
     await waitFor(() => expect(screen.getByText('first line')).toBeTruthy())
     expect(screen.queryByText('다시 시도')).toBeNull()
-    expect(screen.getByText('요청됨 · 확인')).toBeTruthy()
+    expect(screen.getByText('번역 대기 중 · 확인')).toBeTruthy()
   })
 })
 
@@ -339,10 +392,10 @@ describe('the translation live region is stable across the arrival', () => {
 
     const region = document.querySelector('.lys-tr-live')
     expect(region?.getAttribute('aria-live')).toBe('polite')
-    expect(region?.textContent).toContain('요청됨')
+    expect(region?.textContent).toContain('번역 대기 중')
 
     await act(async () => {
-      fireEvent.click(screen.getByText('요청됨 · 확인'))
+      fireEvent.click(screen.getByText('번역 대기 중 · 확인'))
     })
     await waitFor(() => expect(screen.getByText('첫째 줄')).toBeTruthy())
 
@@ -371,7 +424,7 @@ describe('the burst stays invisible (review finding)', () => {
 
       // It DID ask — the control simply never announced it.
       expect(mocks.getLyrics.mock.calls.length).toBeGreaterThan(before)
-      expect(screen.getByText('요청됨 · 확인').getAttribute('aria-busy')).toBe('false')
+      expect(screen.getByText('번역 대기 중 · 확인').getAttribute('aria-busy')).toBe('false')
     }
     finally {
       vi.useRealTimers()

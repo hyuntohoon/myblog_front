@@ -418,35 +418,37 @@
 .lys-echo, .lys-dual { border: 1px solid var(--color-border); border-radius: 999px; padding: 0 5px; }
 
 /* ── treatments ───────────────────────────────────────────────────────────── */
+/* Every mark lands on the ORIGINAL line (`.lys-orig`), never on the translation
+   under it. Filling the whole line block took the Korean line with it, so on a
+   dense track (Helmet: 20 of 31 lines) the page read as one yellow slab and the
+   translation lost its own quiet ink. The bracket still spans the whole block. */
 /* M0 fill — the chosen house. Correct at the album average (34.1% of lines). */
-.lys-anno-m0 .lys-mark { background: var(--lys-hl); color: var(--lys-hl-ink); }
+.lys-anno-m0 .lys-mark .lys-orig { background: var(--lys-hl); }
 /* M1 rule — for dense tracks; the fill is spent only on the open annotation. */
-.lys-anno-m1 .lys-mark { box-shadow: inset 0 -1px 0 var(--lys-hl-edge); }
+.lys-anno-m1 .lys-mark .lys-orig { box-shadow: inset 0 -1px 0 var(--lys-hl-edge); }
 /* M2 margin only — the text is untouched; the gutter carries the affordance. */
-.lys-anno-m2 .lys-mark:hover { background: var(--lys-hl-soft); }
+.lys-anno-m2 .lys-mark:hover .lys-orig { background: var(--lys-hl-soft); }
 /* M3 reveal on open — yellow made rare by construction. */
-.lys-anno-m3 .lys-mark { box-shadow: inset 0 -1px 0 var(--color-border-soft); }
+.lys-anno-m3 .lys-mark .lys-orig { box-shadow: inset 0 -1px 0 var(--color-border-soft); }
 .lys-anno-m3 .lys-brk { opacity: 0; }
 .lys-anno-m3 .lys-mark:hover .lys-brk, .lys-anno-m3 .lys-mark.is-open .lys-brk { opacity: 1; }
 
-/* The open annotation always gets the fill, whatever the treatment. */
-.lys-doc .lys-mark.is-open { background: var(--lys-hl); color: var(--lys-hl-ink); box-shadow: inset 3px 0 0 var(--lys-hl-edge); }
+/* The open annotation always gets the fill, whatever the treatment — and, because
+   under M0 every mark already has it, a heavier accent bracket that no closed mark
+   carries, so "which one did I open" survives every treatment. */
+.lys-doc .lys-mark.is-open .lys-orig { background: var(--lys-hl); box-shadow: none; }
+.lys-doc .lys-mark.is-open .lys-brk { border-left-width: 4px; border-left-color: var(--color-accent); left: -4px; }
+.lys-doc .lys-mark.is-open.is-start .lys-brk { border-top-color: var(--color-accent); }
+.lys-doc .lys-mark.is-open.is-end .lys-brk { border-bottom-color: var(--color-accent); }
 
-/* Ink on the fill. `color` on the marked line alone does nothing: .lys-orig and
-   .lys-ko each set their own colour and override inheritance, so in dark mode the
-   near-white lyric sat on amber at 1.63:1 and the Korean line at 1.73:1. The
-   children have to be named, under exactly the conditions where the fill lands —
-   m0 (or open), and never on a long-span middle or a disputed line, because those
-   two are the cases that keep the page's own ground. */
+/* Ink on the fill. .lys-orig sets its own colour, so in dark mode the near-white
+   lyric sat on amber at 1.63:1 until it was named here, under exactly the
+   conditions where the fill lands — m0 (or open), never a long-span middle or a
+   disputed line, the two cases that keep the page's own ground. The translation
+   line no longer receives the fill, so it keeps its own ink. */
 .lys-anno-m0 .lys-mark:not(.is-long-mid):not(.is-disputed) .lys-orig,
 .lys-doc .lys-mark.is-open:not(.is-long-mid):not(.is-disputed) .lys-orig {
 	color: var(--lys-hl-ink);
-}
-.lys-anno-m0 .lys-mark:not(.is-long-mid):not(.is-disputed) .lys-ko,
-.lys-doc .lys-mark.is-open:not(.is-long-mid):not(.is-disputed) .lys-ko {
-	color: var(--lys-hl-ink);
-	opacity: 0.78;                     /* still secondary, but legible on the fill */
-	border-left-color: var(--lys-hl-edge);
 }
 .lys-anno-m0 .lys-mark:not(.is-long-mid):not(.is-disputed) :is(.lys-tail, .lys-echo, .lys-dual),
 .lys-doc .lys-mark.is-open:not(.is-long-mid):not(.is-disputed) :is(.lys-tail, .lys-echo, .lys-dual) {
@@ -456,15 +458,15 @@
 
 /* Long spans (4+ segments): ends only. At 12 a full fill takes two whole stanzas
    and the highlight becomes the page's ground instead of its emphasis. */
-.lys-doc .lys-mark.is-long-mid { background: transparent; color: inherit; box-shadow: none; }
+.lys-doc .lys-mark.is-long-mid .lys-orig { background: transparent; box-shadow: none; }
 
 /* Disputed: negative votes NEVER receive the fill, in any treatment — the site
    would read as agreeing with a reading the community rejected. */
-.lys-doc .lys-mark.is-disputed { background: transparent; color: inherit; box-shadow: inset 0 -1px 0 var(--color-accent); }
+.lys-doc .lys-mark.is-disputed .lys-orig { background: transparent; box-shadow: inset 0 -1px 0 var(--color-accent); }
 .lys-doc .lys-mark.is-disputed .lys-brk { border-left-color: var(--color-accent); }
 
 /* A repeat echo is marked but never numbered. */
-.lys-doc .lys-mark.is-repeated.is-long-mid { box-shadow: inset 0 -1px 0 var(--lys-echo); }
+.lys-doc .lys-mark.is-repeated.is-long-mid .lys-orig { box-shadow: inset 0 -1px 0 var(--lys-echo); }
 
 /* Two claims meeting on one line: a doubled gutter rule, so the overlap is visible
    and not merely handled. 3 of 201 lines, never three at once. */
@@ -507,6 +509,31 @@
 .lys-anno-drawer li > button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .lys-anno-drawer .mk { font-size: 12px; color: var(--color-accent); }
 .lys-anno-drawer .tx { font-size: 13px; color: var(--color-subtle); line-height: 1.5; }
+/* The Korean body's opening, so a reader can tell which drawer row is worth opening. */
+.lys-anno-drawer .tx-ko {
+	display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+	margin-top: 3px; font-size: 12.5px; color: var(--color-faded);
+}
+
+/* What the marks are for, in one line above the lyric. */
+.lys-anno-hint {
+	margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+	font-size: var(--text-xs); line-height: 1.5; color: var(--color-faded);
+}
+.lys-anno-hint-jump {
+	padding: 0; background: none; border: 0; cursor: pointer;
+	font: inherit; color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px;
+}
+.lys-anno-hint-jump:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+/* 해설 표시 — one plain-word select in place of the four treatment chips. */
+.lys-anno-pick { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.06em; color: var(--color-faded); }
+.lys-anno-pick select {
+	font: inherit; letter-spacing: 0; font-size: 11px; color: var(--color-text);
+	background: none; border: 1px solid var(--color-border); border-radius: var(--radius-pill);
+	padding: 4px 8px; cursor: pointer;
+}
+.lys-anno-pick select:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 
 /* ContextPanel parses this property numerically, so MemoWindow resolves its
    continuous dock ratio to a plain px value before setting it inline. */

@@ -24,11 +24,42 @@ export function readAnnoStyle(): AnnoStyle {
   }
 }
 
-export function writeAnnoStyle(v: AnnoStyle): void {
+/** The reader's own choice, or null when they never made one (→ `autoAnnoStyle`). */
+export function readStoredAnnoStyle(): AnnoStyle | null {
   try {
-    localStorage.setItem(ANNO_STYLE_KEY, v)
+    const v = localStorage.getItem(ANNO_STYLE_KEY) as AnnoStyle | null
+    return v && STYLES.includes(v) ? v : null
+  }
+  catch {
+    return null
+  }
+}
+
+/** `null` clears the choice, which hands the track back to `autoAnnoStyle`. */
+export function writeAnnoStyle(v: AnnoStyle | null): void {
+  try {
+    if (v == null)
+      localStorage.removeItem(ANNO_STYLE_KEY)
+    else
+      localStorage.setItem(ANNO_STYLE_KEY, v)
   }
   catch { /* private mode — the setting just does not persist */ }
+}
+
+/**
+ * Past this share of marked lines the fill stops being emphasis. The design record
+ * called M0 "density-blind" and pointed at a density-adaptive rule; it measured
+ * the album average at 34.1% (fine) and the dense end at 64.7% (the yellow becomes
+ * the ground). 40% sits between the two — a judgement, not a measured edge.
+ */
+export const DENSE_SHARE = 0.4
+
+/**
+ * The treatment for a reader who never picked one: the fill on a sparse track,
+ * the rule on a dense one. `Helmet` (Steve Lacy) is 20 of 31 lines — 65%.
+ */
+export function autoAnnoStyle(markedLines: number, lyricLines: number): AnnoStyle {
+  return lyricLines > 0 && markedLines / lyricLines > DENSE_SHARE ? 'm1' : 'm0'
 }
 
 /**
