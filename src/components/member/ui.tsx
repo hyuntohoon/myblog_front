@@ -1,35 +1,22 @@
 // Member dashboard — shared editorial primitives (ported from the design
 // prototype's components.jsx). Scores are native 0–5 (canonical scale).
 import type { CSSProperties, ReactNode } from 'react'
+import { CoverImage } from '../shared/CoverImage'
 
 export function SampleBadge({ label = '샘플' }: { label?: string }) {
   return <span className="sample" title="샘플 데이터 — 백엔드 연동 예정">{label}</span>
 }
 
-export function Cover({ label, size = 56, radius = 3, square = false }: { label: string, size?: number, radius?: number, square?: boolean }) {
-  const dim: CSSProperties = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }
-  const fs = square ? 'clamp(20px, 4vw, 40px)' : Math.max(12, size * 0.34)
-  return (
-    <div className="cover" style={{ ...dim, borderRadius: radius }}>
-      <span className="cover-ph" style={{ fontSize: fs }}>{(label || '?').slice(0, 2).toUpperCase()}</span>
-    </div>
-  )
-}
+// Front audit S2 — the letter tile is `home/ui`'s `Cover`, a `CoverImage`
+// delegate; re-exported so member surfaces keep importing it from here.
+export { Cover } from '../home/ui'
 
-/** Real album art when the API supplies a cover URL, else the editorial letter tile. */
-export function AlbumArt({ url, label, size = 160 }: { url?: string | null, label: string, size?: number }) {
-  if (url) {
-    return (
-      <img
-	src={url}
-	alt={label}
-	loading="lazy"
-	decoding="async"
-	style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: 3, display: 'block', border: '1px solid var(--color-border)' }}
-      />
-    )
-  }
-  return <Cover label={label} square radius={3} size={size} />
+const SQUARE_COVER = { width: '100%', aspectRatio: '1 / 1', borderRadius: 3 } as const
+const SQUARE_COVER_PH = { fontSize: 'clamp(20px, 4vw, 40px)' } as const
+
+/** Full-width square album art through the shared cover primitive (front audit S2). */
+export function AlbumArt({ url, label }: { url?: string | null, label: string }) {
+  return <CoverImage src={url} label={label} style={SQUARE_COVER} placeholderStyle={SQUARE_COVER_PH} />
 }
 
 export function fmtTime(sec: number): string {

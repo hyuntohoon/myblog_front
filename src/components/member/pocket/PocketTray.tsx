@@ -150,22 +150,17 @@ function PocketAlbumCardAdapter({ album: a, bucketId, onRemove }: { album: Board
   )
 }
 
-// FEAT-pocket-buckit-viewers Track B — `url` + `square` added for the Card Viewer
-// (board-style square cover). The site-wide global `.cover`/`.cover img` rules size the
-// image, so this stays self-contained off-dashboard (no member.css dependency). List-mode
-// callers omit both and are unchanged.
-function Cover({ label, size, url, square }: { label: string, size: number, url?: string | null, square?: boolean }) {
-  const dim: CSSProperties = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: sc(size), height: sc(size) }
+// List-mode / leaf-chip letter tile, scaled with the drawer (`sc`). The Card
+// Viewer's tiles are `AlbumCard` / `CoverImage` (front #489); this is the same
+// primitive at Pocket's scale (front audit S2).
+function Cover({ label, size }: { label: string, size: number }) {
   return (
-    <div className="cover" style={{ ...dim, borderRadius: sc(3) }}>
-      {url ?
-        <img src={url} alt={label} loading="lazy" decoding="async" /> :
-        (
-            <span className="cover-ph" style={{ fontSize: sc(Math.max(11, size * 0.34)) }}>
-              {(label || '?').slice(0, 2)}
-            </span>
-          )}
-    </div>
+    <CoverImage
+	src={null}
+	label={label}
+	style={{ width: sc(size), height: sc(size), borderRadius: sc(3) }}
+	placeholderStyle={{ fontSize: sc(Math.max(11, size * 0.34)) }}
+    />
   )
 }
 

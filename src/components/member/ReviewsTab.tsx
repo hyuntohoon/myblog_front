@@ -60,7 +60,7 @@ function ReviewCard({ r, onOpen, onDelete, bucketName, hasResearch, boardHref }:
   }
   return (
     <article className="panel" style={{ padding: 16, display: 'flex', gap: 16, background: 'var(--color-bg)' }}>
-      <div onClick={open} style={{ cursor: clickable ? 'pointer' : 'default', flex: '0 0 auto', width: 92 }}><AlbumArt url={r.cover} label={r.album} size={92} /></div>
+      <div onClick={open} style={{ cursor: clickable ? 'pointer' : 'default', flex: '0 0 auto', width: 92 }}><AlbumArt url={r.cover} label={r.album} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="meta" style={{ marginBottom: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ color: isColumn ? 'var(--color-accent)' : 'var(--color-faded)' }}>{r.type}</span>
@@ -123,7 +123,7 @@ function ReviewCard({ r, onOpen, onDelete, bucketName, hasResearch, boardHref }:
 function DraftCard({ d }: { d: PostListItem }) {
   return (
     <a href={`/write?id=${d.id}`} className="panel" style={{ padding: 14, display: 'flex', gap: 14, alignItems: 'center', textDecoration: 'none', background: 'var(--color-bg)', borderStyle: 'dashed' }}>
-      <div style={{ flex: '0 0 auto', width: 56 }}><AlbumArt url={d.album_cover_url ?? null} label={d.title || '초안'} size={56} /></div>
+      <div style={{ flex: '0 0 auto', width: 56 }}><AlbumArt url={d.album_cover_url ?? null} label={d.title || '초안'} /></div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div className="meta" style={{ marginBottom: 5, display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className="mono" style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--color-accent)', border: '1px solid var(--color-accent)', borderRadius: 2, padding: '1px 5px' }}>초안</span>

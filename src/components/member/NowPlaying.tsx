@@ -161,26 +161,6 @@ function SyncControl({ iso, onSync, syncing }: { iso?: string | null, onSync?: (
   )
 }
 
-/**
- * Fixed-size album cover (item 9): the real catalog art when a cover URL is
- *  available, else the editorial letter tile. (ui's AlbumArt fills 100% width, so
- *  it can't drive these fixed-size now-playing slots — hence a sized variant.)
- */
-function NpCover({ url, label, size, radius = 4 }: { url?: string | null, label: string, size: number, radius?: number }) {
-  if (url) {
-    return (
-      <img
-	src={url}
-	alt={label}
-	loading="lazy"
-	decoding="async"
-	style={{ width: size, height: size, objectFit: 'cover', borderRadius: radius, display: 'block', flex: '0 0 auto', border: '1px solid var(--color-border)' }}
-      />
-    )
-  }
-  return <Cover label={label} size={size} radius={radius} />
-}
-
 function AlbumTextLink({ id, title, artist, cover }: { id?: string | null, title?: string | null, artist?: string | null, cover?: string | null }) {
   if (!id || !title)
     return <>{title}</>
@@ -188,7 +168,7 @@ function AlbumTextLink({ id, title, artist, cover }: { id?: string | null, title
 }
 
 function AlbumCoverLink({ id, title, artist, cover, label, size, radius = 4 }: { id?: string | null, title?: string | null, artist?: string | null, cover?: string | null, label: string, size: number, radius?: number }) {
-  const art = <NpCover url={cover} label={label} size={size} radius={radius} />
+  const art = <Cover src={cover} label={label} size={size} radius={radius} />
   if (!id)
     return art
   return (
@@ -1291,7 +1271,7 @@ function NowPlayingList({ np, state, sync, syncing, latest, onOpenLyrics, moment
         {recent != null && recent.length === 0 && <div className="meta" style={{ padding: '4px 8px' }}>기록이 없습니다</div>}
         {(recent ?? []).slice(0, 6).map((it, i) => (
           <button type="button" key={it.album_id} onClick={() => openAlbum({ albumId: it.album_id, title: it.album?.title, artist: (it.album?.artist_names ?? []).join(', ') || undefined, cover: it.album?.cover_url })} style={{ display: 'flex', gap: 12, alignItems: 'center', width: '100%', border: 'none', background: 'none', padding: 8, cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'inherit', borderTop: i ? '1px solid var(--color-border-soft)' : 'none' }}>
-            <NpCover url={it.album?.cover_url} label={it.album?.title ?? '?'} size={32} radius={2} />
+            <Cover src={it.album?.cover_url} label={it.album?.title ?? '?'} size={32} radius={2} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="serif" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.album?.title}</div>
               <div className="sans" style={{ fontSize: 11.5, color: 'var(--color-subtle)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(it.album?.artist_names ?? []).join(', ')}</div>

@@ -287,7 +287,7 @@ function Row({ row, n, cols, onOpen, onPromote, onLyrics }: {
 			className="lk-row"
 			gridTemplate={cols}
 			no={n}
-			cover={<span style={{ flex: '0 0 auto', lineHeight: 0 }}><LkCover label={row.albumName} cover={row.cover} size={42} /></span>}
+			cover={<span style={{ flex: '0 0 auto', lineHeight: 0 }}><Cover src={row.cover} label={row.albumName} size={42} /></span>}
 			title={row.track}
 			sub={row.artist}
 			cells={(
@@ -318,7 +318,7 @@ function Card({ row, onOpen, onPromote }: {
 	return (
 		<div className="panel" style={{ padding: 13, background: 'var(--color-bg)', display: 'flex', flexDirection: 'column', gap: 10 }}>
 			<button type="button" onClick={() => openDetail(row, onOpen)} disabled={!catalogued} style={{ position: 'relative', padding: 0, border: 'none', background: 'none', cursor: catalogued ? 'pointer' : 'default', lineHeight: 0 }}>
-				<LkCover label={row.albumName} cover={row.cover} square />
+				<Cover src={row.cover} label={row.albumName} square radius={4} />
 			</button>
 			<div style={{ minWidth: 0 }}>
 				<div className="serif" style={{ fontSize: 15, fontWeight: 500, lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.track}</div>
@@ -337,15 +337,6 @@ function Card({ row, onOpen, onPromote }: {
 			</div>
 		</div>
 	)
-}
-
-/** Real cover image when available, else the editorial letter tile. */
-export function LkCover({ label, cover, size = 42, square = false }: { label: string, cover: string | null, size?: number, square?: boolean }) {
-	if (cover) {
-		const dim = square ? { width: '100%', aspectRatio: '1 / 1' } : { width: size, height: size }
-		return <img src={cover} alt={label} loading="lazy" decoding="async" style={{ ...dim, objectFit: 'cover', borderRadius: square ? 4 : 3, display: 'block', border: '1px solid var(--color-border)' }} />
-	}
-	return <Cover label={label} size={size} radius={square ? 4 : 3} square={square} />
 }
 
 // ── filter pill ───────────────────────────────────────────────────────────

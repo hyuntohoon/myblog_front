@@ -36,22 +36,6 @@ function fmtSince(iso?: string | null): string {
   return t.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
 }
 
-/** Fixed-size cover: real Last.fm art when a URL is present, else the letter tile. */
-function LfCover({ url, label, size }: { url?: string | null, label: string, size: number }) {
-  if (url) {
-    return (
-      <img
-	src={url}
-	alt={label}
-	loading="lazy"
-	decoding="async"
-	style={{ width: size, height: size, objectFit: 'cover', borderRadius: 4, display: 'block', flex: '0 0 auto', border: '1px solid var(--color-border)' }}
-      />
-    )
-  }
-  return <Cover label={label} size={size} radius={4} />
-}
-
 type Load = 'loading' | 'ready' | 'error'
 
 interface State {
@@ -128,7 +112,7 @@ export function LastfmNowPlaying() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 14, rowGap: 10 }}>
       {playing ?
-        <LfCover url={np?.image_url} label={np?.album ?? np?.track ?? 'Last.fm'} size={64} /> :
+        <Cover src={np?.image_url} label={np?.album ?? np?.track ?? 'Last.fm'} size={64} radius={4} /> :
         <Equalizer playing={false} h={14} />}
 
       <div style={{ flex: 1, minWidth: 140 }}>
