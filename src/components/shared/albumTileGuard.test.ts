@@ -31,7 +31,6 @@ const BASELINE: Record<string, Counts> = {
 	'src/components/member/LikedBoard.tsx': { usage: 1, definition: 1 },
 	'src/components/member/MemberProfile.tsx': { usage: 1 },
 	'src/components/member/NowPlaying.tsx': { usage: 1, definition: 1 },
-	'src/components/member/OverviewDash.tsx': { usage: 1 },
 	'src/components/member/ReviewsTab.tsx': { usage: 2 },
 	'src/components/member/pocket/PocketTray.tsx': { usage: 4, placeholder: 1, definition: 1 },
 	'src/components/member/ui.tsx': { usage: 1, placeholder: 1, definition: 2 },
@@ -110,6 +109,13 @@ describe('album tile / cover ratchet (front audit S1 + S2)', () => {
 	it('member profile 평가 rows stay on the canonical card', () => {
 		const text = readFileSync(join(root, 'src/components/member/MemberProfile.tsx'), 'utf8')
 		expect(text).toMatch(/<CatalogAlbumCardAdapter\b/)
+		expect(text).not.toMatch(/<AlbumArt\b/)
+	})
+
+	it('overview 최근 평가 rows stay on the canonical card', () => {
+		const text = readFileSync(join(root, 'src/components/member/OverviewDash.tsx'), 'utf8')
+		const miniReview = text.slice(text.indexOf('function MiniReview('), text.indexOf('/** How many 최근 들은 앨범'))
+		expect(miniReview).toMatch(/<CatalogAlbumCardAdapter\b/)
 		expect(text).not.toMatch(/<AlbumArt\b/)
 	})
 

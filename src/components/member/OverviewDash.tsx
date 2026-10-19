@@ -13,13 +13,14 @@ import type { DetailTarget, MemberReview, SampleAlbum, SampleTrack } from '@lib/
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CatalogAlbumCardAdapter } from '@components/shared/CatalogAlbumCardAdapter'
+import { CoverImage } from '@components/shared/CoverImage'
 import { TrackCard } from '@components/shared/TrackCard'
 import { bucketCount, OV_ROWS_KEY, OV_VIEWS_KEY } from '@lib/member'
 import { useDismissable } from '@lib/useDismissable'
 import { LastfmNowPlaying } from './LastfmNowPlaying'
 import { NowPlaying } from './NowPlaying'
 import { listListenedAlbums, listRecentlyListened, listRecentTracks, refreshRecent } from './spotify.api'
-import { AlbumArt, BucketShortcut, SectionTitle, Seg, Stars } from './ui'
+import { BucketShortcut, SectionTitle, Seg, Stars } from './ui'
 
 /** Relative "when" label from an ISO timestamp (오늘 / 어제 / N일 전 / 날짜). */
 function fmtWhen(iso: string): string {
@@ -267,18 +268,34 @@ function widgetsFor(isOwner: boolean): string[] {
   return isOwner ? ALL_WIDGETS : ALL_WIDGETS.filter(w => !OWNER_ONLY_WIDGETS.has(w))
 }
 
-function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
+/**
+ * One 최근 평가/평론 row. A member's row is a 평가 — an album entity — so it is
+ * the canonical card through the catalog adapter (front audit S1, like the
+ * profile's 평가 rows). The owner's rows are blog 평론/칼럼 from the content
+ * collection; a 칼럼 has no album id, which the adapter would announce as
+ * "카탈로그 ID 없음", so those stay a bespoke row with the shared cover (S2).
+ */
+export function MiniReview({ r, onOpen }: { r: MemberReview, onOpen: (t: DetailTarget) => void }) {
+  const open = () => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating, cover: r.cover, albumId: r.albumIds[0], real: r.albumIds.length > 0 })
+  const meta = `${r.type} · ${new Date(r.date).getFullYear()}`
+  if (r.type === '평가') {
+    return (
+      <div className="panel" style={{ padding: 12, background: 'var(--color-bg)', '--album-card-cover-size': '44px' } as CSSProperties}>
+        <CatalogAlbumCardAdapter
+	data={{ catalogAlbumId: r.albumIds[0] ?? null, spotifyAlbumId: null, title: r.album, artist: r.artist || null, artistId: null, cover: r.cover, year: null }}
+	layout="row"
+	capabilities={{ open }}
+	eyebrow={<span className="meta">{meta}</span>}
+	secondaryLine={r.rating != null ? <Stars score={r.rating} size={12} /> : undefined}
+        />
+      </div>
+    )
+  }
   return (
-    <button type="button" onClick={() => onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating, cover: r.cover, albumId: r.albumIds[0], real: r.albumIds.length > 0 })} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
-      <div style={{ width: 44, flex: '0 0 auto' }}><AlbumArt url={r.cover} label={r.album} size={44} /></div>
+    <button type="button" onClick={open} className="panel" style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'center', background: 'var(--color-bg)', textAlign: 'left', cursor: 'pointer' }}>
+      <CoverImage src={r.cover} label={r.album} style={{ width: 44, height: 44, flex: '0 0 auto', borderRadius: 3 }} placeholderStyle={{ fontSize: 15 }} />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div className="meta">
-{r.type}
-{' '}
-·
-{' '}
-{new Date(r.date).getFullYear()}
-        </div>
+        <div className="meta">{meta}</div>
         <div className="serif italic" style={{ fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.album}</div>
       </div>
       {r.rating != null && <Stars score={r.rating} size={12} />}
