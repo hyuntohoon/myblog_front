@@ -21,6 +21,10 @@ export interface CoverImageProps {
 	skeletonClassName?: string
 	/** Overlays drawn inside the cover box (badges, action buttons). */
 	children?: ReactNode
+	/** Wrapper element; `span` where the cover sits inside phrasing content (a `<button>` row). */
+	as?: 'div' | 'span'
+	/** Placeholder letters when a surface has its own rule (search: one Korean syllable). */
+	initials?: string
 }
 
 export function coverState(src: string | null | undefined, loading = false): CoverState {
@@ -33,16 +37,16 @@ export function coverInitials(label: string): string {
 	return (label || '?').slice(0, 2).toUpperCase()
 }
 
-export function CoverImage({ src, label, loading = false, className, style, placeholderStyle, skeletonClassName, children }: CoverImageProps) {
+export function CoverImage({ src, label, loading = false, className, style, placeholderStyle, skeletonClassName, children, as: Box = 'div', initials }: CoverImageProps) {
 	const state = coverState(src, loading)
 	return (
-		<div className={className ? `${className} cover` : 'cover'} style={style} data-cover-state={state}>
+		<Box className={className ? `${className} cover` : 'cover'} style={style} data-cover-state={state}>
 			{state === 'loading' ?
 				<span className={skeletonClassName} aria-hidden="true" /> :
 				state === 'image' ?
 					<img src={src!} alt={label} loading="lazy" decoding="async" /> :
-					<span className="cover-ph" style={placeholderStyle} aria-hidden="true">{coverInitials(label)}</span>}
+					<span className="cover-ph" style={placeholderStyle} aria-hidden="true">{initials ?? coverInitials(label)}</span>}
 			{children}
-		</div>
+		</Box>
 	)
 }

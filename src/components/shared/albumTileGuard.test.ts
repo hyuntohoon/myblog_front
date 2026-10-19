@@ -27,6 +27,7 @@ interface Counts { usage?: number, placeholder?: number, definition?: number }
  * S2 member copies (main 4bb823d): member/ui `Cover` became a re-export of home/ui's and `AlbumArt` a delegate; LfCover, NpCover
  * and LkCover were removed for the shared `Cover`, so LastfmNowPlaying / NowPlaying / LikedBoard lost a definition and the last two
  * gained a call site; PocketTray's list-mode `Cover` is a delegate.
+ * S2 search (main fa1027d): search/atoms `GCover` became a delegate, dropping its placeholder and definition.
  */
 const BASELINE: Record<string, Counts> = {
 	'src/components/album/AlbumDetailView.tsx': { usage: 3 },
@@ -41,7 +42,6 @@ const BASELINE: Record<string, Counts> = {
 	'src/components/member/ReviewsTab.tsx': { usage: 2 },
 	'src/components/member/pocket/PocketTray.tsx': { usage: 3 },
 	'src/components/reviews/ReviewsIndex.tsx': { usage: 10, definition: 1 },
-	'src/components/search/atoms.tsx': { placeholder: 1, definition: 1 },
 }
 
 /** Wrappers that delegate to CoverImage (file → function name). */
@@ -49,6 +49,7 @@ const DELEGATES: Record<string, string> = {
 	'src/components/home/ui.tsx': 'Cover',
 	'src/components/member/pocket/PocketTray.tsx': 'Cover',
 	'src/components/member/ui.tsx': 'AlbumArt',
+	'src/components/search/atoms.tsx': 'GCover',
 	'src/components/shared/AlbumCard.tsx': 'CoverArt',
 	'src/components/shared/TrackCard.tsx': 'CoverArt',
 }

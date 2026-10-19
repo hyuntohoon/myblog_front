@@ -4,6 +4,7 @@
 // The design's demo cover_url:{hue} duotone branch is dropped — real covers are
 // image URLs (or null → letter tile). CSS lives in src/styles/search.css.
 import type { CSSProperties, ReactNode } from 'react'
+import { CoverImage } from '../shared/CoverImage'
 
 /**
  * Initials for the letter-tile fallback: a single Korean syllable, else the
@@ -24,6 +25,11 @@ export function gsInitials(name: string): string {
 	return s.replace(/^[^\p{L}\p{N}]+/u, '').slice(0, 2).toUpperCase() || s.slice(0, 2).toUpperCase()
 }
 
+/**
+ * Search cover — a `CoverImage` delegate (audit S2). Keeps the search look:
+ *  `.gs-cover` sizing/shape, no hatch, container-query letter size, and the
+ *  `gsInitials` rule. `<span>` because rows render it inside a `<button>`.
+ */
 export function GCover({ name, src, size = 44, shape = 'square', radius = 3 }: {
 	name: string
 	src?: string | null
@@ -36,18 +42,7 @@ export function GCover({ name, src, size = 44, shape = 'square', radius = 3 }: {
 		height: size || undefined,
 		borderRadius: shape === 'circle' ? '50%' : radius,
 	}
-	if (src) {
-		return (
-			<span className="gs-cover" style={style}>
-				<img src={src} alt={name} loading="lazy" />
-			</span>
-		)
-	}
-	return (
-		<span className="gs-cover gs-cover-ph" style={style}>
-			<span className="gs-cover-init serif">{gsInitials(name)}</span>
-		</span>
-	)
+	return <CoverImage as="span" className="gs-cover" style={style} src={src} label={name} initials={gsInitials(name)} />
 }
 
 /** Green-dot "Spotify" tag for not-yet-in-catalog candidate rows. */
