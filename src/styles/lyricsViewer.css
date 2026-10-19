@@ -731,6 +731,16 @@
    the track identity into the middle of the bar. `margin-right: auto` pins the
    identity to the leading edge in both screens instead. */
 .lyv-head-id { margin-right: auto; }
+/* Phones: the head's controls (번역 · 전체 가사 · 가사가 틀려요 · ↻ · ⚙ · ✕) are
+   ~330px on their own, so in one row with the track identity a 390px screen
+   pushed ⚙ half and ✕ wholly past the right edge — the viewer could not be
+   closed. Below this width the identity takes the first row and the controls
+   a full-width second row, right-aligned so ✕ keeps its corner. */
+@media (max-width: 520px) {
+	.lyv-head { flex-wrap: wrap; row-gap: 6px; }
+	.lyv-head-id { flex: 1 1 0; }
+	.lyv-head-actions { flex: 1 0 100%; flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
+}
 
 /* screen-reader-only — keeps the focus position announced without visual chrome */
 .lyv-sr-only {

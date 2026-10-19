@@ -261,6 +261,7 @@ export function useLyricsSheetState(spotifyTrackId: string) {
 		openIds,
 		showKo,
 		requesting: doc.requesting,
+		canRequestTr: doc.canRequestTr,
 		checkingTr: doc.checkingTr,
 		copied,
 		notice,
@@ -300,6 +301,7 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 		showKo,
 		koreanDominant,
 		requesting,
+		canRequestTr,
 		copied,
 		checkingTr,
 		pickMode,
@@ -328,8 +330,12 @@ export function LyricsSheetToolbar({ state }: { state: LyricsSheetState }) {
 					<button type="button" className={annoStyle === 'm3' ? 'on' : ''} aria-pressed={annoStyle === 'm3'} onClick={() => pickAnnoStyle('m3')} title="열었을 때만 — 강조를 희소하게">열림</button>
 				</span>
 			)}
+			{/* A member cannot queue a translation (the POST is owner-only), so the
+			    request states render only for the owner; done and requested are
+			    reads and show for everyone. */}
 			{phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 &&
-				(translation?.status === 'done' || !koreanDominant) && (
+				(translation?.status === 'done' || !koreanDominant) &&
+				(translation?.status === 'done' || translation?.status === 'requested' || canRequestTr) && (
 				/*
 				  One STABLE live region wrapping every translation state, so the
 				  arrival 요청됨 → 번역 is announced. It has to be the wrapper: the

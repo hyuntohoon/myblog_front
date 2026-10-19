@@ -32,6 +32,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { LyricsAnnotation, LyricsResponse, LyricsSegment, LyricsTranslationInfo } from './lyrics.api'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { isOwnerUser } from '@lib/owner'
 import { getLyrics, requestTranslation } from './lyrics.api'
 
 export type LyricsPhase =
@@ -97,6 +98,15 @@ export interface LyricsDocument {
   setShowKo: Dispatch<SetStateAction<boolean>>
   requesting: boolean
   /**
+   * Whether this reader may queue a translation. The POST is `require_owner`
+   * (it queues LLM work against the owner's corpus), so a member offered
+   * 번역 요청 / 실패 · 재요청 / 번역 갱신 could only ever get 번역 요청에 실패했어요.
+   * Fail-closed: false until the owner check answers, and on any error.
+   * Reading a finished translation and re-checking a pending one stay open to
+   * every member — both are the GET.
+   */
+  canRequestTr: boolean
+  /**
    * Each screen owns its own notice, so this reports what happened instead of
    * setting one. `dropped` is a press that was not sent — a double-press while
    * one is in flight, or an answer that came back for a track the screen has
@@ -144,6 +154,18 @@ export function useLyricsDocument(spotifyTrackId: string, options: LyricsDocumen
   const [checkingTr, setCheckingTr] = useState(false)
   const [reloadSeq, setReloadSeq] = useState(0)
   const [burstSeq, setBurstSeq] = useState(0)
+  const [canRequestTr, setCanRequestTr] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    void isOwnerUser().then((owner) => {
+      if (live)
+        setCanRequestTr(owner)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
 
   // Monotonic load epoch. A response is applied only while it is still the
   // current one — the cleanup bump covers both a track swap and unmount, which
@@ -306,6 +328,7 @@ export function useLyricsDocument(spotifyTrackId: string, options: LyricsDocumen
     showKo,
     setShowKo,
     requesting,
+    canRequestTr,
     requestTr,
     checkingTr,
     recheckTr: () => {

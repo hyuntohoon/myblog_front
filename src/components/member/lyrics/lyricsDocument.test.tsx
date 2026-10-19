@@ -23,12 +23,14 @@ import { TRANSLATION_RETRY_MS, useLyricsDocument } from './useLyricsDocument'
 const mocks = vi.hoisted(() => ({
   getLyrics: vi.fn(),
   requestTranslation: vi.fn(),
+  isOwner: false,
 }))
 
 vi.mock('./lyrics.api', () => ({
   getLyrics: mocks.getLyrics,
   requestTranslation: mocks.requestTranslation,
 }))
+vi.mock('@lib/owner', () => ({ isOwnerUser: () => Promise.resolve(mocks.isOwner) }))
 vi.mock('@lib/useDismissable', () => ({ useDismissable: () => {} }))
 vi.mock('@lib/useScrollLock', () => ({ useScrollLock: () => {} }))
 
@@ -63,6 +65,34 @@ const BURST_SPAN_MS = TRANSLATION_RETRY_MS.reduce((a, b) => a + b, 0) + 1000
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.isOwner = false
+})
+
+describe('who is offered a translation request', () => {
+  // The POST is require_owner. A member who was offered 번역 요청 / 실패 · 재요청
+  // could only ever get 번역 요청에 실패했어요 — found in the 2026-10-19 lyrics UX
+  // clickthrough as the smoke member.
+  it.each(['none', 'failed', 'stale'] as const)('a member sees no request control on a %s row', async (status) => {
+    mocks.getLyrics.mockResolvedValue(doc(status, false))
+    await openSheet()
+    await act(async () => {})
+    expect(screen.queryByText('번역 요청')).toBeNull()
+    expect(screen.queryByText('실패 · 재요청')).toBeNull()
+    expect(screen.queryByText('번역 갱신')).toBeNull()
+  })
+
+  it('the owner is offered the request', async () => {
+    mocks.isOwner = true
+    mocks.getLyrics.mockResolvedValue(doc('failed', false))
+    await openSheet()
+    expect(await screen.findByText('실패 · 재요청')).toBeTruthy()
+  })
+
+  it('a member still sees a pending row and a finished translation — both are reads', async () => {
+    mocks.getLyrics.mockResolvedValue(doc('requested', false))
+    await openSheet()
+    expect(screen.getByText('요청됨 · 확인')).toBeTruthy()
+  })
 })
 
 describe('a translation that finishes while the screen is open (G3)', () => {
