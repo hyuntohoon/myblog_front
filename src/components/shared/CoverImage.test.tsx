@@ -39,4 +39,12 @@ describe('coverImage (front audit S2)', () => {
 		expect(container.querySelector('.cover > .badge')).not.toBeNull()
 		expect(container.querySelector('.cover-ph')?.textContent).toBe('?')
 	})
+
+	it('takes a surface wrapper element and initials rule', () => {
+		const { container } = render(<CoverImage as="span" src={null} label="아이유" initials="아" className="gs-cover" />)
+		const box = container.firstElementChild as HTMLElement
+		expect(box.tagName).toBe('SPAN')
+		expect(box.className).toBe('gs-cover cover')
+		expect(box.querySelector('.cover-ph')?.textContent).toBe('아')
+	})
 })
