@@ -1700,7 +1700,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               Korean-dominant track is offered no request at all, and an empty
               cluster would still cost a gap in the head.
             */}
-            {view === 'lyrics' && phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (translation?.status === 'done' || !koreanDominant) && (
+            {/* The request states are the owner's only (the POST is require_owner);
+                done and requested are reads and show for every member. */}
+            {view === 'lyrics' && phase.k === 'ready' && phase.data.availability === 'ok' && n > 0 && (translation?.status === 'done' || !koreanDominant) && (translation?.status === 'done' || translation?.status === 'requested' || doc.canRequestTr) && (
               <div className="lyv-tr-cluster" aria-live="polite">
                 {translation?.status === 'done' ?
                   (
