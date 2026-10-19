@@ -252,14 +252,14 @@ function memoConstraints(): SizeConstraints {
 	}
 }
 
-const MEMO_DEFAULT_OUTER_WIDTH = 1320
+const MEMO_DEFAULT_OUTER_WIDTH = 1120
 
 function memoDockWidth(contentWidth: number): number {
 	return Math.max(360, Math.min(600, contentWidth * 0.5))
 }
 
 // The research note opens docked by default, so the default footprint is sized
-// for memo + dock together: the outer width stays at most 1320 and the memo
+// for memo + dock together: the outer width stays at most 1120 and the memo
 // content gives up the dock's share instead of the window growing past it.
 function defaultMemoRect(withDock: boolean): Rect {
 	const outer = Math.min(window.innerWidth - 64, MEMO_DEFAULT_OUTER_WIDTH)

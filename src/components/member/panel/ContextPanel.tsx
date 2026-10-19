@@ -138,7 +138,6 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 	// effect and bounce focus through its restore.
 	const [focusOnMount] = useState(focusOnOpen)
 	useDismissable(true, onClose, panelRef, { trapFocus: false, autoFocus: focusOnMount })
-	const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 	const dockW = useCallback(() => {
 		const host = hostRef.current
@@ -221,7 +220,6 @@ function DesktopContextPanel(props: Omit<ContextPanelProps, 'mobile'>) {
 		restRect,
 		clampPos,
 		inSlot,
-		reducedMotion: reduced,
 		geometryKey: CTX_GEOMETRY_KEY,
 	})
 	const getFloatRect = useCallback((): Rect => {
