@@ -96,7 +96,7 @@ import type { LyricsResponse, LyricsSegment } from './lyrics.api'
 import type { QueueEntry, QueueResult } from './queue.api'
 import type { LivePlayback } from './playback.api'
 import type { JumpContext } from './queueJump'
-import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { estimateMs } from '@lib/clockEstimate'
 import { confirmTransport } from '@lib/playback/confirmTransport'
 import { EPOCH_RESTART_MS, nonCoalescingBlocked, playbackSession } from '@lib/playback/session'
@@ -112,6 +112,7 @@ import { ArtistNames } from '../NowPlaying'
 import { readLivePlayback } from './playback.api'
 import { readQueue } from './queue.api'
 import { TR_REQUEST_FAILED, useLyricsDocument } from './useLyricsDocument'
+import { annoBodyKo, annoFlags, annoVotes, buildLineMarks } from './annotations'
 import { LyricsCandidatePanel } from './LyricsCandidatePanel'
 import type { ReportOutcome } from './lyricsReport.api'
 import { reportLyrics } from './lyricsReport.api'
@@ -275,14 +276,14 @@ const LyricsLine = memo(({ i, text, textKo, cls, register, onTap }: {
   >
     {text === '' ?
       <span className="lyv-gap" aria-label="간주">· · ·</span> :
-      textKo ?
-        (
-          <>
-            {text}
-            <span className="lyv-line-ko">{textKo}</span>
-          </>
-        ) :
-        text}
+      (
+        <>
+          {/* Inline, so it is layout-neutral: `.has-anno` underlines the
+              original alone, never the translation under it. */}
+          <span className="lyv-line-o">{text}</span>
+          {textKo && <span className="lyv-line-ko">{textKo}</span>}
+        </>
+      )}
   </button>
 ))
 
@@ -381,6 +382,11 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   const seedFromLoad = useRef<(data: LyricsResponse) => void>(() => {})
   const doc = useLyricsDocument(trackId, { onLoaded: data => seedFromLoad.current(data) })
   const { phase, segs, n, annotations, translation, koreanDominant, showKo, setShowKo, requesting, checkingTr, emptyText } = doc
+  // Same per-line map the sheet builds (B2 overlap + containment fallback), keyed
+  // by the segment index `s.i`.
+  const lineMarks = useMemo(() => buildLineMarks(annotations), [annotations])
+  // What the sheet can show: in text or in its drawer. `section` rows render nowhere.
+  const readableAnnos = annotations.filter(a => a.status !== 'section').length
   const [focus, setFocus] = useState(0)
   // Album cover for the blur backdrop (FEAT-lyrics-auto-progression Step 2).
   // Visual-only state: seeded from the entry prop, refreshed alongside each
@@ -435,6 +441,11 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   // so the owner never flashes the member's "가사가 틀려요".
   const [ownerKnown, setOwnerKnown] = useState(false)
   const [candidatesOpen, setCandidatesOpen] = useState(false)
+  // Genius commentary in the listening screen (owner decision 2026-10-19, which
+  // reverses the 2026-07-26 "annotations live on the static sheet only"). The
+  // panel holds the annotations it was opened for, so the song moving on under
+  // it does not swap the text a member is reading. Closed on a track swap.
+  const [annoOpen, setAnnoOpen] = useState<{ ids: number[], paired: boolean } | null>(null)
   useEffect(() => {
     let live = true
     void isOwnerUser().then((owner) => {
@@ -455,6 +466,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
   useEffect(() => {
     setCandidatesOpen(false)
     setReport('idle')
+    setAnnoOpen(null)
     reportFor.current = trackId
   }, [trackId])
   const sendReport = useCallback(() => {
@@ -1627,6 +1639,53 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
     segRefs.current[i] = el
   }, [])
 
+  // The focused line's commentary: one chip, never a control inside a line —
+  // every line is already a seek <button>, and a button cannot hold another.
+  // Tapping a line focuses it, so "tap the line, then 해설" reaches any mark.
+  const focusMark = settingsReady && view === 'lyrics' ? lineMarks.get(segs[focus]?.i ?? -1) : undefined
+  const annoById = (id: number) => annotations.find(a => a.id === id)
+  const annoPanel = (
+    <>
+      {focusMark && !(annoOpen && focusMark.claims.every(c => annoOpen.ids.includes(c.id))) && (
+        <button
+	type="button"
+	className="lyv-anno-chip mono"
+	onClick={() => setAnnoOpen({ ids: focusMark.claims.map(c => c.id), paired: focusMark.sharedBy > 1 })}
+	aria-haspopup="dialog"
+        >
+          {focusMark.claims.length > 1 ? `해설 ${focusMark.claims.length}개 보기` : '이 줄 해설 보기'}
+        </button>
+      )}
+      {annoOpen && view === 'lyrics' && (
+        /*
+          An overlay inside `.lyv-body`, not a flow sibling: `.lyv-scroll`'s
+          clientHeight is cached as `boxH` by the centring math, and an element
+          that took height from it would put the focused line off-centre until
+          the next resize.
+        */
+        <div className="lyv-anno-panel" role="dialog" aria-label="Genius 해설">
+          <div className="lyv-anno-panel-head mono">
+            <span>Genius 해설</span>
+            <button type="button" className="lyv-btn" onClick={() => setAnnoOpen(null)} aria-label="해설 닫기">✕</button>
+          </div>
+          {annoOpen.ids.map(annoById).filter(a => a != null).map(a => (
+            <div className="lyv-anno-note" key={a.id}>
+              <p className="lyv-anno-frag">{a.fragment}</p>
+              {annoFlags(a, annoOpen.paired).map(f => (
+                <p key={f.text} className={f.warn ? 'lyv-anno-flag is-warn' : 'lyv-anno-flag'}>{f.text}</p>
+              ))}
+              <p className="lyv-anno-body">{annoBodyKo(a)}</p>
+              <p className="lyv-anno-meta mono">
+                <span className={a.votes_total < 0 ? 'is-neg' : ''}>{annoVotes(a)}</span>
+                {a.genius_url && <a href={a.genius_url} target="_blank" rel="noreferrer noopener">Genius에서 보기</a>}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+
   return (
     <div className="scrim lyv-scrim" role="dialog" aria-modal="true" aria-label="가사 뷰어">
       <div
@@ -1771,9 +1830,13 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
               <button
 	type="button"
 	className="lyv-btn lyv-full-btn mono"
+	aria-label={readableAnnos > 0 ? `전체 가사, 해설 ${readableAnnos}개` : undefined}
 	onClick={() => onOpenFullLyrics(trackId, { track: meta.track, artist: meta.artist, cover: coverUrl })}
               >
                 전체 가사
+                {/* What waits on the sheet. A badge, not words: on a 390px phone the
+                    longer label pushed ✕ onto a third head row. */}
+                {readableAnnos > 0 && <span className="lyv-full-count" aria-hidden="true">{readableAnnos}</span>}
               </button>
             )}
             {view === 'lyrics' && settingsReady && !trackable && <span className="lyv-manual-note mono">동기화 없음 — 수동</span>}
@@ -1931,7 +1994,9 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                     // change class per step, so the memo still holds.
                     const tier = i === focus ? 'is-focus' : d === 1 ? 'is-near' : 'is-far'
                     const rel = i < focus ? ' is-past' : i > focus ? ' is-ahead' : ''
-                    const cls = `lyv-line ${tier}${rel}`
+                    // `has-anno` rides the class string, so the memo compare and the
+                    // offset cache see nothing new: the mark is a text decoration.
+                    const cls = `lyv-line ${tier}${rel}${lineMarks.has(s.i) ? ' has-anno' : ''}`
                     return (
                       <LyricsLine
 	key={s.i}
@@ -1975,6 +2040,7 @@ export function LyricsViewer({ spotifyTrackId, initialProgressMs = null, initial
                   <span aria-hidden="true">↩</span>
                 </button>
               )}
+              {annoPanel}
             </div>
             {/* Position stays available to assistive tech without visual chrome. */}
             <span className="lyv-sr-only" aria-live="polite">

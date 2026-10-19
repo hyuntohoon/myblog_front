@@ -26,6 +26,9 @@ import { useMemo, useRef, useState } from 'react'
 import { useDismissable } from '@lib/useDismissable'
 import { useScrollLock } from '@lib/useScrollLock'
 import {
+  annoBodyKo,
+  annoFlags,
+  annoVotes,
   autoAnnoStyle,
   buildLineMarks,
   drawerItems,
@@ -110,35 +113,16 @@ function MarkTail({ mark }: { mark: LineMark }) {
  * secondary and collapsed. A withheld translation says so rather than showing nothing.
  */
 function AnnoNote({ anno, paired }: { anno: LyricsAnnotation, paired: boolean }) {
-	const withheld = anno.translation_status !== 'done'
 	return (
 		<div className="lys-note">
 			<div className="lys-note-head mono">
 				<span>해설</span>
-				<span className={anno.votes_total < 0 ? 'v neg' : 'v'}>
-					{`${anno.votes_total > 0 ? '+' : ''}${anno.votes_total}표`}
-				</span>
+				<span className={anno.votes_total < 0 ? 'v neg' : 'v'}>{annoVotes(anno)}</span>
 			</div>
-			{anno.status === 'repeated' && anno.occurrences > 1 && (
-				<p className="lys-note-flag mono">
-					{`이 구간은 곡에서 ${anno.occurrences}번 나옵니다 — 번호는 첫 등장에만 붙습니다`}
-				</p>
-			)}
-			{anno.disputed && (
-				<p className="lys-note-flag is-warn mono">
-					{`득표 ${anno.votes_total} — 커뮤니티에서 반박된 해석입니다`}
-				</p>
-			)}
-			{paired && <p className="lys-note-flag mono">겹친 줄 — 이 줄을 주장하는 해설이 둘입니다</p>}
-			{withheld ?
-				(
-					<p className="lys-note-body">
-						{anno.translation_status === 'stale' ?
-							'원문이 바뀌어 한국어 해설을 다시 만들어야 합니다.' :
-							'한국어 해설이 아직 준비되지 않았습니다.'}
-					</p>
-				) :
-				<p className="lys-note-body">{anno.body_ko}</p>}
+			{annoFlags(anno, paired).map(f => (
+				<p key={f.text} className={f.warn ? 'lys-note-flag is-warn mono' : 'lys-note-flag mono'}>{f.text}</p>
+			))}
+			<p className="lys-note-body">{annoBodyKo(anno)}</p>
 			<details>
 				<summary className="mono">원문 보기</summary>
 				<p className="lys-note-src">{anno.fragment}</p>
@@ -148,13 +132,6 @@ function AnnoNote({ anno, paired }: { anno: LyricsAnnotation, paired: boolean })
 			</details>
 		</div>
 	)
-}
-
-/** What a drawer row says in Korean — the same withheld wording the note uses. */
-function annoKoPreview(anno: LyricsAnnotation): string {
-	if (anno.translation_status === 'done' && anno.body_ko)
-		return anno.body_ko
-	return anno.translation_status === 'stale' ? '원문이 바뀌어 한국어 해설을 다시 만들어야 합니다.' : '한국어 해설이 아직 준비되지 않았습니다.'
 }
 
 /** The treatments, in the words a reader would use for them. */
@@ -551,7 +528,7 @@ export function LyricsSheetBody({ state, meta }: { state: LyricsSheetState, meta
 										<span className="tx">
 											{a.fragment}
 											{/* Opened, the full note sits right below — the preview would repeat it. */}
-											{!openIds.includes(a.id) && <span className="tx-ko">{annoKoPreview(a)}</span>}
+											{!openIds.includes(a.id) && <span className="tx-ko">{annoBodyKo(a)}</span>}
 										</span>
 									</button>
 									{openIds.includes(a.id) && <AnnoNote anno={a} paired={false} />}

@@ -216,3 +216,33 @@ export function drawerMark(idx: number): string {
 export function sectionAnnotations(annotations: LyricsAnnotation[]): LyricsAnnotation[] {
   return annotations.filter(a => a.status === 'section')
 }
+
+/**
+ * The Korean body a reader sees, or the sentence that stands in for a withheld one.
+ * Shared by the sheet's note and the live viewer's panel so the two never word a
+ * pending or stale translation differently.
+ */
+export function annoBodyKo(anno: LyricsAnnotation): string {
+  if (anno.translation_status === 'done' && anno.body_ko)
+    return anno.body_ko
+  return anno.translation_status === 'stale' ?
+    '원문이 바뀌어 한국어 해설을 다시 만들어야 합니다.' :
+    '한국어 해설이 아직 준비되지 않았습니다.'
+}
+
+/** The flags a note carries above its body, in order. */
+export function annoFlags(anno: LyricsAnnotation, paired: boolean): { text: string, warn: boolean }[] {
+  const out: { text: string, warn: boolean }[] = []
+  if (anno.status === 'repeated' && anno.occurrences > 1)
+    out.push({ text: `이 구간은 곡에서 ${anno.occurrences}번 나옵니다 — 번호는 첫 등장에만 붙습니다`, warn: false })
+  if (anno.disputed)
+    out.push({ text: `득표 ${anno.votes_total} — 커뮤니티에서 반박된 해석입니다`, warn: true })
+  if (paired)
+    out.push({ text: '겹친 줄 — 이 줄을 주장하는 해설이 둘입니다', warn: false })
+  return out
+}
+
+/** `+23표` / `-4표` / `0표`. */
+export function annoVotes(anno: LyricsAnnotation): string {
+  return `${anno.votes_total > 0 ? '+' : ''}${anno.votes_total}표`
+}

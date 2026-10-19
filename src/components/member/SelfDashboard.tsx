@@ -30,6 +30,7 @@ import { DENSITY_KEY, DENSITY_OPTS, NP_STYLE_KEY, NP_STYLE_OPTS, readPref, TabPa
 import { LyricsSheet } from './lyrics/LyricsSheet'
 import { LyricsViewer } from './lyrics/LyricsViewer'
 import { OverviewDash } from './OverviewDash'
+import { reopenPlaybackLyrics } from './playback/playbackEntryActions'
 import { ReviewsTab } from './ReviewsTab'
 import { SpotifyIntegrationTab } from './SpotifyIntegrationTab'
 import { StatsTab } from './StatsTab'
@@ -37,7 +38,7 @@ import '@styles/member.css'
 import '@styles/research.css'
 
 interface LiveLyrics { kind: 'live', trackId: string, progressMs: number | null, progressAtMs: number | null, durationMs: number | null, albumCoverUrl: string | null, track: string | null, artist: string | null, artists: Array<{ id: string, name: string }> }
-interface StaticLyrics { kind: 'static', trackId: string, meta?: LyricsSheetMeta }
+interface StaticLyrics { kind: 'static', trackId: string, meta?: LyricsSheetMeta, fromViewer?: boolean }
 
 // Stable empty list so downstream useMemo deps don't churn per render while
 // the owner JSON (or the public profile feed) is still loading.
@@ -169,7 +170,13 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 	const openLyrics = (t: LyricsOpenTarget) => setLyrics({ kind: 'live', trackId: t.trackId, progressMs: t.progressMs, progressAtMs: t.progressAtMs, durationMs: t.durationMs, albumCoverUrl: t.albumCoverUrl, track: t.track, artist: t.artist, artists: t.artists })
 	const openStaticLyrics = (spotifyTrackId: string, meta?: LyricsSheetMeta) => setLyrics({ kind: 'static', trackId: spotifyTrackId, meta })
 	const closeLyrics = () => {
+		// A sheet opened by the live viewer's 전체 가사 returns to a viewer. That
+		// viewer is the site-wide host's (PocketBuckit) — the same component, read
+		// fresh from where playback is now.
+		const back = lyrics?.kind === 'static' && lyrics.fromViewer
 		setLyrics(null)
+		if (back)
+			reopenPlaybackLyrics()
 		try {
 			const url = new URL(window.location.href)
 			url.searchParams.delete('lyrics')
@@ -217,7 +224,7 @@ export default function SelfDashboard({ handle, publicReviews, tab, onSelectTab 
 					null
 			))}
 			{detail && <AlbumDetail album={detail} reviews={reviews} onClose={() => setDetail(null)} onMemoSaved={onMemoSaved} onOpenLyrics={openStaticLyrics} />}
-			{lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} initialArtists={lyrics.artists} canRefresh onOpenFullLyrics={(trackId, m) => openStaticLyrics(trackId, { track: m.track, artist: m.artist, cover: m.cover })} onClose={closeLyrics} />}
+			{lyrics?.kind === 'live' && <LyricsViewer key={lyrics.trackId} spotifyTrackId={lyrics.trackId} initialProgressMs={lyrics.progressMs} initialProgressAtMs={lyrics.progressAtMs} initialDurationMs={lyrics.durationMs} initialAlbumCoverUrl={lyrics.albumCoverUrl} initialTrack={lyrics.track} initialArtist={lyrics.artist} initialArtists={lyrics.artists} canRefresh onOpenFullLyrics={(trackId, m) => setLyrics({ kind: 'static', trackId, meta: { track: m.track, artist: m.artist, cover: m.cover }, fromViewer: true })} onClose={closeLyrics} />}
 			{lyrics?.kind === 'static' && <LyricsSheet key={lyrics.trackId} spotifyTrackId={lyrics.trackId} meta={lyrics.meta} onClose={closeLyrics} />}
 		</div>
 	)
