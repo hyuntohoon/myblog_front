@@ -6,7 +6,8 @@
 // NO similar artists, NO aggregation. followers/popularity are a tiny footnote,
 // never a hero metric. Numeric rating is never shown (stars only, owner decision).
 import type { AlbumCardData } from '@components/shared/AlbumCard'
-import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import type { ArtistReviewCard } from '../../lib/artistReviews'
 import type { AlbumListItem, ArtistHero, TopTrackItem } from '../../scripts/write/artistApi'
 import { fetchArtistAlbums, fetchArtistHero, fetchArtistTopTracks } from '../../scripts/write/artistApi'
@@ -44,6 +45,20 @@ function fmtFollowers(n: number | null | undefined): string | null {
 	if (n >= 1_000)
 		return `${(n / 1_000).toFixed(1)}K`
 	return String(n)
+}
+
+// Front UI/UX audit #7 — Spotify's album_type has no EP: an EP is a
+// `single`. Everything that is not a single (album, compilation, or a row
+// with no type) is shown as an album, so no release can fall out of both groups.
+type DiscographyGroup = 'album' | 'single'
+
+const DISCOGRAPHY_GROUPS: { value: DiscographyGroup, label: string }[] = [
+	{ value: 'album', label: '앨범' },
+	{ value: 'single', label: '싱글·EP' },
+]
+
+export function discographyGroup(al: AlbumListItem): DiscographyGroup {
+	return al.album_type === 'single' ? 'single' : 'album'
 }
 
 const SQUARE_COVER = { width: '100%', aspectRatio: '1 / 1', borderRadius: 3 } as const
@@ -96,6 +111,15 @@ function ArtistDiscographyCard({ al, artistName }: { al: AlbumListItem, artistNa
 	)
 }
 
+function DotJoined({ parts }: { parts: { key: string, node: ReactNode }[] }) {
+	return parts.map((p, i) => (
+		<Fragment key={p.key}>
+			{i > 0 && <span className="art-id-dot" aria-hidden="true">·</span>}
+			{p.node}
+		</Fragment>
+	))
+}
+
 function LetterTile({ label }: { label: string }) {
 	const ch = (label.trim()[0] ?? '?').toUpperCase()
 	return <span className="art-letter" aria-hidden="true">{ch}</span>
@@ -114,7 +138,10 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 		setStatus('loading')
 		Promise.all([
 			fetchArtistHero(artistId),
-			fetchArtistAlbums(artistId, 48),
+			// The music API collapses editions over the whole discography and caps a
+			// page at 100; the largest prod discography is 92, so one page is all of
+			// it and the masthead counts below are exact.
+			fetchArtistAlbums(artistId, 100),
 			fetchArtistTopTracks(artistId, 8),
 		]).then(([heroRes, albumList, tracks]) => {
 			if (!alive)
@@ -177,6 +204,37 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 		catalog.sort((a, b) => a.title.localeCompare(b.title, 'ko'))
 	}
 	const hasReviews = reviews.length > 0
+	const catalogGroups = DISCOGRAPHY_GROUPS
+		.map(g => ({ ...g, items: catalog.filter(a => discographyGroup(a) === g.value) }))
+		.filter(g => g.items.length > 0)
+	// Masthead counts by type over the whole fetched discography (reviewed
+	// albums included). If the album list came back empty — no albums, or a
+	// failed fetch, which artistApi does not distinguish — keep the hero count.
+	const typeCounts = DISCOGRAPHY_GROUPS
+		.map(g => ({ label: g.label, count: albums.filter(a => discographyGroup(a) === g.value).length }))
+		.filter(c => c.count > 0)
+	const countParts = hero ?
+		[
+			...(albums.length > 0 ?
+				typeCounts.map(c => `${c.count} ${c.label}`) :
+				[`${hero.album_count} 앨범`]),
+			`${hero.track_count} 트랙`,
+		] :
+		[]
+	// Audit #7 — the footnote separators are placed between the items that
+	// render, so a missing Spotify link no longer leaves a leading "·".
+	const footParts: { key: string, node: ReactNode }[] = []
+	if (hero?.spotify_url) {
+		footParts.push({ key: 'spotify', node: (
+			<a className="art-id-spotify" href={hero.spotify_url} target="_blank" rel="noreferrer">
+				Spotify ↗
+			</a>
+		) })
+	}
+	if (hero?.followers != null)
+		footParts.push({ key: 'followers', node: <span>{`팔로워 ${fmtFollowers(hero.followers)}`}</span> })
+	if (hero?.popularity != null)
+		footParts.push({ key: 'popularity', node: <span>{`인기도 ${hero.popularity}`}</span> })
 	const sortControls = (
 		<div className="art-sort mono" role="group" aria-label="디스코그래피 정렬">
 			{CATALOG_SORTS.map(option => (
@@ -212,17 +270,9 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 								spotifyGenres.map(g => <span key={g} className="art-id-gchip">{g}</span>)}
 						</div>
 					)}
-					{hero && (
+					{countParts.length > 0 && (
 						<div className="art-id-counts">
-							<span>
-								{hero.album_count}
-								{' 앨범'}
-							</span>
-							<span className="art-id-dot">·</span>
-							<span>
-								{hero.track_count}
-								{' 트랙'}
-							</span>
+							<DotJoined parts={countParts.map(text => ({ key: text, node: <span>{text}</span> }))} />
 						</div>
 					)}
 					{/* FIX-user-flow-state-consistency leg 4 — the artist hub is where a
@@ -231,70 +281,41 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 					<div className="art-id-actions">
 						<TrackArtistButton artistId={artistId} name={displayName} />
 					</div>
-					<div className="art-id-foot">
-						{hero?.spotify_url && (
-							<a className="art-id-spotify" href={hero.spotify_url} target="_blank" rel="noreferrer">
-								Spotify ↗
-							</a>
-						)}
-						{hero?.followers != null && (
-							<>
-								<span className="art-id-dot">·</span>
-								<span>
-									{'팔로워 '}
-									{fmtFollowers(hero.followers)}
-								</span>
-							</>
-						)}
-						{hero?.popularity != null && (
-							<>
-								<span className="art-id-dot">·</span>
-								<span>
-									{'인기도 '}
-									{hero.popularity}
-								</span>
-							</>
-						)}
-					</div>
+					{footParts.length > 0 && (
+						<div className="art-id-foot">
+							<DotJoined parts={footParts} />
+						</div>
+					)}
 				</div>
 			</header>
 
 			{/* ── 2. 평론한 앨범 (the critic's lens) ───────────────────── */}
-			{hasReviews ?
-				(
-					<section className="art-block">
-						<SectionTitle kicker="THE CRITIC’S LENS" title="평론한 앨범" />
-						<div className="art-cov-grid">
-							{reviews.map(r => (
-								<a key={r.slug} className="art-rev-card" href={reviewHref(r.slug)}>
-									<div className="art-rev-cover">
-										<CoverImage src={r.cover} label={r.album} style={SQUARE_COVER} placeholderStyle={SQUARE_COVER_PH} />
-										{r.bestNew && <span className="art-rev-bnm">베스트 뉴 뮤직</span>}
+			{/* Audit #7 — with no 평론 the section is not rendered at all, like the
+			    empty 평론 nav items (FEAT-public-surfaces-before-first-review). */}
+			{hasReviews && (
+				<section className="art-block">
+					<SectionTitle kicker="THE CRITIC’S LENS" title="평론한 앨범" />
+					<div className="art-cov-grid">
+						{reviews.map(r => (
+							<a key={r.slug} className="art-rev-card" href={reviewHref(r.slug)}>
+								<div className="art-rev-cover">
+									<CoverImage src={r.cover} label={r.album} style={SQUARE_COVER} placeholderStyle={SQUARE_COVER_PH} />
+									{r.bestNew && <span className="art-rev-bnm">베스트 뉴 뮤직</span>}
+								</div>
+								<div className="art-rev-body">
+									<Stars rating={r.rating} />
+									<h3 className="art-rev-title">{r.album}</h3>
+									<div className="art-rev-meta meta">
+										{r.year ?? ''}
+										{r.genre ? ` · ${r.genre}` : ''}
 									</div>
-									<div className="art-rev-body">
-										<Stars rating={r.rating} />
-										<h3 className="art-rev-title">{r.album}</h3>
-										<div className="art-rev-meta meta">
-											{r.year ?? ''}
-											{r.genre ? ` · ${r.genre}` : ''}
-										</div>
-										{r.pull && <p className="art-rev-pull">{r.pull}</p>}
-									</div>
-								</a>
-							))}
-						</div>
-					</section>
-				) :
-				(
-					<section className="art-block art-cov-empty">
-						<p className="art-cov-empty-kicker mono">THE CRITIC’S LENS</p>
-						<p className="art-cov-empty-lead">아직 이 아티스트의 평론이 없습니다.</p>
-						<p className="art-cov-empty-sub">
-							{displayName}
-							의 디스코그래피를 아래에서 살펴보세요.
-						</p>
-					</section>
-				)}
+									{r.pull && <p className="art-rev-pull">{r.pull}</p>}
+								</div>
+							</a>
+						))}
+					</div>
+				</section>
+			)}
 
 			{/* ── 3. 디스코그래피 + 주요 트랙 ─────────────────────────── */}
 			<div className="art-lower-grid art-block">
@@ -306,12 +327,18 @@ export default function ArtistHub({ artistId, name, reviews, reviewedAlbumIds }:
 					/>
 					{status === 'loading' ?
 						<div className="art-pending">불러오는 중…</div> :
-						catalog.length > 0 ?
-							(
-								<div className={`art-disco-grid${hasReviews ? '' : ' is-foreground'}`}>
-									{catalog.map(al => <ArtistDiscographyCard key={al.id ?? al.title} al={al} artistName={name} />)}
-								</div>
-							) :
+						catalogGroups.length > 0 ?
+							catalogGroups.map(g => (
+								<section key={g.value} className="art-disco-group" aria-labelledby={`art-disco-${g.value}`}>
+									<p id={`art-disco-${g.value}`} className="art-disco-group-title mono">
+										{g.label}
+										<span className="art-disco-group-count">{g.items.length}</span>
+									</p>
+									<div className={`art-disco-grid${hasReviews ? '' : ' is-foreground'}`}>
+										{g.items.map(al => <ArtistDiscographyCard key={al.id ?? al.title} al={al} artistName={name} />)}
+									</div>
+								</section>
+							)) :
 							<p className="art-cov-empty-sub">등록된 앨범이 없습니다.</p>}
 				</div>
 
