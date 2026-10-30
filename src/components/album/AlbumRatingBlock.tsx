@@ -126,6 +126,9 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 
 	const reviews = agg?.reviews ?? []
 	const myReview = myHandle ? reviews.find(r => r.author.handle === myHandle) ?? null : null
+	// My row already reads as 내 평가 above (audit #8). Held until the handle
+	// settles so it does not paint in the list and then jump out.
+	const listedReviews = authed && !mineLoaded ? [] : reviews.filter(r => r.id !== myReview?.id)
 	const marked = myState?.review_candidate ?? false
 
 	function startEdit() {
@@ -518,9 +521,9 @@ export default function AlbumRatingBlock({ albumId, openRating = false, display 
 			)}
 
 			{/* review list */}
-			{reviews.length > 0 && (
+			{listedReviews.length > 0 && (
 				<ul className="album-rating__reviews">
-					{reviews.map((r) => {
+					{listedReviews.map((r) => {
 						const placeholder = isPlaceholderIdentity(r.author.display_name, r.author.handle)
 						return (
 							<li key={r.id} className="album-rating__review">

@@ -341,7 +341,7 @@ function RatedAlbumCard({ row, badge, secondaryLine }: {
 			}}
 			layout="row"
 			capabilities={{
-				open: () => openAlbum({ albumId: row.album_id, title: row.album_title, cover: row.album_cover_url }),
+				open: () => openAlbum({ albumId: row.album_id, title: row.album_title, artist: row.artist_name ?? undefined, cover: row.album_cover_url }),
 				...(artistId ? { artistOpen: () => window.location.assign(artistHref(artistId)) } : {}),
 			}}
 			badge={badge}

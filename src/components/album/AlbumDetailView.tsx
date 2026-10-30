@@ -99,7 +99,7 @@ export function Tracklist({ tracks, onOpenLyrics, onAddTrack, onPlayTrack, album
                 <span className="sans" style={{ fontSize: 11.5, color: 'var(--color-faded)' }}>{` feat. ${t.feat_artist_names.join(', ')}`}</span> :
                 undefined}
 	cells={t.duration_sec != null ?
-                <span className="mono" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
+                <span className="mono album-modal__track-time" style={{ fontSize: 11, color: 'var(--color-faded)', flex: '0 0 auto' }}>{fmtTime(t.duration_sec)}</span> :
                 undefined}
 	actions={{
                 ...(onOpenLyrics && sid ? { lyrics: () => onOpenLyrics(sid, { track: t.title, ...albumMeta }) } : {}),
@@ -212,6 +212,8 @@ export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyr
 
   const a = data?.album
   const displayTitle = title || a?.title || ''
+  // Not every opener holds the artist (audit #8) — the catalog read does.
+  const displayArtist = artist || (data?.artists ?? []).map(ar => ar.name).join(', ') || undefined
   const headerMeta: string[] = []
   const genres = Array.from(new Set((data?.artists ?? []).flatMap(ar => ar.genres)))
   if (genres.length)
@@ -233,17 +235,17 @@ export function AlbumDetailView({ albumId, title, artist, cover, year, onOpenLyr
   if (a?.label)
     catalogLines.push(a.label)
 
-  const albumMeta: AlbumLyricsMeta = { artist, album: displayTitle, cover: a?.cover_url ?? cover }
+  const albumMeta: AlbumLyricsMeta = { artist: displayArtist, album: displayTitle, cover: a?.cover_url ?? cover }
 
   return (
     <div className="album-modal__detail">
       <div className={`album-modal__plate${!interactive && !topSlot ? ' album-modal__plate--identity-only' : ''}`}>
-        <Header cover={a?.cover_url ?? cover} title={displayTitle} artist={artist} meta={headerMeta} kicker="앨범" actions={headerActions} modalPlate />
+        <Header cover={a?.cover_url ?? cover} title={displayTitle} artist={displayArtist} meta={headerMeta} kicker="앨범" actions={headerActions} modalPlate />
         {topSlot}
         {/* FEAT-multi-user Phase 1: public community rating + signed-in write panel.
             Renders on every album surface (public overlay + member modal) EXCEPT
             when albumId is a display-only fallback (interactive=false). */}
-        {interactive && <AlbumRatingBlock albumId={albumId} openRating={openRating} display={{ title: displayTitle, artist, cover: a?.cover_url ?? cover, year }} />}
+        {interactive && <AlbumRatingBlock albumId={albumId} openRating={openRating} display={{ title: displayTitle, artist: displayArtist, cover: a?.cover_url ?? cover, year }} />}
       </div>
       <div className="album-modal__body">
       {state === 'loading' ?
