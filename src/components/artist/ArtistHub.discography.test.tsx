@@ -241,7 +241,10 @@ describe('artist hub audit #7', () => {
 				reviewedAlbumIds={['alb-2']}
 			/>,
 		)
-		await screen.findByText('THE CRITIC’S LENS')
+		// the lens renders from props before the album fetch resolves — wait
+		// for the catalog, not the lens, before reading the groups
+		await screen.findByRole('button', { name: 'Break 앨범 보기' })
+		expect(screen.getByText('THE CRITIC’S LENS')).toBeTruthy()
 		expect(screen.getByText('NOWITZKI')).toBeTruthy()
 		// the reviewed album leaves the catalog, and its group with it
 		expect(groupTitles()).toEqual(['싱글·EP1'])
