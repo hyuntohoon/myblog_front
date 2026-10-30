@@ -410,6 +410,13 @@
   border-color: var(--color-border-soft);
 }
 
+/* `.btn` already gives touch 44px of height; the glyphs need the width (audit #8). */
+@media (pointer: coarse) {
+  .album-modal__track .btn {
+    min-width: 44px;
+  }
+}
+
 .album-modal__artists {
   margin-top: 22px;
   padding-top: 16px;
@@ -564,6 +571,11 @@
 
   .album-modal__track .btn {
     padding-inline: 5px !important;
+  }
+
+  /* Three 44px buttons leave the title 80px at 390; the time gives way (audit #8). */
+  .album-modal__track:has(.btn ~ .btn ~ .btn) .album-modal__track-time {
+    display: none;
   }
 }
 

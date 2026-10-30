@@ -105,3 +105,33 @@ describe('albumRatingBlock confirmed mutations', () => {
 		}))
 	})
 })
+
+// Audit #8 — one rater used to read the same score three times.
+describe('albumRatingBlock review list', () => {
+	const OTHER = { ...REVIEW, id: 'rating-2', author: { handle: 'other', display_name: 'Other' } }
+
+	it('lists other members but not my own row, which 내 평가 already shows', async () => {
+		api.fetchAlbumReviews.mockResolvedValue(aggregate([REVIEW, OTHER]))
+		api.fetchMyAlbumStates.mockResolvedValue([STATE])
+		render(<AlbumRatingBlock albumId={ALBUM} />)
+
+		await screen.findByRole('button', { name: '수정' })
+		expect(await screen.findByRole('link', { name: 'Other' })).toBeInTheDocument()
+		expect(screen.queryByRole('link', { name: 'Park' })).not.toBeInTheDocument()
+	})
+
+	it('keeps every row, mine included, if the handle cannot be matched', async () => {
+		api.fetchAlbumReviews.mockResolvedValue(aggregate([REVIEW, OTHER]))
+		api.fetchMyHandle.mockResolvedValue(null)
+		render(<AlbumRatingBlock albumId={ALBUM} />)
+
+		expect(await screen.findByRole('link', { name: 'Park' })).toBeInTheDocument()
+		expect(screen.getByRole('link', { name: 'Other' })).toBeInTheDocument()
+	})
+
+	it('stays deduped while my rating is being edited', async () => {
+		await mountWithExistingRating()
+		fireEvent.click(screen.getByRole('button', { name: '수정' }))
+		expect(screen.queryByRole('link', { name: 'Park' })).not.toBeInTheDocument()
+	})
+})

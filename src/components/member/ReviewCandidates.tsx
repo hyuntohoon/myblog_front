@@ -34,7 +34,7 @@ const CANDIDATE_CARD_CSS = `
 
 /** Private review-queue adapter. Editorial state stays entirely in the slots. */
 export function ReviewCandidateAlbumCardAdapter({ c }: { c: ReviewCandidate }) {
-	const open = () => openAlbum({ albumId: c.album_id, title: c.album_title, cover: c.album_cover_url })
+	const open = () => openAlbum({ albumId: c.album_id, title: c.album_title, artist: c.artist_name ?? undefined, cover: c.album_cover_url })
 	return (
 		<div className="panel review-candidate-card" style={{ padding: 12, background: 'var(--color-bg)' }}>
 			<CatalogAlbumCardAdapter

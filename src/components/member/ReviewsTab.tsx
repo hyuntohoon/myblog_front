@@ -53,7 +53,7 @@ function ReviewCard({ r, onOpen, onDelete, bucketName, hasResearch, boardHref }:
     if (!clickable)
       return
     if (!hasPost && albumId) {
-      openAlbum({ albumId, title: r.album, cover: r.cover })
+      openAlbum({ albumId, title: r.album, artist: r.artist || undefined, cover: r.cover })
       return
     }
     onOpen({ album: r.album, artist: r.artist, genre: r.genre, year: r.year, rating: r.rating, track: r.type === '트랙 리뷰' ? r.album : undefined })

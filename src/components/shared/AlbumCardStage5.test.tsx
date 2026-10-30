@@ -160,6 +160,7 @@ describe('albumCard Stage 5 adapters', () => {
 		fireEvent.click(screen.getByRole('button', { name: 'Promises — Floating Points 앨범 보기' }))
 		expect(mocks.openAlbum).toHaveBeenCalledWith({
 			albumId: 'album/3',
+			artist: 'Floating Points',
 			title: 'Promises',
 			cover: null,
 		})
