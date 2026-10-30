@@ -171,17 +171,6 @@ a.art-id-gchip:hover { color: var(--color-accent); border-color: var(--color-acc
 	overflow: hidden;
 }
 
-.art-cov-empty {
-	border-top: 1px solid var(--color-border-soft);
-	padding-top: clamp(20px, 3vw, 30px);
-	max-width: 52ch;
-}
-.art-cov-empty-kicker {
-	font-size: var(--text-2xs);
-	letter-spacing: .1em;
-	color: var(--color-faded);
-	margin: 0 0 10px;
-}
 .art-cov-empty-lead {
 	font-size: clamp(20px, 2.6vw, 28px);
 	font-weight: 500;
@@ -238,6 +227,18 @@ a.art-id-gchip:hover { color: var(--color-accent); border-color: var(--color-acc
 .art-disco-grid:not(.is-foreground) .album-card:not([data-dragging]) { opacity: .66; transition: opacity .2s; }
 .art-disco-grid:not(.is-foreground) .album-card:not([data-dragging]):hover,
 .art-disco-grid:not(.is-foreground) .album-card:not([data-dragging]):focus-within { opacity: 1; }
+/* Audit #7 — 앨범 / 싱글·EP groups inside the discography. */
+.art-disco-group + .art-disco-group { margin-top: clamp(24px, 3vw, 36px); }
+.art-disco-group-title {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	margin: 0 0 14px;
+	font-size: var(--text-xs);
+	letter-spacing: .08em;
+	color: var(--color-subtle);
+}
+.art-disco-group-count { color: var(--color-faded); }
 .art-disco-type {
 	font-size: var(--text-2xs);
 	letter-spacing: .05em;
